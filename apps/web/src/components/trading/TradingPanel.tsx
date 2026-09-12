@@ -1,14 +1,10 @@
 import { chartIntervalKey } from "./tradingIntervals";
 import { ChartViewMenu, type ChartView } from "./ChartViewMenu";
-import {
-  INSTRUMENTS,
-  INSTRUMENT_ROOTS,
-  rootFromSymbol,
-  type InstrumentRoot,
-} from "./tradingInstruments";
+import { INSTRUMENTS, INSTRUMENT_ROOTS, type InstrumentRoot } from "./tradingInstruments";
 import { AlertIcon } from "./AlertIcon";
 import { WatchlistPanel } from "./WatchlistPanel";
 import { tradingFetch } from "./tradingTransport";
+import { loadMarketContracts } from "./contractLoader";
 import { ChartAlerts, useChartAlerts } from "./ChartAlertsPanel";
 import { ChartIcon } from "./ChartIcon";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -43,56 +39,37 @@ function ReadyTradingPanel({
   const [technicalSource, setTechnicalSource] = useState<string | null>(null);
   const [contracts, setContracts] = useState<FuturesContract[]>([]);
   const [errors, setErrors] = useState<Partial<Record<InstrumentRoot, string>>>({});
-  const [loading, setLoading] = useState(true);
+  const [loadingRoots, setLoadingRoots] = useState<Partial<Record<InstrumentRoot, boolean>>>(
+    Object.fromEntries(INSTRUMENT_ROOTS.map((root) => [root, true])),
+  );
+  const loading = Object.values(loadingRoots).some(Boolean);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [quote, setQuote] = useState<MarketQuote | null>(null);
   const request = useRef<AbortController | null>(null);
-  const loadContracts = useCallback(async (signal: AbortSignal) => {
-    const results = await Promise.allSettled(
-      INSTRUMENT_ROOTS.map(async (root) => {
-        const response = await tradingFetch(`/api/trading/contracts?root=${root}`, {
-          signal,
-          credentials: "same-origin",
-        });
-        if (!response.ok)
-          throw Error("Could not load Tradovate contracts. Check the server session.");
-        const data: unknown = await response.json();
-        if (!Array.isArray(data)) throw Error("Invalid contract response.");
-        const valid = data
-          .filter(
-            (item): item is { id: number; name: string } =>
-              typeof item === "object" &&
-              item !== null &&
-              typeof item.id === "number" &&
-              typeof item.name === "string" &&
-              rootFromSymbol(item.name) === root,
-          )
-          .map((item) => ({ ...item, root }));
-        if (!valid.length) throw Error("No contracts available.");
-        return valid;
-      }),
-    );
-    if (signal.aborted) return;
-    const nextErrors: Partial<Record<InstrumentRoot, string>> = {};
-    const nextContracts: FuturesContract[] = [];
-    results.forEach((result, index) => {
-      if (result.status === "fulfilled") nextContracts.push(...result.value);
-      else
-        nextErrors[INSTRUMENT_ROOTS[index]!] =
-          result.reason instanceof Error ? result.reason.message : "Contract lookup failed.";
-    });
-    // A temporary refresh failure must not tear down an already loaded chart.
-    setContracts((previous) => [
-      ...nextContracts,
-      ...previous.filter((contract) => nextErrors[contract.root]),
-    ]);
-    setErrors(nextErrors);
-    setLoading(false);
-  }, []);
+  const loadContracts = useCallback(
+    async (signal: AbortSignal, roots: readonly InstrumentRoot[] = INSTRUMENT_ROOTS) => {
+      setLoadingRoots((current) => ({
+        ...current,
+        ...Object.fromEntries(roots.map((root) => [root, true])),
+      }));
+      await loadMarketContracts(roots, signal, tradingFetch, (result) => {
+        if (result.contracts) {
+          setContracts((previous) => [
+            ...previous.filter((contract) => contract.root !== result.root),
+            ...result.contracts,
+          ]);
+        }
+        // Keep the existing chart if this market's refresh fails.
+        setErrors((previous) => ({ ...previous, [result.root]: result.error }));
+        setLoadingRoots((previous) => ({ ...previous, [result.root]: false }));
+      });
+    },
+    [],
+  );
   useEffect(() => {
     const abort = new AbortController();
     request.current = abort;
-    // State changes occur only after both network requests settle.
+    // Track the pending external market subscriptions when mounting.
     // eslint-disable-next-line react/set-state-in-effect
     void loadContracts(abort.signal);
     const refresh = () => {
@@ -282,15 +259,14 @@ function ReadyTradingPanel({
           <Button
             variant="outline"
             size="sm"
-            disabled={loading}
+            disabled={loadingRoots[settings.root]}
             onClick={() => {
-              request.current?.abort();
-              request.current = new AbortController();
-              setLoading(true);
-              void loadContracts(request.current.signal);
+              if (!request.current || request.current.signal.aborted)
+                request.current = new AbortController();
+              void loadContracts(request.current.signal, [settings.root]);
             }}
           >
-            {loading ? "Retrying…" : "Retry"}
+            {loadingRoots[settings.root] ? "Retrying…" : "Retry"}
           </Button>
         </div>
       ) : null}
