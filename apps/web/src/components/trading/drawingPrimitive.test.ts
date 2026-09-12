@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import type { IChartApi, ISeriesApi, SeriesType, Time } from "lightweight-charts";
-import { createDrawingPrimitive, drawingProjection } from "./drawingPrimitive";
+import {
+  createDrawingPrimitive,
+  drawingProjection,
+  drawingTextPlacement,
+  supportsInlineDrawingText,
+} from "./drawingPrimitive";
 import type { ChartDrawing } from "./drawingGeometry";
 
 function fixture() {
@@ -473,6 +478,76 @@ describe("additional line primitive behavior", () => {
       { time: 200 as Time, price: 300 },
     ],
   });
+
+  it.each([0, 0.5, 1])(
+    "keeps standalone multiline canvas text aligned with its editor at opacity %s",
+    (opacity) => {
+      const drawing: ChartDrawing = {
+        ...line("text"),
+        anchors: [{ time: 100 as Time, price: 400 }],
+        text: "Entry\nretest",
+        textFontSize: 20,
+        textColor: "#aabbcc",
+        textBold: true,
+        textItalic: true,
+        textOpacity: opacity,
+        textAlignment: "right",
+        textPosition: "below",
+      };
+      const next: ChartDrawing = {
+        ...drawing,
+        id: "next-text",
+        text: "Next",
+        textOpacity: 1,
+        textColor: "#ffffff",
+        textBold: false,
+        textItalic: false,
+      };
+      const { chart, series } = fixture();
+      const placement = drawingTextPlacement(chart, series, drawing)!;
+      expect(supportsInlineDrawingText("text")).toBe(true);
+      expect(placement.fontSize).toBe(20);
+      expect(placement.angle ?? 0).toBe(0);
+      expect(placement.align).toBe("right");
+      const rowHeight = 24;
+      const top =
+        placement.point.y -
+        (placement.baseline === "top" ? 0 : placement.baseline === "middle" ? 24 : 48);
+      const f = renderFixture(drawing, undefined, [next]);
+      const painted: unknown[] = [];
+      f.ctx.fillText.mockImplementation((value, x, y) => {
+        const context = f.ctx as unknown as CanvasRenderingContext2D;
+        painted.push({
+          value,
+          x,
+          y,
+          color: context.fillStyle,
+          alpha: context.globalAlpha,
+          font: context.font,
+          align: context.textAlign,
+        });
+      });
+      f.draw();
+      expect(painted.slice(0, 2)).toEqual(
+        ["Entry", "retest"].map((value, index) => ({
+          value,
+          x: placement.point.x,
+          y: top + index * rowHeight,
+          color: "#aabbcc",
+          alpha: opacity,
+          font: "italic bold 20px system-ui",
+          align: "right",
+        })),
+      );
+      expect(painted[2]).toMatchObject({
+        value: "Next",
+        color: "#ffffff",
+        alpha: 1,
+        font: "20px system-ui",
+      });
+      expect(f.ctx.rotate).not.toHaveBeenCalled();
+    },
+  );
 
   it("paints mixed horizontal and trend bodies in their shared persisted order", () => {
     const horizontal: ChartDrawing = {

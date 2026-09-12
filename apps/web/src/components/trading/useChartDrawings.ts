@@ -109,6 +109,7 @@ export function createChartDrawingSession(
     original: ChartDrawing;
     drawing: ChartDrawing;
     appearanceReplaced?: boolean;
+    created?: boolean;
   } | null = null;
   let contextPoint: DrawingPoint | null = null;
   let replacingId: string | null = null;
@@ -164,9 +165,11 @@ export function createChartDrawingSession(
   const removers: Array<() => void> = [];
   const displayedDrawings = () =>
     settingsDraft
-      ? drawings.map((drawing) =>
-          drawing.id === settingsDraft!.original.id ? settingsDraft!.drawing : drawing,
-        )
+      ? settingsDraft.created
+        ? [...drawings, settingsDraft.drawing]
+        : drawings.map((drawing) =>
+            drawing.id === settingsDraft!.original.id ? settingsDraft!.drawing : drawing,
+          )
       : drawings;
   const isVisible = (drawing: ChartDrawing) =>
     !hidden && !drawing.hidden && isDrawingVisibleAtInterval(drawing.visibility, intervalMinutes);
@@ -292,6 +295,7 @@ export function createChartDrawingSession(
   };
   const discardSettings = () => {
     const hadDraft = settingsDraft !== null;
+    if (settingsDraft?.created) selectedId = null;
     settingsDraft = null;
     settingsOpen = false;
     textEditing = false;
@@ -532,15 +536,28 @@ export function createChartDrawingSession(
   };
   const commitDrawing = () => {
     if (disposed || tool === "cursor" || !validDrawingAnchors(tool, anchors)) return false;
-    remember();
     const previous = drawings.find((drawing) => drawing.id === replacingId);
+    const creatingText = tool === "text" && !previous;
     const drawing: ChartDrawing = {
       ...(previous ?? defaults.get(tool)),
       id: previous?.id ?? randomUUID(),
       kind: tool,
       anchors,
-      ...(tool === "text" ? { text: previous?.text ?? "Text" } : {}),
+      ...(tool === "text" ? { text: previous?.text ?? "" } : {}),
     };
+    if (creatingText) {
+      selectedId = drawing.id;
+      anchors = [];
+      preview = null;
+      replacingId = null;
+      tool = "cursor";
+      settingsDraft = { original: drawing, drawing, created: true };
+      textEditing = true;
+      render();
+      emit();
+      return true;
+    }
+    remember();
     drawings = replacingId
       ? drawings.map((item) => (item.id === replacingId ? drawing : item))
       : [...drawings, drawing].slice(-100);
@@ -768,7 +785,7 @@ export function createChartDrawingSession(
   };
   const finishSettingsDraft = (next: ChartDrawing, forceAppearance = false) => {
     if (!settingsDraft) return false;
-    const { original } = settingsDraft;
+    const { original, created } = settingsDraft;
     if (
       !textEditing &&
       (forceAppearance ||
@@ -779,7 +796,18 @@ export function createChartDrawingSession(
     settingsDraft = null;
     settingsOpen = false;
     textEditing = false;
-    if (JSON.stringify(original) !== JSON.stringify(next)) {
+    if (created) {
+      if (next.text?.trim()) {
+        remember();
+        drawings = [...drawings, next].slice(-100);
+        if (keepDrawing) tool = "text";
+        changed();
+      } else {
+        selectedId = null;
+        render();
+        emit();
+      }
+    } else if (JSON.stringify(original) !== JSON.stringify(next)) {
       remember();
       drawings = drawings.map((drawing) => (drawing.id === original.id ? next : drawing));
       changed();
