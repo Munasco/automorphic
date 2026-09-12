@@ -481,7 +481,7 @@ export const INDICATOR_DEFINITIONS = [
     ],
     styles: [
       style("main", "VWAP", "#2962ff", true),
-      ...["#4caf50", "#808000", "#089981"].flatMap((color, index) => {
+      ...["#81c784", "#808000", "#089981"].flatMap((color, index) => {
         const number = index + 1,
           shownWhen = { key: `band${number}Enabled`, value: 1 };
         return [

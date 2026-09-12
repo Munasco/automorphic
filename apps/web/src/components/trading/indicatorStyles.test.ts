@@ -69,7 +69,7 @@ describe("declared indicator styles", () => {
       before.resetIndicatorInputs("vwap");
       expect(
         resolveIndicatorStyle("vwap", "fill1", useChartPreferences.getState().appearance.vwap),
-      ).toMatchObject({ color: "#4caf50", opacity: 0.05, visible: true });
+      ).toMatchObject({ color: "#81c784", opacity: 0.05, visible: true });
     } finally {
       useChartPreferences.setState(before);
     }
