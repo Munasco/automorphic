@@ -1,4 +1,10 @@
-import { useId, useMemo, useState, useSyncExternalStore } from "react";
+import { useId, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Tabs } from "@base-ui/react/tabs";
+import { Dialog, DialogPopup, DialogTitle, DialogDescription } from "../ui/dialog";
+import { Menu, MenuTrigger, MenuPopup, MenuItem } from "../ui/menu";
+import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
+import { ChartIcon } from "./ChartIcon";
+import { AlertIcon } from "./AlertIcon";
 import { toastManager } from "../ui/toast";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
 import { createChartAlertSession, type AlertCondition, type ChartAlertState } from "./chartAlerts";
@@ -40,9 +46,37 @@ export function useChartAlerts(symbol: string) {
 
 export type ChartAlertsController = ReturnType<typeof useChartAlerts>;
 const fieldClass =
-  "mt-1 h-8 w-full rounded border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200 outline-none focus:border-blue-400";
-const actionClass =
-  "rounded px-2 py-1 text-xs text-zinc-400 hover:bg-white/5 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400";
+  "mt-2 h-10 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-200 outline-none focus:border-blue-400";
+const iconButtonClass =
+  "inline-flex size-8 shrink-0 items-center justify-center rounded text-zinc-300 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:opacity-40";
+const primaryClass =
+  "rounded-md bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-950 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:opacity-40";
+
+function AlertAction({
+  label,
+  children,
+  onClick,
+  pressed,
+}: {
+  label: string;
+  children: ReactNode;
+  onClick: () => void;
+  pressed?: boolean;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        className={iconButtonClass}
+        aria-label={label}
+        aria-pressed={pressed}
+        onClick={onClick}
+      >
+        {children}
+      </TooltipTrigger>
+      <TooltipPopup>{label}</TooltipPopup>
+    </Tooltip>
+  );
+}
 
 export function ChartAlerts({
   controller,
@@ -56,218 +90,384 @@ export function ChartAlerts({
   onClose?: (() => void) | undefined;
 }) {
   const formId = useId();
-  const [target, setTarget] = useState(() => (Number.isFinite(lastPrice) ? String(lastPrice) : ""));
+  const [tab, setTab] = useState("alerts");
+  const [creating, setCreating] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<"newest" | "oldest" | "symbol">("newest");
+  const [target, setTarget] = useState("");
   const [condition, setCondition] = useState<AlertCondition>("crossing");
   const [repeat, setRepeat] = useState(false);
   const [cooldownMs, setCooldownMs] = useState(60_000);
   const [error, setError] = useState("");
+  const query = search.trim().toLowerCase();
+  const alerts = controller.alerts
+    .filter((alert) =>
+      `${alert.symbol} ${conditionLabel[alert.condition]} ${alert.price}`
+        .toLowerCase()
+        .includes(query),
+    )
+    .toSorted((a, b) =>
+      sort === "symbol"
+        ? a.symbol.localeCompare(b.symbol)
+        : sort === "oldest"
+          ? a.armedAt - b.armedAt
+          : b.armedAt - a.armedAt,
+    );
+  const history = controller.history
+    .filter((event) =>
+      `${event.symbol} ${conditionLabel[event.condition]} ${event.target}`
+        .toLowerCase()
+        .includes(query),
+    )
+    .toSorted((a, b) =>
+      sort === "symbol"
+        ? a.symbol.localeCompare(b.symbol)
+        : sort === "oldest"
+          ? a.triggeredAt - b.triggeredAt
+          : b.triggeredAt - a.triggeredAt,
+    );
+  const openCreate = () => {
+    setTarget(Number.isFinite(lastPrice) ? String(lastPrice) : "");
+    setError("");
+    setCreating(true);
+  };
+  const empty = tab === "alerts" ? !alerts.length : !history.length;
   return (
     <section
-      className="flex h-full min-h-0 flex-col bg-[#0b0d12] text-zinc-300"
+      className="flex h-full min-h-0 flex-col bg-[#101010] text-zinc-300"
       aria-label="Price alerts"
     >
-      <header className="flex h-10 shrink-0 items-center justify-between border-b border-zinc-800 px-3">
-        <h2 className="text-xs font-semibold">Price alerts</h2>
-        {onClose ? (
-          <button
-            type="button"
-            className={actionClass}
-            onClick={onClose}
-            aria-label="Close price alerts"
+      <Tabs.Root
+        value={tab}
+        onValueChange={(value) => setTab(String(value))}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <div className="shrink-0 border-b border-zinc-700">
+          <Tabs.List
+            aria-label="Alerts and log"
+            className="mx-4 mt-3 flex rounded-lg bg-[#292929] p-1"
           >
-            Close
-          </button>
-        ) : null}
-      </header>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <form
-          className="space-y-3 border-b border-zinc-800 p-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            try {
-              if (!target.trim()) throw Error("Enter a target price.");
-              controller.add({ price: Number(target), condition, repeat, cooldownMs });
-              setError("");
-            } catch (cause) {
-              setError(cause instanceof Error ? cause.message : "Could not create the alert.");
-            }
-          }}
-        >
-          <p className="text-xs font-medium text-zinc-100">
-            Create for {symbol || "selected contract"}
-          </p>
-          <p className="text-[11px] leading-relaxed text-zinc-500">
-            In-app alerts run while this chart is open and receiving live quotes for the selected
-            contract. Other contracts wait until selected. No email or push delivery.
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <label htmlFor={`${formId}-condition`} className="text-[11px] text-zinc-400">
-              Condition
-              <select
-                id={`${formId}-condition`}
-                className={fieldClass}
-                value={condition}
-                onChange={(event) => setCondition(event.target.value as AlertCondition)}
-              >
-                <option value="crossing">Crossing</option>
-                <option value="above">Above</option>
-                <option value="below">Below</option>
-              </select>
-            </label>
-            <label htmlFor={`${formId}-price`} className="text-[11px] text-zinc-400">
-              Target price
-              <input
-                id={`${formId}-price`}
-                className={fieldClass}
-                type="number"
-                step="any"
-                inputMode="decimal"
-                required
-                value={target}
-                onChange={(event) => setTarget(event.target.value)}
-              />
-            </label>
+            <Tabs.Tab
+              value="alerts"
+              className="flex-1 rounded-md py-1.5 text-sm font-medium text-zinc-400 outline-none data-active:bg-[#484848] data-active:text-white data-active:shadow-sm focus-visible:ring-2 focus-visible:ring-blue-400"
+            >
+              Alerts
+            </Tabs.Tab>
+            <Tabs.Tab
+              value="log"
+              className="flex-1 rounded-md py-1.5 text-sm font-medium text-zinc-400 outline-none data-active:bg-[#484848] data-active:text-white data-active:shadow-sm focus-visible:ring-2 focus-visible:ring-blue-400"
+            >
+              Log
+            </Tabs.Tab>
+          </Tabs.List>
+          <div
+            className="flex items-center gap-1 px-3 py-2"
+            role="toolbar"
+            aria-label="Alert actions"
+          >
+            <AlertAction label="Create alert" onClick={openCreate}>
+              <AlertIcon name="plus" size={25} />
+            </AlertAction>
+            <div className="flex-1" />
+            <AlertAction
+              label="Search alerts"
+              pressed={searching}
+              onClick={() => {
+                setSearching(!searching);
+                setSearch("");
+              }}
+            >
+              <ChartIcon name="search" size={22} />
+            </AlertAction>
+            <Menu>
+              <Tooltip>
+                <TooltipTrigger
+                  render={<MenuTrigger />}
+                  className={iconButtonClass}
+                  aria-label="Sort alerts"
+                >
+                  <AlertIcon name="sort" size={23} />
+                </TooltipTrigger>
+                <TooltipPopup>Sort alerts</TooltipPopup>
+              </Tooltip>
+              <MenuPopup align="end">
+                {(
+                  [
+                    ["newest", "Newest first"],
+                    ["oldest", "Oldest first"],
+                    ["symbol", "Symbol"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <MenuItem key={value} onClick={() => setSort(value)}>
+                    <span className="w-4">{sort === value ? "✓" : ""}</span>
+                    {label}
+                  </MenuItem>
+                ))}
+              </MenuPopup>
+            </Menu>
+            <Menu>
+              <Tooltip>
+                <TooltipTrigger
+                  render={<MenuTrigger />}
+                  className={iconButtonClass}
+                  aria-label="More alert actions"
+                >
+                  <AlertIcon name="more" size={23} />
+                </TooltipTrigger>
+                <TooltipPopup>More</TooltipPopup>
+              </Tooltip>
+              <MenuPopup align="end">
+                {tab === "alerts" ? (
+                  <>
+                    <MenuItem
+                      disabled={!controller.alerts.some((alert) => alert.enabled)}
+                      onClick={() =>
+                        controller.alerts
+                          .filter((alert) => alert.enabled)
+                          .forEach((alert) => controller.setEnabled(alert.id, false))
+                      }
+                    >
+                      Pause all alerts
+                    </MenuItem>
+                    <MenuItem
+                      disabled={!controller.alerts.some((alert) => !alert.enabled)}
+                      onClick={() =>
+                        controller.alerts
+                          .filter((alert) => !alert.enabled)
+                          .forEach((alert) => controller.setEnabled(alert.id, true))
+                      }
+                    >
+                      Enable all alerts
+                    </MenuItem>
+                  </>
+                ) : (
+                  <MenuItem disabled={!controller.history.length} onClick={controller.clearHistory}>
+                    Clear log
+                  </MenuItem>
+                )}
+                {onClose ? <MenuItem onClick={onClose}>Close alerts</MenuItem> : null}
+              </MenuPopup>
+            </Menu>
           </div>
-          {Number.isFinite(lastPrice) ? (
-            <button
-              type="button"
-              className="text-[11px] text-blue-400 hover:text-blue-300"
-              onClick={() => setTarget(String(lastPrice))}
-            >
-              Use last price · {priceLabel(lastPrice!)}
-            </button>
-          ) : null}
-          <label htmlFor={`${formId}-repeat`} className="block text-[11px] text-zinc-400">
-            Frequency
-            <select
-              id={`${formId}-repeat`}
-              className={fieldClass}
-              value={repeat ? "repeat" : "once"}
-              onChange={(event) => setRepeat(event.target.value === "repeat")}
-            >
-              <option value="once">Once, then disable</option>
-              <option value="repeat">Repeating</option>
-            </select>
-          </label>
-          {repeat ? (
-            <label htmlFor={`${formId}-cooldown`} className="block text-[11px] text-zinc-400">
-              Minimum time between alerts
-              <select
-                id={`${formId}-cooldown`}
+          {searching ? (
+            <div className="px-4 pb-3">
+              <input
+                autoFocus
+                type="search"
+                aria-label="Search alerts and log"
+                placeholder="Search by symbol or price"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
                 className={fieldClass}
-                value={cooldownMs}
-                onChange={(event) => setCooldownMs(Number(event.target.value))}
-              >
-                <option value={60_000}>1 minute</option>
-                <option value={300_000}>5 minutes</option>
-                <option value={900_000}>15 minutes</option>
-              </select>
-            </label>
+              />
+            </div>
           ) : null}
-          <p className="text-[11px] leading-relaxed text-zinc-500">
-            {condition === "crossing"
-              ? "Crossing needs two new quotes after activation. Reconnecting starts a new baseline."
-              : repeat
-                ? "Triggers on a new qualifying quote, then again after the cooldown if price still qualifies."
-                : "Triggers on the next new quote strictly above or below the target."}
-          </p>
-          {error ? (
-            <p role="alert" className="text-xs text-red-400">
-              {error}
-            </p>
-          ) : null}
-          <button
-            type="submit"
-            disabled={!symbol}
-            className="h-8 w-full rounded bg-blue-500/15 text-xs font-medium text-blue-300 hover:bg-blue-500/25 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400"
+        </div>
+        {empty ? (
+          <div
+            className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-6 py-8 text-center"
+            role="status"
           >
-            Create alert
-          </button>
-        </form>
-        <div className="border-b border-zinc-800 p-3">
-          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-            Workspace alerts · {controller.alerts.length}
-          </h3>
-          {!controller.alerts.length ? (
-            <p className="py-2 text-xs text-zinc-500">No alerts yet.</p>
-          ) : null}
-          <ul className="space-y-2">
-            {controller.alerts.map((alert) => (
-              <li key={alert.id} className="rounded border border-zinc-800 p-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-zinc-200">
-                      {alert.symbol} · {conditionLabel[alert.condition]} {priceLabel(alert.price)}
+            <AlertIcon
+              name={tab === "alerts" ? "alarm-add" : "alarm"}
+              size={92}
+              className="shrink-0 text-zinc-400"
+            />
+            <p className="max-w-64 text-[15px] leading-6 text-zinc-300">
+              {query
+                ? "No matching alerts."
+                : tab === "alerts"
+                  ? "Get notified when your conditions are met. Create an alert to get started."
+                  : "Triggered alerts appear here."}
+            </p>
+            {!query && tab === "alerts" ? (
+              <button type="button" className={primaryClass} onClick={openCreate}>
+                Create alert
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        <Tabs.Panel
+          value="alerts"
+          className={empty ? "hidden" : "min-h-0 flex-1 overflow-y-auto overscroll-contain"}
+        >
+          <ul className="divide-y divide-zinc-800">
+            {alerts.map((alert) => (
+              <li key={alert.id} className="group px-4 py-3 hover:bg-white/[0.025]">
+                <div className="flex items-start gap-3">
+                  <AlertIcon
+                    name="alarm"
+                    size={23}
+                    className={
+                      alert.enabled
+                        ? "mt-0.5 shrink-0 text-zinc-200"
+                        : "mt-0.5 shrink-0 text-zinc-600"
+                    }
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-zinc-200">{alert.symbol}</p>
+                    <p className="mt-1 text-[13px]">
+                      {conditionLabel[alert.condition]} {priceLabel(alert.price)}
                     </p>
-                    <p className="mt-1 text-[11px] text-zinc-500">
+                    <p className="mt-1 text-xs text-zinc-500">
                       {alert.enabled
                         ? alert.symbol === symbol
-                          ? "Armed"
+                          ? "Active"
                           : "Waiting for chart"
                         : alert.lastTriggeredAt !== null && !alert.repeat
                           ? "Triggered"
-                          : "Paused"}
-                      {" · "}
-                      {alert.repeat ? `Repeat, ${alert.cooldownMs / 60_000}m cooldown` : "Once"}
+                          : "Paused"}{" "}
+                      · {alert.repeat ? "Repeating" : "Once"}
                     </p>
                   </div>
-                </div>
-                <div className="mt-1 flex justify-end gap-1">
-                  <button
-                    type="button"
-                    className={actionClass}
-                    onClick={() => controller.setEnabled(alert.id, !alert.enabled)}
-                    aria-label={`${alert.enabled ? "Pause" : "Enable"} ${alert.symbol} alert at ${alert.price}`}
-                  >
-                    {alert.enabled ? "Pause" : "Enable"}
-                  </button>
-                  <button
-                    type="button"
-                    className={actionClass}
-                    onClick={() => controller.remove(alert.id)}
-                    aria-label={`Delete ${alert.symbol} alert at ${alert.price}`}
-                  >
-                    Delete
-                  </button>
+                  <div className="flex flex-col opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
+                    <AlertAction
+                      label={`${alert.enabled ? "Pause" : "Enable"} ${alert.symbol} alert at ${alert.price}`}
+                      onClick={() => controller.setEnabled(alert.id, !alert.enabled)}
+                    >
+                      <AlertIcon name={alert.enabled ? "pause" : "play"} size={18} />
+                    </AlertAction>
+                    <AlertAction
+                      label={`Delete ${alert.symbol} alert at ${alert.price}`}
+                      onClick={() => controller.remove(alert.id)}
+                    >
+                      <ChartIcon name="trash" size={18} />
+                    </AlertAction>
+                  </div>
                 </div>
               </li>
             ))}
           </ul>
-        </div>
-        <div className="p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-              Triggered history
-            </h3>
-            {controller.history.length ? (
-              <button type="button" className={actionClass} onClick={controller.clearHistory}>
-                Clear history
-              </button>
-            ) : null}
-          </div>
-          <p className="mb-3 text-[11px] leading-relaxed text-zinc-500">
-            Latest 100 triggers in this workspace. Saved with your workspace retention setting.
-          </p>
-          {!controller.history.length ? (
-            <p className="text-xs text-zinc-500">No alerts triggered.</p>
-          ) : null}
-          <ol className="space-y-3" aria-live="polite" aria-relevant="additions">
-            {controller.history.map((event) => (
-              <li key={event.id} className="text-xs">
-                <p className="text-zinc-200">
+        </Tabs.Panel>
+        <Tabs.Panel
+          value="log"
+          className={empty ? "hidden" : "min-h-0 flex-1 overflow-y-auto overscroll-contain"}
+        >
+          <ol className="divide-y divide-zinc-800" aria-live="polite" aria-relevant="additions">
+            {history.map((event) => (
+              <li key={event.id} className="px-4 py-3 text-[13px]">
+                <p className="font-medium text-zinc-200">
                   {event.symbol} · {conditionLabel[event.condition]} {priceLabel(event.target)}
                 </p>
-                <p className="mt-1 text-[11px] text-zinc-500">
-                  Last {priceLabel(event.price)} ·{" "}
-                  <time dateTime={new Date(event.triggeredAt).toISOString()}>
-                    {new Date(event.triggeredAt).toLocaleString()}
-                  </time>
-                </p>
+                <p className="mt-1 text-zinc-400">Last {priceLabel(event.price)}</p>
+                <time
+                  className="mt-1 block text-xs text-zinc-500"
+                  dateTime={new Date(event.triggeredAt).toISOString()}
+                >
+                  {new Date(event.triggeredAt).toLocaleString()}
+                </time>
               </li>
             ))}
           </ol>
-        </div>
-      </div>
+        </Tabs.Panel>
+      </Tabs.Root>
+      <Dialog open={creating} onOpenChange={setCreating}>
+        <DialogPopup className="w-[min(420px,calc(100vw-32px))] bg-[#161616] p-6">
+          <DialogTitle className="text-lg font-semibold">Create alert</DialogTitle>
+          <DialogDescription className="mt-1 text-sm text-zinc-400">
+            {symbol || "Select a symbol to create an alert."}
+          </DialogDescription>
+          <form
+            className="mt-6 space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              try {
+                if (!target.trim()) throw Error("Enter a target price.");
+                controller.add({ price: Number(target), condition, repeat, cooldownMs });
+                setError("");
+                setTab("alerts");
+                setSearch("");
+                setCreating(false);
+              } catch (cause) {
+                setError(cause instanceof Error ? cause.message : "Could not create the alert.");
+              }
+            }}
+          >
+            <div className="grid grid-cols-2 gap-3">
+              <label htmlFor={`${formId}-condition`} className="text-sm text-zinc-400">
+                Condition
+                <select
+                  id={`${formId}-condition`}
+                  className={fieldClass}
+                  value={condition}
+                  onChange={(event) => setCondition(event.target.value as AlertCondition)}
+                >
+                  <option value="crossing">Crossing</option>
+                  <option value="above">Above</option>
+                  <option value="below">Below</option>
+                </select>
+              </label>
+              <label htmlFor={`${formId}-price`} className="text-sm text-zinc-400">
+                Price
+                <input
+                  id={`${formId}-price`}
+                  className={fieldClass}
+                  type="number"
+                  step="any"
+                  inputMode="decimal"
+                  required
+                  value={target}
+                  onChange={(event) => setTarget(event.target.value)}
+                />
+              </label>
+            </div>
+            {Number.isFinite(lastPrice) ? (
+              <button
+                type="button"
+                className="text-xs text-blue-400 hover:text-blue-300"
+                onClick={() => setTarget(String(lastPrice))}
+              >
+                Use last price · {priceLabel(lastPrice!)}
+              </button>
+            ) : null}
+            <label htmlFor={`${formId}-repeat`} className="block text-sm text-zinc-400">
+              Frequency
+              <select
+                id={`${formId}-repeat`}
+                className={fieldClass}
+                value={repeat ? "repeat" : "once"}
+                onChange={(event) => setRepeat(event.target.value === "repeat")}
+              >
+                <option value="once">Only once</option>
+                <option value="repeat">Repeating</option>
+              </select>
+            </label>
+            {repeat ? (
+              <label htmlFor={`${formId}-cooldown`} className="block text-sm text-zinc-400">
+                Time between alerts
+                <select
+                  id={`${formId}-cooldown`}
+                  className={fieldClass}
+                  value={cooldownMs}
+                  onChange={(event) => setCooldownMs(Number(event.target.value))}
+                >
+                  <option value={60_000}>1 minute</option>
+                  <option value={300_000}>5 minutes</option>
+                  <option value={900_000}>15 minutes</option>
+                </select>
+              </label>
+            ) : null}
+            {error ? (
+              <p role="alert" className="text-sm text-red-400">
+                {error}
+              </p>
+            ) : null}
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                className="rounded px-3 py-2 text-sm text-zinc-400 hover:text-white"
+                onClick={() => setCreating(false)}
+              >
+                Cancel
+              </button>
+              <button type="submit" disabled={!symbol} className={primaryClass}>
+                Create
+              </button>
+            </div>
+          </form>
+        </DialogPopup>
+      </Dialog>
     </section>
   );
 }

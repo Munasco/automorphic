@@ -1,3 +1,4 @@
+import { AlertIcon } from "./AlertIcon";
 import { MarketInstrumentIcon } from "./MarketInstrumentIcon";
 import { tradingFetch } from "./tradingTransport";
 import { ChartAlerts, useChartAlerts } from "./ChartAlertsPanel";
@@ -153,7 +154,11 @@ function ReadyTradingPanel({
                   />
                 }
               >
-                <ChartIcon name={item.name} className="size-5" />
+                {item.view === "alerts" ? (
+                  <AlertIcon name="alarm" size={22} />
+                ) : (
+                  <ChartIcon name={item.name} className="size-5" />
+                )}
                 {item.view === "alerts" && alerts.activeCount > 0 ? (
                   <span className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-blue-400" />
                 ) : null}
