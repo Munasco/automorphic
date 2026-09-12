@@ -1,3 +1,4 @@
+import { seedTradingWorkspaceInstructions } from "./trading/workspaceInstructions.ts";
 import {
   CommandId,
   DEFAULT_MODEL,
@@ -271,6 +272,7 @@ export const resolveAutoBootstrapWelcomeTargets = Effect.gen(function* () {
       });
     }
     yield* fs.makeDirectory(workspaceRoot, { recursive: true });
+    yield* seedTradingWorkspaceInstructions(workspaceRoot);
     let nextProjectId: ProjectId;
     let nextThreadModelSelection: ModelSelection;
 

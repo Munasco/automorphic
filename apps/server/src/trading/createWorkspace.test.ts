@@ -87,14 +87,31 @@ it.effect(
         assert.deepEqual(first, second);
         const folder = `${home}/.automorphic/Gold research`;
         assert.equal(yield* fs.exists(folder), true);
+        assert.include(
+          yield* fs.readFileString(`${folder}/AGENTS.md`),
+          "Automorphic trading workspace",
+        );
+        assert.include(yield* fs.readFileString(`${folder}/CLAUDE.md`), "@AGENTS.md");
+        assert.equal(
+          yield* fs.readFileString(`${folder}/.agents/skills/trading-workflow/SKILL.md`),
+          yield* fs.readFileString(`${folder}/.claude/skills/trading-workflow/SKILL.md`),
+        );
+        yield* fs.writeFileString(`${folder}/AGENTS.md`, "My own trading plan");
+        yield* fs.writeFileString(`${folder}/CLAUDE.md`, "My Claude instructions");
         yield* fs.writeFileString(`${folder}/notes.md`, "Keep this research");
         const reopened = yield* make;
         assert.deepEqual(yield* reopened("GOLD RESEARCH"), first);
         assert.equal(yield* fs.readFileString(`${folder}/notes.md`), "Keep this research");
+        assert.equal(yield* fs.readFileString(`${folder}/AGENTS.md`), "My own trading plan");
+        assert.equal(yield* fs.readFileString(`${folder}/CLAUDE.md`), "My Claude instructions");
         assert.deepEqual(commands, ["project.create", "thread.create"]);
         const defaultWorkspace = yield* create("My workspace");
         assert.equal(yield* fs.exists(`${home}/.automorphic/my-workspace`), true);
         assert.deepEqual(yield* create("my-workspace"), defaultWorkspace);
+        assert.include(
+          yield* fs.readFileString(`${home}/.automorphic/my-workspace/AGENTS.md`),
+          "Backtests and benchmarking",
+        );
         yield* fs.makeDirectory(`${home}/.automorphic/userdata`, { recursive: true });
         yield* fs.symlink(`${home}/.automorphic/userdata`, `${home}/.automorphic/Protected alias`);
         assert.equal(

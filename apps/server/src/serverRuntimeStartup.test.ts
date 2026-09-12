@@ -170,6 +170,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets returns existing project and threa
         FileSystem.FileSystem,
         FileSystem.makeNoop({
           makeDirectory: () => Effect.void,
+          writeFileString: () => Effect.void,
         }),
       ),
       Effect.provide(ServerSettings.layerTest()),
@@ -382,6 +383,12 @@ it.effect.each([
       }
       const first = yield* bootstrap("/source/apps/server");
       assert.equal(yield* fs.exists(workspaceRoot), true);
+      assert.include(
+        yield* fs.readFileString(`${workspaceRoot}/AGENTS.md`),
+        "Automorphic trading workspace",
+      );
+      assert.include(yield* fs.readFileString(`${workspaceRoot}/CLAUDE.md`), "@AGENTS.md");
+      yield* fs.writeFileString(`${workspaceRoot}/AGENTS.md`, "Personal trading rules");
       assert.equal(first.bootstrapProjectCreated, !options.legacy);
       assert.equal(first.bootstrapThreadCreated, !options.legacy);
       if (options.legacy) {
@@ -406,6 +413,10 @@ it.effect.each([
         bootstrapThreadCreated: false,
       });
       assert.equal(projects.get(workspaceRoot)?.title, "My renamed workspace");
+      assert.equal(
+        yield* fs.readFileString(`${workspaceRoot}/AGENTS.md`),
+        "Personal trading rules",
+      );
       assert.deepStrictEqual(
         commands,
         options.legacy
@@ -442,6 +453,7 @@ it.effect.each([
         FileSystem.FileSystem,
         FileSystem.makeNoop({
           makeDirectory: () => Effect.void,
+          writeFileString: () => Effect.void,
         }),
       ),
       Effect.provide(
@@ -543,6 +555,7 @@ it.effect(
           FileSystem.FileSystem,
           FileSystem.makeNoop({
             makeDirectory: () => Effect.void,
+            writeFileString: () => Effect.void,
           }),
         ),
         Effect.provide(ServerSettings.layerTest()),
@@ -613,6 +626,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets preserves typed UUID generation fa
         FileSystem.FileSystem,
         FileSystem.makeNoop({
           makeDirectory: () => Effect.void,
+          writeFileString: () => Effect.void,
         }),
       ),
       Effect.provide(ServerSettings.layerTest()),

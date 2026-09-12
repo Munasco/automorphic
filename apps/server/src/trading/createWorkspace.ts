@@ -1,3 +1,4 @@
+import { seedTradingWorkspaceInstructions } from "./workspaceInstructions.ts";
 import {
   isReservedWorkspaceDirectory,
   DEFAULT_WORKSPACE_DIRECTORY,
@@ -92,6 +93,7 @@ export const makeTradingWorkspaceCreator = Effect.gen(function* () {
           message: "The workspace must be a folder inside ~/.automorphic.",
         }),
       );
+    yield* seedTradingWorkspaceInstructions(folder);
     const existing = yield* query.getActiveProjectByWorkspaceRoot(folder);
     const projectId = Option.isSome(existing)
       ? existing.value.id
