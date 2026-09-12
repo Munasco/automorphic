@@ -4,11 +4,14 @@ import { defaultDrawingTemplateSettings } from "./drawingTemplates";
 import type { Time } from "lightweight-charts";
 import {
   buildDrawingGeometry,
+  drawingLineExtensions,
+  drawingLineMarkers,
   hitDrawingGeometry,
   hitDrawingHandle,
   validDrawingAnchors,
   DRAWING_ANCHORS,
   defaultDrawingLevels,
+  parallelChannelSettingsLevels,
   defaultRegressionDrawingSettings,
   defaultFibTimeDrawingSettings,
   fibTimeAppearancePatch,
@@ -558,6 +561,128 @@ describe("native drawing geometry", () => {
     ]);
     expect(hitDrawingGeometry(channel, { x: 200, y: 200 })).toBe(true);
   });
+  it("pads legacy channel settings with disabled rows without changing its original appearance", () => {
+    const original = drawing("channel", [
+      [100, 400],
+      [300, 300],
+      [200, 300],
+    ]);
+    const levels = parallelChannelSettingsLevels(original);
+    expect(levels.map((level) => [level.value, level.visible])).toEqual([
+      [-0.25, false],
+      [0, true],
+      [0.25, false],
+      [0.5, true],
+      [0.75, false],
+      [1, true],
+      [1.25, false],
+    ]);
+    const initial = geometry(original);
+    const normalized = geometry({ ...original, levels });
+    expect(normalized.lines).toEqual([initial.lines[0], initial.lines[2], initial.lines[1]]);
+    expect(normalized.handles).toEqual(initial.handles);
+    const customized = levels.map((level, index) =>
+      index === 0
+        ? { ...level, visible: true, value: -0.75, color: "#ff0000", width: 4, opacity: 0.4 }
+        : level,
+    );
+    expect(parallelChannelSettingsLevels({ ...original, levels: customized })).toEqual(customized);
+    expect(
+      parallelChannelSettingsLevels({
+        ...original,
+        levels: [{ value: -0.75, visible: true, color: "#ff0000" }],
+      }),
+    ).toContainEqual({ value: -0.75, visible: true, color: "#ff0000" });
+  });
+  it("edits channel ratios and line appearance without changing its three placement handles", () => {
+    const base = drawing("channel", [
+      [100, 400],
+      [300, 300],
+      [200, 300],
+    ]);
+    const original = geometry(base);
+    expect(original.polygons).toBeUndefined();
+    const edited: ChartDrawing = {
+      ...base,
+      levels: [
+        { value: 0, visible: false },
+        { value: -1, visible: true, color: "#ff0000", width: 5, lineStyle: "dashed", opacity: 0.3 },
+        { value: 2, visible: true, color: "#00ff00", width: 1, lineStyle: "dotted", opacity: 0 },
+      ],
+    };
+    const shape = geometry(edited);
+    expect(shape.handles).toEqual(original.handles);
+    expect(shape.lines).toEqual([
+      {
+        from: { x: 100, y: 50 },
+        to: { x: 300, y: 150 },
+        color: "#ff0000",
+        width: 5,
+        lineStyle: "dashed",
+        opacity: 0.3,
+      },
+      {
+        from: { x: 100, y: 200 },
+        to: { x: 300, y: 300 },
+        color: "#00ff00",
+        width: 1,
+        lineStyle: "dotted",
+        opacity: 0,
+      },
+    ]);
+    expect(hitDrawingHandle(shape, { x: 200, y: 200 })).toBe(2);
+    expect(geometry(parseChartDrawings(JSON.stringify([edited]))[0]!)).toEqual(shape);
+    const extended = geometry({ ...edited, extendLeft: true, extendRight: true });
+    expect(extended.handles).toEqual(original.handles);
+    expect(extended.lines[0]).toEqual({
+      ...shape.lines[0],
+      from: { x: 0, y: 0 },
+      to: { x: 1000, y: 500 },
+    });
+  });
+  it.each([false, true])(
+    "extends the channel fill along time with reversed anchors=%s",
+    (reverse) => {
+      const points: Array<[number, number]> = reverse
+        ? [
+            [300, 300],
+            [100, 400],
+            [200, 300],
+          ]
+        : [
+            [100, 400],
+            [300, 300],
+            [200, 300],
+          ];
+      const base = drawing("channel", points);
+      const edited = {
+        ...base,
+        levels: [],
+        background: true,
+        backgroundColor: "#00ff00",
+        backgroundOpacity: 0.4,
+        extendLeft: true,
+      };
+      const shape = geometry(edited);
+      expect(shape.lines).toEqual([]);
+      expect(shape.handles).toEqual(geometry(base).handles);
+      expect(shape.polygons).toEqual([
+        {
+          points: [
+            { x: 0, y: 50 },
+            { x: 300, y: 200 },
+            { x: 300, y: 250 },
+            { x: 0, y: 100 },
+          ],
+          color: "#00ff00",
+          opacity: 0.4,
+        },
+      ]);
+      expect(geometry({ ...edited, background: false }).polygons).toBeUndefined();
+      const right = geometry({ ...edited, extendLeft: false, extendRight: true });
+      expect(right.polygons?.[0]?.points.map((point) => point.x)).toEqual([100, 1000, 1000, 100]);
+    },
+  );
   it("restores all new drawing kinds, migrates legacy records, and rejects corrupt anchors", () => {
     const shapes = [
       drawing("ray", [
@@ -617,6 +742,42 @@ describe("native drawing geometry", () => {
 });
 
 describe("additional line tools", () => {
+  it.each(["arrow", "path"] as const)(
+    "%s marker settings reflect the rendered defaults and explicit removal",
+    (kind) => {
+      const shape = drawing(kind, [
+        [100, 400],
+        [300, 300],
+      ]);
+      expect(drawingLineMarkers(shape)).toEqual({ start: "normal", end: "arrow" });
+      expect(geometry(shape).polygons).toHaveLength(1);
+      const removed = { ...shape, endMarker: "normal" as const };
+      expect(drawingLineMarkers(removed).end).toBe("normal");
+      expect(geometry(removed).polygons).toBeUndefined();
+      expect(geometry({ ...removed, startMarker: "arrow" }).polygons).toHaveLength(1);
+    },
+  );
+  it("reports the same extension direction for reversed rays as the rendered line", () => {
+    const ray = drawing("ray", [
+      [300, 400],
+      [100, 400],
+    ]);
+    expect(drawingLineExtensions(ray)).toEqual({ left: true, right: false });
+    expect(geometry(ray).lines[0]?.to.x).toBe(0);
+    const edited = { ...ray, extendLeft: false, extendRight: true };
+    expect(drawingLineExtensions(edited)).toEqual({ left: false, right: true });
+    expect(geometry(edited).lines[0]?.from.x).toBe(1000);
+    expect(
+      drawingLineExtensions({
+        ...ray,
+        anchors: [
+          { time: { year: 2026, month: 9, day: 12 }, price: 400 },
+          { time: "2026-09-11", price: 400 },
+        ],
+      }),
+    ).toEqual({ left: true, right: false });
+  });
+
   it("extends both directions by default, honors overrides and keeps original handles", () => {
     const line = drawing("extended-line", [
       [100, 400],

@@ -270,7 +270,32 @@ export const supportsDrawingLevels = (kind: DrawingKind) =>
   ["fib", "fib-extension", "fib-channel"].includes(kind) ||
   isPitchforkDrawingTool(kind) ||
   isFibTimeDrawing(kind);
+export function defaultParallelChannelLevels(): DrawingLevel[] {
+  // Sparse appearance preserves existing channels and inherits their toolbar style.
+  return [0, 1, 0.5].map((value) => ({ value, visible: true }));
+}
+/** Seven settings rows from the official channel Style panel; legacy appearance stays sparse. */
+export function parallelChannelSettingsLevels(drawing: ChartDrawing): DrawingLevel[] {
+  const levels = drawing.levels ?? defaultParallelChannelLevels();
+  if (levels.length >= 7 && levels[1]?.value === 0 && levels[5]?.value === 1)
+    return levels.map((level, index) =>
+      index === 1 || index === 5 ? { ...level, visible: true } : { ...level },
+    );
+  const remaining = levels.map((level) => ({ ...level }));
+  const rows = [-0.25, 0, 0.25, 0.5, 0.75, 1, 1.25].map((value) => {
+    const index = remaining.findIndex((level) => level.value === value);
+    const existing = index < 0 ? undefined : remaining.splice(index, 1)[0];
+    return { value, existing };
+  });
+  const resolved = rows.map(({ value, existing }) => {
+    if (value === 0 || value === 1) return { ...existing, value, visible: true };
+    return existing ?? remaining.shift() ?? { value, visible: false };
+  });
+  // Never silently discard settings from older records with more custom levels.
+  return [...resolved, ...remaining];
+}
 export function defaultDrawingLevels(kind: DrawingKind): DrawingLevel[] {
+  if (kind === "channel") return defaultParallelChannelLevels();
   if (kind === "fib-time-zone")
     return [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89].map((value) => ({
       value,
@@ -442,6 +467,8 @@ export const supportsShapeBackground = (kind: DrawingKind) =>
 export const isSpecialChannelDrawing = (kind: DrawingKind) =>
   kind === "flat-channel" || kind === "disjoint-channel";
 export function defaultChannelDrawingSettings(kind: DrawingKind): DrawingSettings {
+  if (kind === "channel")
+    return { background: false, backgroundOpacity: 0.12, extendLeft: false, extendRight: false };
   return isSpecialChannelDrawing(kind)
     ? {
         background: true,
@@ -459,6 +486,27 @@ export const supportsLineExtensions = (kind: DrawingKind) =>
   supportsDrawingLevels(kind) ||
   isSpecialChannelDrawing(kind) ||
   ["trend", "info-line", "extended-line", "trend-angle", "ray", "arrow", "channel"].includes(kind);
+export function drawingLineExtensions(drawing: ChartDrawing) {
+  const first = drawingTimeValue(drawing.anchors[0]?.time);
+  const second = drawingTimeValue(drawing.anchors[1]?.time);
+  const reversed = first !== null && second !== null && second < first;
+  return {
+    left:
+      drawing.extendLeft ??
+      (drawing.kind === "extended-line" || (drawing.kind === "ray" && reversed)),
+    right:
+      drawing.extendRight ??
+      (drawing.kind === "extended-line" || (drawing.kind === "ray" && !reversed)),
+  };
+}
+export function drawingLineMarkers(drawing: ChartDrawing) {
+  return {
+    start: drawing.startMarker ?? "normal",
+    end:
+      drawing.endMarker ??
+      (drawing.kind === "arrow" || drawing.kind === "path" ? "arrow" : "normal"),
+  } as const;
+}
 export const supportsLineMarkers = (kind: DrawingKind) =>
   isSpecialChannelDrawing(kind) ||
   [
@@ -1024,16 +1072,42 @@ function buildBaseDrawingGeometry(
     }
     return result;
   }
-  line(first, second);
   if (drawing.kind === "channel") {
     const third = drawing.anchors[2] && project(drawing.anchors[2]);
-    if (!third || first.x === second.x) return result;
+    if (!third || first.x === second.x) {
+      line(first, second);
+      return result;
+    }
     result.handles.push(third);
     const baselineY = first.y + (second.y - first.y) * ((third.x - first.x) / (second.x - first.x));
     const offset = third.y - baselineY;
-    line({ x: first.x, y: first.y + offset }, { x: second.x, y: second.y + offset });
-    line({ x: first.x, y: first.y + offset / 2 }, { x: second.x, y: second.y + offset / 2 });
-  }
+    // Ratio 0 is the original baseline; ratio 1 is the parallel through the third anchor.
+    // Keep this separate from Fibonacci routing: channels have no level/price labels or reversal.
+    for (const level of drawing.levels ?? defaultParallelChannelLevels()) {
+      if (!level.visible) continue;
+      const { value, visible: _visible, ...appearance } = level;
+      result.lines.push({
+        from: { x: first.x, y: first.y + offset * value },
+        to: { x: second.x, y: second.y + offset * value },
+        ...appearance,
+      });
+    }
+    if (drawing.background === true) {
+      const left = drawing.extendLeft ? 0 : Math.min(first.x, second.x),
+        right = drawing.extendRight ? width : Math.max(first.x, second.x);
+      const at = (x: number, ratio: number) => ({
+        x,
+        y: first.y + ((second.y - first.y) * (x - first.x)) / (second.x - first.x) + offset * ratio,
+      });
+      result.polygons = [
+        {
+          points: [at(left, 0), at(right, 0), at(right, 1), at(left, 1)],
+          color: drawing.backgroundColor ?? drawing.color,
+          opacity: drawing.backgroundOpacity ?? 0.12,
+        },
+      ];
+    }
+  } else line(first, second);
   return result;
 }
 /** Linear-price Fibonacci projections and the four median constructions documented by TradingView. */
@@ -1299,9 +1373,9 @@ export function extendDrawingLine(
   }
   if (minimum > maximum || !Number.isFinite(minimum) || !Number.isFinite(maximum)) return null;
   return {
+    ...source,
     from: { x: source.from.x + dx * minimum, y: source.from.y + dy * minimum },
     to: { x: source.from.x + dx * maximum, y: source.from.y + dy * maximum },
-    ...(source.label ? { label: source.label } : {}),
   };
 }
 
@@ -1501,18 +1575,9 @@ export function buildDrawingGeometry(
       second = result.handles[1];
     if (first && second) {
       if (drawing.kind === "ray") result.lines = [{ from: first, to: second }];
-      const defaultLeft =
-        drawing.kind === "extended-line" || (drawing.kind === "ray" && second.x < first.x);
-      const defaultRight =
-        drawing.kind === "extended-line" || (drawing.kind === "ray" && second.x >= first.x);
+      const extensions = drawingLineExtensions(drawing);
       result.lines = result.lines.flatMap((line) => {
-        const extended = extendDrawingLine(
-          line,
-          width,
-          height,
-          drawing.extendLeft ?? defaultLeft,
-          drawing.extendRight ?? defaultRight,
-        );
+        const extended = extendDrawingLine(line, width, height, extensions.left, extensions.right);
         return extended ? [extended] : [];
       });
     }
@@ -1535,6 +1600,7 @@ export function buildDrawingGeometry(
   const bodyFirst = result.lines[0],
     bodyLast = result.lines.at(-1);
   if (supportsLineMarkers(drawing.kind) && bodyFirst && bodyLast) {
+    const markers = drawingLineMarkers(drawing);
     const arrowHead = (from: DrawingPoint, to: DrawingPoint) => {
       const distance = Math.hypot(to.x - from.x, to.y - from.y);
       if (!distance) return;
@@ -1552,17 +1618,13 @@ export function buildDrawingGeometry(
     };
     if (isSpecialChannelDrawing(drawing.kind)) {
       for (const boundary of result.lines.slice(0, 2)) {
-        if (drawing.startMarker === "arrow") arrowHead(boundary.to, boundary.from);
-        if (drawing.endMarker === "arrow") arrowHead(boundary.from, boundary.to);
+        if (markers.start === "arrow") arrowHead(boundary.to, boundary.from);
+        if (markers.end === "arrow") arrowHead(boundary.from, boundary.to);
       }
     }
-    if (!isSpecialChannelDrawing(drawing.kind) && drawing.startMarker === "arrow")
+    if (!isSpecialChannelDrawing(drawing.kind) && markers.start === "arrow")
       arrowHead(bodyFirst.to, bodyFirst.from);
-    if (
-      !isSpecialChannelDrawing(drawing.kind) &&
-      (drawing.endMarker === "arrow" ||
-        (drawing.endMarker === undefined && (drawing.kind === "arrow" || drawing.kind === "path")))
-    )
+    if (!isSpecialChannelDrawing(drawing.kind) && markers.end === "arrow")
       arrowHead(bodyLast.from, bodyLast.to);
   }
   if (drawing.text !== undefined && drawing.text.length && drawing.kind !== "text") {

@@ -1087,6 +1087,64 @@ describe("drawing settings interactions", () => {
 });
 
 describe("drawing settings preview transactions", () => {
+  it("previews channel levels without writes, cancels, then saves all settings in one undoable edit", () => {
+    const original = {
+      id: "parallel",
+      kind: "channel",
+      color: "#2962ff",
+      width: 2,
+      anchors: [
+        { time: 100, price: 4900 },
+        { time: 300, price: 4800 },
+        { time: 200, price: 4800 },
+      ],
+    };
+    const f = fixture("channel-settings-transaction", JSON.stringify([original]));
+    const session = f.open();
+    session.selectDrawing(original.id);
+    const patch = {
+      levels: [
+        { value: 0, visible: false },
+        {
+          value: -0.5,
+          visible: true,
+          color: "#ff0000",
+          width: 4,
+          lineStyle: "dashed" as const,
+          opacity: 0.35,
+        },
+      ],
+      extendLeft: true,
+      extendRight: true,
+      background: true,
+      backgroundColor: "#00ff00",
+      backgroundOpacity: 0.25,
+    };
+    session.openSettings();
+    session.previewSettings(patch);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: expect.objectContaining(patch) }),
+    );
+    expect(f.writes()).toBe(0);
+    session.closeSettings();
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ selected: original }));
+    expect(JSON.parse(f.saved()!)).toEqual([original]);
+    session.openSettings();
+    session.previewSettings(patch);
+    session.applySettings({});
+    expect(f.writes()).toBe(1);
+    expect(JSON.parse(f.saved()!)).toEqual([{ ...original, ...patch }]);
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toEqual([original]);
+    session.redo();
+    expect(JSON.parse(f.saved()!)).toEqual([{ ...original, ...patch }]);
+    session.dispose();
+    const restored = f.open();
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ objects: [expect.objectContaining(patch)] }),
+    );
+    restored.dispose();
+  });
   it("previews immediately while keeping persisted drawings and undo history unchanged until OK", () => {
     const f = fixture("settings-preview-apply");
     const session = f.open();

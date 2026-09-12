@@ -116,6 +116,51 @@ describe("drawing templates", () => {
     expect(reset("regression-trend")).not.toHaveProperty("levels");
   });
 
+  it("roundtrips channel level styles and resets to its inherited three-line appearance", () => {
+    const channel: ChartDrawing = {
+      ...drawing,
+      kind: "channel",
+      extendLeft: true,
+      extendRight: true,
+      background: true,
+      backgroundColor: "#00ff00",
+      backgroundOpacity: 0.4,
+      levels: [
+        {
+          value: -0.5,
+          visible: true,
+          color: "#ff0000",
+          width: 5,
+          lineStyle: "dotted",
+          opacity: 0.3,
+        },
+        { value: 2, visible: false },
+      ],
+    };
+    const saved = saveDrawingTemplate([], channel, "Channel")!;
+    const restored = normalizeDrawingTemplates(JSON.parse(JSON.stringify(saved)))[0]!;
+    const applied = applyDrawingTemplate(channel, restored.settings);
+    expect(applied.levels).toEqual(channel.levels);
+    expect(applied).toMatchObject({
+      background: true,
+      backgroundColor: "#00ff00",
+      backgroundOpacity: 0.4,
+      extendLeft: true,
+      extendRight: true,
+    });
+    const reset = applyDrawingTemplate(applied, defaultDrawingTemplateSettings("channel"));
+    expect(reset).toMatchObject({
+      background: false,
+      backgroundOpacity: 0.12,
+      extendLeft: false,
+      extendRight: false,
+      id: channel.id,
+      anchors: channel.anchors,
+    });
+    expect(reset).not.toHaveProperty("levels");
+    expect(reset).not.toHaveProperty("backgroundColor");
+  });
+
   it("preserves a saved shape fill and resets it through the existing sparse default template", () => {
     const shape: ChartDrawing = {
       ...drawing,
