@@ -719,6 +719,198 @@ describe("additional line primitive behavior", () => {
     },
   );
 
+  it.each([
+    ["left", 100, 96, 146],
+    ["center", 550, 525, 575],
+    ["right", 1000, 954, 1004],
+  ] as const)(
+    "cuts a padded multiline gap aligned %s with the exact painted text font",
+    (textAlignment, x, left, right) => {
+      const drawing: ChartDrawing = {
+        ...line("horizontal-ray"),
+        anchors: [{ time: 100 as Time, price: 300 }],
+        text: "Confirm\nRetest",
+        textPosition: "center",
+        textAlignment,
+        textFontSize: 20,
+        textBold: true,
+        textItalic: true,
+      };
+      const f = renderFixture(drawing);
+      const measuredFonts: string[] = [];
+      f.ctx.measureText.mockImplementation((text: string) => {
+        measuredFonts.push(f.ctx.font);
+        return { width: text.length * 6 };
+      });
+      f.draw();
+      expect(measuredFonts).toEqual(["italic bold 20px system-ui", "italic bold 20px system-ui"]);
+      expect(f.ctx.clip.mock.calls).toEqual([[], ["evenodd"]]);
+      expect(f.ctx.moveTo.mock.calls[0]).toEqual([left, 172]);
+      expect(f.ctx.lineTo.mock.calls.slice(0, 3)).toEqual([
+        [right, 172],
+        [right, 228],
+        [left, 228],
+      ]);
+      expect(f.ctx.fillText.mock.calls).toEqual([
+        ["Confirm", x, 176],
+        ["Retest", x, 200],
+      ]);
+      expect(f.ctx.fillRect).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["trend", "vertical"] as const)(
+    "rotates the %s text gap with the painted label without a background mask",
+    (kind) => {
+      const drawing: ChartDrawing = {
+        ...line(kind),
+        anchors:
+          kind === "vertical"
+            ? [{ time: 100 as Time, price: 400 }]
+            : [
+                { time: 100 as Time, price: 400 },
+                { time: 300 as Time, price: 300 },
+              ],
+        text: "Hello",
+        textPosition: "center",
+        textAlignment: "center",
+        textOrientation: "vertical",
+        textFontSize: 20,
+      };
+      const f = renderFixture(drawing);
+      f.chart.options = () =>
+        ({
+          layout: { fontFamily: "system-ui", background: { type: "solid", color: "#000000" } },
+        }) as ReturnType<IChartApi["options"]>;
+      f.draw();
+      const corners = [f.ctx.moveTo.mock.calls[0], ...f.ctx.lineTo.mock.calls.slice(0, 3)];
+      const root = Math.sqrt(5);
+      const expected =
+        kind === "vertical"
+          ? [
+              [84, 269],
+              [84, 231],
+              [116, 231],
+              [116, 269],
+            ]
+          : [
+              [200 - 22 / root, 150 - 51 / root],
+              [200 + 54 / root, 150 - 13 / root],
+              [200 + 22 / root, 150 + 51 / root],
+              [200 - 54 / root, 150 + 13 / root],
+            ];
+      corners.forEach((point, index) => {
+        expect(point![0]).toBeCloseTo(expected[index]![0]!);
+        expect(point![1]).toBeCloseTo(expected[index]![1]!);
+      });
+      expect(f.ctx.clip).toHaveBeenCalledWith("evenodd");
+      expect(f.ctx.fillRect).not.toHaveBeenCalled();
+      expect(f.ctx.rotate).toHaveBeenCalledWith(
+        kind === "vertical" ? -Math.PI / 2 : Math.atan(0.5),
+      );
+    },
+  );
+
+  it.each([0, 0.5, 1])(
+    "reserves the same stroke gap at text opacity %s while only glyph alpha changes",
+    (textOpacity) => {
+      const drawing: ChartDrawing = {
+        ...line("horizontal-ray"),
+        text: "Label",
+        textPosition: "center",
+        textOpacity,
+      };
+      const f = renderFixture(drawing);
+      const alphas: number[] = [];
+      f.ctx.fillText.mockImplementation(() =>
+        alphas.push((f.ctx as unknown as CanvasRenderingContext2D).globalAlpha),
+      );
+      f.draw();
+      expect(f.ctx.clip.mock.calls).toEqual([[], ["evenodd"]]);
+      expect(alphas).toEqual([textOpacity]);
+      expect(f.ctx.fillRect).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps whitespace as label content but skips empty labels and unrelated shapes", () => {
+    for (const text of ["", " "]) {
+      const f = renderFixture({ ...line("horizontal-ray"), text, textPosition: "center" });
+      f.draw();
+      expect(f.ctx.clip.mock.calls).toEqual(text ? [[], ["evenodd"]] : [[]]);
+    }
+    for (const kind of ["text", "rectangle", "flat-channel", "fib"] as const) {
+      const f = renderFixture({ ...line(kind), text: "Label", textPosition: "center" });
+      f.draw();
+      expect(f.ctx.clip.mock.calls).toEqual([[]]);
+    }
+    for (const textPosition of ["above", "below"] as const) {
+      const f = renderFixture({ ...line("trend"), text: "Label", textPosition });
+      f.draw();
+      expect(f.ctx.clip.mock.calls).toEqual([[]]);
+    }
+  });
+
+  it("clips only its own stroke, preserving earlier fills and restoring before text, stats, handles and the next drawing", () => {
+    const underneath: ChartDrawing = {
+      ...line("rectangle"),
+      id: "under",
+      color: "#00ff00",
+      background: true,
+    };
+    const label: ChartDrawing = {
+      ...line("trend"),
+      id: "label",
+      color: "#0000ff",
+      text: "Label",
+      textPosition: "center",
+      lineStyle: "dashed",
+      lineOpacity: 0.4,
+      stats: ["ticks"],
+      alwaysShowStats: true,
+    };
+    const next: ChartDrawing = { ...line("trend"), id: "next", color: "#ff0000", text: "Next" };
+    const f = renderFixture(underneath, undefined, [label, next]);
+    const context = f.ctx as unknown as CanvasRenderingContext2D;
+    let gap = false;
+    const stack: boolean[] = [];
+    const strokes: Array<[string, boolean, number]> = [];
+    const fills: boolean[] = [];
+    const texts: Array<[string, boolean]> = [];
+    f.ctx.save.mockImplementation(() => {
+      stack.push(gap);
+    });
+    f.ctx.restore.mockImplementation(() => {
+      gap = stack.pop() ?? false;
+    });
+    f.ctx.clip.mockImplementation((rule?: CanvasFillRule) => {
+      if (rule === "evenodd") gap = true;
+    });
+    f.ctx.stroke.mockImplementation(() => {
+      strokes.push([String(context.strokeStyle), gap, context.globalAlpha]);
+    });
+    f.ctx.fillRect.mockImplementation(() => {
+      fills.push(gap);
+    });
+    f.ctx.fillText.mockImplementation((text: string) => {
+      texts.push([text, gap]);
+    });
+    f.hover(label.id);
+    f.draw();
+    expect(strokes.filter(([color]) => color === "#0000ff")).toEqual([["#0000ff", true, 0.4]]);
+    expect(strokes.filter(([color]) => color !== "#0000ff").every(([, active]) => !active)).toBe(
+      true,
+    );
+    expect(strokes.at(-1)).toEqual(["#ff0000", false, 1]);
+    expect(fills).toEqual([false, false, false]);
+    expect(texts).toEqual([
+      ["Label", false],
+      ["-400", false],
+      ["Next", false],
+    ]);
+    expect(f.ctx.setLineDash).toHaveBeenCalledWith([8, 5]);
+    expect(stack).toEqual([]);
+  });
+
   it("paints mixed horizontal and trend bodies in their shared persisted order", () => {
     const horizontal: ChartDrawing = {
       ...line("horizontal"),

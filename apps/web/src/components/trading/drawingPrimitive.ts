@@ -23,6 +23,7 @@ import {
   type DrawingAnchor,
   type DrawingKind,
   type DrawingPoint,
+  type DrawingGeometry,
   type DrawingRegressionFit,
   defaultRegressionDrawingSettings,
 } from "./drawingGeometry";
@@ -31,6 +32,36 @@ import { calculateDrawingStats, formatInfoLineStats } from "./drawingStats";
 import { calculateChartRegression } from "./chartRegression";
 
 const SELECTION_COLOR = "#2962ff";
+
+function drawingLabelLayout(
+  drawing: ChartDrawing,
+  text: NonNullable<DrawingGeometry["text"]>,
+  fontFamily: string,
+) {
+  const size = text.fontSize ?? 14;
+  const rows = text.value.split(/\r?\n/);
+  const rowHeight = size * 1.2;
+  const height = rows.length * rowHeight;
+  return {
+    rows,
+    rowHeight,
+    height,
+    top: text.baseline === "top" ? 0 : text.baseline === "middle" ? -height / 2 : -height,
+    font: `${drawing.textItalic ? "italic " : ""}${drawing.textBold ? "bold " : ""}${size}px ${fontFamily}`,
+  };
+}
+
+const supportsLineTextGap = (kind: DrawingKind) =>
+  [
+    "trend",
+    "info-line",
+    "extended-line",
+    "ray",
+    "arrow",
+    "horizontal",
+    "horizontal-ray",
+    "vertical",
+  ].includes(kind);
 
 export function drawingTimeCoordinate(
   chart: IChartApi,
@@ -303,6 +334,9 @@ export function createDrawingPrimitive(
             (coordinate) => series.coordinateToPrice(coordinate),
             regressionFit(drawing),
           );
+          const textLayout = geometry.text
+            ? drawingLabelLayout(drawing, geometry.text, chart.options().layout.fontFamily)
+            : undefined;
           const genericLineOpacity =
             drawing.kind === "regression-trend" || isFibTimeDrawing(drawing.kind)
               ? 1
@@ -338,6 +372,49 @@ export function createDrawingPrimitive(
           ctx.globalAlpha = lineAlpha;
           ctx.fillStyle = drawing.color;
           ctx.font = `${drawing.textFontSize ?? 12}px ${chart.options().layout.fontFamily}`;
+          const gapText = geometry.text;
+          const clipTextGap = Boolean(
+            gapText &&
+            textLayout &&
+            gapText.value.length > 0 &&
+            supportsLineTextGap(drawing.kind) &&
+            (drawing.kind === "vertical" || drawing.textPosition === "center"),
+          );
+          if (clipTextGap && gapText && textLayout) {
+            ctx.save();
+            const strokeFont = ctx.font;
+            ctx.font = textLayout.font;
+            const textWidth = Math.max(...textLayout.rows.map((row) => ctx.measureText(row).width));
+            ctx.font = strokeFont;
+            const left =
+              (gapText.align === "right"
+                ? -textWidth
+                : gapText.align === "center"
+                  ? -textWidth / 2
+                  : 0) - 4;
+            const top = textLayout.top - 4;
+            const right = left + textWidth + 8;
+            const bottom = top + textLayout.height + 8;
+            const angle = gapText.angle ?? 0;
+            const cos = Math.cos(angle),
+              sin = Math.sin(angle);
+            const corners = [
+              [left, top],
+              [right, top],
+              [right, bottom],
+              [left, bottom],
+            ].map(([x, y]) => ({
+              x: gapText.point.x + x! * cos - y! * sin,
+              y: gapText.point.y + x! * sin + y! * cos,
+            }));
+            // Cut only this drawing's stroke out of the text bounds. Earlier chart pixels and fills remain intact.
+            ctx.beginPath();
+            ctx.rect(0, 0, width, height);
+            ctx.moveTo(corners[0]!.x, corners[0]!.y);
+            for (const point of corners.slice(1)) ctx.lineTo(point.x, point.y);
+            ctx.closePath();
+            ctx.clip("evenodd");
+          }
           ctx.beginPath();
           let previous: DrawingPoint | undefined;
           let activeColor = drawing.color;
@@ -377,6 +454,7 @@ export function createDrawingPrimitive(
             previous = line.to;
           }
           if (visibleLines.length) ctx.stroke();
+          if (clipTextGap) ctx.restore();
           for (const line of visibleLines) {
             if (!line.label) continue;
             ctx.globalAlpha = (line.opacity ?? 1) * lineAlpha;
@@ -396,13 +474,11 @@ export function createDrawingPrimitive(
               ctx.fillText(label.value, label.point.x, label.point.y);
             }
           }
-          if (geometry.text) {
+          if (geometry.text && textLayout) {
             const text = geometry.text;
             ctx.globalAlpha = drawing.kind === "regression-trend" ? 1 : (drawing.textOpacity ?? 1);
-            const size = text.fontSize ?? 14;
-            const rows = text.value.split(/\r?\n/);
-            const rowHeight = size * 1.2;
-            ctx.font = `${drawing.textItalic ? "italic " : ""}${drawing.textBold ? "bold " : ""}${size}px ${chart.options().layout.fontFamily}`;
+            const { rows, rowHeight } = textLayout;
+            ctx.font = textLayout.font;
             ctx.fillStyle =
               drawing.kind === "regression-trend"
                 ? (
@@ -418,26 +494,7 @@ export function createDrawingPrimitive(
               ctx.translate(text.point.x, text.point.y);
               ctx.rotate(text.angle!);
             }
-            const top =
-              (rotated ? 0 : text.point.y) -
-              (text.baseline === "top"
-                ? 0
-                : text.baseline === "middle"
-                  ? (rows.length * rowHeight) / 2
-                  : rows.length * rowHeight);
-            if (drawing.kind === "vertical" && (drawing.textOpacity ?? 1) > 0) {
-              const background = chart.options().layout.background;
-              if (background?.type === "solid") {
-                const width = Math.max(...rows.map((row) => ctx.measureText(row).width));
-                const x =
-                  (rotated ? 0 : text.point.x) -
-                  (text.align === "right" ? width : text.align === "center" ? width / 2 : 0);
-                ctx.save();
-                ctx.fillStyle = background.color;
-                ctx.fillRect(x - 4, top - 3, width + 8, rows.length * rowHeight + 6);
-                ctx.restore();
-              }
-            }
+            const top = (rotated ? 0 : text.point.y) + textLayout.top;
             rows.forEach((row, index) =>
               ctx.fillText(row, rotated ? 0 : text.point.x, top + index * rowHeight),
             );
