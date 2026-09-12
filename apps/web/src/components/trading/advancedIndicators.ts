@@ -1,6 +1,7 @@
 import {
   calculateEMA,
   calculateRSI,
+  calculateSMA,
   sourcePrice,
   type Candle,
   type IndicatorPoint,
@@ -120,22 +121,43 @@ export function calculateBollingerBands(
   return result;
 }
 
-/** SMA-seeded EMAs: 12 minus 26, 9-period EMA signal, MACD minus signal histogram.
+export type MACDOptions = {
+  source?: PriceSource;
+  oscillatorMA?: "ema" | "sma";
+  signalMA?: "ema" | "sma";
+};
+
+/** Fast minus slow moving average, smoothed signal, MACD minus signal histogram.
+ * Defaults: close-price EMA12 / EMA26 with an EMA9 signal.
  * https://www.tradingview.com/support/solutions/43000502344-moving-average-convergence-divergence-macd-indicator/
  */
-export function calculateMACD(bars: readonly Candle[], fast = 12, slow = 26, signalPeriod = 9) {
+export function calculateMACD(
+  bars: readonly Candle[],
+  fast = 12,
+  slow = 26,
+  signalPeriod = 9,
+  options: MACDOptions = {},
+) {
   const result: { macd: IndicatorPoint[]; signal: IndicatorPoint[]; histogram: IndicatorPoint[] } =
     { macd: [], signal: [], histogram: [] };
   if (![fast, slow, signalPeriod].every(validPeriod) || fast >= slow) return result;
-  for (const segment of segments(bars, validClose)) {
+  const source = options.source ?? "close";
+  const average = options.oscillatorMA === "sma" ? calculateSMA : calculateEMA;
+  for (const segment of segments(
+    bars,
+    (bar) => Number.isFinite(bar.time) && Number.isFinite(sourcePrice(bar, source)),
+  )) {
     const fastPoints = new Map(
-      calculateEMA(segment, fast).map((point) => [point.time, point.value]),
+      average(segment, fast, source).map((point) => [point.time, point.value]),
     );
-    const macd = calculateEMA(segment, slow).map((point) => ({
+    const macd = average(segment, slow, source).map((point) => ({
       time: point.time,
       value: (fastPoints.get(point.time) ?? NaN) - point.value,
     }));
-    const signal = smooth(macd, signalPeriod, 2 / (signalPeriod + 1));
+    const signal =
+      options.signalMA === "sma"
+        ? sma(macd, signalPeriod)
+        : smooth(macd, signalPeriod, 2 / (signalPeriod + 1));
     const byTime = new Map(macd.map((point) => [point.time, point.value]));
     for (const point of macd) add(result.macd, point.time, point.value);
     result.signal.push(...signal);

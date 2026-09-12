@@ -190,7 +190,7 @@ describe("indicator inputs", () => {
       bollinger: { period: 20, deviations: 1.5, source: 0 },
       keltner: { period: 20, atrPeriod: 8, multiplier: 2 },
       stochRsi: { rsiPeriod: 10, stochasticPeriod: 14, smoothK: 2, periodD: 3 },
-      macd: { fast: 12, slow: 26, signalPeriod: 5 },
+      macd: { fast: 12, slow: 26, signalPeriod: 5, source: 0, oscillatorMA: 0, signalMA: 0 },
     });
     expect(normalizeChartPreferences({ indicators: { sma: true } }).indicatorInputs).toEqual({});
     expect(getIndicatorInputs("sma")).toEqual({ period: 20, source: 0 });
@@ -231,6 +231,9 @@ describe("indicator inputs", () => {
         fast: 30,
         slow: 40,
         signalPeriod: 9,
+        source: 0,
+        oscillatorMA: 0,
+        signalMA: 0,
       });
     } finally {
       useChartPreferences.setState(original, true);
@@ -322,5 +325,69 @@ describe("moving-average price source inputs", () => {
         `${key.toUpperCase()} 50`,
       );
     }
+  });
+});
+
+describe("MACD source and moving-average inputs", () => {
+  it.each([
+    { oscillatorMA: 0, signalMA: 0, macd: 91 / 1944, signal: 221 / 972, histogram: -13 / 72 },
+    { oscillatorMA: 0, signalMA: 1, macd: 91 / 1944, signal: 1741 / 3888, histogram: -1559 / 3888 },
+    { oscillatorMA: 1, signalMA: 0, macd: 4 / 3, signal: 293 / 324, histogram: 139 / 324 },
+    { oscillatorMA: 1, signalMA: 1, macd: 4 / 3, signal: 1 / 2, histogram: 5 / 6 },
+  ])(
+    "routes source and oscillator=$oscillatorMA/signal=$signalMA selectors to plotted values",
+    ({ oscillatorMA, signalMA, ...expected }) => {
+      const definition = INDICATOR_CATALOG.find((item) => item.key === "macd")!;
+      const bars = [2, 5, 3, 8, 4, 10, 6].map((open, index) => ({
+        time: index + 1,
+        open,
+        high: 100,
+        low: 0,
+        close: 50,
+        volume: 1,
+      }));
+      const inputs = getIndicatorInputs("macd", {
+        macd: { fast: 2, slow: 3, signalPeriod: 2, source: 1, oscillatorMA, signalMA },
+      });
+      const plots = definition.calculate({
+        bars,
+        inputs,
+        interval: 1,
+        session: DEFAULT_INITIAL_BALANCE,
+      }).plots;
+      for (const id of ["macd", "signal", "histogram"] as const) {
+        const points = plots.find((plot) => plot.id === id)!.points;
+        expect(points[0]?.time).toBe(id === "macd" ? 3 : 4);
+        expect(points.at(-1)?.time).toBe(7);
+        expect(points.at(-1)?.value).toBeCloseTo(expected[id], 10);
+      }
+      const legacyInputs = getIndicatorInputs("macd", {
+        macd: { fast: 2, slow: 3, signalPeriod: 2 },
+      });
+      expect(legacyInputs).toEqual({
+        fast: 2,
+        slow: 3,
+        signalPeriod: 2,
+        source: 0,
+        oscillatorMA: 0,
+        signalMA: 0,
+      });
+      const legacy = definition.calculate({
+        bars,
+        inputs: legacyInputs,
+        interval: 1,
+        session: DEFAULT_INITIAL_BALANCE,
+      });
+      expect(legacy.plots.map((plot) => plot.points.at(-1)?.value)).toEqual([0, 0, 0]);
+      expect(getIndicatorLabel("macd", { macd: inputs })).toBe("MACD 2 / 3 / 2");
+    },
+  );
+
+  it("repairs invalid stored selector values without discarding valid lengths", () => {
+    expect(
+      getIndicatorInputs("macd", {
+        macd: { fast: 7, slow: 21, signalPeriod: 4, source: 99, oscillatorMA: 0.5, signalMA: -1 },
+      }),
+    ).toEqual({ fast: 7, slow: 21, signalPeriod: 4, source: 0, oscillatorMA: 0, signalMA: 0 });
   });
 });

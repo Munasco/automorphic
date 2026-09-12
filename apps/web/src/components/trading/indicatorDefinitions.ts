@@ -52,6 +52,21 @@ const priceSource: IndicatorInputDescriptor = {
   })),
 };
 
+const movingAverageType = (key: string, label: string): IndicatorInputDescriptor => ({
+  key,
+  label,
+  kind: "select",
+  legend: false,
+  defaultValue: 0,
+  min: 0,
+  max: 1,
+  step: 1,
+  options: [
+    { value: 0, label: "EMA" },
+    { value: 1, label: "SMA" },
+  ],
+});
+
 const style = (key: string, label: string, color: string, primary = false, lineWidth = 1) => ({
   key,
   label,
@@ -259,6 +274,9 @@ export const INDICATOR_DEFINITIONS = [
       length(12, "fast", "Fast length"),
       length(26, "slow", "Slow length"),
       length(9, "signalPeriod", "Signal length"),
+      priceSource,
+      movingAverageType("oscillatorMA", "Oscillator MA type"),
+      movingAverageType("signalMA", "Signal MA type"),
     ],
     styles: [
       style("main", "Primary line", "#60a5fa", true),
@@ -269,7 +287,11 @@ export const INDICATOR_DEFINITIONS = [
     validateInputs: (values) => values.fast! < values.slow!,
     repairInputs: (values) => ({ ...values, fast: 12, slow: 26 }),
     calculate: ({ bars, inputs }) => {
-      const result = calculateMACD(bars, inputs.fast, inputs.slow, inputs.signalPeriod);
+      const result = calculateMACD(bars, inputs.fast, inputs.slow, inputs.signalPeriod, {
+        source: PRICE_SOURCES[inputs.source ?? 0] ?? "close",
+        oscillatorMA: inputs.oscillatorMA === 1 ? "sma" : "ema",
+        signalMA: inputs.signalMA === 1 ? "sma" : "ema",
+      });
       return {
         plots: [
           {

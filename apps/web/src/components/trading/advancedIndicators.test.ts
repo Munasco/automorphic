@@ -218,6 +218,128 @@ describe("common chart indicators", () => {
     near(result.lower, [0.5, 3.5]);
   });
 
+  it.each([
+    {
+      oscillatorMA: "ema",
+      signalMA: "ema",
+      macd: [-1 / 6, 13 / 18, -1 / 27, 275 / 324, 91 / 1944],
+      signal: [5 / 18, 11 / 162, 143 / 243, 221 / 972],
+      histogram: [4 / 9, -17 / 162, 253 / 972, -13 / 72],
+    },
+    {
+      oscillatorMA: "ema",
+      signalMA: "sma",
+      macd: [-1 / 6, 13 / 18, -1 / 27, 275 / 324, 91 / 1944],
+      signal: [5 / 18, 37 / 108, 263 / 648, 1741 / 3888],
+      histogram: [4 / 9, -41 / 108, 287 / 648, -1559 / 3888],
+    },
+    {
+      oscillatorMA: "sma",
+      signalMA: "ema",
+      macd: [2 / 3, 1 / 6, 1, -1 / 3, 4 / 3],
+      signal: [5 / 12, 29 / 36, 5 / 108, 293 / 324],
+      histogram: [-1 / 4, 7 / 36, -41 / 108, 139 / 324],
+    },
+    {
+      oscillatorMA: "sma",
+      signalMA: "sma",
+      macd: [2 / 3, 1 / 6, 1, -1 / 3, 4 / 3],
+      signal: [5 / 12, 7 / 12, 1 / 3, 1 / 2],
+      histogram: [-1 / 4, 5 / 12, -2 / 3, 5 / 6],
+    },
+  ] as const)(
+    "calculates $oscillatorMA MACD with a $signalMA signal on nonlinear prices",
+    ({ oscillatorMA, signalMA, macd, signal, histogram }) => {
+      const input = bars([2, 5, 3, 8, 4, 10, 6]);
+      const original = structuredClone(input);
+      const result = calculateMACD(input, 2, 3, 2, { oscillatorMA, signalMA });
+      near(result.macd, [...macd]);
+      near(result.signal, [...signal]);
+      near(result.histogram, [...histogram]);
+      expect(result.macd.map((point) => point.time)).toEqual(input.slice(2).map((bar) => bar.time));
+      expect(result.signal.map((point) => point.time)).toEqual(
+        input.slice(3).map((bar) => bar.time),
+      );
+      expect(result.histogram.map((point) => point.time)).toEqual(
+        result.signal.map((point) => point.time),
+      );
+      if (oscillatorMA === "ema" && signalMA === "ema") {
+        expect(calculateMACD(input, 2, 3, 2)).toEqual(result);
+        expect(calculateMACD(input, 2, 3, 2, {})).toEqual(result);
+        expect(calculateMACD(input, 2, 3, 2, { source: "close", oscillatorMA, signalMA })).toEqual(
+          result,
+        );
+      }
+      expect(input).toEqual(original);
+    },
+  );
+
+  it.each([
+    { source: "close", prices: [12, 10, 13, 11, 16] },
+    { source: "open", prices: [10, 12, 11, 14, 13] },
+    { source: "high", prices: [15, 16, 14, 18, 17] },
+    { source: "low", prices: [5, 8, 7, 9, 6] },
+    { source: "hl2", prices: [10, 12, 10.5, 13.5, 11.5] },
+    { source: "hlc3", prices: [32 / 3, 34 / 3, 34 / 3, 38 / 3, 13] },
+    { source: "ohlc4", prices: [10.5, 11.5, 11.25, 13, 13] },
+  ] as const)("routes $source into both fast and slow MACD averages", ({ source, prices }) => {
+    const input = bars([12, 10, 13, 11, 16]).map((bar, index) => ({
+      ...bar,
+      open: [10, 12, 11, 14, 13][index]!,
+      high: [15, 16, 14, 18, 17][index]!,
+      low: [5, 8, 7, 9, 6][index]!,
+    }));
+    for (const oscillatorMA of ["ema", "sma"] as const) {
+      const options = { oscillatorMA, signalMA: "sma" as const };
+      const actual = calculateMACD(input, 2, 3, 2, { ...options, source });
+      const expected = calculateMACD(bars([...prices]), 2, 3, 2, options);
+      for (const key of ["macd", "signal", "histogram"] as const) {
+        expect(actual[key].map((point) => point.time)).toEqual(
+          expected[key].map((point) => point.time),
+        );
+        near(actual[key], values(expected[key]));
+      }
+    }
+  });
+
+  it.each([
+    { oscillatorMA: "ema", signalMA: "ema" },
+    { oscillatorMA: "ema", signalMA: "sma" },
+    { oscillatorMA: "sma", signalMA: "ema" },
+    { oscillatorMA: "sma", signalMA: "sma" },
+  ] as const)(
+    "restarts $oscillatorMA/$signalMA MACD after missing selected prices or times",
+    (modes) => {
+      for (const missing of ["open", "time"] as const) {
+        const input = bars([2, 5, 3, 8, 9, 4, 10, 6, 8, 2]);
+        input[4]![missing] = NaN;
+        const options = { ...modes, source: "open" as const };
+        const result = calculateMACD(input, 2, 3, 2, options);
+        const before = calculateMACD(input.slice(0, 4), 2, 3, 2, options);
+        const after = calculateMACD(input.slice(5), 2, 3, 2, options);
+        expect(result.macd.map((point) => point.time)).toEqual([
+          input[2]!.time,
+          input[3]!.time,
+          input[7]!.time,
+          input[8]!.time,
+          input[9]!.time,
+        ]);
+        expect(result.signal.map((point) => point.time)).toEqual([
+          input[3]!.time,
+          input[8]!.time,
+          input[9]!.time,
+        ]);
+        for (const key of ["macd", "signal", "histogram"] as const)
+          expect(result[key]).toEqual([...before[key], ...after[key]]);
+      }
+      const complete = bars([2, 5, 3, 8, 4, 10, 6]);
+      const unusedMissing = complete.map((bar) => ({ ...bar, close: NaN }));
+      expect(calculateMACD(unusedMissing, 2, 3, 2, { ...modes, source: "open" })).toEqual(
+        calculateMACD(complete, 2, 3, 2, { ...modes, source: "open" }),
+      );
+    },
+  );
+
   it("SMA-seeds fast, slow and signal EMAs before computing the MACD histogram", () => {
     const input = bars([1, 2, 3, 4, 8]);
     const result = calculateMACD(input, 2, 3, 2);

@@ -576,3 +576,52 @@ it("preserves each moving-average source through duplication and workspace reloa
   ).toBe(0);
   expect(useChartPreferences.getState().indicatorInputs.sma?.source).toBe(1);
 });
+
+it("keeps duplicate MACD source and MA selectors independent through validation, reset, and reload", async () => {
+  const store = useChartPreferences.getState();
+  const base = store.addIndicator("macd")!;
+  const baseInputs = {
+    fast: 4,
+    slow: 10,
+    signalPeriod: 3,
+    source: 1,
+    oscillatorMA: 1,
+    signalMA: 0,
+  };
+  expect(store.setIndicatorInstanceInputs(base, baseInputs)).toBe(true);
+  const duplicate = store.duplicateIndicatorInstance(base)!;
+  const duplicateInputs = { ...baseInputs, fast: 6, source: 5, oscillatorMA: 0, signalMA: 1 };
+  expect(store.setIndicatorInstanceInputs(duplicate, duplicateInputs)).toBe(true);
+  const inputs = () =>
+    getChartIndicatorInstances(useChartPreferences.getState())
+      .filter((instance) => instance.key === "macd")
+      .map((instance) => instance.inputs);
+  expect(inputs()).toEqual([baseInputs, duplicateInputs]);
+  const reload = async () => {
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    await useChartPreferences.persist.rehydrate();
+  };
+  await reload();
+  expect(inputs()).toEqual([baseInputs, duplicateInputs]);
+  vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+  for (const patch of [
+    { source: 99 },
+    { source: 0.5 },
+    { oscillatorMA: 2 },
+    { oscillatorMA: -1 },
+    { signalMA: 2 },
+    { signalMA: 0.5 },
+  ])
+    expect(
+      useChartPreferences.getState().setIndicatorInstanceInputs(duplicate, { fast: 8, ...patch }),
+    ).toBe(false);
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  expect(inputs()).toEqual([baseInputs, duplicateInputs]);
+  useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
+  const defaults = { fast: 12, slow: 26, signalPeriod: 9, source: 0, oscillatorMA: 0, signalMA: 0 };
+  expect(inputs()).toEqual([baseInputs, defaults]);
+  await reload();
+  expect(inputs()).toEqual([baseInputs, defaults]);
+});
