@@ -495,3 +495,78 @@ describe("additional line primitive behavior", () => {
     expect(f.plugin.primitive.priceAxisViews!()).toEqual([]);
   });
 });
+
+describe("level colors and labels", () => {
+  it("paints individual Fibonacci colors and background opacity, formats real prices, and restores the next drawing style", () => {
+    const { chart, series } = fixture();
+    const strokes: string[] = [];
+    const fills: Array<[string, number]> = [];
+    const texts: Array<[string, string, number, number]> = [];
+    const ctx = {
+      strokeStyle: "",
+      fillStyle: "",
+      globalAlpha: 1,
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      closePath: vi.fn(),
+      rect: vi.fn(),
+      clip: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      arc: vi.fn(),
+      setLineDash: vi.fn(),
+      stroke: () => strokes.push(ctx.strokeStyle),
+      fill: () => fills.push([ctx.fillStyle, ctx.globalAlpha]),
+      fillText: (value: string, x: number, y: number) => texts.push([value, ctx.fillStyle, x, y]),
+    };
+    const fib: ChartDrawing = {
+      id: "fib",
+      kind: "fib",
+      color: "#729bff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 400 },
+        { time: 200 as Time, price: 300 },
+      ],
+      levels: [
+        { value: 0, visible: true, color: "#ff0000" },
+        { value: 0.5, visible: false },
+        { value: 1, visible: true, color: "#00ff00" },
+      ],
+      background: true,
+      backgroundOpacity: 0.25,
+      showPrices: true,
+      levelLabelFormat: "value",
+      levelLabelPosition: "left",
+      levelLabelAlignment: "middle",
+    };
+    const next: ChartDrawing = { ...fib, id: "trend", kind: "trend" };
+    const plugin = createDrawingPrimitive(chart, series, () => ({
+      drawings: [fib, next],
+      selected: null,
+    }));
+    const renderer = plugin.primitive.paneViews!()[0]!.renderer()!;
+    const draw = () =>
+      renderer.draw({
+        useMediaCoordinateSpace: (callback: (scope: { context: typeof ctx }) => void) =>
+          callback({ context: ctx }),
+      } as unknown as Parameters<typeof renderer.draw>[0]);
+    draw();
+    expect(strokes).toEqual(["#ff0000", "#00ff00", "#729bff"]);
+    expect(fills).toEqual([["#00ff00", 0.25]]);
+    expect(texts).toEqual([
+      ["0  300.00", "#ff0000", 106, 200],
+      ["1  400.00", "#00ff00", 106, 100],
+    ]);
+    strokes.length = 0;
+    fills.length = 0;
+    texts.length = 0;
+    fib.background = false;
+    fib.showLevels = false;
+    fib.showPrices = false;
+    draw();
+    expect(fills).toEqual([]);
+    expect(texts).toEqual([]);
+  });
+});

@@ -6,6 +6,7 @@ import {
   hitDrawingHandle,
   validDrawingAnchors,
   DRAWING_ANCHORS,
+  defaultDrawingLevels,
   maximumDrawingAnchors,
   sanitizeDrawingSettings,
   parseChartDrawings,
@@ -606,5 +607,243 @@ describe("additional line tools", () => {
     });
     expect(info.lines[0]?.to).toEqual({ x: 500, y: 500 });
     expect(info.polygons?.[0]?.points[0]).toEqual({ x: 500, y: 500 });
+  });
+});
+
+describe("configurable Fibonacci and pitchfork geometry", () => {
+  const pivots: Array<[number, number]> = [
+    [100, 100],
+    [300, 300],
+    [500, 200],
+  ];
+  const levels = (values: number[]) => values.map((value) => ({ value, visible: true }));
+
+  it("projects a measured move from the retracement, reverses it and keeps all three handles", () => {
+    const extension = {
+      ...drawing("fib-extension", pivots),
+      levels: levels([0, 0.618, 1]),
+      showTrendLine: false,
+      showPrices: false,
+      levelLabelFormat: "percent" as const,
+      extendRight: true,
+    };
+    const shape = geometry(extension);
+    expect(
+      shape.lines.map((line) => [Number(line.from.y.toFixed(4)), line.to.x, line.label]),
+    ).toEqual([
+      [300, 1000, "0%"],
+      [176.4, 1000, "61.8%"],
+      [100, 1000, "100%"],
+    ]);
+    expect(shape.handles).toEqual([
+      { x: 100, y: 400 },
+      { x: 300, y: 200 },
+      { x: 500, y: 300 },
+    ]);
+    expect(hitDrawingHandle(shape, { x: 500, y: 300 })).toBe(2);
+    expect(hitDrawingGeometry(shape, { x: 900, y: 100 })).toBe(true);
+    const reversed = geometry({ ...extension, reverse: true, levels: levels([0.5]) });
+    expect(reversed.lines[0]?.from.y).toBe(400);
+    expect(geometry({ ...extension, extendRight: false }).lines[0]?.to.x).toBe(500);
+    expect(geometry({ ...extension, extendRight: false }).lines[0]?.from.x).toBe(300);
+    expect(geometry({ ...extension, extendLeft: true }).lines[0]?.from.x).toBe(0);
+    const down = geometry({
+      ...drawing("fib-extension", [
+        [100, 300],
+        [300, 100],
+        [500, 200],
+      ]),
+      levels: levels([1]),
+      showTrendLine: false,
+    });
+    expect(down.lines[0]?.from.y).toBe(500);
+  });
+
+  it("builds channel ratios as parallel offsets and passes the 100% line through the third point", () => {
+    const channel = {
+      ...drawing("fib-channel", [
+        [100, 100],
+        [300, 200],
+        [200, 300],
+      ]),
+      levels: levels([0, 0.5, 1]),
+      extendRight: false,
+    };
+    const shape = geometry(channel);
+    expect(shape.lines.map((line) => [line.from.y, line.to.y])).toEqual([
+      [400, 300],
+      [300, 200],
+      [200, 100],
+    ]);
+    expect(hitDrawingGeometry(shape, { x: 200, y: 200 }, 1)).toBe(true);
+    expect(
+      shape.lines.map((line) => (line.to.y - line.from.y) / (line.to.x - line.from.x)),
+    ).toEqual([-0.5, -0.5, -0.5]);
+    const mirrored = geometry({ ...channel, reverse: true, levels: levels([0.5]) });
+    expect(mirrored.lines[0]?.from.y).toBe(500);
+  });
+
+  it.each([
+    ["pitchfork", { x: 100, y: 400 }, { x: 400, y: 250 }],
+    ["schiff-pitchfork", { x: 100, y: 300 }, { x: 400, y: 250 }],
+    ["modified-schiff-pitchfork", { x: 200, y: 300 }, { x: 400, y: 250 }],
+    ["inside-pitchfork", { x: 400, y: 250 }, { x: 700, y: 250 }],
+  ] as const)("constructs the documented %s median and parallel outer rails", (kind, from, to) => {
+    const shape = geometry({
+      ...drawing(kind, pivots),
+      levels: levels([1]),
+      showLevels: true,
+      extendRight: false,
+      extendLeft: false,
+    });
+    const median = shape.lines.find((line) => line.label === "Median")!;
+    expect(median.from).toEqual(from);
+    expect(median.to).toEqual(to);
+    const slope = (to.y - from.y) / (to.x - from.x);
+    for (const line of shape.lines.filter((line) => line.label))
+      expect((line.to.y - line.from.y) / (line.to.x - line.from.x)).toBeCloseTo(slope);
+    expect(shape.lines.find((line) => line.label === "-100%")?.from).toEqual({ x: 300, y: 200 });
+    expect(shape.lines.find((line) => line.label === "100%")?.from).toEqual({ x: 500, y: 300 });
+    expect(shape.handles).toHaveLength(3);
+    const extended = geometry({ ...drawing(kind, pivots), levels: levels([0]), extendLeft: true });
+    expect(extended.lines[0]?.from.x).toBeLessThanOrEqual(from.x);
+    expect(extended.lines[0]?.to.x).toBeGreaterThan(to.x);
+  });
+
+  it("edits existing retracement levels, colors, labels, reverse and background without changing anchors", () => {
+    const fib: ChartDrawing = {
+      ...drawing("fib", [
+        [100, 100],
+        [300, 300],
+      ]),
+      levels: [
+        { value: 0, visible: true, color: "#ff0000" },
+        { value: 0.25, visible: false },
+        { value: 0.5, visible: true, color: "#00ff00" },
+      ],
+      background: true,
+      backgroundOpacity: 0.3,
+      showPrices: true,
+      levelLabelFormat: "value",
+      levelLabelPosition: "center",
+      levelLabelAlignment: "middle",
+    };
+    const shape = geometry(fib);
+    expect(shape.lines.map((line) => [line.label, line.color])).toEqual([
+      ["0  300", "#ff0000"],
+      ["0.5  200", "#00ff00"],
+    ]);
+    expect(shape.lines[0]?.labelPoint).toEqual({ x: 200, y: 200 });
+    expect(shape.lines[0]?.labelBaseline).toBe("middle");
+    expect(shape.polygons).toMatchObject([{ opacity: 0.3, color: "#00ff00" }]);
+    expect(geometry({ ...fib, reverse: true }).lines[0]?.from.y).toBe(400);
+    expect(
+      geometry({ ...fib, background: false, showPrices: false, showLevels: false }).lines.every(
+        (line) => !line.label,
+      ),
+    ).toBe(true);
+    expect(geometry({ ...fib, levels: [] }).lines).toEqual([]);
+    expect(shape.handles).toEqual([
+      { x: 100, y: 400 },
+      { x: 300, y: 200 },
+    ]);
+    const unified = geometry({ ...fib, useOneColor: true });
+    expect(unified.lines.every((line) => line.color === fib.color)).toBe(true);
+    expect(unified.polygons?.every((polygon) => polygon.color === fib.color)).toBe(true);
+    expect(fib.levels?.[0]?.color).toBe("#ff0000");
+  });
+
+  it("validates level settings and rejects geometrically degenerate persisted projections", () => {
+    const settings = sanitizeDrawingSettings({
+      levels: [
+        { value: 0.618, visible: false, color: "#ff00ff" },
+        { value: NaN },
+        { value: 101 },
+        { value: 1, color: "url(bad)" },
+      ],
+      backgroundOpacity: 1.1,
+      reverse: true,
+      showPrices: false,
+      levelLabelFormat: "value",
+      levelLabelPosition: "left",
+    });
+    expect(settings).toEqual({
+      levels: [
+        { value: 0.618, visible: false, color: "#ff00ff" },
+        { value: 1, visible: true },
+      ],
+      reverse: true,
+      showPrices: false,
+      levelLabelFormat: "value",
+      levelLabelPosition: "left",
+    });
+    expect(
+      sanitizeDrawingSettings({ levels: Array.from({ length: 100 }, (_, value) => ({ value })) })
+        .levels,
+    ).toHaveLength(64);
+    for (const kind of [
+      "fib-extension",
+      "fib-channel",
+      "pitchfork",
+      "schiff-pitchfork",
+      "modified-schiff-pitchfork",
+      "inside-pitchfork",
+    ] as const) {
+      const shape = { ...drawing(kind, pivots), ...settings };
+      expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+      expect(validDrawingAnchors(kind, shape.anchors.slice(0, 2))).toBe(false);
+      expect(
+        validDrawingAnchors(kind, [shape.anchors[0]!, shape.anchors[0]!, shape.anchors[2]!]),
+      ).toBe(false);
+      if (kind !== "fib-extension")
+        expect(
+          validDrawingAnchors(
+            kind,
+            drawing(kind, [
+              [100, 100],
+              [200, 200],
+              [300, 300],
+            ]).anchors,
+          ),
+        ).toBe(false);
+    }
+  });
+});
+
+describe("pitchfork style settings", () => {
+  it("keeps a separate median, expands enabled positive ratios symmetrically and switches geometry in place", () => {
+    const fork = drawing("pitchfork", [
+      [100, 100],
+      [300, 300],
+      [500, 200],
+    ]);
+    const defaults = defaultDrawingLevels("pitchfork");
+    expect(defaults).toHaveLength(9);
+    expect(defaults.filter((level) => level.visible).map((level) => level.value)).toEqual([0.5, 1]);
+    const normal = geometry(fork);
+    expect(normal.lines).toHaveLength(7);
+    expect(normal.lines.every((line) => !line.label)).toBe(true);
+    expect(normal.polygons).toHaveLength(4);
+    expect(normal.lines[0]?.color).toBe(fork.color);
+    const inside = geometry({ ...fork, pitchforkStyle: "inside", levels: [] });
+    expect(inside.lines[0]?.from).toEqual({ x: 400, y: 250 });
+    expect(inside.lines[0]?.to).toEqual({ x: 1000, y: 250 });
+    expect(inside.lines).toHaveLength(3);
+    const both = geometry({ ...fork, extendLines: true, levels: [] });
+    expect(both.lines[0]?.from).toEqual({ x: 0, y: 450 });
+    const forward = geometry({ ...fork, extendLines: false, levels: [] });
+    expect(forward.lines[0]?.from).toEqual({ x: 100, y: 400 });
+    expect(sanitizeDrawingSettings({ pitchforkStyle: "inside", extendLines: true })).toEqual({
+      pitchforkStyle: "inside",
+      extendLines: true,
+    });
+    expect(sanitizeDrawingSettings({ pitchforkStyle: "unsupported", extendLines: "true" })).toEqual(
+      {},
+    );
+    expect(
+      parseChartDrawings(
+        JSON.stringify([{ ...fork, pitchforkStyle: "inside", extendLines: true }]),
+      )[0],
+    ).toMatchObject({ pitchforkStyle: "inside", extendLines: true });
   });
 });

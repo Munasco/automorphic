@@ -12,6 +12,12 @@ export type DrawingKind =
   | "vertical"
   | "rectangle"
   | "fib"
+  | "fib-extension"
+  | "fib-channel"
+  | "pitchfork"
+  | "schiff-pitchfork"
+  | "modified-schiff-pitchfork"
+  | "inside-pitchfork"
   | "channel"
   | "text"
   | "brush"
@@ -30,7 +36,21 @@ export type DrawingKind =
   | "curve"
   | "double-curve";
 export type DrawingAnchor = { time: Time; price: number };
+export type DrawingLevel = { value: number; visible: boolean; color?: string };
 export type DrawingSettings = {
+  levels?: DrawingLevel[];
+  useOneColor?: boolean;
+  extendLines?: boolean;
+  pitchforkStyle?: "original" | "schiff" | "modified-schiff" | "inside";
+  reverse?: boolean;
+  background?: boolean;
+  backgroundOpacity?: number;
+  showPrices?: boolean;
+  showLevels?: boolean;
+  showTrendLine?: boolean;
+  levelLabelFormat?: "percent" | "value";
+  levelLabelPosition?: "left" | "center" | "right";
+  levelLabelAlignment?: "top" | "middle" | "bottom";
   visibility?: DrawingVisibility;
   showMiddlePoint?: boolean;
   stats?: Array<"price" | "percent" | "ticks" | "bars" | "datetime" | "distance" | "angle">;
@@ -61,7 +81,16 @@ export type ChartDrawing = DrawingSettings & {
   name?: string;
 };
 export type DrawingPoint = { x: number; y: number };
-export type DrawingLine = { from: DrawingPoint; to: DrawingPoint; label?: string };
+export type DrawingLine = {
+  from: DrawingPoint;
+  to: DrawingPoint;
+  label?: string;
+  color?: string;
+  lineStyle?: "solid" | "dashed" | "dotted";
+  labelPoint?: DrawingPoint;
+  labelAlign?: "left" | "center" | "right";
+  labelBaseline?: "top" | "middle" | "bottom";
+};
 export type DrawingGeometry = {
   lines: DrawingLine[];
   rectangle?: { x: number; y: number; width: number; height: number };
@@ -75,7 +104,7 @@ export type DrawingGeometry = {
   handles: DrawingPoint[];
   /** Original anchor indices for the visible, editable handles of dense freehand strokes. */
   handleIndices?: number[];
-  polygons?: Array<{ points: DrawingPoint[]; opacity: number }>;
+  polygons?: Array<{ points: DrawingPoint[]; opacity: number; color?: string }>;
   strokeWidth?: number;
   opacity?: number;
 };
@@ -91,6 +120,12 @@ export const DRAWING_ANCHORS: Record<DrawingKind, number> = {
   vertical: 1,
   rectangle: 2,
   fib: 2,
+  "fib-extension": 3,
+  "fib-channel": 3,
+  pitchfork: 3,
+  "schiff-pitchfork": 3,
+  "modified-schiff-pitchfork": 3,
+  "inside-pitchfork": 3,
   channel: 3,
   text: 1,
   brush: 2,
@@ -118,6 +153,56 @@ export const minimumDrawingAnchors = (kind: DrawingKind) => DRAWING_ANCHORS[kind
 export const maximumDrawingAnchors = (kind: DrawingKind) =>
   isVariableDrawingTool(kind) ? 1000 : DRAWING_ANCHORS[kind];
 export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
+export const isPitchforkDrawingTool = (kind: DrawingKind) =>
+  ["pitchfork", "schiff-pitchfork", "modified-schiff-pitchfork", "inside-pitchfork"].includes(kind);
+export const supportsDrawingLevels = (kind: DrawingKind) =>
+  ["fib", "fib-extension", "fib-channel"].includes(kind) || isPitchforkDrawingTool(kind);
+export function defaultDrawingLevels(kind: DrawingKind): DrawingLevel[] {
+  if (kind === "fib-extension" || kind === "fib-channel") {
+    const values = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 3.618, 4.236];
+    const colors = [
+      "#808080",
+      "#f23645",
+      "#ff9800",
+      "#4caf50",
+      "#089981",
+      "#00bcd4",
+      "#808080",
+      "#2962ff",
+      "#f23645",
+      "#9c27b0",
+      "#e91e63",
+    ];
+    return values.map((value, index) => ({ value, visible: true, color: colors[index]! }));
+  }
+  if (isPitchforkDrawingTool(kind))
+    return [0.25, 0.382, 0.5, 0.618, 0.75, 1, 1.5, 1.75, 2].map((value) => ({
+      value,
+      visible: value === 0.5 || value === 1,
+      color: value === 0.5 ? "#4caf50" : "#2962ff",
+    }));
+  const ratios = kind === "fib" ? FIB_LEVELS : [];
+  return ratios.map((value) => ({ value, visible: true }));
+}
+/** Defaults for the new level tools; saved retracements retain their original appearance. */
+export function defaultDrawingLevelSettings(kind: DrawingKind): DrawingSettings {
+  if (isPitchforkDrawingTool(kind))
+    return { background: true, backgroundOpacity: 0.12, showLevels: false, showPrices: false };
+  return kind === "fib-extension" || kind === "fib-channel"
+    ? {
+        extendLeft: false,
+        extendRight: false,
+        background: true,
+        backgroundOpacity: 0.12,
+        showPrices: true,
+        showLevels: true,
+        levelLabelFormat: "value",
+        levelLabelPosition: "left",
+        levelLabelAlignment: "middle",
+        ...(kind === "fib-extension" ? { showTrendLine: true } : {}),
+      }
+    : {};
+}
 export function drawingTimeValue(time: unknown): number | null {
   if (typeof time === "number") return Number.isFinite(time) ? time : null;
   if (typeof time === "string") {
@@ -153,6 +238,7 @@ export const supportsLineStatistics = (kind: DrawingKind) =>
 export const defaultDrawingStats = (kind: DrawingKind): NonNullable<DrawingSettings["stats"]> =>
   kind === "info-line" ? ["price", "percent", "bars", "datetime"] : [];
 export const supportsLineExtensions = (kind: DrawingKind) =>
+  supportsDrawingLevels(kind) ||
   ["trend", "info-line", "extended-line", "trend-angle", "ray", "arrow", "channel"].includes(kind);
 export const supportsLineMarkers = (kind: DrawingKind) =>
   [
@@ -190,6 +276,41 @@ export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
   if (!value || typeof value !== "object") return {};
   const source = value as DrawingSettings;
   const result: DrawingSettings = {};
+  if (["original", "schiff", "modified-schiff", "inside"].includes(source.pitchforkStyle ?? ""))
+    result.pitchforkStyle = source.pitchforkStyle!;
+  if (source.levelLabelFormat === "percent" || source.levelLabelFormat === "value")
+    result.levelLabelFormat = source.levelLabelFormat;
+  if (Array.isArray(source.levels))
+    result.levels = source.levels.slice(0, 64).flatMap((level) => {
+      if (
+        !level ||
+        typeof level !== "object" ||
+        typeof level.value !== "number" ||
+        !Number.isFinite(level.value) ||
+        Math.abs(level.value) > 100
+      )
+        return [];
+      return [
+        {
+          value: level.value,
+          visible: level.visible !== false,
+          ...(typeof level.color === "string" && /^#[a-f\d]{6}$/i.test(level.color)
+            ? { color: level.color }
+            : {}),
+        },
+      ];
+    });
+  if (
+    typeof source.backgroundOpacity === "number" &&
+    Number.isFinite(source.backgroundOpacity) &&
+    source.backgroundOpacity >= 0 &&
+    source.backgroundOpacity <= 1
+  )
+    result.backgroundOpacity = source.backgroundOpacity;
+  if (["left", "center", "right"].includes(source.levelLabelPosition ?? ""))
+    result.levelLabelPosition = source.levelLabelPosition!;
+  if (["top", "middle", "bottom"].includes(source.levelLabelAlignment ?? ""))
+    result.levelLabelAlignment = source.levelLabelAlignment!;
   if (source.visibility !== undefined)
     result.visibility = sanitizeDrawingVisibility(source.visibility);
   if (Array.isArray(source.stats))
@@ -203,6 +324,13 @@ export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
   if (["left", "center", "right"].includes(source.statsPosition ?? ""))
     result.statsPosition = source.statsPosition!;
   for (const key of [
+    "useOneColor",
+    "extendLines",
+    "reverse",
+    "background",
+    "showPrices",
+    "showLevels",
+    "showTrendLine",
     "showMiddlePoint",
     "alwaysShowStats",
     "extendLeft",
@@ -523,19 +651,6 @@ function buildBaseDrawingGeometry(
     line({ x, y: y + h }, { x, y });
     return result;
   }
-  if (drawing.kind === "fib") {
-    for (const ratio of FIB_LEVELS) {
-      const price = b.price + (a.price - b.price) * ratio;
-      const y = priceY(price);
-      if (y !== null)
-        line(
-          { x: Math.min(first.x, second.x), y },
-          { x: Math.max(first.x, second.x), y },
-          `${(ratio * 100).toFixed(1).replace(/\.0$/, "")}%`,
-        );
-    }
-    return result;
-  }
   line(first, second);
   if (drawing.kind === "channel") {
     const third = drawing.anchors[2] && project(drawing.anchors[2]);
@@ -548,6 +663,223 @@ function buildBaseDrawingGeometry(
   }
   return result;
 }
+/** Linear-price Fibonacci projections and the four median constructions documented by TradingView. */
+function buildLevelDrawingGeometry(
+  drawing: ChartDrawing,
+  project: (anchor: DrawingAnchor) => DrawingPoint | null,
+  priceY: (price: number) => number | null,
+  width: number,
+  height: number,
+  formatPrice: (price: number) => string,
+  coordinatePrice?: (coordinate: number) => number | null,
+): DrawingGeometry {
+  const result: DrawingGeometry = { lines: [], handles: [] };
+  if (drawing.hidden) return result;
+  drawing = { ...defaultDrawingLevelSettings(drawing.kind), ...drawing };
+  const projected = drawing.anchors.map(project);
+  if (projected.some((point) => point === null)) return result;
+  const points = projected as DrawingPoint[];
+  result.handles = points;
+  const [a, b, c] = drawing.anchors;
+  const [first, second, third] = points;
+  if (!a || !b || !first || !second) return result;
+  if (drawing.kind !== "fib" && (!c || !third)) {
+    result.lines.push({ from: first, to: second });
+    return result;
+  }
+  const midpoint = (a: DrawingPoint, b: DrawingPoint) => ({
+    x: (a.x + b.x) / 2,
+    y: (a.y + b.y) / 2,
+  });
+  const levels = drawing.levels ?? defaultDrawingLevels(drawing.kind);
+  const boundaries: Array<{ value: number; line: DrawingLine; color: string }> = [];
+  const addLevel = (
+    source: DrawingLine,
+    level: DrawingLevel,
+    defaults: { left: boolean; right: boolean },
+    price?: number,
+  ) => {
+    if (!level.visible) return;
+    const forkExtensions =
+      isPitchforkDrawingTool(drawing.kind) && drawing.extendLines !== undefined;
+    const left = forkExtensions
+      ? drawing.extendLines || defaults.left
+      : (drawing.extendLeft ?? defaults.left);
+    const right = forkExtensions
+      ? drawing.extendLines || defaults.right
+      : (drawing.extendRight ?? defaults.right);
+    const color = drawing.useOneColor ? drawing.color : (level.color ?? drawing.color);
+    const clipped = extendDrawingLine(source, width, height, left, right);
+    // Use unclipped, finite boundaries for background fills even when one level is outside the pane.
+    const dx = source.to.x - source.from.x,
+      dy = source.to.y - source.from.y;
+    const length = Math.hypot(dx, dy);
+    if (length > 0 && Number.isFinite(length)) {
+      const reach =
+        (2 * (width + height) +
+          Math.abs(source.from.x) +
+          Math.abs(source.from.y) +
+          Math.abs(source.to.x) +
+          Math.abs(source.to.y)) /
+        length;
+      const start = (dx >= 0 ? left : right) ? -reach : 0;
+      const end = (dx >= 0 ? right : left) ? 1 + reach : 1;
+      boundaries.push({
+        value: level.value,
+        color,
+        line: {
+          from: { x: source.from.x + dx * start, y: source.from.y + dy * start },
+          to: { x: source.from.x + dx * end, y: source.from.y + dy * end },
+        },
+      });
+    }
+    if (!clipped) return;
+    const position = drawing.levelLabelPosition ?? "right";
+    const leftPoint = clipped.from.x <= clipped.to.x ? clipped.from : clipped.to;
+    const rightPoint = clipped.from.x <= clipped.to.x ? clipped.to : clipped.from;
+    const point =
+      position === "left"
+        ? leftPoint
+        : position === "right"
+          ? rightPoint
+          : midpoint(leftPoint, rightPoint);
+    const rows: string[] = [];
+    if (drawing.showLevels !== false)
+      rows.push(
+        isPitchforkDrawingTool(drawing.kind) && level.value === 0
+          ? "Median"
+          : drawing.levelLabelFormat === "value"
+            ? String(level.value)
+            : `${Number((level.value * 100).toFixed(3))}%`,
+      );
+    if (drawing.showPrices) {
+      // The horizontal tools have an exact target price; sloped levels use the linear-price chart at the label point.
+      const reference = points.findIndex((p) => p.y !== first.y);
+      const inferred =
+        reference >= 0
+          ? a.price +
+            ((point.y - first.y) * (drawing.anchors[reference]!.price - a.price)) /
+              (points[reference]!.y - first.y)
+          : a.price;
+      const value = price ?? coordinatePrice?.(point.y) ?? inferred;
+      if (Number.isFinite(value)) rows.push(formatPrice(value));
+    }
+    const vertical = drawing.levelLabelAlignment ?? "top";
+    result.lines.push({
+      ...clipped,
+      color,
+      ...(rows.length
+        ? {
+            label: rows.join("  "),
+            labelPoint: {
+              x: point.x + (position === "left" ? 6 : position === "right" ? -6 : 0),
+              y: Math.max(
+                14,
+                Math.min(
+                  height - 4,
+                  point.y + (vertical === "top" ? -4 : vertical === "bottom" ? 4 : 0),
+                ),
+              ),
+            },
+            labelAlign: position,
+            labelBaseline: vertical === "top" ? "bottom" : vertical === "bottom" ? "top" : "middle",
+          }
+        : {}),
+    });
+  };
+  if (drawing.kind === "fib" || drawing.kind === "fib-extension") {
+    const extension = drawing.kind === "fib-extension";
+    const base = extension ? c!.price : drawing.reverse ? a.price : b.price;
+    const delta = extension
+      ? (b.price - a.price) * (drawing.reverse ? -1 : 1)
+      : (a.price - b.price) * (drawing.reverse ? -1 : 1);
+    const fromX = extension ? Math.min(second.x, third!.x) : Math.min(first.x, second.x);
+    const toX = extension ? Math.max(second.x, third!.x) : Math.max(first.x, second.x);
+    for (const level of levels) {
+      const price = base + delta * level.value,
+        y = priceY(price);
+      if (y !== null && Number.isFinite(y))
+        addLevel(
+          { from: { x: fromX, y }, to: { x: toX, y } },
+          level,
+          { left: false, right: extension },
+          price,
+        );
+    }
+    if (drawing.showTrendLine ?? extension) {
+      result.lines.push({ from: first, to: second, lineStyle: "dashed" });
+      if (extension) result.lines.push({ from: second, to: third!, lineStyle: "dashed" });
+    }
+  } else if (drawing.kind === "fib-channel") {
+    const direction = drawing.reverse ? -1 : 1;
+    const offset = { x: (third!.x - first.x) * direction, y: (third!.y - first.y) * direction };
+    for (const level of levels)
+      addLevel(
+        {
+          from: { x: first.x + offset.x * level.value, y: first.y + offset.y * level.value },
+          to: { x: second.x + offset.x * level.value, y: second.y + offset.y * level.value },
+        },
+        level,
+        { left: false, right: false },
+      );
+  } else {
+    // Inside uses C−mid(A,B) for its direction, but starts its median at mid(B,C).
+    // The outer rails originate at B/C in every variation (confirmed against native drawings).
+    const style =
+      drawing.pitchforkStyle ??
+      (drawing.kind === "pitchfork" ? "original" : drawing.kind.replace("-pitchfork", ""));
+    const center = midpoint(second, third!);
+    const adjusted =
+      style === "original"
+        ? first
+        : style === "schiff"
+          ? { x: first.x, y: (first.y + second.y) / 2 }
+          : midpoint(first, second);
+    const origin = style === "inside" ? center : adjusted;
+    const target = style === "inside" ? third! : center;
+    const direction = { x: target.x - adjusted.x, y: target.y - adjusted.y };
+    if (!direction.x && !direction.y) return result;
+    const defaults = { left: direction.x < 0, right: direction.x >= 0 };
+    const ray = (point: DrawingPoint, level: DrawingLevel) =>
+      addLevel(
+        { from: point, to: { x: point.x + direction.x, y: point.y + direction.y } },
+        level,
+        defaults,
+      );
+    ray(origin, { value: 0, visible: true, color: drawing.color });
+    for (const level of levels) {
+      if (!level.visible || level.value === 0) continue;
+      for (const sign of [-1, 1]) {
+        const ratio = Math.abs(level.value) * sign;
+        ray(
+          {
+            x: center.x + ((third!.x - second.x) / 2) * ratio,
+            y: center.y + ((third!.y - second.y) / 2) * ratio,
+          },
+          { ...level, value: ratio },
+        );
+      }
+    }
+    result.lines.push(
+      { from: first, to: second, color: drawing.color },
+      { from: second, to: third!, color: drawing.color },
+    );
+  }
+  if (drawing.background) {
+    boundaries.sort((a, b) => a.value - b.value);
+    for (let index = 1; index < boundaries.length; index++) {
+      const a = boundaries[index - 1]!,
+        b = boundaries[index]!;
+      (result.polygons ??= []).push({
+        points: [a.line.from, a.line.to, b.line.to, b.line.from],
+        color: b.color,
+        opacity: drawing.backgroundOpacity ?? 0.12,
+      });
+    }
+  }
+  return result;
+}
+
 /** Clip an optionally extended line to the pane. Left/right refer to time direction, not anchor order. */
 export function extendDrawingLine(
   source: DrawingLine,
@@ -588,11 +920,24 @@ export function buildDrawingGeometry(
   priceY: (price: number) => number | null,
   width: number,
   height: number,
+  formatPrice: (price: number) => string = (price) => String(Number(price.toFixed(6))),
+  coordinatePrice?: (coordinate: number) => number | null,
 ): DrawingGeometry {
-  const result = buildBaseDrawingGeometry(drawing, project, priceY, width, height);
+  const result = supportsDrawingLevels(drawing.kind)
+    ? buildLevelDrawingGeometry(
+        drawing,
+        project,
+        priceY,
+        width,
+        height,
+        formatPrice,
+        coordinatePrice,
+      )
+    : buildBaseDrawingGeometry(drawing, project, priceY, width, height);
   if (drawing.hidden || !result.handles.length) return result;
   if (
     supportsLineExtensions(drawing.kind) &&
+    !supportsDrawingLevels(drawing.kind) &&
     (drawing.kind === "extended-line" ||
       drawing.extendLeft !== undefined ||
       drawing.extendRight !== undefined)
@@ -799,6 +1144,17 @@ export function validDrawingAnchors(kind: DrawingKind, anchors: DrawingAnchor[])
   if (!first || !second) return true;
   const same = (a: DrawingAnchor, b: DrawingAnchor) =>
     drawingTimeValue(a.time) === drawingTimeValue(b.time) && a.price === b.price;
+  if (kind === "fib-extension")
+    return !!third && first.price !== second.price && !same(second, third);
+  if (kind === "fib-channel" || isPitchforkDrawingTool(kind)) {
+    if (!third || same(first, second)) return false;
+    const ax = drawingTimeValue(second.time)! - drawingTimeValue(first.time)!;
+    const bx = drawingTimeValue(third.time)! - drawingTimeValue(first.time)!;
+    return (
+      (kind !== "fib-channel" || ax !== 0) &&
+      ax * (third.price - first.price) - bx * (second.price - first.price) !== 0
+    );
+  }
   if (["trend", "rectangle", "fib", "channel"].includes(kind))
     return drawingTimeValue(first.time) !== drawingTimeValue(second.time);
   if (kind === "ellipse")

@@ -81,6 +81,44 @@ export function ChartDrawingGlyph({ tool }: { tool: ChartDrawingTool }) {
           <circle cx="18" cy="20" r="1.5" fill="var(--color-background, #0b0d12)" />
         </>
       ) : null}
+      {tool === "fib-extension" ? (
+        <>
+          <path d="M2 19 8 10l5 4 8-11M3 8h18M3 4h18M10 13h11" />
+          <circle cx="2" cy="19" r="1.5" />
+          <circle cx="8" cy="10" r="1.5" />
+          <circle cx="13" cy="14" r="1.5" />
+        </>
+      ) : null}
+      {tool === "fib-channel" ? (
+        <>
+          <path d="m2 18 17-7M3 13l17-7M4 8l17-7M1 23l17-7" />
+          <circle cx="3" cy="13" r="1.5" />
+          <circle cx="20" cy="6" r="1.5" />
+          <circle cx="2" cy="18" r="1.5" />
+        </>
+      ) : null}
+      {["pitchfork", "schiff-pitchfork", "modified-schiff-pitchfork", "inside-pitchfork"].includes(
+        tool,
+      ) ? (
+        <>
+          <path d="m3 21 17-17M6 11l15-8M13 20l10-15M6 11l7 9" />
+          <circle cx="3" cy="21" r="1.5" />
+          <circle cx="6" cy="11" r="1.5" />
+          <circle cx="13" cy="20" r="1.5" />
+          {tool !== "pitchfork" ? (
+            <path
+              d={
+                tool === "schiff-pitchfork"
+                  ? "M3 21v-7h6"
+                  : tool === "inside-pitchfork"
+                    ? "m4 16 5-2 4 3"
+                    : "m3 21 4-5 3 1"
+              }
+              strokeDasharray="2 2"
+            />
+          ) : null}
+        </>
+      ) : null}
       {tool === "channel" ? (
         <>
           <path d="M4 15 17 4M7 20 20 9M5.5 17.5 18.5 6.5" />

@@ -100,7 +100,15 @@ export function createDrawingPrimitive(
         ctx.clip();
         for (const drawing of [...state.drawings, ...(state.preview ? [state.preview] : [])]) {
           if (drawing.hidden) continue;
-          const geometry = buildDrawingGeometry(drawing, project, priceY, width, height);
+          const geometry = buildDrawingGeometry(
+            drawing,
+            project,
+            priceY,
+            width,
+            height,
+            (price) => series.priceFormatter().format(price),
+            (coordinate) => series.coordinateToPrice(coordinate),
+          );
           ctx.textAlign = "left";
           ctx.textBaseline = "alphabetic";
           ctx.strokeStyle = drawing.color;
@@ -123,6 +131,7 @@ export function createDrawingPrimitive(
             for (const polygon of geometry.polygons ?? []) {
               if (!polygon.points.length) continue;
               ctx.globalAlpha = polygon.opacity;
+              ctx.fillStyle = polygon.color ?? drawing.color;
               ctx.beginPath();
               ctx.moveTo(polygon.points[0]!.x, polygon.points[0]!.y);
               for (const point of polygon.points.slice(1)) ctx.lineTo(point.x, point.y);
@@ -130,19 +139,39 @@ export function createDrawingPrimitive(
               ctx.fill();
             }
             ctx.globalAlpha = geometry.opacity ?? 1;
-            ctx.font = `12px ${chart.options().layout.fontFamily}`;
+            ctx.fillStyle = drawing.color;
+            ctx.font = `${drawing.textFontSize ?? 12}px ${chart.options().layout.fontFamily}`;
             ctx.beginPath();
             let previous: DrawingPoint | undefined;
+            let activeColor = drawing.color;
+            let activeStyle = drawing.lineStyle ?? "solid";
             const visibleLines = nativeLine ? geometry.lines.slice(1) : geometry.lines;
             for (const line of visibleLines) {
+              const color = line.color ?? drawing.color;
+              const style = line.lineStyle ?? drawing.lineStyle ?? "solid";
+              if (color !== activeColor || style !== activeStyle) {
+                if (previous) ctx.stroke();
+                ctx.beginPath();
+                ctx.strokeStyle = color;
+                activeColor = color;
+                activeStyle = style;
+                ctx.setLineDash(style === "dashed" ? [8, 5] : style === "dotted" ? [2, 4] : []);
+                previous = undefined;
+              }
               if (!previous || previous.x !== line.from.x || previous.y !== line.from.y)
                 ctx.moveTo(line.from.x, line.from.y);
               ctx.lineTo(line.to.x, line.to.y);
               previous = line.to;
             }
             if (visibleLines.length) ctx.stroke();
-            for (const line of visibleLines)
-              if (line.label) ctx.fillText(line.label, line.to.x + 4, line.to.y - 3);
+            for (const line of visibleLines) {
+              if (!line.label) continue;
+              ctx.fillStyle = line.color ?? drawing.color;
+              ctx.textAlign = line.labelAlign ?? "left";
+              ctx.textBaseline = line.labelBaseline ?? "alphabetic";
+              const point = line.labelPoint ?? { x: line.to.x + 4, y: line.to.y - 3 };
+              ctx.fillText(line.label, point.x, point.y);
+            }
             if (geometry.text) {
               const text = geometry.text;
               const size = text.fontSize ?? 14;
