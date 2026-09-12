@@ -89,3 +89,55 @@ export function formatDrawingStats(
     }
   });
 }
+
+export interface InfoLineStatRow {
+  kind: "price" | "range" | "angle";
+  text: string;
+}
+
+const infoNumber = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+
+/** Groups selected Info Line measurements into their price, range, and angle rows. */
+export function formatInfoLineStats(
+  stats: DrawingStats,
+  kinds: readonly DrawingStatKind[],
+  formatPrice: (value: number) => string,
+): InfoLineStatRow[] {
+  const selected = new Set(kinds);
+  const value = (kind: DrawingStatKind): number | null => {
+    const stat = stats[kind];
+    return selected.has(kind) && stat !== null && Number.isFinite(stat) ? stat : null;
+  };
+  const rows: InfoLineStatRow[] = [];
+  const price = value("price"),
+    percent = value("percent"),
+    ticks = value("ticks");
+  let priceText = price === null ? "" : formatPrice(price);
+  if (percent !== null) {
+    const percentText = `${percent.toFixed(2)}%`;
+    priceText = priceText ? `${priceText} (${percentText})` : percentText;
+  }
+  if (ticks !== null) {
+    priceText = [priceText, infoNumber.format(ticks)].filter(Boolean).join(", ");
+  }
+  if (priceText) rows.push({ kind: "price", text: priceText });
+
+  const bars = value("bars"),
+    datetime = value("datetime"),
+    distance = value("distance");
+  let rangeText = bars === null ? "" : `${infoNumber.format(bars)} bars`;
+  if (datetime !== null) {
+    const timeText = duration(datetime);
+    rangeText = rangeText ? `${rangeText} (${timeText})` : timeText;
+  }
+  if (distance !== null) {
+    rangeText = [rangeText, `distance: ${infoNumber.format(Math.round(distance))} px`]
+      .filter(Boolean)
+      .join(", ");
+  }
+  if (rangeText) rows.push({ kind: "range", text: rangeText });
+
+  const angle = value("angle");
+  if (angle !== null) rows.push({ kind: "angle", text: `${angle.toFixed(2)}°` });
+  return rows;
+}

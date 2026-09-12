@@ -16,6 +16,7 @@ export function DrawingNumberField({
   max,
   disabled = false,
   readOnly = false,
+  showSteppers = true,
   className,
 }: {
   label: string;
@@ -26,6 +27,7 @@ export function DrawingNumberField({
   max?: number;
   disabled?: boolean;
   readOnly?: boolean;
+  showSteppers?: boolean;
   className?: string;
 }) {
   return (
@@ -50,24 +52,29 @@ export function DrawingNumberField({
     >
       <NumberField.Input
         aria-label={label}
-        className="h-full w-full min-w-0 rounded bg-transparent py-0 pl-[5px] pr-5 text-left text-sm leading-[18px] outline-none disabled:cursor-not-allowed"
+        className={cn(
+          "h-full w-full min-w-0 rounded bg-transparent py-0 pl-[5px] text-left text-sm leading-[18px] outline-none disabled:cursor-not-allowed",
+          showSteppers ? "pr-5" : "pr-[5px]",
+        )}
       />
-      <div className="absolute inset-y-0 right-0 flex w-[18px] flex-col">
-        <NumberField.Increment
-          disabled={readOnly}
-          aria-label={`Increase ${label}`}
-          className="flex min-h-0 flex-1 items-center justify-center rounded-tr text-zinc-400 hover:bg-white/10 hover:text-zinc-200 focus-visible:outline focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <ChartIcon name="chevron-down" className="size-3 rotate-180" />
-        </NumberField.Increment>
-        <NumberField.Decrement
-          disabled={readOnly}
-          aria-label={`Decrease ${label}`}
-          className="flex min-h-0 flex-1 items-center justify-center rounded-br text-zinc-400 hover:bg-white/10 hover:text-zinc-200 focus-visible:outline focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <ChartIcon name="chevron-down" className="size-3" />
-        </NumberField.Decrement>
-      </div>
+      {showSteppers ? (
+        <div className="absolute inset-y-0 right-0 flex w-[18px] flex-col">
+          <NumberField.Increment
+            disabled={readOnly}
+            aria-label={`Increase ${label}`}
+            className="flex min-h-0 flex-1 items-center justify-center rounded-tr text-zinc-400 hover:bg-white/10 hover:text-zinc-200 focus-visible:outline focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ChartIcon name="chevron-down" className="size-3 rotate-180" />
+          </NumberField.Increment>
+          <NumberField.Decrement
+            disabled={readOnly}
+            aria-label={`Decrease ${label}`}
+            className="flex min-h-0 flex-1 items-center justify-center rounded-br text-zinc-400 hover:bg-white/10 hover:text-zinc-200 focus-visible:outline focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ChartIcon name="chevron-down" className="size-3" />
+          </NumberField.Decrement>
+        </div>
+      ) : null}
     </NumberField.Root>
   );
 }

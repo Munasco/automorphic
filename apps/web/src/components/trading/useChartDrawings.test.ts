@@ -18,6 +18,7 @@ import { createChartDrawingSession } from "./useChartDrawings";
 import { sanitizeDrawingVisibility } from "./drawingVisibility";
 import type { ChartDrawing } from "./drawingGeometry";
 import { parseDrawingClipboard, serializeDrawingClipboard } from "./drawingClipboard";
+import { drawingProjection } from "./drawingPrimitive";
 
 function fixture(symbol: string, initial: string | null = null, candles: CandlestickData[] = []) {
   let listener: ((event: MouseEventParams<Time>) => void) | undefined;
@@ -1758,6 +1759,209 @@ describe("parallel channel coordinate offsets", () => {
     expect(session.channelAnchorsAtOffset(original, 25)).toBeNull();
     expect(f.writes()).toBe(0);
     session.dispose();
+  });
+});
+
+describe("trend-angle coordinate helpers", () => {
+  const original: ChartDrawing = {
+    id: "angle",
+    kind: "trend-angle",
+    color: "#2962ff",
+    width: 2,
+    anchors: [
+      { time: 253 as Time, price: 4720 },
+      { time: 439 as Time, price: 4785 },
+    ],
+  };
+  it("preserves exact angle and length when native time lookup snaps, including market gaps and empty edges", () => {
+    const times = [100, 200, 100_000, 100_100];
+    const positions = new Map(times.map((time, index) => [time, 100 + index * 100]));
+    const candles = times.map((time) => ({
+      time: time as UTCTimestamp,
+      open: 4800,
+      high: 4900,
+      low: 4700,
+      close: 4800,
+    }));
+    const f = fixture("angle-snapped-time", null, candles);
+    const scale = f.chart.timeScale();
+    vi.spyOn(f.chart, "timeScale").mockReturnValue({
+      ...scale,
+      timeToCoordinate: (time: Time) =>
+        (positions.get(Number(time)) as Coordinate | undefined) ?? null,
+      coordinateToTime: (x: number) =>
+        times.reduce((nearest, time) =>
+          Math.abs(positions.get(time)! - x) < Math.abs(positions.get(nearest)! - x)
+            ? time
+            : nearest,
+        ) as Time,
+    });
+    const session = f.open();
+    const drawing: ChartDrawing = {
+      ...original,
+      anchors: [
+        { time: 100 as Time, price: 4800 },
+        { time: 200 as Time, price: 4900 },
+      ],
+    };
+    const project = drawingProjection(f.chart, f.series);
+    const first = project.project(drawing.anchors[0]!)!;
+    const length = Math.hypot(100, 100);
+    for (const degrees of [30, 180, -45]) {
+      const anchors = session.anchorsAtAngle(drawing, degrees)!;
+      const end = project.project(anchors[1]!)!;
+      expect(end.x).toBeCloseTo(first.x + Math.cos((degrees * Math.PI) / 180) * length, 8);
+      expect(end.y).toBeCloseTo(first.y - Math.sin((degrees * Math.PI) / 180) * length, 8);
+      expect(Math.hypot(end.x - first.x, end.y - first.y)).toBeCloseTo(length, 8);
+      expect(Math.abs(session.drawingAngle({ ...drawing, anchors })!)).toBeCloseTo(
+        Math.abs(degrees),
+        8,
+      );
+    }
+    const rotated = { ...drawing, anchors: session.anchorsAtAngle(drawing, 30)! };
+    const origin = { time: 100_000 as Time, price: 4700 };
+    const translated = session.anchorsAtOrigin(rotated, origin)!;
+    const a = project.project(translated[0]!)!,
+      b = project.project(translated[1]!)!;
+    expect(translated[0]).toEqual(origin);
+    expect(b.x).toBeGreaterThan(400); // beyond the final candle, using its real interval
+    expect(Math.hypot(b.x - a.x, b.y - a.y)).toBeCloseTo(length, 8);
+    expect(session.drawingAngle({ ...drawing, anchors: translated })).toBeCloseTo(30, 8);
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+  it("rotates the second projected endpoint at fixed length and saves through the normal draft transaction", () => {
+    const f = fixture("angle-coordinate", JSON.stringify([original]));
+    const session = f.open();
+    const length = Math.hypot(186, 65);
+    expect(session.drawingAngle(original)).toBeCloseTo((Math.atan2(65, 186) * 180) / Math.PI, 10);
+    const anchors = session.anchorsAtAngle(original, 45)!;
+    expect(anchors[0]).toEqual(original.anchors[0]);
+    expect(Number(anchors[1]!.time)).toBeCloseTo(253 + length / Math.sqrt(2), 10);
+    expect(anchors[1]!.price).toBeCloseTo(4720 + length / Math.sqrt(2), 10);
+    expect(session.drawingAngle({ ...original, anchors })).toBeCloseTo(45, 10);
+    expect(f.writes()).toBe(0);
+    session.selectDrawing(original.id);
+    session.openSettings();
+    expect(session.previewSettings({ anchors })).toBe(true);
+    expect(f.writes()).toBe(0);
+    session.closeSettings();
+    expect(session.getCommittedDrawings()).toEqual([original]);
+    session.openSettings();
+    session.previewSettings({ anchors });
+    session.applySettings({});
+    expect(JSON.parse(f.saved()!)).toEqual([{ ...original, anchors }]);
+    expect(f.writes()).toBe(1);
+    session.undo();
+    expect(session.getCommittedDrawings()).toEqual([original]);
+    session.redo();
+    expect(session.getCommittedDrawings()).toEqual([{ ...original, anchors }]);
+    session.dispose();
+  });
+
+  it("translates Point1 in projected space across nonlinear time and price scales", () => {
+    const f = fixture("angle-origin");
+    const scale = f.chart.timeScale();
+    vi.spyOn(f.chart, "timeScale").mockReturnValue({
+      ...scale,
+      timeToCoordinate: (time: Time) => (100 * Math.log2(Number(time))) as Coordinate,
+      coordinateToTime: (x: number) => (2 ** (x / 100)) as Time,
+    });
+    vi.spyOn(f.series, "priceToCoordinate").mockImplementation(
+      (price) => (500 - 100 * Math.log(price)) as Coordinate,
+    );
+    vi.spyOn(f.series, "coordinateToPrice").mockImplementation(
+      (y) => Math.exp((500 - y) / 100) as BarPrice,
+    );
+    const session = f.open();
+    const drawing = {
+      ...original,
+      anchors: [
+        { time: 4 as Time, price: 100 },
+        { time: 8 as Time, price: 200 },
+      ],
+    };
+    const angle = session.drawingAngle(drawing)!;
+    const origin = { time: 16 as Time, price: 50 };
+    const anchors = session.anchorsAtOrigin(drawing, origin)!;
+    expect(anchors[0]).toEqual(origin);
+    expect(Number(anchors[1]!.time)).toBeCloseTo(32, 10);
+    expect(anchors[1]!.price).toBeCloseTo(100, 10);
+    expect(session.drawingAngle({ ...drawing, anchors })).toBeCloseTo(angle, 10);
+    const rotated = session.anchorsAtAngle(drawing, -30)!;
+    expect(session.drawingAngle({ ...drawing, anchors: rotated })).toBeCloseTo(-30, 10);
+    expect(drawing.anchors).toEqual([
+      { time: 4, price: 100 },
+      { time: 8, price: 200 },
+    ]);
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+
+  it.each([0, 90, -90, 180, -180, 405])(
+    "supports %s degrees without changing Point1 or pixel length",
+    (degrees) => {
+      const f = fixture("angle-cardinal"),
+        session = f.open();
+      const anchors = session.anchorsAtAngle(original, degrees)!;
+      expect(anchors[0]).toEqual(original.anchors[0]);
+      expect(Math.hypot(Number(anchors[1]!.time) - 253, anchors[1]!.price - 4720)).toBeCloseTo(
+        Math.hypot(186, 65),
+        10,
+      );
+      const expected =
+        (Math.atan2(Math.sin((degrees * Math.PI) / 180), Math.cos((degrees * Math.PI) / 180)) *
+          180) /
+        Math.PI;
+      expect(Math.abs(session.drawingAngle({ ...original, anchors })!)).toBeCloseTo(
+        Math.abs(expected),
+        10,
+      );
+      session.dispose();
+    },
+  );
+
+  it("reads the current chart scale instead of preserving a stale data-space angle", () => {
+    const f = fixture("angle-rescale"),
+      session = f.open();
+    const before = session.drawingAngle(original)!;
+    vi.spyOn(f.series, "priceToCoordinate").mockImplementation(
+      (price) => (2 * (5000 - price)) as Coordinate,
+    );
+    expect(session.drawingAngle(original)).toBeCloseTo((Math.atan2(130, 186) * 180) / Math.PI, 10);
+    expect(session.drawingAngle(original)).not.toBe(before);
+    session.dispose();
+  });
+
+  it("rejects invalid or unavailable transforms without mutating a drawing or writing storage", () => {
+    const f = fixture("angle-invalid"),
+      session = f.open();
+    expect(session.anchorsAtAngle(original, NaN)).toBeNull();
+    expect(session.anchorsAtAngle(original, Infinity)).toBeNull();
+    expect(session.drawingAngle({ ...original, kind: "trend" })).toBeNull();
+    expect(
+      session.anchorsAtAngle(
+        { ...original, anchors: [original.anchors[0]!, original.anchors[0]!] },
+        45,
+      ),
+    ).toBeNull();
+    expect(session.anchorsAtOrigin(original, { time: NaN as Time, price: 100 })).toBeNull();
+    expect(session.anchorsAtOrigin(original, { time: 100 as Time, price: Infinity })).toBeNull();
+    const inverse = vi.spyOn(f.series, "coordinateToPrice").mockReturnValue(null);
+    expect(session.anchorsAtAngle(original, 45)).toBeNull();
+    expect(session.anchorsAtOrigin(original, original.anchors[0]!)).toBeNull();
+    inverse.mockImplementation(() => {
+      throw Error("Disposed scale");
+    });
+    expect(session.anchorsAtAngle(original, 45)).toBeNull();
+    vi.spyOn(f.series, "priceToCoordinate").mockReturnValue(NaN as Coordinate);
+    expect(session.drawingAngle(original)).toBeNull();
+    expect(session.anchorsAtOrigin(original, original.anchors[0]!)).toBeNull();
+    expect(f.writes()).toBe(0);
+    session.dispose();
+    expect(session.drawingAngle(original)).toBeNull();
+    expect(session.anchorsAtAngle(original, 45)).toBeNull();
+    expect(session.anchorsAtOrigin(original, original.anchors[0]!)).toBeNull();
   });
 });
 

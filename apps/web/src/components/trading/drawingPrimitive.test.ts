@@ -586,6 +586,8 @@ describe("additional line primitive behavior", () => {
     );
     const ctx = {
       font: "",
+      measureText: vi.fn((text: string) => ({ width: text.length * 6 })),
+      fillRect: vi.fn(),
       save: vi.fn(),
       translate: vi.fn(),
       rotate: vi.fn(),
@@ -729,28 +731,26 @@ describe("additional line primitive behavior", () => {
     const f = renderFixture(drawing);
     f.draw();
     expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual([
-      "-100.00",
-      "-25%",
-      "1 bars",
-      "1m 40s",
+      "-100.00 (-25.00%), -400",
+      "1 bars (1m 40s), distance: 141 px",
+      "-45.00°",
     ]);
     drawing.anchors[1] = { time: 200 as Time, price: 450 };
     f.draw();
     expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual([
-      "50.00",
-      "12.5%",
-      "1 bars",
-      "1m 40s",
+      "50.00 (12.50%), 200",
+      "1 bars (1m 40s), distance: 112 px",
+      "26.57°",
     ]);
     drawing.alwaysShowStats = false;
     f.draw();
     expect(f.ctx.fillText).not.toHaveBeenCalled();
     f.select();
     f.draw();
-    expect(f.ctx.fillText).toHaveBeenCalledTimes(4);
+    expect(f.ctx.fillText).toHaveBeenCalledTimes(3);
     drawing.stats = ["ticks"];
     f.draw();
-    expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual(["200 ticks"]);
+    expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual(["200"]);
     drawing.stats = [];
     f.draw();
     expect(f.ctx.fillText).not.toHaveBeenCalled();
@@ -1013,16 +1013,16 @@ describe("additional line primitive behavior", () => {
     expect(f.ctx.fillText).not.toHaveBeenCalled();
   });
 
-  it("recalculates the trend angle after scale changes and retains an independent text label", () => {
+  it("recalculates the trend angle after scale changes without showing legacy custom text", () => {
     const drawing = { ...line("trend-angle"), text: "Slope" };
     const f = renderFixture(drawing);
     f.draw();
-    expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual(["-45°", "Slope"]);
+    expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual(["-45°"]);
     vi.spyOn(f.series, "priceToCoordinate").mockImplementation(
       (price) => ((500 - price) * 2) as ReturnType<typeof f.series.priceToCoordinate>,
     );
     f.draw();
-    expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual(["-63.43°", "Slope"]);
+    expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual(["-63.43°"]);
   });
 
   it("paints both crossline arms and exposes its enabled price label without selection", () => {

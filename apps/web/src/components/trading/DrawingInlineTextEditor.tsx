@@ -245,7 +245,7 @@ export function DrawingInlineTextEditor({
               className="pointer-events-auto block cursor-text border-0 bg-transparent p-0 outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
               style={{ ...style, color: selected.text ? "transparent" : "#2962ff" }}
             >
-              {selected.text || "+ Add text"}
+              {selected.text || "Add text"}
             </button>
           )}
         </div>

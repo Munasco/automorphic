@@ -24,7 +24,7 @@ import {
   type PointerEventHandler,
 } from "react";
 import { ContextMenu } from "@base-ui/react/context-menu";
-import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
+import { Dialog, DialogClose, DialogPopup, DialogTitle } from "../ui/dialog";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -103,6 +103,8 @@ const lineKinds = new Set([
 function titleFor(drawing: ChartDrawing) {
   const labels: Record<string, string> = {
     trend: "Trendline",
+    "trend-angle": "Trend angle",
+    "info-line": "Info line",
     horizontal: "Horizontal Line",
     "horizontal-ray": "Horizontal Ray",
     fib: "Fib Retracement",
@@ -252,7 +254,7 @@ function DrawingSettings({
       ? ["Text", "Coordinates", "Visibility"]
       : draft.kind === "regression-trend"
         ? ["Inputs", "Style", "Coordinates", "Visibility"]
-        : supportsDrawingLevels(draft.kind) || draft.kind === "crossline"
+        : supportsDrawingLevels(draft.kind) || ["crossline", "trend-angle"].includes(draft.kind)
           ? ["Style", "Coordinates", "Visibility"]
           : isSpecialChannelDrawing(draft.kind)
             ? ["Style", "Text", "Visibility"]
@@ -268,6 +270,7 @@ function DrawingSettings({
   const line =
     lineKinds.has(draft.kind) || supportsLineStatistics(draft.kind) || draft.kind === "crossline";
   const axisLine = ["horizontal", "horizontal-ray", "vertical", "crossline"].includes(draft.kind);
+  const angle = draft.kind === "trend-angle" ? drawings.drawingAngle(draft) : null;
   const coordinateHasPrice = draft.kind !== "vertical" && draft.kind !== "regression-trend";
   const coordinateHasBar = draft.kind !== "horizontal";
   const coordinateLabel = coordinateHasPrice ? (coordinateHasBar ? "price, bar" : "price") : "bar";
@@ -342,6 +345,7 @@ function DrawingSettings({
       }}
     >
       <DialogPopup
+        showCloseButton={false}
         bottomStickOnMobile={false}
         backdropStyle={{ background: "transparent", backdropFilter: "none", transition: "none" }}
         ref={measureDialog}
@@ -354,6 +358,14 @@ function DrawingSettings({
           ...(dialogBounds ? { position: "fixed", ...dialogBounds } : {}),
         }}
       >
+        <DialogClose
+          aria-label="Close"
+          className="absolute right-5 top-5 z-10 flex size-7 items-center justify-center rounded text-zinc-200 hover:bg-white/10 focus-visible:outline focus-visible:outline-blue-500"
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d="m3 3 14 14M17 3 3 17" stroke="currentColor" strokeWidth="1.5" />
+          </svg>
+        </DialogClose>
         <DrawingSettingsTitle
           drawing={draft}
           onChange={update}
@@ -569,7 +581,9 @@ function DrawingSettings({
                       <PopoverTrigger
                         className={cn(inputClass, "flex w-45 items-center justify-between")}
                       >
-                        {selectedStats.length ? `${selectedStats.length} selected` : "Hidden"}
+                        {selectedStats.length
+                          ? `${({ price: "Price range", percent: "Percent change", ticks: "Ticks", bars: "Bars range", datetime: "Date/time range", distance: "Distance", angle: "Angle" } as const)[selectedStats[0]!]}${selectedStats.length > 1 ? ", ..." : ""}`
+                          : "Hidden"}
                         <ChartIcon name="chevron-down" className="size-4" />
                       </PopoverTrigger>
                       <PopoverPopup
@@ -589,20 +603,26 @@ function DrawingSettings({
                             ["distance", "Distance"],
                             ["angle", "Angle"],
                           ] as const
-                        ).map(([key, label]) => (
-                          <Check
-                            key={key}
-                            label={label}
-                            checked={selectedStats.includes(key)}
-                            onChange={(checked) =>
-                              update({
-                                stats: checked
-                                  ? [...selectedStats, key]
-                                  : selectedStats.filter((stat) => stat !== key),
-                              })
-                            }
-                          />
-                        ))}
+                        )
+                          .filter(
+                            ([key]) =>
+                              draft.kind !== "trend-angle" ||
+                              !["datetime", "distance", "angle"].includes(key),
+                          )
+                          .map(([key, label]) => (
+                            <Check
+                              key={key}
+                              label={label}
+                              checked={selectedStats.includes(key)}
+                              onChange={(checked) =>
+                                update({
+                                  stats: checked
+                                    ? [...selectedStats, key]
+                                    : selectedStats.filter((stat) => stat !== key),
+                                })
+                              }
+                            />
+                          ))}
                       </PopoverPopup>
                     </Popover>
                   </div>
@@ -610,7 +630,9 @@ function DrawingSettings({
                     <span className="w-[100px] shrink-0">Stats position</span>
                     <DrawingSelect
                       label="Stats position"
-                      value={draft.statsPosition ?? "right"}
+                      value={
+                        draft.statsPosition ?? (draft.kind === "info-line" ? "center" : "right")
+                      }
                       onChange={(value) =>
                         update({
                           statsPosition: value as NonNullable<ChartDrawing["statsPosition"]>,
@@ -643,7 +665,10 @@ function DrawingSettings({
           {tab === "Coordinates" ? (
             <div className="min-h-[113px]">
               {draft.anchors
-                .slice(0, draft.kind === "channel" ? 2 : undefined)
+                .slice(
+                  0,
+                  draft.kind === "trend-angle" ? 1 : draft.kind === "channel" ? 2 : undefined,
+                )
                 .map((anchor, index) => (
                   <div key={anchorKeys[index]} className="flex h-[50px] items-center">
                     <span className="w-[113px] shrink-0 pr-5 text-sm leading-[18px] text-zinc-400">
@@ -656,33 +681,51 @@ function DrawingSettings({
                           step="any"
                           value={drawings.coordinatePrice(anchor.price)}
                           onValueChange={(price) => {
-                            update({
-                              anchors: draft.anchors.map((point, i) =>
-                                i === index ? { ...point, price } : point,
-                              ),
-                            });
+                            const next = { ...anchor, price };
+                            const anchors =
+                              draft.kind === "trend-angle"
+                                ? drawings.anchorsAtOrigin(draft, next)
+                                : draft.anchors.map((point, i) => (i === index ? next : point));
+                            if (anchors) update({ anchors });
                           }}
                         />
                       ) : null}
                       {coordinateHasBar ? (
                         <DrawingNumberField
                           label={`Point ${index + 1} bar`}
+                          showSteppers={false}
                           step={1}
                           value={Math.round(drawings.anchorBar(anchor) ?? 0)}
                           onValueChange={(bar) => {
                             const next = drawings.anchorAtBar(bar, anchor.price);
-                            if (next)
-                              update({
-                                anchors: draft.anchors.map((point, i) =>
-                                  i === index ? next : point,
-                                ),
-                              });
+                            if (next) {
+                              const anchors =
+                                draft.kind === "trend-angle"
+                                  ? drawings.anchorsAtOrigin(draft, next)
+                                  : draft.anchors.map((point, i) => (i === index ? next : point));
+                              if (anchors) update({ anchors });
+                            }
                           }}
                         />
                       ) : null}
                     </div>
                   </div>
                 ))}
+              {draft.kind === "trend-angle" ? (
+                <label className="flex h-[50px] items-center text-sm">
+                  <span className="w-[113px] shrink-0 pr-5 text-zinc-400">Angle</span>
+                  <DrawingNumberField
+                    label="Angle"
+                    showSteppers={false}
+                    step="any"
+                    value={angle === null ? null : Number(angle.toFixed(2))}
+                    onValueChange={(angle) => {
+                      const anchors = drawings.anchorsAtAngle(draft, angle);
+                      if (anchors) update({ anchors });
+                    }}
+                  />
+                </label>
+              ) : null}
               {draft.kind === "channel" ? (
                 <label className="flex items-center gap-3 text-sm">
                   <span className="w-28">Price offset</span>

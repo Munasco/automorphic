@@ -819,17 +819,18 @@ describe("additional line tools", () => {
     expect(hitDrawingGeometry(cross, { x: 250, y: 250 })).toBe(false);
   });
 
-  it("builds a signed angle arc from projected points without replacing custom text", () => {
+  it("builds a signed angle guide from projected points without unsupported text or markers", () => {
     const shape = drawing("trend-angle", [
       [100, 300],
       [200, 400],
     ]);
     const angle = geometry({ ...shape, text: "Momentum", endMarker: "arrow" });
     expect(angle.lines.find((line) => line.label)?.label).toBe("45°");
-    expect(angle.text?.value).toBe("Momentum");
-    expect(angle.polygons?.[0]?.points[0]).toEqual({ x: 200, y: 100 });
+    expect(angle.text).toBeUndefined();
+    expect(angle.polygons).toBeUndefined();
+    expect(angle.lines.find((line) => line.label)?.labelPoint).toEqual({ x: 160, y: 200 });
     expect(angle.handles).toHaveLength(2);
-    const arcPoint = { x: 100 + 36 * Math.cos(Math.PI / 8), y: 200 - 36 * Math.sin(Math.PI / 8) };
+    const arcPoint = { x: 100 + 50 * Math.cos(Math.PI / 8), y: 200 - 50 * Math.sin(Math.PI / 8) };
     expect(hitDrawingGeometry(angle, arcPoint, 1)).toBe(true);
     const rescaled = buildDrawingGeometry(
       shape,

@@ -1002,6 +1002,114 @@ export function createChartDrawingSession(
       index === 2 ? { ...anchor, price } : { ...anchor },
     );
   };
+  const angleProjection = (drawing: ChartDrawing) => {
+    if (
+      disposed ||
+      drawing.kind !== "trend-angle" ||
+      !validDrawingAnchors(drawing.kind, drawing.anchors)
+    )
+      return null;
+    try {
+      const projection = drawingProjection(chart, series);
+      const first = projection.project(drawing.anchors[0]!);
+      const second = projection.project(drawing.anchors[1]!);
+      if (!first || !second || ![first.x, first.y, second.x, second.y].every(Number.isFinite))
+        return null;
+      const length = Math.hypot(second.x - first.x, second.y - first.y);
+      return Number.isFinite(length) && length > 0 ? { projection, first, second, length } : null;
+    } catch {
+      return null;
+    }
+  };
+  const drawingAngle = (drawing: ChartDrawing): number | null => {
+    const projected = angleProjection(drawing);
+    if (!projected) return null;
+    const { first, second } = projected;
+    return (Math.atan2(first.y - second.y, second.x - first.x) * 180) / Math.PI || 0;
+  };
+  const continuousAngleAnchor = (
+    projection: ReturnType<typeof drawingProjection>,
+    point: DrawingPoint,
+  ): DrawingAnchor | null => {
+    if (![point.x, point.y].every(Number.isFinite)) return null;
+    const price = series.coordinateToPrice(point.y);
+    if (price === null || !Number.isFinite(price)) return null;
+    const data = series.data();
+    if (data.length < 2) {
+      const anchor = projection.unproject(point);
+      const projected = anchor ? projection.project(anchor) : null;
+      return projected && Math.abs(projected.x - point.x) < 1e-6 ? anchor : null;
+    }
+    const scale = chart.timeScale();
+    let left = 0,
+      right = data.length - 1;
+    while (left < right) {
+      const middle = Math.floor((left + right) / 2);
+      const coordinate = scale.timeToCoordinate(data[middle]!.time);
+      if (coordinate === null || !Number.isFinite(coordinate)) return null;
+      if (coordinate < point.x) left = middle + 1;
+      else right = middle;
+    }
+    const a = data[Math.max(0, left - 1)]!;
+    const b = data[Math.min(data.length - 1, Math.max(1, left))]!;
+    const ax = scale.timeToCoordinate(a.time),
+      bx = scale.timeToCoordinate(b.time);
+    const at = drawingTimeValue(a.time),
+      bt = drawingTimeValue(b.time);
+    if (
+      ax === null ||
+      bx === null ||
+      !Number.isFinite(ax) ||
+      !Number.isFinite(bx) ||
+      ax === bx ||
+      at === null ||
+      bt === null ||
+      at === bt
+    )
+      return null;
+    // Invert drawingTimeCoordinate's interpolation. coordinateToTime rounds to a bar,
+    // which would change the requested screen angle and length after every edit.
+    const time = at + ((point.x - ax) / (bx - ax)) * (bt - at);
+    return Number.isFinite(time) ? { time: time as Time, price } : null;
+  };
+  const anchorsAtAngle = (drawing: ChartDrawing, degrees: number): DrawingAnchor[] | null => {
+    if (!Number.isFinite(degrees)) return null;
+    const projected = angleProjection(drawing);
+    if (!projected) return null;
+    const { projection, first, length } = projected;
+    const radians = ((degrees % 360) * Math.PI) / 180;
+    try {
+      const second = continuousAngleAnchor(projection, {
+        x: first.x + Math.cos(radians) * length,
+        y: first.y - Math.sin(radians) * length,
+      });
+      const anchors = second ? [{ ...drawing.anchors[0]! }, second] : null;
+      return anchors && validDrawingAnchors(drawing.kind, anchors) ? anchors : null;
+    } catch {
+      return null;
+    }
+  };
+  const anchorsAtOrigin = (
+    drawing: ChartDrawing,
+    anchor: DrawingAnchor,
+  ): DrawingAnchor[] | null => {
+    if (drawingTimeValue(anchor.time) === null || !Number.isFinite(anchor.price)) return null;
+    const projected = angleProjection(drawing);
+    if (!projected) return null;
+    const { projection, first, second } = projected;
+    try {
+      const origin = projection.project(anchor);
+      if (!origin || ![origin.x, origin.y].every(Number.isFinite)) return null;
+      const endpoint = continuousAngleAnchor(projection, {
+        x: origin.x + second.x - first.x,
+        y: origin.y + second.y - first.y,
+      });
+      const anchors = endpoint ? [{ ...anchor }, endpoint] : null;
+      return anchors && validDrawingAnchors(drawing.kind, anchors) ? anchors : null;
+    } catch {
+      return null;
+    }
+  };
   // The chart library suppresses a second quick click even at a different position.
   // DOM placement handles every anchor; the chart retains its cursor-selection behavior.
   const chartClick = (event: MouseEventParams<Time>) => {
@@ -1040,6 +1148,9 @@ export function createChartDrawingSession(
     cancelTextEdit,
     channelPriceOffset,
     channelAnchorsAtOffset,
+    drawingAngle,
+    anchorsAtAngle,
+    anchorsAtOrigin,
     coordinatePrice: (price: number) => {
       const format = series.options().priceFormat;
       const precision = format && "precision" in format ? format.precision : 2;
@@ -1549,6 +1660,20 @@ export function useChartDrawings(
       session.current?.channelAnchorsAtOffset(drawing, offset) ?? null,
     [],
   );
+  const drawingAngle = useCallback(
+    (drawing: ChartDrawing) => session.current?.drawingAngle(drawing) ?? null,
+    [],
+  );
+  const anchorsAtAngle = useCallback(
+    (drawing: ChartDrawing, degrees: number) =>
+      session.current?.anchorsAtAngle(drawing, degrees) ?? null,
+    [],
+  );
+  const anchorsAtOrigin = useCallback(
+    (drawing: ChartDrawing, anchor: DrawingAnchor) =>
+      session.current?.anchorsAtOrigin(drawing, anchor) ?? null,
+    [],
+  );
   const coordinatePrice = useCallback(
     (price: number) => session.current?.coordinatePrice(price) ?? price,
     [],
@@ -1606,6 +1731,9 @@ export function useChartDrawings(
     interval: intervalMinutes,
     channelPriceOffset,
     channelAnchorsAtOffset,
+    drawingAngle,
+    anchorsAtAngle,
+    anchorsAtOrigin,
     coordinatePrice,
     anchorBar,
     anchorAtBar,

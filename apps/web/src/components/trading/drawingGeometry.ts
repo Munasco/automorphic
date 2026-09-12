@@ -484,7 +484,9 @@ export function defaultChannelDrawingSettings(kind: DrawingKind): DrawingSetting
 export const supportsLineStatistics = (kind: DrawingKind) =>
   ["trend", "info-line", "extended-line", "trend-angle"].includes(kind);
 export const defaultDrawingStats = (kind: DrawingKind): NonNullable<DrawingSettings["stats"]> =>
-  kind === "info-line" ? ["price", "percent", "bars", "datetime"] : [];
+  kind === "info-line"
+    ? ["price", "percent", "ticks", "bars", "datetime", "distance", "angle"]
+    : [];
 export const supportsLineExtensions = (kind: DrawingKind) =>
   supportsDrawingLevels(kind) ||
   isSpecialChannelDrawing(kind) ||
@@ -516,7 +518,6 @@ export const supportsLineMarkers = (kind: DrawingKind) =>
     "trend",
     "info-line",
     "extended-line",
-    "trend-angle",
     "ray",
     "horizontal",
     "horizontal-ray",
@@ -1772,6 +1773,8 @@ export function buildDrawingGeometry(
     }
   }
   if (drawing.kind === "trend-angle") {
+    // Trend Angle owns its numeric label; it has no independent text annotation.
+    delete result.text;
     const [first, second] = result.handles;
     if (first && second) {
       const dx = second.x - first.x,
@@ -1780,8 +1783,16 @@ export function buildDrawingGeometry(
       if (length > 0) {
         // The angle reflects the current chart projection, including zoom and price-scale changes.
         const radians = Math.atan2(dy, dx);
-        const radius = Math.min(36, length / 3);
-        result.lines.push({ from: first, to: { x: first.x + radius + 12, y: first.y } });
+        const radius = Math.min(50, length);
+        result.lines.push({
+          from: first,
+          to: { x: first.x + radius, y: first.y },
+          width: 1,
+          lineStyle: "dotted",
+          label: `${Number(((-radians * 180) / Math.PI).toFixed(2))}°`,
+          labelPoint: { x: first.x + radius + 10, y: first.y },
+          labelBaseline: "middle",
+        });
         const samples = Math.max(1, Math.ceil(Math.abs(radians) * 12));
         let previous = { x: first.x + radius, y: first.y };
         for (let index = 1; index <= samples; index++) {
@@ -1793,9 +1804,8 @@ export function buildDrawingGeometry(
           result.lines.push({
             from: previous,
             to: next,
-            ...(index === samples
-              ? { label: `${Number(((-radians * 180) / Math.PI).toFixed(2))}°` }
-              : {}),
+            width: 1,
+            lineStyle: "dotted",
           });
           previous = next;
         }

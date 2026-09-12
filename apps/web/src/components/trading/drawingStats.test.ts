@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { Time } from "lightweight-charts";
-import { calculateDrawingStats, formatDrawingStats } from "./drawingStats";
+import {
+  calculateDrawingStats,
+  formatDrawingStats,
+  formatInfoLineStats,
+  type DrawingStats,
+} from "./drawingStats";
 
 describe("drawing statistics", () => {
   it("uses signed actual price changes, the instrument tick increment, and logical bar spacing", () => {
@@ -103,5 +108,85 @@ describe("drawing statistics", () => {
     expect(zoomed.distance).toBeCloseTo(Math.sqrt(500));
     expect(zoomed.price).toBe(before.price);
     expect(zoomed.datetime).toBe(before.datetime);
+  });
+});
+
+describe("Info Line statistics rows", () => {
+  const stats: DrawingStats = {
+    price: 1177.5,
+    percent: 3.7,
+    ticks: 4710,
+    bars: 17,
+    datetime: 23 * 86400,
+    distance: 196.7,
+    angle: 19.261,
+  };
+  const price = (value: number) =>
+    value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  it("groups all measurements into the three compact reference rows", () => {
+    expect(
+      formatInfoLineStats(
+        stats,
+        ["price", "percent", "ticks", "bars", "datetime", "distance", "angle"],
+        price,
+      ),
+    ).toEqual([
+      { kind: "price", text: "1,177.50 (3.70%), 4,710" },
+      { kind: "range", text: "17 bars (23d), distance: 197 px" },
+      { kind: "angle", text: "19.26°" },
+    ]);
+  });
+
+  it("keeps semantic row order when options are enabled in another order", () => {
+    expect(
+      formatInfoLineStats(stats, ["angle", "distance", "ticks", "percent", "ticks"], price),
+    ).toEqual([
+      { kind: "price", text: "3.70%, 4,710" },
+      { kind: "range", text: "distance: 197 px" },
+      { kind: "angle", text: "19.26°" },
+    ]);
+  });
+
+  it("removes grouping punctuation when the paired measurement is deselected", () => {
+    expect(formatInfoLineStats(stats, ["price", "datetime"], price)).toEqual([
+      { kind: "price", text: "1,177.50" },
+      { kind: "range", text: "23d" },
+    ]);
+    expect(formatInfoLineStats(stats, ["ticks", "bars"], price)).toEqual([
+      { kind: "price", text: "4,710" },
+      { kind: "range", text: "17 bars" },
+    ]);
+    expect(formatInfoLineStats(stats, [], price)).toEqual([]);
+  });
+
+  it("omits unavailable values without losing other measurements in their row", () => {
+    expect(
+      formatInfoLineStats(
+        { ...stats, price: null, ticks: Number.NaN, bars: null, distance: Infinity, angle: null },
+        ["price", "percent", "ticks", "bars", "datetime", "distance", "angle"],
+        price,
+      ),
+    ).toEqual([
+      { kind: "price", text: "3.70%" },
+      { kind: "range", text: "23d" },
+    ]);
+    expect(
+      formatInfoLineStats(calculateDrawingStats({ anchors: [] }), ["price", "bars"], price),
+    ).toEqual([]);
+  });
+
+  it("preserves signed changes, meaningful zeroes and multi-unit elapsed time", () => {
+    expect(
+      formatInfoLineStats(
+        { price: -2.5, percent: -1.25, ticks: -10, bars: 0, datetime: 3661, distance: 0, angle: 0 },
+        ["price", "percent", "ticks", "bars", "datetime", "distance", "angle"],
+        price,
+      ),
+    ).toEqual([
+      { kind: "price", text: "-2.50 (-1.25%), -10" },
+      { kind: "range", text: "0 bars (1h 1m 1s), distance: 0 px" },
+      { kind: "angle", text: "0.00°" },
+    ]);
   });
 });
