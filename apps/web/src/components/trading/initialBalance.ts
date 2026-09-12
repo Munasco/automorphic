@@ -4,11 +4,13 @@ export interface InitialBalanceConfig {
   startTime: string;
   timeZone: string;
   durationMinutes: number;
+  sessionEndTime?: string;
 }
 export const DEFAULT_INITIAL_BALANCE: InitialBalanceConfig = {
   startTime: "09:30",
   timeZone: "America/New_York",
   durationMinutes: 60,
+  sessionEndTime: "16:00",
 };
 export type InitialBalanceStatus =
   | "waiting"
@@ -18,13 +20,42 @@ export type InitialBalanceStatus =
   | "unaligned"
   | "invalid";
 export type InitialBalancePoint = IndicatorPoint | { time: number };
+export interface InitialBalanceRange {
+  session: string;
+  startTime: number;
+  endTime: number;
+  sessionEndTime: number;
+  lastTime: number;
+  high: number;
+  low: number;
+  volume: number | null;
+  status: "developing" | "complete" | "incomplete" | "unaligned";
+}
+export interface InitialBalanceStats {
+  session: string;
+  sessionName: string;
+  status: "Forming" | "Locked";
+  high: number;
+  low: number;
+  midpoint: number;
+  range: number;
+  atr: number | null;
+  rangeAtrPercent: number | null;
+  position: "Above IBH" | "Inside" | "Below IBL";
+  nearestBoundary: "IBH" | "IBL";
+  /** Last close minus the nearest IB boundary, in price units. */
+  distance: number;
+  volume: number | null;
+}
 export interface InitialBalanceSegment {
   session: string;
+  range: InitialBalanceRange;
   high: IndicatorPoint[];
   low: IndicatorPoint[];
   mid: IndicatorPoint[];
 }
 export interface InitialBalanceResult {
+  activeSession: string | null;
   high: InitialBalancePoint[];
   low: InitialBalancePoint[];
   mid: InitialBalancePoint[];
@@ -82,6 +113,7 @@ export function calculateInitialBalance(
   barIntervalMinutes: number,
 ): InitialBalanceResult {
   const result: InitialBalanceResult = {
+    activeSession: null,
     high: [],
     low: [],
     mid: [],
@@ -122,12 +154,29 @@ export function calculateInitialBalance(
   } catch {
     return { ...result, status: "invalid", reason: "Choose a valid session timezone." };
   }
+  const endMatch = /^(\d{2}):(\d{2})$/.exec(config.sessionEndTime ?? "16:00");
+  const closeHour = Number(endMatch?.[1]);
+  const closeMinute = Number(endMatch?.[2]);
+  if (
+    !endMatch ||
+    closeHour > 23 ||
+    closeMinute > 59 ||
+    closeHour * 60 + closeMinute < hour * 60 + minute + config.durationMinutes
+  ) {
+    return {
+      ...result,
+      status: "invalid",
+      reason: "Session end must follow the opening range on the same day.",
+    };
+  }
   const interval = barIntervalMinutes * 60;
   let dayKey = "";
   let dayParts: ReturnType<typeof partsAt> | undefined;
   let nextDayStart = -Infinity;
   let start: number | undefined;
   let end = 0;
+  let sessionEndTime = 0;
+  let volume: number | null = 0;
   let coveredUntil = 0;
   let high = -Infinity;
   let low = Infinity;
@@ -140,6 +189,7 @@ export function calculateInitialBalance(
   };
   const fail = (status: "incomplete" | "unaligned", reason: string) => {
     failed = status;
+    if (segment) segment.range.status = status;
     result.status = status;
     result.reason = reason;
   };
@@ -154,9 +204,14 @@ export function calculateInitialBalance(
     const day = dayParts;
     const key = `${day.year}-${day.month}-${day.day}`;
     if (key !== dayKey) {
+      if (segment && !failed)
+        segment.range.status = coveredUntil === end ? "complete" : "incomplete";
       dayKey = key;
+      result.activeSession = key;
       start = sessionStart(formatter, day, hour, minute);
       end = (start ?? 0) + config.durationMinutes * 60;
+      sessionEndTime = sessionStart(formatter, day, closeHour, closeMinute) ?? end;
+      volume = 0;
       coveredUntil = start ?? 0;
       high = -Infinity;
       low = Infinity;
@@ -209,6 +264,13 @@ export function calculateInitialBalance(
       high = Math.max(high, bar.high);
       low = Math.min(low, bar.low);
       coveredUntil = bar.time + interval;
+      volume =
+        volume !== null &&
+        Number.isFinite(bar.volume) &&
+        bar.volume >= 0 &&
+        Number.isFinite(volume + bar.volume)
+          ? volume + bar.volume
+          : null;
       result.status = "developing";
     } else {
       if (coveredUntil !== end || !Number.isFinite(high)) {
@@ -219,9 +281,33 @@ export function calculateInitialBalance(
       result.status = "complete";
     }
     if (!segment) {
-      segment = { session: key, high: [], low: [], mid: [] };
+      segment = {
+        session: key,
+        range: {
+          session: key,
+          startTime: start,
+          endTime: end,
+          sessionEndTime,
+          lastTime: bar.time,
+          high,
+          low,
+          volume,
+          status: "developing",
+        },
+        high: [],
+        low: [],
+        mid: [],
+      };
       result.segments.push(segment);
     }
+    segment.range = {
+      ...segment.range,
+      lastTime: bar.time,
+      high,
+      low,
+      volume,
+      status: result.status === "complete" ? "complete" : "developing",
+    };
     const highPoint = { time: bar.time, value: high };
     const lowPoint = { time: bar.time, value: low };
     const midPoint = { time: bar.time, value: high / 2 + low / 2 };
@@ -233,4 +319,48 @@ export function calculateInitialBalance(
     segment.mid.push(midPoint);
   }
   return result;
+}
+
+/** Dashboard values use the latest observed close and that day's valid opening window only. */
+export function getInitialBalanceStats(
+  result: InitialBalanceResult,
+  bars: readonly Candle[],
+  config: InitialBalanceConfig,
+  atr: number | null,
+): InitialBalanceStats | null {
+  const latest = bars.at(-1);
+  const range = result.segments.at(-1)?.range;
+  if (
+    !latest ||
+    !range ||
+    !Number.isFinite(latest.close) ||
+    range.lastTime !== latest.time ||
+    (result.status !== "developing" && result.status !== "complete")
+  )
+    return null;
+  const width = range.high - range.low;
+  const nearestBoundary =
+    Math.abs(latest.close - range.high) <= Math.abs(latest.close - range.low) ? "IBH" : "IBL";
+  const validAtr = atr !== null && Number.isFinite(atr) && atr >= 0 ? atr : null;
+  return {
+    session: range.session,
+    sessionName:
+      config.timeZone === "America/New_York"
+        ? "New York"
+        : config.timeZone === "America/Chicago"
+          ? "Chicago"
+          : config.timeZone,
+    status: result.status === "complete" ? "Locked" : "Forming",
+    high: range.high,
+    low: range.low,
+    midpoint: range.high / 2 + range.low / 2,
+    range: width,
+    atr: validAtr,
+    rangeAtrPercent: validAtr && validAtr > 0 ? (width / validAtr) * 100 : null,
+    position:
+      latest.close > range.high ? "Above IBH" : latest.close < range.low ? "Below IBL" : "Inside",
+    nearestBoundary,
+    distance: latest.close - (nearestBoundary === "IBH" ? range.high : range.low),
+    volume: range.volume,
+  };
 }

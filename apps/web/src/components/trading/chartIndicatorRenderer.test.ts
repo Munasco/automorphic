@@ -16,6 +16,8 @@ type FakeSeries = {
   seriesType: () => string;
   applyOptions: (options: Record<string, unknown>) => void;
   createPriceLine: (options: object) => void;
+  attachPrimitive: (primitive: object) => void;
+  primitives: object[];
 };
 function chartHarness() {
   const series: FakeSeries[] = [];
@@ -27,6 +29,10 @@ function chartHarness() {
         pane,
         options,
         data: [],
+        primitives: [],
+        attachPrimitive(primitive) {
+          this.primitives.push(primitive);
+        },
         setData(points) {
           this.data = points;
         },
@@ -240,6 +246,73 @@ describe("native indicator renderer", () => {
     expect(signal.options.color).toBe(signalColor);
     renderer.update(inputBars(), enabled, DEFAULT_INITIAL_BALANCE, 1);
     expect(sma.options).toMatchObject({ color: originalColor, lineWidth: 1 });
+  });
+
+  it("keeps the locked IB reading after session close, bounds projections, and hides old history", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.01);
+    const start = Date.parse("2026-09-14T13:30:00Z") / 1000;
+    const first = Array.from({ length: 13 }, (_, i) => ({
+      ...inputBars(1)[0]!,
+      time: start + i * 300,
+      high: 110,
+      low: 100,
+      close: 105,
+    }));
+    const second = first.map((bar) => ({
+      ...bar,
+      time: bar.time + 86400,
+      high: 120,
+      low: 100,
+      close: 110,
+    }));
+    const afterClose = {
+      ...second.at(-1)!,
+      time: start + 86400 + 8 * 3600,
+      close: 130,
+      high: 140,
+      volume: 90000,
+    };
+    const input = [...first, ...second, afterClose];
+    const result = renderer.update(input, { ...disabled, ib: true }, DEFAULT_INITIAL_BALANCE, 5);
+    expect(result.readings.ib).toBe(110);
+    expect(result.initialBalanceStats).toMatchObject({
+      status: "Locked",
+      high: 120,
+      low: 100,
+      range: 20,
+      volume: 120,
+      position: "Above IBH",
+      distance: 10,
+    });
+    expect(harness.series).toHaveLength(6);
+    expect(harness.series.every((series) => series.options.lineVisible === false)).toBe(true);
+    expect(harness.series.flatMap((series) => series.primitives)).toHaveLength(2);
+    expect(
+      harness.series.every((series) =>
+        series.data.every((point) => point.time !== afterClose.time),
+      ),
+    ).toBe(true);
+    const sourceTimes = new Set(input.map((bar) => bar.time));
+    expect(
+      harness.series.every((series) => series.data.every((point) => sourceTimes.has(point.time))),
+    ).toBe(true);
+    renderer.update(
+      input,
+      { ...disabled, ib: true },
+      { ...DEFAULT_INITIAL_BALANCE, showHistory: false, showMidpoint: false },
+      5,
+    );
+    expect(harness.series).toHaveLength(3);
+    expect(harness.series.flatMap((series) => series.primitives)).toHaveLength(1);
+    const premarket = { ...afterClose, time: start + 2 * 86400 - 3600 };
+    renderer.update(
+      [...input, premarket],
+      { ...disabled, ib: true },
+      { ...DEFAULT_INITIAL_BALANCE, showHistory: false },
+      5,
+    );
+    expect(harness.series).toHaveLength(0);
   });
 
   it("bounds IB rendering to20 independent sessions without overnight lines", () => {

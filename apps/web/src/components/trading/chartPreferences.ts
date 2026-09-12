@@ -7,6 +7,7 @@ import {
   DEFAULT_INITIAL_BALANCE,
   INDICATOR_CATALOG,
   isValidInitialBalanceSettings,
+  resolveInitialBalanceSettings,
   normalizeIndicatorInputs,
   updateIndicatorInputs,
   type IndicatorInputSettings,
@@ -78,7 +79,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
         : DEFAULT_VOLUME_COLORS.down,
     },
     initialBalance: isValidInitialBalanceSettings(saved.initialBalance)
-      ? { ...saved.initialBalance }
+      ? resolveInitialBalanceSettings(saved.initialBalance)
       : { ...DEFAULT_INITIAL_BALANCE },
     showGrid: typeof saved.showGrid === "boolean" ? saved.showGrid : true,
     logScale: typeof saved.logScale === "boolean" ? saved.logScale : false,
@@ -116,7 +117,8 @@ export const useChartPreferences = create<{
       volumeColors: { ...DEFAULT_VOLUME_COLORS },
       initialBalance: { ...DEFAULT_INITIAL_BALANCE },
       setInitialBalance: (settings) => {
-        if (isValidInitialBalanceSettings(settings)) set({ initialBalance: { ...settings } });
+        if (isValidInitialBalanceSettings(settings))
+          set({ initialBalance: resolveInitialBalanceSettings(settings) });
       },
       showGrid: true,
       logScale: false,

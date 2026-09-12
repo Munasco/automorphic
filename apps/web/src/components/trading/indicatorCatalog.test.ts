@@ -117,8 +117,27 @@ describe("initial balance settings validation", () => {
     { durationMinutes: 241 },
     { durationMinutes: 3.5 },
     { durationMinutes: Number.NaN },
+    { sessionEndTime: "10:00" },
+    { sessionEndTime: "25:00" },
+    { showMidpoint: "no" },
+    { startTime: "23:00", durationMinutes: 120 },
   ])("rejects invalid settings %j", (invalid) => {
     expect(isValidInitialBalanceSettings({ ...DEFAULT_INITIAL_BALANCE, ...invalid })).toBe(false);
+  });
+  it("restores older IB preferences and retains explicit visual toggles", () => {
+    const legacy = normalizeChartPreferences({
+      initialBalance: { startTime: "09:30", timeZone: "America/New_York", durationMinutes: 60 },
+    });
+    expect(legacy.initialBalance).toEqual(DEFAULT_INITIAL_BALANCE);
+    const custom = {
+      ...DEFAULT_INITIAL_BALANCE,
+      sessionEndTime: "15:00",
+      showLabels: false,
+      showBox: false,
+      showDashboard: false,
+      showHistory: false,
+    };
+    expect(normalizeChartPreferences({ initialBalance: custom }).initialBalance).toEqual(custom);
   });
   it("allows midnight and a configured session within supported bounds", () => {
     expect(

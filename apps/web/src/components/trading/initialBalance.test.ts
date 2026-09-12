@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { Candle } from "./chartIndicators";
 import {
   calculateInitialBalance,
+  getInitialBalanceStats,
   DEFAULT_INITIAL_BALANCE,
   type InitialBalancePoint,
 } from "./initialBalance";
@@ -26,6 +27,82 @@ const session = (date = "2026-09-14", utcHour = 13): Candle[] => [
 ];
 
 describe("initial balance", () => {
+  it("tracks the exact 5m opening hour, frozen volume, projection end and live dashboard statistics", () => {
+    const start = Date.parse("2026-09-14T13:30:00Z") / 1000;
+    const input = Array.from({ length: 14 }, (_, index) => ({
+      time: start + index * 300,
+      open: 100,
+      close: index < 12 ? 105 : 120,
+      high: index < 12 ? 105 + index : 500,
+      low: index < 12 ? 100 - index : 0,
+      volume: index < 12 ? 10 : 900,
+    }));
+    const forming = calculateInitialBalance(input.slice(0, 12), DEFAULT_INITIAL_BALANCE, 5);
+    expect(forming.segments[0]?.range).toMatchObject({
+      startTime: start,
+      endTime: start + 3600,
+      sessionEndTime: start + 23400,
+      high: 116,
+      low: 89,
+      volume: 120,
+      status: "developing",
+    });
+    expect(
+      getInitialBalanceStats(forming, input.slice(0, 12), DEFAULT_INITIAL_BALANCE, 9),
+    ).toMatchObject({
+      status: "Forming",
+      range: 27,
+      rangeAtrPercent: 300,
+      position: "Inside",
+      nearestBoundary: "IBH",
+      distance: -11,
+      volume: 120,
+    });
+    const locked = calculateInitialBalance(input, DEFAULT_INITIAL_BALANCE, 5);
+    expect(locked.segments[0]?.range).toMatchObject({
+      high: 116,
+      low: 89,
+      volume: 120,
+      status: "complete",
+    });
+    expect(getInitialBalanceStats(locked, input, DEFAULT_INITIAL_BALANCE, 9)).toMatchObject({
+      sessionName: "New York",
+      status: "Locked",
+      position: "Above IBH",
+      nearestBoundary: "IBH",
+      distance: 4,
+    });
+    const below = [...input.slice(0, -1), { ...input.at(-1)!, close: 80 }];
+    expect(
+      getInitialBalanceStats(
+        calculateInitialBalance(below, DEFAULT_INITIAL_BALANCE, 5),
+        below,
+        DEFAULT_INITIAL_BALANCE,
+        0,
+      ),
+    ).toMatchObject({
+      position: "Below IBL",
+      nearestBoundary: "IBL",
+      distance: -9,
+      rangeAtrPercent: null,
+    });
+    expect(forming.high).toEqual(locked.high.slice(0, 12));
+  });
+
+  it("marks a broken opening range unusable for boxes and excludes unavailable volume from statistics", () => {
+    const input = session();
+    const missing = [input[0]!, ...input.slice(2)];
+    const incomplete = calculateInitialBalance(missing, DEFAULT_INITIAL_BALANCE, 15);
+    expect(incomplete.segments[0]?.range.status).toBe("incomplete");
+    expect(getInitialBalanceStats(incomplete, missing, DEFAULT_INITIAL_BALANCE, 2)).toBeNull();
+    const noVolume = input.map((bar, index) => ({ ...bar, volume: index === 1 ? NaN : 1 }));
+    const complete = calculateInitialBalance(noVolume, DEFAULT_INITIAL_BALANCE, 15);
+    expect(complete.status).toBe("complete");
+    expect(
+      getInitialBalanceStats(complete, noVolume, DEFAULT_INITIAL_BALANCE, null)?.volume,
+    ).toBeNull();
+  });
+
   it("develops without lookahead, then freezes high/low/mid after the opening hour", () => {
     const input = session();
     const firstTwo = calculateInitialBalance(input.slice(0, 2), DEFAULT_INITIAL_BALANCE, 15);
@@ -45,6 +122,19 @@ describe("initial balance", () => {
     expect(values(calculateInitialBalance(input, DEFAULT_INITIAL_BALANCE, 15).high).at(-1)).toBe(
       110,
     );
+  });
+  it("does not project a partial historical opening window after the next local day starts", () => {
+    const input = session();
+    const nextDay = bar("2026-09-15T12:00:00Z", 110, 100);
+    const incomplete = calculateInitialBalance([input[0]!, nextDay], DEFAULT_INITIAL_BALANCE, 15);
+    expect(incomplete.segments[0]?.range.status).toBe("incomplete");
+    const finished = calculateInitialBalance(
+      [...input.slice(0, 4), nextDay],
+      DEFAULT_INITIAL_BALANCE,
+      15,
+    );
+    expect(finished.segments[0]?.range.status).toBe("complete");
+    expect(finished.status).toBe("waiting");
   });
   it("separates dates and weekend gaps, without carrying previous levels into premarket", () => {
     const first = session("2026-09-11");
@@ -70,6 +160,7 @@ describe("initial balance", () => {
     for (const input of [springBefore, springAfter, fallBefore, fallAfter]) {
       const result = calculateInitialBalance(input, DEFAULT_INITIAL_BALANCE, 15);
       expect(result.status).toBe("complete");
+      expect(result.segments[0]?.range.sessionEndTime).toBe(input[0]!.time + 6.5 * 3600);
       expect(values(result.high)).toEqual([102, 104, 104, 105, 105, 105]);
     }
   });

@@ -46,7 +46,8 @@ function Action({
     </Tooltip>
   );
 }
-const tools: Array<{ kind: ChartDrawingTool; label: string; icon: ReactNode }> = [
+type DrawingTool = { kind: ChartDrawingTool; label: string; icon: ReactNode };
+const tools: DrawingTool[] = [
   {
     kind: "cursor",
     label: "Select drawing / crosshair",
@@ -94,20 +95,107 @@ const tools: Array<{ kind: ChartDrawingTool; label: string; icon: ReactNode }> =
     icon: <DrawingToolIcon name="letter-t" className="size-[18px]" />,
   },
 ];
+const toolGroups: Array<{ label: string; kinds: ChartDrawingTool[] }> = [
+  { label: "Cursors", kinds: ["cursor"] },
+  {
+    label: "Lines and channels",
+    kinds: ["trend", "horizontal", "ray", "horizontal-ray", "vertical", "channel"],
+  },
+  { label: "Fibonacci tools", kinds: ["fib"] },
+  { label: "Geometric shapes", kinds: ["rectangle"] },
+  { label: "Annotations", kinds: ["text"] },
+];
+
+function DrawingToolGroup({
+  label,
+  entries,
+  currentTool,
+  onSelect,
+}: {
+  label: string;
+  entries: DrawingTool[];
+  currentTool: ChartDrawingTool;
+  onSelect: (tool: ChartDrawingTool) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [lastTool, setLastTool] = useState(entries[0]!);
+  const activeTool = entries.find((entry) => entry.kind === currentTool);
+  // Repositioning an object can select a tool from outside this picker.
+  if (activeTool && activeTool !== lastTool) setLastTool(activeTool);
+  const shown = activeTool ?? lastTool;
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              aria-label={`${label}, ${shown.label}${activeTool ? ", selected" : ""}`}
+              className={cn(
+                "relative flex size-8 shrink-0 items-center justify-center rounded text-zinc-400 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/70 data-popup-open:bg-white/10",
+                activeTool && "bg-white/15 text-blue-300",
+              )}
+            />
+          }
+        >
+          {shown.icon}
+          <ChartIcon
+            name="chevron-down"
+            className="absolute bottom-0.5 right-0 size-2 -rotate-90"
+          />
+        </TooltipTrigger>
+        <TooltipPopup side="right">
+          {label} · {shown.label}
+        </TooltipPopup>
+      </Tooltip>
+      <PopoverPopup
+        side="right"
+        align="start"
+        className="w-64 max-w-[calc(100vw-4rem)]"
+        viewportClassName="p-1.5"
+      >
+        <PopoverTitle className="px-2 py-2 text-xs font-medium text-zinc-400">{label}</PopoverTitle>
+        <div role="group" aria-label={label} className="space-y-0.5">
+          {entries.map((entry) => (
+            <button
+              key={entry.kind}
+              type="button"
+              aria-pressed={currentTool === entry.kind}
+              onClick={() => {
+                setLastTool(entry);
+                onSelect(entry.kind);
+                setOpen(false);
+              }}
+              className={cn(
+                "flex w-full items-center gap-3 rounded px-2 py-2 text-left text-xs text-zinc-300 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/70",
+                currentTool === entry.kind && "bg-blue-400/10 text-blue-300",
+              )}
+            >
+              {entry.icon}
+              <span className="flex-1">{entry.label}</span>
+              {currentTool === entry.kind ? (
+                <span aria-hidden="true" className="size-1.5 rounded-full bg-blue-300" />
+              ) : null}
+            </button>
+          ))}
+        </div>
+      </PopoverPopup>
+    </Popover>
+  );
+}
+
 export function DrawingTools({ drawings }: { drawings: ChartDrawingsController }) {
   const selected = drawings.selected;
   const [editorOpen, setEditorOpen] = useState(false);
   return (
     <>
-      {tools.map((tool) => (
-        <Action
-          key={tool.kind}
-          label={tool.label}
-          active={drawings.tool === tool.kind}
-          onClick={() => drawings.setTool(tool.kind)}
-        >
-          {tool.icon}
-        </Action>
+      {toolGroups.map((group) => (
+        <DrawingToolGroup
+          key={group.label}
+          label={group.label}
+          entries={group.kinds.map((kind) => tools.find((tool) => tool.kind === kind)!)}
+          currentTool={drawings.tool}
+          onSelect={drawings.setTool}
+        />
       ))}
       <Popover>
         <Tooltip>

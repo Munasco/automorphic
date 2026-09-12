@@ -30,11 +30,17 @@ import {
   calculateStochastic,
   calculateWilliamsR,
 } from "./advancedIndicators";
-import { calculateInitialBalance } from "./initialBalance";
+import {
+  calculateInitialBalance,
+  getInitialBalanceStats,
+  type InitialBalanceStats,
+} from "./initialBalance";
+import { createInitialBalancePrimitive } from "./initialBalancePrimitive";
 import type { ChartAppearance } from "./chartPreferences";
 import {
   INDICATOR_CATALOG,
   getIndicatorInputs,
+  resolveInitialBalanceSettings,
   type IndicatorInputSettings,
   type ChartIndicators,
   type IndicatorKey,
@@ -73,6 +79,7 @@ type Plot = {
   indicator: IndicatorKey;
   primary: boolean;
   oscillator: boolean;
+  initialBalance?: ReturnType<typeof createInitialBalancePrimitive>;
 };
 
 /** Owns only indicator series; price, volume, drawings, and the chart lifetime remain with the caller. */
@@ -154,6 +161,9 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
                 color: options.color ?? INDICATOR_COLORS[indicator],
                 lineWidth: 1,
                 lineType: options.steps ? LineType.WithSteps : LineType.Simple,
+                ...(indicator === "ib"
+                  ? { lineVisible: false, crosshairMarkerVisible: false }
+                  : {}),
                 ...(options.bounds
                   ? {
                       autoscaleInfoProvider: () => ({
@@ -193,7 +203,7 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
       }));
       plot.series.setData(data);
       if (indicator === "ib" && plot.series.seriesType() === "Line")
-        plot.series.applyOptions({ pointMarkersVisible: points.length === 1 });
+        plot.series.applyOptions({ pointMarkersVisible: false });
       const latest = points.at(-1);
       if (plot.primary && latest && latest.time === latestTime) readings[indicator] = latest.value;
     };
@@ -315,14 +325,50 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
         });
     }
     let initialBalanceStatus = "";
+    let initialBalanceStats: InitialBalanceStats | null = null;
     if (enabled.ib) {
-      const result = calculateInitialBalance(bars, ibSettings, interval);
+      const resolved = resolveInitialBalanceSettings(ibSettings);
+      const result = calculateInitialBalance(bars, resolved, interval);
+      const atr = calculateATR(bars).at(-1);
+      initialBalanceStats = getInitialBalanceStats(
+        result,
+        bars,
+        resolved,
+        atr && atr.time === latestTime ? atr.value : null,
+      );
       initialBalanceStatus = `${ibSettings.startTime} ${ibSettings.timeZone} · ${ibSettings.durationMinutes} min · ${result.reason ?? result.status}`;
-      for (const segment of result.segments.slice(-20)) {
+      const sessions = resolved.showHistory
+        ? result.segments.slice(-20)
+        : result.segments.filter((segment) => segment.session === result.activeSession);
+      for (const segment of sessions) {
         // Separate series are essential: whitespace alone can bridge overnight sessions.
-        line(`ib.${segment.session}.high`, "ib", segment.high, { primary: false, steps: true });
-        line(`ib.${segment.session}.low`, "ib", segment.low, { primary: false, steps: true });
-        line(`ib.${segment.session}.mid`, "ib", segment.mid, { color: "#fde68a", steps: true });
+        line(
+          `ib.${segment.session}.high`,
+          "ib",
+          segment.high.filter((point) => point.time <= segment.range.sessionEndTime),
+          { primary: false, steps: true },
+        );
+        line(
+          `ib.${segment.session}.low`,
+          "ib",
+          segment.low.filter((point) => point.time <= segment.range.sessionEndTime),
+          { primary: false, steps: true },
+        );
+        line(
+          `ib.${segment.session}.mid`,
+          "ib",
+          segment.mid.filter((point) => point.time <= segment.range.sessionEndTime),
+          { color: "#fde68a", steps: true },
+        );
+        const plot = plots.get(`ib.${segment.session}.high`)!;
+        if (!plot.initialBalance) {
+          plot.initialBalance = createInitialBalancePrimitive(
+            chart,
+            plot.series as ISeriesApi<"Line">,
+          );
+          plot.series.attachPrimitive(plot.initialBalance.primitive);
+        }
+        plot.initialBalance.update(segment.range, resolved, bars, interval);
       }
     }
     for (const [id, plot] of plots)
@@ -334,7 +380,8 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
       chart.panes()[0]?.setStretchFactor(3);
       for (const pane of chart.panes().slice(1)) pane.setStretchFactor(1);
     }
-    return { readings, initialBalanceStatus };
+    if (initialBalanceStats) readings.ib = initialBalanceStats.midpoint;
+    return { readings, initialBalanceStatus, initialBalanceStats };
   };
   return { update, readCrosshair };
 }

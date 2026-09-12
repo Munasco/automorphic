@@ -89,7 +89,10 @@ export function IndicatorLegend({
                     >
                       <SolarSettingsIcon className="size-4" />
                     </PopoverTrigger>
-                    <PopoverPopup align="start" className="w-64">
+                    <PopoverPopup
+                      align="start"
+                      className="max-h-[min(70vh,36rem)] w-72 overflow-y-auto"
+                    >
                       <PopoverTitle className="mb-4 text-sm">{label}</PopoverTitle>
                       <div className="space-y-3 text-xs">
                         <label className="flex items-center justify-between">
@@ -151,7 +154,7 @@ export function IndicatorLegend({
                               />
                             </label>
                           ))
-                        ) : (
+                        ) : key !== "ib" ? (
                           <>
                             <label className="flex items-center justify-between">
                               {key === "macd" ||
@@ -191,7 +194,7 @@ export function IndicatorLegend({
                               </select>
                             </label>
                           </>
-                        )}
+                        ) : null}
                         {key === "ib" && (
                           <>
                             <label className="flex items-center justify-between">
@@ -204,6 +207,21 @@ export function IndicatorLegend({
                                   settings.setInitialBalance({
                                     ...settings.initialBalance,
                                     startTime: event.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                            <label className="flex items-center justify-between">
+                              Session end
+                              <input
+                                type="time"
+                                aria-label="Initial balance session end"
+                                className={inputClass}
+                                value={settings.initialBalance.sessionEndTime ?? "16:00"}
+                                onChange={(event) =>
+                                  settings.setInitialBalance({
+                                    ...settings.initialBalance,
+                                    sessionEndTime: event.target.value,
                                   })
                                 }
                               />
@@ -241,12 +259,56 @@ export function IndicatorLegend({
                                 <option key={zone}>{zone}</option>
                               ))}
                             </select>
+                            <div className="space-y-3 border-t border-white/10 pt-3">
+                              {(
+                                [
+                                  ["showBox", "First-hour shading"],
+                                  ["showMidpoint", "50% midpoint"],
+                                  ["showQuarters", "25% and 75% levels"],
+                                  ["showExpansions", "0.5× and 1× expansions"],
+                                  ["showLabels", "Price labels"],
+                                  ["showHistory", "Historical sessions"],
+                                  ["showDashboard", "Session dashboard"],
+                                ] as const
+                              ).map(([option, title]) => (
+                                <label
+                                  key={option}
+                                  className="flex items-center justify-between gap-3"
+                                >
+                                  {title}
+                                  <input
+                                    type="checkbox"
+                                    aria-label={title}
+                                    checked={settings.initialBalance[option] ?? true}
+                                    onChange={(event) =>
+                                      settings.setInitialBalance({
+                                        ...settings.initialBalance,
+                                        [option]: event.target.checked,
+                                      })
+                                    }
+                                  />
+                                </label>
+                              ))}
+                            </div>
                           </>
                         )}
                         <div className="flex items-center justify-between border-t border-white/10 pt-3">
                           <button
                             type="button"
-                            onClick={() => settings.resetIndicatorAppearance(key)}
+                            onClick={() => {
+                              if (key === "ib")
+                                settings.setInitialBalance({
+                                  ...settings.initialBalance,
+                                  showMidpoint: true,
+                                  showQuarters: true,
+                                  showBox: true,
+                                  showLabels: true,
+                                  showExpansions: true,
+                                  showHistory: true,
+                                  showDashboard: true,
+                                });
+                              else settings.resetIndicatorAppearance(key);
+                            }}
                             className="rounded px-2 py-1.5 hover:bg-white/10"
                           >
                             Reset appearance

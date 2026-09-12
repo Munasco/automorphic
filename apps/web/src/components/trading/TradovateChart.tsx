@@ -29,6 +29,8 @@ import { INDICATOR_CATALOG } from "./indicatorCatalog";
 import { createIndicatorRenderer, oscillatorPaneCount } from "./chartIndicatorRenderer";
 import { useChartDrawings } from "./useChartDrawings";
 import { IndicatorLegend } from "./IndicatorLegend";
+import { InitialBalanceDashboard } from "./InitialBalanceDashboard";
+import type { InitialBalanceStats } from "./initialBalance";
 import { DrawingTools } from "./DrawingTools";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
@@ -119,6 +121,7 @@ export function TradovateChart({
   const volumeColors = useRef(settings.volumeColors);
   const initialBalanceSettings = useRef(settings.initialBalance);
   const [initialBalanceStatus, setInitialBalanceStatus] = useState("");
+  const [initialBalanceStats, setInitialBalanceStats] = useState<InitialBalanceStats | null>(null);
   const paneCount = oscillatorPaneCount(visibleIndicators);
   const [engine, setEngine] = useState<ChartEngine | null>(null);
   const [status, setStatus] = useState("Connecting to Tradovate…");
@@ -256,6 +259,7 @@ export function TradovateChart({
           .applyOptions({ scaleMargins: { top: 0.08, bottom: enabled.volume ? 0.2 : 0.06 } });
         setReadings(result.readings);
         setInitialBalanceStatus(result.initialBalanceStatus);
+        setInitialBalanceStats(result.initialBalanceStats);
       },
     };
     // The imperative chart lifetime is scoped to this mounted contract/interval.
@@ -549,6 +553,16 @@ export function TradovateChart({
                   initialBalanceStatus={initialBalanceStatus}
                 />
               </div>
+              {visibleIndicators.ib &&
+              settings.initialBalance.showDashboard !== false &&
+              initialBalanceStats &&
+              activeEngine ? (
+                <InitialBalanceDashboard
+                  chart={activeEngine.chart}
+                  hostRef={host}
+                  stats={initialBalanceStats}
+                />
+              ) : null}
               {!last ? (
                 <div className="pointer-events-none absolute inset-x-0 top-12 flex items-center justify-center p-6 text-center text-xs text-zinc-400">
                   {symbol ? status : "Select a contract to load its chart."}
