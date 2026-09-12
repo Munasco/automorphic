@@ -3,7 +3,7 @@ import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { useRef, useState } from "react";
 import { CheckIcon, SearchIcon } from "lucide-react";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogDescription } from "../ui/dialog";
-import { INSTRUMENTS } from "./InstrumentHeader";
+import { INSTRUMENTS } from "./tradingInstruments";
 import { cn } from "../../lib/utils";
 
 export interface FuturesContract {
@@ -29,10 +29,10 @@ export function SymbolPicker({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "MGC" | "MNQ">("all");
+  const [filter, setFilter] = useState<"all" | "gold" | "nasdaq">("all");
   const filtered = contracts.filter(
     (contract) =>
-      (filter === "all" || contract.root === filter) &&
+      (filter === "all" || INSTRUMENTS[contract.root].family === filter) &&
       `${contract.name} ${INSTRUMENTS[contract.root].name} ${INSTRUMENTS[contract.root].exchange}`
         .toLowerCase()
         .includes(search.trim().toLowerCase()),
@@ -66,7 +66,7 @@ export function SymbolPicker({
           />
         </div>
         <div className="flex gap-2 px-6 py-3" aria-label="Symbol categories">
-          {(["all", "MGC", "MNQ"] as const).map((value) => (
+          {(["all", "gold", "nasdaq"] as const).map((value) => (
             <button
               type="button"
               key={value}
@@ -79,7 +79,7 @@ export function SymbolPicker({
                   : "text-muted-foreground hover:bg-accent/50",
               )}
             >
-              {value === "all" ? "All futures" : value === "MGC" ? "Gold" : "Nasdaq"}
+              {value === "all" ? "All futures" : value === "gold" ? "Gold" : "Nasdaq"}
             </button>
           ))}
         </div>

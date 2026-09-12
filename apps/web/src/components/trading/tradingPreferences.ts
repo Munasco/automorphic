@@ -1,16 +1,18 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
+import { isInstrumentRoot, type InstrumentRoot } from "./tradingInstruments";
+import { isChartInterval, type ChartInterval } from "./tradingIntervals";
 export const useTradingPreferences = create<{
   useTradingView: boolean;
   showLiveWires: boolean;
-  root: "MGC" | "MNQ";
-  interval: number;
+  root: InstrumentRoot;
+  interval: ChartInterval;
   selectedSymbol: string;
   setSelectedSymbol: (symbol: string) => void;
   setTradingView: (value: boolean) => void;
   setLiveWires: (value: boolean) => void;
-  setRoot: (root: "MGC" | "MNQ") => void;
+  setRoot: (root: InstrumentRoot) => void;
   setInterval: (interval: number) => void;
 }>()(
   persist(
@@ -24,7 +26,9 @@ export const useTradingPreferences = create<{
       setTradingView: (useTradingView) => set({ useTradingView }),
       setLiveWires: (showLiveWires) => set({ showLiveWires }),
       setRoot: (root) => set({ root }),
-      setInterval: (interval) => set({ interval }),
+      setInterval: (interval) => {
+        if (isChartInterval(interval)) set({ interval });
+      },
     }),
     {
       name: "automorphic:trading-settings:v1",
@@ -35,8 +39,8 @@ export const useTradingPreferences = create<{
         return {
           ...current,
           ...saved,
-          // Existing Nasdaq workspaces now use the micro feed, never a renamed NQ quote.
-          root: "root" in saved && (saved.root === "NQ" || saved.root === "MNQ") ? "MNQ" : "MGC",
+          root: "root" in saved && isInstrumentRoot(saved.root) ? saved.root : "MGC",
+          interval: "interval" in saved && isChartInterval(saved.interval) ? saved.interval : 5,
         };
       },
     },

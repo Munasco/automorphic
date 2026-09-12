@@ -1,13 +1,14 @@
 import type { SVGProps } from "react";
+import { INSTRUMENTS, type InstrumentRoot } from "./tradingInstruments";
 
 // Market identity is shared by every expiry of the same instrument.
 export function MarketInstrumentIcon({
   root,
   ...props
-}: SVGProps<SVGSVGElement> & { root: "MGC" | "MNQ" }) {
+}: SVGProps<SVGSVGElement> & { root: InstrumentRoot }) {
   return (
     <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true" {...props}>
-      {root === "MGC" ? (
+      {INSTRUMENTS[root].family === "gold" ? (
         <>
           <circle cx="18" cy="18" r="18" fill="#6b440c" />
           <path d="m14 8 7 0 3 8H11Z" fill="#fbbf24" />

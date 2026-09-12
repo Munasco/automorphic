@@ -89,8 +89,8 @@ function TradingSettings() {
               Use TradingView charts
             </label>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              Use TradingView’s hosted widget. Turn off for Automorphic’s MGC and MNQ charts with
-              Tradovate data. Some futures are restricted in hosted widgets.
+              Use TradingView’s hosted widget. Turn off for Automorphic’s MGC, MNQ, GC, and NQ
+              charts with Tradovate data. Some futures are restricted in hosted widgets.
             </p>
           </div>
           <Switch

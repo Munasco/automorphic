@@ -3,7 +3,8 @@ import { describe, it, expect, vi, afterEach } from "vite-plus/test";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import { chartStream, normalizeBars, normalizeQuote } from "./marketData.ts";
+import { chartStream, contracts, normalizeBars, normalizeQuote } from "./marketData.ts";
+import * as ActiveContract from "./activeContract.ts";
 import { parseWires } from "./news.ts";
 describe("Tradovate candle normalization", () => {
   it("orders and merges history updates and rejects invalid prices", () => {
@@ -92,9 +93,67 @@ describe("Tradovate quote normalization", () => {
 
 describe("selected Tradovate contract", () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });
+
+  it.each(["MGC", "MNQ", "GC", "NQ"])(
+    "selects the active %s expiry using only exact-root candidates and their activity IDs",
+    async (root) => {
+      const directory = await NodeFSP.mkdtemp(
+        NodePath.join(NodeOS.tmpdir(), "automorphic-contract-test-"),
+      );
+      try {
+        const envFile = NodePath.join(directory, ".env");
+        await NodeFSP.writeFile(
+          envFile,
+          "TRADOVATE_ACCESS_TOKEN=test-contract-session\nTRADOVATE_ENVIRONMENT=demo\nTRADOVATE_TOKEN_EXPIRATION=2099-01-01T00:00:00.000Z\n",
+        );
+        vi.stubEnv("AUTOMORPHIC_ENV_FILE", envFile);
+        const lookup = vi.fn(async (url: string) => {
+          if (url.includes("contract/suggest"))
+            return Response.json([
+              { id: 11, name: `${root}Z6`, contractMaturityId: 101 },
+              { id: 12, name: `${root}H7`, contractMaturityId: 102 },
+              { id: 13, name: `${root}Z5`, contractMaturityId: 103 },
+              ...["MGC", "MNQ", "GC", "NQ"]
+                .filter((other) => other !== root)
+                .map((other, index) => ({
+                  id: 50 + index,
+                  name: `${other}Z6`,
+                  contractMaturityId: 150 + index,
+                })),
+            ]);
+          return Response.json([
+            { id: 101, expirationDate: "2098-12-01", firstIntentDate: "2098-11-25" },
+            { id: 102, expirationDate: "2099-03-01", firstIntentDate: "2099-02-25" },
+            { id: 103, expirationDate: "2000-01-01" },
+          ]);
+        });
+        vi.stubGlobal("fetch", lookup);
+        const activity = vi.spyOn(ActiveContract, "readContractActivity").mockResolvedValue(
+          new Map([
+            [11, { volume: 100, openInterest: 1000 }],
+            [12, { volume: 500, openInterest: 2000 }],
+          ]),
+        );
+        expect(await contracts(root)).toEqual([{ id: 12, name: `${root}H7` }]);
+        expect(lookup.mock.calls[0]?.[0]).toBe(
+          `https://demo.tradovateapi.com/v1/contract/suggest?t=${root}&l=12`,
+        );
+        expect(lookup.mock.calls[1]?.[0]).toBe(
+          "https://demo.tradovateapi.com/v1/contractMaturity/items?ids=101,102,103",
+        );
+        expect(activity.mock.calls[0]?.[0].map(({ id, name }) => ({ id, name }))).toEqual([
+          { id: 11, name: `${root}Z6` },
+          { id: 12, name: `${root}H7` },
+        ]);
+      } finally {
+        await NodeFSP.rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("rejects foreign, absent, and malformed contract IDs instead of relabeling quotes", () => {
     const entries = { Trade: { price: 4000 }, OpeningPrice: { price: 3990 } };
@@ -107,69 +166,116 @@ describe("selected Tradovate contract", () => {
     });
   });
 
-  it("resolves the exact expiry and emits only its quotes from a mixed websocket batch", async () => {
-    const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "automorphic-md-test-"));
-    let response: Response | undefined;
-    try {
-      const envFile = NodePath.join(directory, ".env");
-      await NodeFSP.writeFile(
-        envFile,
-        "TRADOVATE_ACCESS_TOKEN=test-session\nTRADOVATE_ENVIRONMENT=demo\nTRADOVATE_TOKEN_EXPIRATION=2099-01-01T00:00:00.000Z\n",
+  it.each([
+    ["MGCV6", 15],
+    ["MNQU6", 3],
+    ["GCZ6", 30],
+    ["NQU6", 240],
+  ] as const)(
+    "resolves %s at %d minutes and emits only its quotes and chart subscription from mixed batches",
+    async (symbol, interval) => {
+      const directory = await NodeFSP.mkdtemp(
+        NodePath.join(NodeOS.tmpdir(), "automorphic-md-test-"),
       );
-      vi.stubEnv("AUTOMORPHIC_ENV_FILE", envFile);
-      const lookup = vi.fn(async (_url: string, _options: RequestInit) =>
-        Response.json({ id: 123456, name: "MGCV6" }),
-      );
-      vi.stubGlobal("fetch", lookup);
-      const sockets: FakeSocket[] = [];
-      class FakeSocket extends EventTarget {
-        static OPEN = 1;
-        readyState = 1;
-        messages: string[] = [];
-        constructor() {
-          super();
-          sockets.push(this);
+      let response: Response | undefined;
+      try {
+        const envFile = NodePath.join(directory, ".env");
+        await NodeFSP.writeFile(
+          envFile,
+          "TRADOVATE_ACCESS_TOKEN=test-session\nTRADOVATE_ENVIRONMENT=demo\nTRADOVATE_TOKEN_EXPIRATION=2099-01-01T00:00:00.000Z\n",
+        );
+        vi.stubEnv("AUTOMORPHIC_ENV_FILE", envFile);
+        const lookup = vi.fn(async (_url: string, _options: RequestInit) =>
+          Response.json({ id: 123456, name: symbol }),
+        );
+        vi.stubGlobal("fetch", lookup);
+        const sockets: FakeSocket[] = [];
+        class FakeSocket extends EventTarget {
+          static OPEN = 1;
+          readyState = 1;
+          messages: string[] = [];
+          constructor() {
+            super();
+            sockets.push(this);
+          }
+          send(data: string) {
+            this.messages.push(data);
+          }
+          close() {
+            this.readyState = 3;
+          }
+          receive(data: string) {
+            this.dispatchEvent(new MessageEvent("message", { data }));
+          }
         }
-        send(data: string) {
-          this.messages.push(data);
-        }
-        close() {
-          this.readyState = 3;
-        }
-        receive(data: string) {
-          this.dispatchEvent(new MessageEvent("message", { data }));
-        }
+        vi.stubGlobal("WebSocket", FakeSocket);
+        response = await chartStream(symbol, interval);
+        expect(lookup.mock.calls[0]?.[0]).toBe(
+          `https://demo.tradovateapi.com/v1/contract/find?name=${symbol}`,
+        );
+        const socket = sockets[0]!;
+        socket.receive("o");
+        socket.receive('a[{"i":1,"s":200}]');
+        expect(socket.messages.some((message) => message.startsWith("md/subscribeQuote\n4"))).toBe(
+          true,
+        );
+        expect(socket.messages).toContain(`md/subscribeQuote\n4\n\n${JSON.stringify({ symbol })}`);
+        const chartRequest = socket.messages.find((message) =>
+          message.startsWith("md/getChart\n2"),
+        )!;
+        expect(JSON.parse(chartRequest.split("\n\n")[1]!)).toMatchObject({
+          symbol,
+          chartDescription: {
+            underlyingType: "MinuteBar",
+            elementSize: interval,
+            elementSizeUnit: "UnderlyingUnits",
+          },
+        });
+        socket.receive('a[{"i":2,"s":200,"d":{"historicalId":31,"realtimeId":32}}]');
+        const bar = {
+          timestamp: "2026-09-11T12:00:00Z",
+          open: 100,
+          high: 102,
+          low: 99,
+          close: 101,
+        };
+        socket.receive(
+          `a${JSON.stringify([
+            {
+              e: "chart",
+              d: {
+                charts: [
+                  { id: 999, bars: [{ ...bar, open: 88888 }] },
+                  { id: 31, bars: [bar], eoh: true },
+                  { id: 32, bars: [{ ...bar, close: 102 }] },
+                ],
+              },
+            },
+          ])}`,
+        );
+        socket.receive(
+          'a[{"e":"md","d":{"quotes":[{"contractId":987654,"entries":{"Trade":{"price":20000},"OpeningPrice":{"price":19000}}},{"contractId":123456,"entries":{"Trade":{"price":4356.3},"OpeningPrice":{"price":4325.2},"HighPrice":{"price":4410.8},"LowPrice":{"price":4300.1}}}]}}]',
+        );
+        socket.receive('a[{"i":1,"s":401}]'); // End the stream after the supplied batch.
+        const output = await response.text();
+        expect(output).toContain('"open":4325.2');
+        expect(output).toContain('"high":4410.8');
+        expect(output).toContain('"low":4300.1');
+        expect(output).not.toContain("19000");
+        expect(output.match(/"type":"quote"/g)).toHaveLength(1);
+        expect(output.match(/"type":"bars"/g)).toHaveLength(2);
+        expect(output).not.toContain("88888");
+        expect(output).toContain(`"symbol":"${symbol}"`);
+        expect(socket.readyState).toBe(3);
+        lookup.mockResolvedValueOnce(Response.json({ id: 987654, name: "MGCZ6" }));
+        await expect(chartStream(symbol, interval)).rejects.toThrow(
+          "did not confirm the selected contract",
+        );
+        expect(sockets).toHaveLength(1);
+      } finally {
+        if (response?.body && !response.bodyUsed) await response.body.cancel();
+        await NodeFSP.rm(directory, { recursive: true, force: true });
       }
-      vi.stubGlobal("WebSocket", FakeSocket);
-      response = await chartStream("MGCV6", 15);
-      expect(lookup.mock.calls[0]?.[0]).toBe(
-        "https://demo.tradovateapi.com/v1/contract/find?name=MGCV6",
-      );
-      const socket = sockets[0]!;
-      socket.receive("o");
-      socket.receive('a[{"i":1,"s":200}]');
-      expect(socket.messages.some((message) => message.startsWith("md/subscribeQuote\n4"))).toBe(
-        true,
-      );
-      socket.receive(
-        'a[{"e":"md","d":{"quotes":[{"contractId":987654,"entries":{"Trade":{"price":20000},"OpeningPrice":{"price":19000}}},{"contractId":123456,"entries":{"Trade":{"price":4356.3},"OpeningPrice":{"price":4325.2},"HighPrice":{"price":4410.8},"LowPrice":{"price":4300.1}}}]}}]',
-      );
-      socket.receive('a[{"i":1,"s":401}]'); // End the stream after the supplied batch.
-      const output = await response.text();
-      expect(output).toContain('"open":4325.2');
-      expect(output).toContain('"high":4410.8');
-      expect(output).toContain('"low":4300.1');
-      expect(output).not.toContain("19000");
-      expect(output.match(/"type":"quote"/g)).toHaveLength(1);
-      expect(socket.readyState).toBe(3);
-      lookup.mockResolvedValueOnce(Response.json({ id: 987654, name: "MGCZ6" }));
-      await expect(chartStream("MGCV6", 15)).rejects.toThrow(
-        "did not confirm the selected contract",
-      );
-      expect(sockets).toHaveLength(1);
-    } finally {
-      if (response?.body && !response.bodyUsed) await response.body.cancel();
-      await NodeFSP.rm(directory, { recursive: true, force: true });
-    }
-  });
+    },
+  );
 });

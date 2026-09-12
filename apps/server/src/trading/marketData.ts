@@ -91,7 +91,7 @@ const activeContractCache = new Map<
 >();
 
 export async function contracts(root: string) {
-  if (!["MGC", "MNQ", "NQ"].includes(root)) throw new Error("Choose MGC or MNQ.");
+  if (!["MGC", "MNQ", "GC", "NQ"].includes(root)) throw new Error("Choose MGC, MNQ, GC or NQ.");
   const session = await credentials();
   const key = `${session.environment}:${root}`;
   const cached = activeContractCache.get(key);
@@ -152,8 +152,11 @@ export async function contracts(root: string) {
 }
 
 export async function chartStream(symbol: string, interval: number) {
-  if (!/^(MGC|MNQ|NQ)[FGHJKMNQUVXZ]\d{1,2}$/.test(symbol) || ![1, 5, 15, 60].includes(interval)) {
-    throw new Error("Choose a valid MGC/MNQ contract and chart interval.");
+  if (
+    !/^(MGC|MNQ|GC|NQ)[FGHJKMNQUVXZ]\d{1,2}$/.test(symbol) ||
+    ![1, 2, 3, 5, 10, 15, 30, 45, 60, 120, 180, 240].includes(interval)
+  ) {
+    throw new Error("Choose a valid MGC, MNQ, GC or NQ contract and chart interval.");
   }
   const session = await credentials();
   // https://api.tradovate.com/: contract/find binds the requested expiry to its ID.

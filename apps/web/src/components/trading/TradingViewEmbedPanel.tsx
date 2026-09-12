@@ -150,9 +150,13 @@ export function TradingViewEmbedPanel({
   expanded,
   settingsControl,
   onToggleExpand,
+  navigationControl,
+  panelActions,
 }: {
   expanded: boolean;
   settingsControl?: ReactNode;
+  navigationControl?: ReactNode;
+  panelActions?: ReactNode;
   onToggleExpand?: (() => void) | undefined;
 }) {
   const symbol = useTradingPreferences((state) => state.symbol);
@@ -165,6 +169,7 @@ export function TradingViewEmbedPanel({
   return (
     <section aria-label="Trading panel" className="flex h-full min-h-0 flex-col bg-[#131722]">
       <div className="flex flex-wrap items-center gap-2 border-b border-border bg-background px-3 py-2">
+        {navigationControl}
         <label className="sr-only" htmlFor="trading-market">
           Market
         </label>
@@ -180,6 +185,7 @@ export function TradingViewEmbedPanel({
             </option>
           ))}
         </select>
+        {panelActions}
         {onToggleExpand ? (
           <Button
             variant="outline"

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 import { getFuturesSession } from "./marketSession";
+import { INSTRUMENT_ROOTS, type InstrumentRoot } from "./tradingInstruments";
 
-const at = (root: "MGC" | "NQ", iso: string) => getFuturesSession(root, new Date(iso));
+const at = (root: InstrumentRoot, iso: string) => getFuturesSession(root, new Date(iso));
 
 describe("getFuturesSession", () => {
-  it.each(["MGC", "NQ"] as const)("observes the Friday close and Sunday reopen for %s", (root) => {
+  it.each(INSTRUMENT_ROOTS)("observes the Friday close and Sunday reopen for %s", (root) => {
     expect(at(root, "2026-09-11T20:59:59Z").status).toBe("scheduled-open");
     expect(at(root, "2026-09-11T21:00:00Z").status).toBe("closed");
     expect(at(root, "2026-09-12T22:00:00Z").status).toBe("closed");
@@ -27,6 +28,8 @@ describe("getFuturesSession", () => {
       expect(at("NQ", `${day}T20:14:59Z`).status).toBe("scheduled-open");
       expect(at("NQ", `${day}T20:15:00Z`).status).toBe("break");
       expect(at("MGC", `${day}T20:20:00Z`).status).toBe("scheduled-open");
+      expect(at("GC", `${day}T20:20:00Z`).status).toBe("scheduled-open");
+      expect(at("MNQ", `${day}T20:20:00Z`).status).toBe("break");
       expect(at("NQ", `${day}T20:29:59Z`).status).toBe("break");
       expect(at("NQ", `${day}T20:30:00Z`).status).toBe("scheduled-open");
     }

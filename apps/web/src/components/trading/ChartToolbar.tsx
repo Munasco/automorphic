@@ -1,3 +1,19 @@
+import {
+  CHART_INTERVALS,
+  isChartInterval,
+  formatChartInterval,
+  type ChartInterval,
+} from "./tradingIntervals";
+import { rootFromSymbol } from "./tradingInstruments";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+  SelectGroup,
+  SelectGroupLabel,
+} from "../ui/select";
 import { MarketInstrumentIcon } from "./MarketInstrumentIcon";
 import { ChartIcon } from "./ChartIcon";
 import { useId, useState, type ReactNode } from "react";
@@ -27,8 +43,8 @@ export type {
 export type ChartToolbarProps = {
   symbol: string;
   onSelectSymbol: () => void;
-  interval: number;
-  onIntervalChange: (value: number) => void;
+  interval: ChartInterval;
+  onIntervalChange: (value: ChartInterval) => void;
   style: ChartStyle;
   onStyleChange: (value: ChartStyle) => void;
   indicators: ChartIndicators;
@@ -41,11 +57,10 @@ export type ChartToolbarProps = {
   onToggleLogScale: () => void;
   onScreenshot: () => void;
   panelActions?: ReactNode;
+  navigationControl?: ReactNode;
 };
 const control =
   "inline-flex h-8 shrink-0 items-center justify-center gap-2 rounded px-2.5 text-[13px] text-zinc-400 outline-none hover:bg-white/5 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-blue-400/70 data-popup-open:bg-white/5 data-popup-open:text-zinc-100";
-const select =
-  "h-8 appearance-none rounded border-0 bg-transparent pr-6 text-xs text-zinc-300 outline-none hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-blue-400/70 [&>option]:bg-zinc-900 [&>option]:text-zinc-200";
 
 export function ChartToolbar({
   symbol,
@@ -64,6 +79,7 @@ export function ChartToolbar({
   onToggleLogScale,
   onScreenshot,
   panelActions,
+  navigationControl,
 }: ChartToolbarProps) {
   const id = useId();
   const [indicatorSearch, setIndicatorSearch] = useState("");
@@ -78,6 +94,9 @@ export function ChartToolbar({
       aria-label="Chart tools"
       className="flex min-w-0 shrink-0 items-center border-b border-white/10 bg-[#101013]"
     >
+      {navigationControl ? (
+        <div className="shrink-0 border-r border-white/10 px-1.5 py-1">{navigationControl}</div>
+      ) : null}
       <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto px-1.5 py-1 [scrollbar-width:thin]">
         <Tooltip>
           <TooltipTrigger
@@ -87,7 +106,7 @@ export function ChartToolbar({
             className={cn(control, "max-w-32 font-semibold text-zinc-200")}
           >
             <MarketInstrumentIcon
-              root={symbol.startsWith("MGC") ? "MGC" : "MNQ"}
+              root={rootFromSymbol(symbol) ?? "MGC"}
               className="size-5 shrink-0"
             />
             <span className="truncate">
@@ -97,47 +116,76 @@ export function ChartToolbar({
           <TooltipPopup>{symbol || "Select symbol"}</TooltipPopup>
         </Tooltip>
         <span className="mx-1 h-4 w-px shrink-0 bg-white/10" aria-hidden="true" />
-        <div className="relative shrink-0">
-          <select
+        <Select
+          value={interval}
+          onValueChange={(value) => {
+            if (isChartInterval(value)) onIntervalChange(value);
+          }}
+        >
+          <SelectTrigger
             aria-label="Chart interval"
-            value={interval}
-            onChange={(event) => onIntervalChange(Number(event.target.value))}
-            className={cn(select, "w-14 pl-2")}
+            variant="ghost"
+            size="compact"
+            className="h-7 w-auto min-w-0 shrink-0 gap-1 px-1.5 text-[11px] text-zinc-300"
           >
-            <option value={1}>1m</option>
-            <option value={5}>5m</option>
-            <option value={15}>15m</option>
-            <option value={60}>1h</option>
-          </select>
-          <ChartIcon
-            name="chevron-down"
-            className="pointer-events-none absolute right-1.5 top-2.5 size-3 text-zinc-600"
-            aria-hidden="true"
-          />
-        </div>
-        <div className="relative shrink-0">
-          <ChartIcon
-            name="chart-candle"
-            className="pointer-events-none absolute left-2 top-2 size-4 text-zinc-500"
-            aria-hidden="true"
-          />
-          <select
+            <SelectValue>{formatChartInterval(interval)}</SelectValue>
+          </SelectTrigger>
+          <SelectPopup
+            alignItemWithTrigger={false}
+            matchTriggerWidth={false}
+            popupClassName="!bg-[#202020] !backdrop-filter-none"
+            className="min-w-24 p-1"
+          >
+            {(["Minutes", "Hours"] as const).map((group) => (
+              <SelectGroup key={group}>
+                <SelectGroupLabel className="px-2 py-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
+                  {group}
+                </SelectGroupLabel>
+                {CHART_INTERVALS.filter((value) =>
+                  group === "Minutes" ? value < 60 : value >= 60,
+                ).map((value) => {
+                  const count = value < 60 ? value : value / 60;
+                  return (
+                    <SelectItem key={value} value={value} className="min-h-8 text-xs">
+                      {count} {value < 60 ? "minute" : "hour"}
+                      {count === 1 ? "" : "s"}
+                    </SelectItem>
+                  );
+                })}
+              </SelectGroup>
+            ))}
+          </SelectPopup>
+        </Select>
+        <Select
+          value={style}
+          onValueChange={(value) => {
+            if (value !== null) onStyleChange(value);
+          }}
+        >
+          <SelectTrigger
             aria-label="Chart style"
-            value={style}
-            onChange={(event) => onStyleChange(event.target.value as ChartStyle)}
-            className={cn(select, "w-28 pl-7")}
+            variant="ghost"
+            size="compact"
+            className="h-7 w-auto min-w-0 shrink-0 gap-1.5 px-1.5 text-xs text-zinc-300"
           >
-            <option value="candles">Candles</option>
-            <option value="bars">Bars</option>
-            <option value="line">Line</option>
-            <option value="area">Area</option>
-          </select>
-          <ChartIcon
-            name="chevron-down"
-            className="pointer-events-none absolute right-1.5 top-2.5 size-3 text-zinc-600"
-            aria-hidden="true"
-          />
-        </div>
+            <ChartIcon name="chart-candle" className="size-4 text-zinc-500" />
+            <SelectValue>
+              {{ candles: "Candles", bars: "Bars", line: "Line", area: "Area" }[style]}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup
+            alignItemWithTrigger={false}
+            matchTriggerWidth={false}
+            popupClassName="!bg-[#202020] !backdrop-filter-none"
+            className="min-w-28 p-1"
+          >
+            {(["candles", "bars", "line", "area"] as const).map((value) => (
+              <SelectItem key={value} value={value} className="text-xs">
+                {value[0]!.toUpperCase() + value.slice(1)}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
         <span className="mx-1 h-4 w-px shrink-0 bg-white/10" aria-hidden="true" />
         <Dialog>
           <Tooltip>
@@ -263,28 +311,42 @@ export function ChartToolbar({
                                 <label htmlFor={`${id}-ib-zone`} className="text-[11px]">
                                   Time zone
                                 </label>
-                                <select
-                                  id={`${id}-ib-zone`}
+                                <Select
                                   value={initialBalance.timeZone}
-                                  onChange={(event) =>
-                                    onInitialBalanceChange({
-                                      ...initialBalance,
-                                      timeZone: event.target
-                                        .value as InitialBalanceSettings["timeZone"],
-                                    })
-                                  }
-                                  className="h-7 min-w-0 rounded border border-border bg-background px-1.5 text-xs"
+                                  onValueChange={(timeZone) => {
+                                    if (timeZone !== null)
+                                      onInitialBalanceChange({ ...initialBalance, timeZone });
+                                  }}
                                 >
-                                  {INITIAL_BALANCE_TIME_ZONES.map((zone) => (
-                                    <option key={zone} value={zone}>
-                                      {zone === "America/New_York"
+                                  <SelectTrigger
+                                    id={`${id}-ib-zone`}
+                                    aria-label="Initial balance time zone"
+                                    size="compact"
+                                    className="h-7 min-w-0 text-xs"
+                                  >
+                                    <SelectValue>
+                                      {initialBalance.timeZone === "America/New_York"
                                         ? "New York"
-                                        : zone === "America/Chicago"
+                                        : initialBalance.timeZone === "America/Chicago"
                                           ? "Chicago"
                                           : "UTC"}
-                                    </option>
-                                  ))}
-                                </select>
+                                    </SelectValue>
+                                  </SelectTrigger>
+                                  <SelectPopup
+                                    alignItemWithTrigger={false}
+                                    popupClassName="!bg-[#202020] !backdrop-filter-none"
+                                  >
+                                    {INITIAL_BALANCE_TIME_ZONES.map((zone) => (
+                                      <SelectItem key={zone} value={zone} className="text-xs">
+                                        {zone === "America/New_York"
+                                          ? "New York"
+                                          : zone === "America/Chicago"
+                                            ? "Chicago"
+                                            : "UTC"}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectPopup>
+                                </Select>
                               </div>
                               <div className="flex items-center justify-between gap-3">
                                 <label htmlFor={`${id}-ib-duration`} className="text-[11px]">

@@ -3,6 +3,8 @@ import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { MarketSessionBadge } from "./MarketSessionBadge";
 import { ChartIcon } from "./ChartIcon";
 import { cn } from "../../lib/utils";
+import { INSTRUMENTS } from "./tradingInstruments";
+export { INSTRUMENTS } from "./tradingInstruments";
 
 export interface MarketQuote {
   symbol: string;
@@ -15,11 +17,6 @@ export interface MarketQuote {
   timestamp?: string;
   source?: "quote" | "bar";
 }
-
-export const INSTRUMENTS = {
-  MGC: { name: "Micro Gold Futures", exchange: "COMEX" },
-  MNQ: { name: "Micro E-mini Nasdaq-100 Futures", exchange: "CME" },
-} as const;
 
 const price = (value: number) =>
   value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

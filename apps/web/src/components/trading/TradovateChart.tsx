@@ -1,3 +1,6 @@
+import { formatChartInterval, type ChartInterval } from "./tradingIntervals";
+import { ChartTechnicals, chartTechnicalReadings } from "./ChartTechnicals";
+import type { InstrumentRoot } from "./tradingInstruments";
 import { openTradingStream } from "./tradingTransport";
 import { ChartIcon } from "./ChartIcon";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -95,15 +98,21 @@ export function TradovateChart({
   onIntervalChange,
   panelActions,
   settingsControl,
+  navigationControl,
+  technicals = false,
+  onTechnicalsAvailabilityChange,
 }: {
   symbol: string;
-  interval: number;
-  root: "MGC" | "MNQ";
+  interval: ChartInterval;
+  root: InstrumentRoot;
   onQuote?: ((quote: MarketQuote | null) => void) | undefined;
   onSelectSymbol: () => void;
-  onIntervalChange: (interval: number) => void;
+  onIntervalChange: (interval: ChartInterval) => void;
   panelActions?: ReactNode;
   settingsControl?: ReactNode;
+  navigationControl?: ReactNode;
+  technicals?: boolean;
+  onTechnicalsAvailabilityChange?: (available: boolean) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const settings = useChartPreferences();
@@ -136,6 +145,14 @@ export function TradovateChart({
   );
   const activeEngine =
     engine?.symbol === symbol && engine.interval === interval && !engine.disposed ? engine : null;
+  const technicalRows = useMemo(
+    () => chartTechnicalReadings(readings, visibleIndicators, settings.indicatorInputs),
+    [readings, visibleIndicators, settings.indicatorInputs],
+  );
+  const hasTechnicals = !!activeEngine && !!last && technicalRows.length > 0;
+  useEffect(() => {
+    onTechnicalsAvailabilityChange?.(hasTechnicals);
+  }, [hasTechnicals, onTechnicalsAvailabilityChange]);
   const drawings = useChartDrawings(
     activeEngine?.chart ?? null,
     activeEngine?.prices[settings.style] ?? null,
@@ -187,7 +204,7 @@ export function TradovateChart({
     const priceFormat = {
       type: "price" as const,
       precision: 2,
-      minMove: root === "MGC" ? 0.1 : 0.25,
+      minMove: root === "MGC" || root === "GC" ? 0.1 : 0.25,
     };
     const prices = {
       candles: chart.addSeries(CandlestickSeries, {
@@ -488,8 +505,9 @@ export function TradovateChart({
         onToggleLogScale={settings.toggleLogScale}
         onScreenshot={screenshot}
         panelActions={panelActions}
+        navigationControl={navigationControl}
       />
-      <div className="flex min-h-0 min-w-0 flex-1">
+      <div className="relative flex min-h-0 min-w-0 flex-1">
         <div
           role="toolbar"
           aria-label="Drawing tools"
@@ -550,7 +568,7 @@ export function TradovateChart({
                     onClick={onSelectSymbol}
                     className="pointer-events-auto trading-heading truncate font-medium text-zinc-200 hover:text-white"
                   >
-                    {INSTRUMENTS[root].name} · {interval === 60 ? "1h" : `${interval}m`} ·{" "}
+                    {INSTRUMENTS[root].name} · {formatChartInterval(interval)} ·{" "}
                     {INSTRUMENTS[root].exchange}
                   </button>
                 </div>
@@ -597,6 +615,14 @@ export function TradovateChart({
             </div>
           </div>
         </div>
+        {technicals && hasTechnicals ? (
+          <ChartTechnicals
+            symbol={symbol}
+            interval={interval}
+            time={last?.time ?? null}
+            rows={technicalRows}
+          />
+        ) : null}
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-t border-white/10 px-2 py-1 text-[11px] text-zinc-400">
         {([1, 5, null] as const).map((days) => (

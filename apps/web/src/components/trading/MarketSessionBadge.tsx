@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { MarketStatusIcon } from "./MarketStatusIcon";
 import { getFuturesSession } from "./marketSession";
+import type { InstrumentRoot } from "./tradingInstruments";
 
-export function MarketSessionBadge({ root }: { root: "MGC" | "MNQ" }) {
+export function MarketSessionBadge({ root }: { root: InstrumentRoot }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const refresh = () => setNow(new Date());

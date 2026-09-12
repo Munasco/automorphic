@@ -1,3 +1,10 @@
+import { ChartViewMenu, type ChartView } from "./ChartViewMenu";
+import {
+  INSTRUMENTS,
+  INSTRUMENT_ROOTS,
+  rootFromSymbol,
+  type InstrumentRoot,
+} from "./tradingInstruments";
 import { AlertIcon } from "./AlertIcon";
 import { MarketInstrumentIcon } from "./MarketInstrumentIcon";
 import { tradingFetch } from "./tradingTransport";
@@ -31,17 +38,17 @@ function ReadyTradingPanel({
   onToggleAi?: (() => void) | undefined;
 }) {
   const settings = useTradingPreferences();
-  const [view, setView] = useState<"chart" | "news">("chart");
-  const activeView = expanded ? "chart" : view;
+  const [view, setView] = useState<ChartView>("chart");
+  const [technicalSource, setTechnicalSource] = useState<string | null>(null);
   const [contracts, setContracts] = useState<FuturesContract[]>([]);
-  const [errors, setErrors] = useState<Partial<Record<"MGC" | "MNQ", string>>>({});
+  const [errors, setErrors] = useState<Partial<Record<InstrumentRoot, string>>>({});
   const [loading, setLoading] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [quote, setQuote] = useState<MarketQuote | null>(null);
   const request = useRef<AbortController | null>(null);
   const loadContracts = useCallback(async (signal: AbortSignal) => {
     const results = await Promise.allSettled(
-      (["MGC", "MNQ"] as const).map(async (root) => {
+      INSTRUMENT_ROOTS.map(async (root) => {
         const response = await tradingFetch(`/api/trading/contracts?root=${root}`, {
           signal,
           credentials: "same-origin",
@@ -57,7 +64,7 @@ function ReadyTradingPanel({
               item !== null &&
               typeof item.id === "number" &&
               typeof item.name === "string" &&
-              item.name.startsWith(root),
+              rootFromSymbol(item.name) === root,
           )
           .map((item) => ({ ...item, root }));
         if (!valid.length) throw Error("No contracts available.");
@@ -65,12 +72,12 @@ function ReadyTradingPanel({
       }),
     );
     if (signal.aborted) return;
-    const nextErrors: Partial<Record<"MGC" | "MNQ", string>> = {};
+    const nextErrors: Partial<Record<InstrumentRoot, string>> = {};
     const nextContracts: FuturesContract[] = [];
     results.forEach((result, index) => {
       if (result.status === "fulfilled") nextContracts.push(...result.value);
       else
-        nextErrors[index === 0 ? "MGC" : "MNQ"] =
+        nextErrors[INSTRUMENT_ROOTS[index]!] =
           result.reason instanceof Error ? result.reason.message : "Contract lookup failed.";
     });
     // A temporary refresh failure must not tear down an already loaded chart.
@@ -101,7 +108,19 @@ function ReadyTradingPanel({
       window.removeEventListener("focus", refresh);
     };
   }, [loadContracts]);
-  const symbol = contracts.find((contract) => contract.root === settings.root)?.name ?? "";
+  const symbol =
+    contracts.find(
+      (contract) => contract.root === settings.root && contract.name === settings.selectedSymbol,
+    )?.name ??
+    contracts.find((contract) => contract.root === settings.root)?.name ??
+    "";
+  const technicalsAvailable =
+    !settings.useTradingView && technicalSource === `${symbol}:${settings.interval}`;
+  const activeView = view === "technicals" && !technicalsAvailable ? "chart" : view;
+  const handleTechnicalsAvailability = useCallback(
+    (available: boolean) => setTechnicalSource(available ? `${symbol}:${settings.interval}` : null),
+    [symbol, settings.interval],
+  );
   const alerts = useChartAlerts(symbol);
   const { observeQuote } = alerts;
   const handleQuote = useCallback(
@@ -128,6 +147,16 @@ function ReadyTradingPanel({
       </TooltipTrigger>
       <TooltipPopup>Trading settings</TooltipPopup>
     </Tooltip>
+  );
+  const navigationControl = (
+    <ChartViewMenu
+      view={activeView}
+      technicalsAvailable={technicalsAvailable}
+      onChange={(next) => {
+        setView(next);
+        if (next !== "chart") setSideView(null);
+      }}
+    />
   );
   const panelActions = (
     <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -231,46 +260,14 @@ function ReadyTradingPanel({
           settings.setSelectedSymbol(contract.name);
         }}
       />
-      {!expanded && (
-        <nav
-          className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1"
-          aria-label="Trading views"
-        >
-          <button
-            type="button"
-            aria-pressed={activeView === "chart"}
-            onClick={() => setView("chart")}
-            className={cn(
-              "rounded px-3 py-1.5 text-xs font-semibold",
-              activeView === "chart" ? "bg-accent" : "text-muted-foreground",
-            )}
-          >
-            Chart
-          </button>
-          <button
-            type="button"
-            aria-pressed={activeView === "news"}
-            onClick={() => setView("news")}
-            className={cn(
-              "rounded px-3 py-1.5 text-xs font-semibold",
-              activeView === "news" ? "bg-accent" : "text-muted-foreground",
-            )}
-          >
-            Live Wires
-          </button>
-          {activeView === "news" ? (
-            <div className="ml-auto flex items-center">
-              {settingsControl}
-              {panelActions}
-            </div>
-          ) : settings.useTradingView ? (
-            panelActions
-          ) : null}
-        </nav>
-      )}
-      {expanded && settings.useTradingView ? (
-        <div className="flex shrink-0 items-center justify-end border-b border-border px-2 py-1">
-          {panelActions}
+      {activeView === "news" ? (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1">
+          {navigationControl}
+          <span className="text-xs text-muted-foreground">News</span>
+          <div className="ml-auto flex items-center">
+            {settingsControl}
+            {panelActions}
+          </div>
         </div>
       ) : null}
       {error && !settings.useTradingView ? (
@@ -295,14 +292,16 @@ function ReadyTradingPanel({
         </div>
       ) : null}
       <div
-        className={cn(
-          "relative min-h-0 min-w-0 flex-1",
-          activeView === "chart" ? "flex" : "hidden",
-        )}
+        className={cn("relative min-h-0 min-w-0 flex-1", activeView !== "news" ? "flex" : "hidden")}
       >
         <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
           {settings.useTradingView ? (
-            <TradingViewEmbedPanel expanded={expanded} settingsControl={settingsControl} />
+            <TradingViewEmbedPanel
+              expanded={expanded}
+              settingsControl={settingsControl}
+              navigationControl={navigationControl}
+              panelActions={panelActions}
+            />
           ) : (
             <TradovateChart
               key={`${symbol}:${settings.interval}`}
@@ -313,6 +312,9 @@ function ReadyTradingPanel({
               onSelectSymbol={() => setPickerOpen(true)}
               onIntervalChange={settings.setInterval}
               panelActions={panelActions}
+              navigationControl={navigationControl}
+              technicals={activeView === "technicals"}
+              onTechnicalsAvailabilityChange={handleTechnicalsAvailability}
               settingsControl={settingsControl}
             />
           )}
@@ -364,9 +366,7 @@ function ReadyTradingPanel({
                           <MarketInstrumentIcon root={contract.root} className="size-6 shrink-0" />
                           <span className="font-medium">{contract.root}</span>
                         </span>
-                        <span className="text-xs">
-                          {contract.root === "MGC" ? "Micro Gold" : "Micro Nasdaq 100"}
-                        </span>
+                        <span className="text-xs">{INSTRUMENTS[contract.root].name}</span>
                       </TooltipTrigger>
                       <TooltipPopup>{contract.name}</TooltipPopup>
                     </Tooltip>
@@ -384,7 +384,10 @@ function ReadyTradingPanel({
       </div>
       {activeView === "news" ? (
         <div className="min-h-0 flex-1 overflow-hidden">
-          <LiveWires root={settings.root === "MNQ" ? "NQ" : "MGC"} projectId={projectId} />
+          <LiveWires
+            root={INSTRUMENTS[settings.root].family === "gold" ? "MGC" : "NQ"}
+            projectId={projectId}
+          />
         </div>
       ) : null}
     </section>
