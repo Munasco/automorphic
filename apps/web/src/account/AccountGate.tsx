@@ -5,9 +5,9 @@ import { useDesktopAccount } from "./desktop";
 import { accountClient } from "./client";
 
 const inputClass =
-  "h-12 w-full border-[1.7px] border-[#252824] bg-[#121714] px-3 text-[#E2E3E0] outline-none placeholder:text-[#626c60] focus:border-[#9CA99A]";
+  "h-11 w-full rounded-md border border-slate-700/70 bg-[#0d121c] px-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-blue-400 focus:ring-2 focus:ring-blue-400/15";
 const buttonClass =
-  "flex h-12 w-full items-center justify-center gap-3 bg-[#252824] text-base text-[#E2E3E0] transition-colors hover:bg-[#9CA99A] hover:text-[#2E322D] disabled:cursor-not-allowed disabled:opacity-50";
+  "flex h-11 w-full items-center justify-center gap-2 rounded-md bg-blue-500 text-sm font-medium text-white transition-colors hover:bg-blue-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400 disabled:cursor-not-allowed disabled:opacity-50";
 
 export function AccountGate({ children }: { children: ReactNode }) {
   const session = accountClient.useSession();
@@ -102,59 +102,43 @@ export function AccountGate({ children }: { children: ReactNode }) {
   const pending = session.isPending || verified.pending || desktop.pending;
   if (pending) return <AccountLoading />;
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-[#0C0E0D] px-6 py-12 text-[#E2E3E0]">
-      <section className="relative w-full max-w-xl border-[1.7px] border-[#252824] bg-[#0E110F] p-6 md:p-12">
-        {[
-          "-top-2.5 -left-2.5",
-          "-top-2.5 -right-2.5",
-          "-bottom-2.5 -left-2.5",
-          "-bottom-2.5 -right-2.5",
-        ].map((position) => (
-          <svg
-            key={position}
-            aria-hidden="true"
-            className={`absolute hidden size-5 text-[#9CA99A] md:block ${position}`}
-            viewBox="0 0 20 20"
-            fill="none"
-          >
-            <path d="M10 0v20M0 10h20" stroke="currentColor" strokeWidth="1.5" />
-          </svg>
-        ))}
+    <main className="flex min-h-dvh items-center justify-center bg-[#080b12] px-6 py-10 font-sans text-slate-100">
+      <section className="w-full max-w-sm">
         <a
           href="https://automorphic-six.vercel.app"
-          className="mb-6 flex items-center gap-2 text-xl text-[#C9D0C8] md:mb-12"
+          className="mb-10 flex items-center gap-2.5 text-xl font-medium tracking-tight text-slate-100"
         >
           <img src="/automorphic-mark.svg" alt="" width="24" height="24" /> Automorphic
         </a>
         {pending ? (
-          <p role="status" className="text-sm text-[#9CA99A]">
+          <p role="status" className="text-sm text-slate-400">
             Signing you in…
           </p>
         ) : (
           <>
-            <h1 className="bg-linear-to-b from-[#D6DEF0]/50 to-[#D6DEF0] bg-clip-text text-2xl font-normal text-transparent md:text-3xl">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-100">
               {profile
                 ? "What should we call you?"
                 : sent
                   ? "Check your email"
                   : signingUp
                     ? "Create your account"
-                    : "Sign in to your account"}
+                    : "Welcome to Automorphic"}
             </h1>
-            <p className="mt-2 text-sm text-[#9CA99A] md:text-base">
+            <p className="mt-2 text-sm text-slate-400">
               {profile ? (
                 "Your trading workspace is almost ready."
               ) : sent ? (
                 <>
-                  We’ve sent a 6-digit code to <strong className="text-[#E2E3E0]">{email}</strong>
+                  We’ve sent a 6-digit code to <strong className="text-slate-100">{email}</strong>
                 </>
               ) : (
-                "Choose your preferred authentication method"
+                "Sign in to your trading workspace."
               )}
             </p>
             <form onSubmit={submit} className="mt-6 space-y-4">
               {profile || (signingUp && !sent) ? (
-                <label className="block text-sm text-[#aeb8ab]">
+                <label className="block text-sm text-slate-300">
                   Name
                   <input
                     autoComplete="name"
@@ -168,7 +152,7 @@ export function AccountGate({ children }: { children: ReactNode }) {
                 </label>
               ) : null}
               {sent && !profile ? (
-                <label className="block text-sm text-[#aeb8ab]">
+                <label className="block text-sm text-slate-300">
                   Verification code
                   <input
                     autoFocus
@@ -183,12 +167,12 @@ export function AccountGate({ children }: { children: ReactNode }) {
                   />
                 </label>
               ) : !profile ? (
-                <label className="block text-sm text-[#aeb8ab]">
+                <label className="block text-sm text-slate-300">
                   Email
                   <span className="relative mt-2 block">
                     <MailIcon
                       aria-hidden="true"
-                      className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[#626c60]"
+                      className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-500"
                     />
                     <input
                       type="email"
@@ -224,36 +208,36 @@ export function AccountGate({ children }: { children: ReactNode }) {
             </form>
             {!profile && !sent && (
               <>
-                <div className="relative my-6 flex items-center justify-center text-xs text-[#9CA99A]">
-                  <span className="absolute inset-x-0 border-t border-[#252824]" />
-                  <span className="relative bg-[#252824] px-3">or</span>
+                <div className="relative my-6 flex items-center justify-center text-xs text-slate-400">
+                  <span className="absolute inset-x-0 border-t border-slate-800" />
+                  <span className="relative bg-[#080b12] px-3">or</span>
                 </div>
                 <button
                   type="button"
                   disabled={busy || googleBusy}
                   onClick={() => void startGoogle()}
-                  className={`${buttonClass} border-[1.7px] border-[#252824] bg-[#121714]`}
+                  className="flex h-11 w-full items-center justify-center gap-2 rounded-md border border-slate-700/70 bg-[#0d121c] text-sm font-medium text-slate-100 transition-colors hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {googleBusy ? <Loader2Icon className="size-5 animate-spin" /> : <GoogleIcon />}
                   Continue with Google
                 </button>
-                <p className="mt-8 text-center text-xs text-[#788177]">
+                <p className="mt-8 text-center text-xs text-slate-400">
                   {signingUp ? "Already have an account? " : "Don’t have an account? "}
                   <button
-                    className="font-medium text-[#9e8cfa] hover:underline"
+                    className="font-medium text-blue-400 hover:underline"
                     onClick={() => {
                       setSigningUp(!signingUp);
                       setError("");
                     }}
                   >
-                    {signingUp ? "Sign in" : "Get Started"}
+                    {signingUp ? "Sign in" : "Create an account"}
                   </button>
                 </p>
               </>
             )}
             {sent && !profile && (
-              <div className="mt-6 space-y-3 text-center text-sm text-[#9CA99A]">
-                <p className="text-[#626c60]">Didn’t receive the code? Check your spam folder.</p>
+              <div className="mt-6 space-y-3 text-center text-sm text-slate-400">
+                <p className="text-slate-500">Didn’t receive the code? Check your spam folder.</p>
                 <button
                   type="button"
                   disabled={busy}
