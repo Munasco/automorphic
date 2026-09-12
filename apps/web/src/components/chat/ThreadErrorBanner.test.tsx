@@ -107,6 +107,27 @@ describe("provider process error recovery", () => {
       }),
     ).toBe(false);
   });
+  it("recognizes the serialized provider error class shown by the installed app", () => {
+    expect(
+      hasRecoveredProviderProcessError(
+        {
+          ...error,
+          message:
+            "ProviderAdapterProcessError: Provider adapter process error (codex): spawn failed",
+        },
+        healthy,
+      ),
+    ).toBe(true);
+    expect(
+      hasRecoveredProviderProcessError(
+        {
+          ...error,
+          message: "OtherError: Provider adapter process error (codex): spawn failed",
+        },
+        healthy,
+      ),
+    ).toBe(false);
+  });
   it("retains newer failures and active server errors", () => {
     expect(
       hasRecoveredProviderProcessError(

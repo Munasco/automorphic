@@ -13,7 +13,8 @@ export function hasRecoveredProviderProcessError(
   } | null,
 ): boolean {
   if (
-    !entry?.message?.startsWith("Provider adapter process error") ||
+    !entry?.message ||
+    !/^(?:ProviderAdapterProcessError:\s*)?Provider adapter process error\b/.test(entry.message) ||
     thread?.session?.status !== "ready" ||
     thread.session.lastError !== null ||
     thread.latestTurn?.state !== "completed" ||
