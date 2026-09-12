@@ -4,11 +4,13 @@ import { useState } from "react";
 import { ChartIcon } from "./ChartIcon";
 import { SolarSettingsIcon } from "./SolarSettingsIcon";
 import { DrawingToolIcon } from "./DrawingToolIcon";
+import { IndicatorNumberField } from "./IndicatorNumberField";
 import {
   INDICATOR_CATALOG,
   INDICATOR_INPUTS,
   getIndicatorInputs,
   getIndicatorLabel,
+  updateIndicatorInputs,
   INITIAL_BALANCE_TIME_ZONES,
   DEFAULT_INITIAL_BALANCE,
   type InitialBalanceSettings,
@@ -160,19 +162,22 @@ export function IndicatorLegend({
                                   className="max-w-40"
                                 />
                               ) : (
-                                <input
-                                  type="number"
-                                  aria-label={`${label} ${input.label}`}
+                                <IndicatorNumberField
+                                  label={`${label} ${input.label}`}
                                   min={input.min}
                                   max={input.max}
                                   step={input.step}
                                   className={cn(inputClass, "w-20")}
                                   value={inputs[input.key] ?? input.defaultValue}
-                                  onChange={(event) => {
-                                    if (event.target.value)
-                                      settings.setIndicatorInputs(key, {
-                                        [input.key]: Number(event.target.value),
-                                      });
+                                  resetKey={settings.indicatorInputs[key]?.[input.key]}
+                                  onCommit={(value) => {
+                                    const patch = { [input.key]: value };
+                                    if (
+                                      !updateIndicatorInputs(key, settings.indicatorInputs, patch)
+                                    )
+                                      return false;
+                                    settings.setIndicatorInputs(key, patch);
+                                    return true;
                                   }}
                                 />
                               )}
