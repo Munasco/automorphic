@@ -1,7 +1,7 @@
 import { defaultRegressionDrawingSettings, type ChartDrawing } from "./drawingGeometry";
 import type { DrawingPatch } from "./useChartDrawings";
 import type { RegressionSource } from "./chartRegression";
-import { Check, inputClass, LineAppearancePicker } from "./DrawingStyleControls";
+import { Check, DrawingSelect, inputClass, LineAppearancePicker } from "./DrawingStyleControls";
 import { cn } from "../../lib/utils";
 
 export function DrawingRegressionSettings({
@@ -48,31 +48,22 @@ export function DrawingRegressionSettings({
         })}
         <label className="flex items-center justify-between gap-4 text-sm">
           Source
-          <select
-            aria-label="Regression source"
+          <DrawingSelect
+            label="Regression source"
             value={settings.regressionSource}
-            onChange={(event) =>
-              onChange({ regressionSource: event.target.value as RegressionSource })
-            }
-            className={cn(inputClass, "w-44 bg-[#202020]")}
-          >
-            {(
-              [
-                ["open", "Open"],
-                ["high", "High"],
-                ["low", "Low"],
-                ["close", "Close"],
-                ["hl2", "(H + L) / 2"],
-                ["hlc3", "(H + L + C) / 3"],
-                ["ohlc4", "(O + H + L + C) / 4"],
-                ["hlcc4", "(H + L + C + C) / 4"],
-              ] as const
-            ).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
+            className="w-44"
+            onChange={(value) => onChange({ regressionSource: value as RegressionSource })}
+            options={[
+              ["open", "Open"],
+              ["high", "High"],
+              ["low", "Low"],
+              ["close", "Close"],
+              ["hl2", "(H + L) / 2"],
+              ["hlc3", "(H + L + C) / 3"],
+              ["ohlc4", "(O + H + L + C) / 4"],
+              ["hlcc4", "(H + L + C + C) / 4"],
+            ]}
+          />
         </label>
       </>
     );

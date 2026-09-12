@@ -1,6 +1,7 @@
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import type { ChartDrawing } from "./drawingGeometry";
 import type { DrawingPatch } from "./useChartDrawings";
+import { Select, SelectTrigger, SelectValue, SelectPopup, SelectItem } from "../ui/select";
 import { cn } from "../../lib/utils";
 const colors = [
   "#ffffff",
@@ -24,10 +25,12 @@ export function ColorPicker({
   value,
   onChange,
   label = "Line color",
+  mixed = false,
 }: {
   value: string;
   onChange: (color: string) => void;
   label?: string;
+  mixed?: boolean;
 }) {
   return (
     <Popover>
@@ -35,9 +38,17 @@ export function ColorPicker({
         aria-label={label}
         className="flex size-8 items-center justify-center rounded hover:bg-white/10"
       >
-        <span className="size-4 rounded-sm border border-white/20" style={{ background: value }} />
+        <span
+          className="size-4 rounded-sm border border-white/20"
+          style={{
+            background: mixed
+              ? "conic-gradient(#f23645 0 25%, #2962ff 0 50%, #4caf50 0 75%, #ff9800 0)"
+              : value,
+          }}
+        />
       </PopoverTrigger>
       <PopoverPopup
+        instant
         style={{ background: "#1f1f1f", backdropFilter: "none" }}
         className="w-56"
         viewportClassName="p-3"
@@ -105,6 +116,7 @@ export function LineStylePicker({
         </svg>
       </PopoverTrigger>
       <PopoverPopup
+        instant
         style={{ background: "#1f1f1f", backdropFilter: "none" }}
         className="w-44"
         viewportClassName="p-1"
@@ -164,6 +176,7 @@ export function WidthPicker({
         )}
       </PopoverTrigger>
       <PopoverPopup
+        instant
         style={{ background: "#1f1f1f", backdropFilter: "none" }}
         className="w-36"
         viewportClassName="p-1"
@@ -218,6 +231,7 @@ export function MarkerPicker({
         {glyph(value)}
       </PopoverTrigger>
       <PopoverPopup
+        instant
         style={{ background: "#202020", backdropFilter: "none" }}
         className="w-40"
         viewportClassName="p-1"
@@ -262,7 +276,7 @@ export function LineAppearancePicker({
         <svg width="28" height="16" aria-hidden="true">
           <path
             d="M0 8H28"
-            stroke="currentColor"
+            stroke={drawing.color}
             strokeWidth={drawing.width}
             strokeDasharray={
               drawing.lineStyle === "dashed"
@@ -275,6 +289,7 @@ export function LineAppearancePicker({
         </svg>
       </PopoverTrigger>
       <PopoverPopup
+        instant
         style={{ background: "#202020", backdropFilter: "none" }}
         className="w-48"
         viewportClassName="p-2"
@@ -322,5 +337,57 @@ export function Check({
       />
       {label}
     </label>
+  );
+}
+
+export function DrawingSelect({
+  label,
+  value,
+  options,
+  onChange,
+  disabled,
+  className,
+}: {
+  label: string;
+  value: string;
+  options: readonly (readonly [string, string])[];
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <Select
+      value={value}
+      disabled={disabled}
+      onValueChange={(next) => {
+        if (next !== null) onChange(next);
+      }}
+    >
+      <SelectTrigger
+        aria-label={label}
+        className={cn(
+          "h-[34px] min-h-0 min-w-0 rounded border-white/15 bg-[#202020] px-2 text-[13px] text-zinc-200 shadow-none dark:bg-[#202020]",
+          className,
+        )}
+      >
+        <SelectValue>{options.find(([key]) => key === value)?.[1] ?? value}</SelectValue>
+      </SelectTrigger>
+      <SelectPopup
+        alignItemWithTrigger={false}
+        sideOffset={4}
+        popupClassName="!bg-[#202020] !backdrop-filter-none border border-white/10"
+        className="p-1"
+      >
+        {options.map(([key, text]) => (
+          <SelectItem
+            key={key}
+            value={key}
+            className="min-h-8 rounded px-3 text-[13px] text-zinc-200 data-selected:bg-zinc-100 data-selected:text-zinc-950 data-highlighted:bg-white/10 data-highlighted:text-white"
+          >
+            {text}
+          </SelectItem>
+        ))}
+      </SelectPopup>
+    </Select>
   );
 }

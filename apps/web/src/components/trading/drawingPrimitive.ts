@@ -329,18 +329,27 @@ export function createDrawingPrimitive(
             let activeColor = drawing.color;
             let activeStyle = drawing.lineStyle ?? "solid";
             let activeWidth = geometry.strokeWidth ?? drawing.width;
+            let activeOpacity = geometry.opacity ?? 1;
             const visibleLines = nativeLine ? geometry.lines.slice(1) : geometry.lines;
             for (const line of visibleLines) {
               const color = line.color ?? drawing.color;
               const style = line.lineStyle ?? drawing.lineStyle ?? "solid";
               const lineWidth = line.width ?? geometry.strokeWidth ?? drawing.width;
-              if (color !== activeColor || style !== activeStyle || lineWidth !== activeWidth) {
+              const opacity = (line.opacity ?? 1) * (geometry.opacity ?? 1);
+              if (
+                color !== activeColor ||
+                style !== activeStyle ||
+                lineWidth !== activeWidth ||
+                opacity !== activeOpacity
+              ) {
                 if (previous) ctx.stroke();
                 ctx.beginPath();
                 ctx.strokeStyle = color;
                 activeColor = color;
                 activeStyle = style;
                 activeWidth = lineWidth;
+                activeOpacity = opacity;
+                ctx.globalAlpha = opacity;
                 ctx.lineWidth = lineWidth;
                 ctx.setLineDash(style === "dashed" ? [8, 5] : style === "dotted" ? [2, 4] : []);
                 previous = undefined;
@@ -353,12 +362,14 @@ export function createDrawingPrimitive(
             if (visibleLines.length) ctx.stroke();
             for (const line of visibleLines) {
               if (!line.label) continue;
+              ctx.globalAlpha = (line.opacity ?? 1) * (geometry.opacity ?? 1);
               ctx.fillStyle = line.color ?? drawing.color;
               ctx.textAlign = line.labelAlign ?? "left";
               ctx.textBaseline = line.labelBaseline ?? "alphabetic";
               const point = line.labelPoint ?? { x: line.to.x + 4, y: line.to.y - 3 };
               ctx.fillText(line.label, point.x, point.y);
             }
+            ctx.globalAlpha = geometry.opacity ?? 1;
             if (geometry.priceLabels?.length) {
               ctx.font = `${drawing.priceLabelItalic ? "italic " : ""}${drawing.priceLabelBold ? "bold " : ""}${drawing.priceLabelFontSize ?? 12}px ${chart.options().layout.fontFamily}`;
               ctx.fillStyle = drawing.priceLabelColor ?? drawing.color;

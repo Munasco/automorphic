@@ -13,6 +13,8 @@ export type DrawingKind =
   | "vertical"
   | "rectangle"
   | "fib"
+  | "fib-time-zone"
+  | "fib-trend-time"
   | "fib-extension"
   | "fib-channel"
   | "pitchfork"
@@ -40,7 +42,14 @@ export type DrawingKind =
   | "curve"
   | "double-curve";
 export type DrawingAnchor = { time: Time; price: number };
-export type DrawingLevel = { value: number; visible: boolean; color?: string };
+export type DrawingLevel = {
+  opacity?: number;
+  value: number;
+  visible: boolean;
+  color?: string;
+  width?: number;
+  lineStyle?: "solid" | "dashed" | "dotted";
+};
 export type DrawingRegressionLine = {
   /** Fill opacity; boundary strokes remain opaque. */
   opacity?: number;
@@ -49,8 +58,13 @@ export type DrawingRegressionLine = {
   width: number;
   lineStyle: "solid" | "dashed" | "dotted";
 };
+export type DrawingLineAppearance = Pick<
+  DrawingRegressionLine,
+  "color" | "width" | "lineStyle" | "opacity"
+>;
 export type DrawingRegressionFit = { result: ChartRegression; start: Time; end: Time };
 export type DrawingSettings = {
+  trendLine?: DrawingLineAppearance;
   regressionSource?: RegressionSource;
   regressionUpperDeviation?: number;
   regressionLowerDeviation?: number;
@@ -109,6 +123,7 @@ export type ChartDrawing = DrawingSettings & {
 };
 export type DrawingPoint = { x: number; y: number };
 export type DrawingLine = {
+  opacity?: number;
   width?: number;
   from: DrawingPoint;
   to: DrawingPoint;
@@ -152,6 +167,8 @@ export const DRAWING_ANCHORS: Record<DrawingKind, number> = {
   rectangle: 2,
   fib: 2,
   "fib-extension": 3,
+  "fib-time-zone": 2,
+  "fib-trend-time": 3,
   "fib-channel": 3,
   pitchfork: 3,
   "schiff-pitchfork": 3,
@@ -189,9 +206,100 @@ export const maximumDrawingAnchors = (kind: DrawingKind) =>
 export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
 export const isPitchforkDrawingTool = (kind: DrawingKind) =>
   ["pitchfork", "schiff-pitchfork", "modified-schiff-pitchfork", "inside-pitchfork"].includes(kind);
+export const isFibTimeDrawing = (kind: DrawingKind) =>
+  kind === "fib-time-zone" || kind === "fib-trend-time";
+export function defaultFibTimeDrawingSettings(kind: DrawingKind): DrawingSettings {
+  return isFibTimeDrawing(kind)
+    ? {
+        background: kind === "fib-trend-time",
+        backgroundOpacity: 0.2,
+        showLevels: true,
+        showTrendLine: true,
+        levelLabelPosition: "right",
+        levelLabelAlignment: "bottom",
+        trendLine: { color: "#808080", width: 2, lineStyle: "dashed", opacity: 1 },
+      }
+    : {};
+}
+export function fibTimeAppearancePatch(
+  drawing: ChartDrawing,
+  patch: Partial<DrawingLineAppearance>,
+): DrawingSettings {
+  if (!isFibTimeDrawing(drawing.kind)) return {};
+  const appearance: Partial<DrawingLineAppearance> = {};
+  if (typeof patch.color === "string" && /^#[a-f\d]{6}$/i.test(patch.color)) {
+    appearance.color = patch.color;
+    appearance.opacity = 1;
+  }
+  if (
+    typeof patch.width === "number" &&
+    Number.isInteger(patch.width) &&
+    patch.width >= 1 &&
+    patch.width <= 8
+  )
+    appearance.width = patch.width;
+  if (patch.lineStyle === "solid" || patch.lineStyle === "dashed" || patch.lineStyle === "dotted")
+    appearance.lineStyle = patch.lineStyle;
+  if (
+    typeof patch.opacity === "number" &&
+    Number.isFinite(patch.opacity) &&
+    patch.opacity >= 0 &&
+    patch.opacity <= 1
+  )
+    appearance.opacity = patch.opacity;
+  if (!Object.keys(appearance).length) return {};
+  return {
+    levels: (drawing.levels ?? defaultDrawingLevels(drawing.kind)).map((level) => ({
+      ...level,
+      ...appearance,
+    })),
+    ...(drawing.kind === "fib-trend-time"
+      ? {
+          trendLine: {
+            ...(drawing.trendLine ?? defaultFibTimeDrawingSettings(drawing.kind).trendLine!),
+            ...appearance,
+          },
+        }
+      : {}),
+  };
+}
 export const supportsDrawingLevels = (kind: DrawingKind) =>
-  ["fib", "fib-extension", "fib-channel"].includes(kind) || isPitchforkDrawingTool(kind);
+  ["fib", "fib-extension", "fib-channel"].includes(kind) ||
+  isPitchforkDrawingTool(kind) ||
+  isFibTimeDrawing(kind);
 export function defaultDrawingLevels(kind: DrawingKind): DrawingLevel[] {
+  if (kind === "fib-time-zone")
+    return [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89].map((value) => ({
+      value,
+      visible: true,
+      color: value === 0 ? "#808080" : "#2962ff",
+      width: 2,
+      lineStyle: "solid",
+      opacity: 1,
+    }));
+  if (kind === "fib-trend-time") {
+    const colors = [
+      "#808080",
+      "#f23645",
+      "#81c784",
+      "#4caf50",
+      "#089981",
+      "#00bcd4",
+      "#808080",
+      "#2962ff",
+      "#e91e63",
+      "#9c27b0",
+      "#673ab7",
+    ];
+    return [0, 0.382, 0.5, 0.618, 1, 1.382, 1.618, 2, 2.382, 2.618, 3].map((value, index) => ({
+      value,
+      visible: value !== 0.5,
+      color: colors[index]!,
+      width: 2,
+      lineStyle: "solid",
+      opacity: 1,
+    }));
+  }
   if (kind === "fib-extension" || kind === "fib-channel") {
     const values = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 3.618, 4.236];
     const colors = [
@@ -220,6 +328,7 @@ export function defaultDrawingLevels(kind: DrawingKind): DrawingLevel[] {
 }
 /** Defaults for the new level tools; saved retracements retain their original appearance. */
 export function defaultDrawingLevelSettings(kind: DrawingKind): DrawingSettings {
+  if (isFibTimeDrawing(kind)) return defaultFibTimeDrawingSettings(kind);
   if (isPitchforkDrawingTool(kind))
     return { background: true, backgroundOpacity: 0.12, showLevels: false, showPrices: false };
   return kind === "fib-extension" || kind === "fib-channel"
@@ -393,12 +502,49 @@ export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
         {
           value: level.value,
           visible: level.visible !== false,
+          ...(typeof level.opacity === "number" &&
+          Number.isFinite(level.opacity) &&
+          level.opacity >= 0 &&
+          level.opacity <= 1
+            ? { opacity: level.opacity }
+            : {}),
+          ...(typeof level.width === "number" &&
+          Number.isInteger(level.width) &&
+          level.width >= 1 &&
+          level.width <= 8
+            ? { width: level.width }
+            : {}),
+          ...(["solid", "dashed", "dotted"].includes(level.lineStyle ?? "")
+            ? { lineStyle: level.lineStyle! }
+            : {}),
           ...(typeof level.color === "string" && /^#[a-f\d]{6}$/i.test(level.color)
             ? { color: level.color }
             : {}),
         },
       ];
     });
+  const trend = source.trendLine;
+  if (
+    trend &&
+    typeof trend === "object" &&
+    typeof trend.color === "string" &&
+    /^#[a-f\d]{6}$/i.test(trend.color) &&
+    Number.isInteger(trend.width) &&
+    trend.width >= 1 &&
+    trend.width <= 8 &&
+    ["solid", "dashed", "dotted"].includes(trend.lineStyle)
+  )
+    result.trendLine = {
+      color: trend.color,
+      width: trend.width,
+      lineStyle: trend.lineStyle,
+      ...(typeof trend.opacity === "number" &&
+      Number.isFinite(trend.opacity) &&
+      trend.opacity >= 0 &&
+      trend.opacity <= 1
+        ? { opacity: trend.opacity }
+        : {}),
+    };
   if (
     typeof source.backgroundOpacity === "number" &&
     Number.isFinite(source.backgroundOpacity) &&
@@ -961,6 +1107,9 @@ function buildLevelDrawingGeometry(
     result.lines.push({
       ...clipped,
       color,
+      ...(level.width === undefined ? {} : { width: level.width }),
+      ...(level.lineStyle === undefined ? {} : { lineStyle: level.lineStyle }),
+      ...(level.opacity === undefined ? {} : { opacity: level.opacity }),
       ...(rows.length
         ? {
             label: rows.join("  "),
@@ -1107,6 +1256,90 @@ export function extendDrawingLine(
   };
 }
 
+function buildFibTimeDrawingGeometry(
+  drawing: ChartDrawing,
+  project: (anchor: DrawingAnchor) => DrawingPoint | null,
+  width: number,
+  height: number,
+): DrawingGeometry {
+  const shape: DrawingGeometry = { lines: [], handles: [] };
+  if (drawing.hidden) return shape;
+  const settings = { ...defaultFibTimeDrawingSettings(drawing.kind), ...drawing };
+  const points = drawing.anchors.map(project);
+  if (points.some((point) => point === null)) return shape;
+  shape.handles = points as DrawingPoint[];
+  const [a, b, c] = shape.handles;
+  if (!a || !b) return shape;
+  const trend = settings.trendLine ?? { color: "#808080", width: 2, lineStyle: "dashed" as const };
+  if (drawing.kind === "fib-time-zone" || settings.showTrendLine !== false) {
+    shape.lines.push({ from: a, to: b, ...trend });
+    if (c) shape.lines.push({ from: b, to: c, ...trend });
+  }
+  const origin = drawing.kind === "fib-time-zone" ? a : c;
+  if (!origin || a.x === b.x) return shape;
+  // Chart x is affine in logical bars, including market closures; never multiply elapsed timestamps.
+  const boundaries = (settings.levels ?? defaultDrawingLevels(drawing.kind))
+    .filter((level) => level.visible)
+    .map((level) => ({ level, x: origin.x + (b.x - a.x) * level.value }))
+    .filter(({ x }) => Number.isFinite(x));
+  if (settings.background) {
+    const ordered = boundaries.toSorted((first, second) => first.x - second.x);
+    shape.polygons = [];
+    for (let index = 1; index < ordered.length; index++) {
+      const previous = ordered[index - 1]!,
+        current = ordered[index]!;
+      const left = Math.max(0, previous.x),
+        right = Math.min(width, current.x);
+      if (right <= left) continue;
+      shape.polygons.push({
+        points: [
+          { x: left, y: 0 },
+          { x: right, y: 0 },
+          { x: right, y: height },
+          { x: left, y: height },
+        ],
+        color: current.level.color ?? drawing.color,
+        opacity: settings.backgroundOpacity ?? 0.2,
+      });
+    }
+  }
+  for (const { level, x } of boundaries) {
+    if (x < 0 || x > width) continue;
+    const horizontal = settings.levelLabelPosition ?? "right",
+      vertical = settings.levelLabelAlignment ?? "bottom";
+    shape.lines.push({
+      from: { x, y: 0 },
+      to: { x, y: height },
+      color: level.color ?? drawing.color,
+      width: level.width ?? 2,
+      lineStyle: level.lineStyle ?? "solid",
+      ...(level.opacity === undefined ? {} : { opacity: level.opacity }),
+      ...(settings.showLevels !== false
+        ? {
+            label: String(level.value),
+            labelPoint: {
+              x: x + (horizontal === "left" ? -5 : horizontal === "right" ? 5 : 0),
+              y: vertical === "top" ? 5 : vertical === "middle" ? height / 2 : height - 5,
+            },
+            labelAlign:
+              horizontal === "left"
+                ? ("right" as const)
+                : horizontal === "right"
+                  ? ("left" as const)
+                  : ("center" as const),
+            labelBaseline:
+              vertical === "top"
+                ? ("top" as const)
+                : vertical === "middle"
+                  ? ("middle" as const)
+                  : ("bottom" as const),
+          }
+        : {}),
+    });
+  }
+  return shape;
+}
+
 function buildRegressionDrawingGeometry(
   drawing: ChartDrawing,
   fit: DrawingRegressionFit | undefined,
@@ -1190,6 +1423,8 @@ export function buildDrawingGeometry(
   coordinatePrice?: (coordinate: number) => number | null,
   regressionFit?: DrawingRegressionFit,
 ): DrawingGeometry {
+  if (isFibTimeDrawing(drawing.kind))
+    return buildFibTimeDrawingGeometry(drawing, project, width, height);
   if (drawing.kind === "regression-trend")
     return buildRegressionDrawingGeometry(drawing, regressionFit, project, width, height);
   if (isSpecialChannelDrawing(drawing.kind))
@@ -1473,6 +1708,7 @@ export function validDrawingAnchors(kind: DrawingKind, anchors: DrawingAnchor[])
   if (!first || !second) return true;
   const same = (a: DrawingAnchor, b: DrawingAnchor) =>
     drawingTimeValue(a.time) === drawingTimeValue(b.time) && a.price === b.price;
+  if (isFibTimeDrawing(kind)) return drawingTimeValue(first.time) !== drawingTimeValue(second.time);
   if (kind === "fib-extension")
     return !!third && first.price !== second.price && !same(second, third);
   if (kind === "fib-channel" || isPitchforkDrawingTool(kind)) {

@@ -1651,3 +1651,30 @@ describe("regression bar-range interaction", () => {
     session.dispose();
   });
 });
+
+describe("Fibonacci time placement and editing", () => {
+  it.each(["fib-time-zone", "fib-trend-time"] as const)(
+    "places %s with its own anchor count, then drags and restores its baseline",
+    (kind) => {
+      const f = fixture(`fib-time-${kind}`),
+        session = f.open();
+      session.setTool(kind);
+      f.click(100, 100);
+      f.click(200, 200);
+      if (kind === "fib-trend-time") {
+        expect(f.writes()).toBe(0);
+        f.click(400, 150);
+      }
+      expect(f.writes()).toBe(1);
+      const original = JSON.parse(f.saved()!)[0];
+      expect(original.anchors).toHaveLength(kind === "fib-time-zone" ? 2 : 3);
+      expect(session.beginDrag({ x: 100, y: 100 })).toBe(true);
+      session.dragTo({ x: 150, y: 130 });
+      session.endDrag();
+      expect(JSON.parse(f.saved()!)[0].anchors[0]).toEqual({ time: 150, price: 4870 });
+      session.undo();
+      expect(JSON.parse(f.saved()!)[0]).toEqual(original);
+      session.dispose();
+    },
+  );
+});

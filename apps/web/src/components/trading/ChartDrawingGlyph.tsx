@@ -87,6 +87,21 @@ export function ChartDrawingGlyph({ tool }: { tool: ChartDrawingTool }) {
           <circle cx="18" cy="20" r="1.5" fill="var(--color-background, #0b0d12)" />
         </>
       ) : null}
+      {tool === "fib-time-zone" ? (
+        <>
+          <path d="M3 3v18M7 3v18M11 3v18M17 3v18M22 3v18" />
+          <path d="m3 16 4-7" strokeDasharray="2 2" />
+        </>
+      ) : null}
+      {tool === "fib-trend-time" ? (
+        <>
+          <path d="M8 3v18M13 3v18M20 3v18" />
+          <path d="m2 18 5-10 4 5" strokeDasharray="2 2" />
+          <circle cx="2" cy="18" r="1" />
+          <circle cx="7" cy="8" r="1" />
+          <circle cx="11" cy="13" r="1" />
+        </>
+      ) : null}
       {tool === "fib-extension" ? (
         <>
           <path d="M2 19 8 10l5 4 8-11M3 8h18M3 4h18M10 13h11" />

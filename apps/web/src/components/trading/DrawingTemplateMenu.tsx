@@ -35,6 +35,7 @@ export function DrawingTemplateMenu({
         Template <ChartIcon name="chevron-down" className="size-3" />
       </PopoverTrigger>
       <PopoverPopup
+        instant
         side="top"
         align="start"
         style={{ background: "#1f1f1f", backdropFilter: "none" }}

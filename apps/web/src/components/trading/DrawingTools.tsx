@@ -61,6 +61,8 @@ const tools: DrawingTool[] = [
   { kind: "crossline", label: "Crossline", section: "Lines" },
   { kind: "fib", label: "Fib retracement", section: "Fibonacci" },
   { kind: "fib-extension", label: "Trend-based fib extension", section: "Fibonacci" },
+  { kind: "fib-time-zone", label: "Fib time zone", section: "Fibonacci" },
+  { kind: "fib-trend-time", label: "Trend-based fib time", section: "Fibonacci" },
   { kind: "fib-channel", label: "Fib channel", section: "Fibonacci" },
   { kind: "pitchfork", label: "Pitchfork", section: "Pitchforks" },
   { kind: "schiff-pitchfork", label: "Schiff pitchfork", section: "Pitchforks" },
@@ -112,7 +114,10 @@ const toolGroups: Array<{ label: string; kinds: ChartDrawingTool[] }> = [
       "inside-pitchfork",
     ],
   },
-  { label: "Fibonacci tools", kinds: ["fib", "fib-extension", "fib-channel"] },
+  {
+    label: "Fibonacci tools",
+    kinds: ["fib", "fib-extension", "fib-channel", "fib-time-zone", "fib-trend-time"],
+  },
   {
     label: "Geometric shapes",
     kinds: [
@@ -189,6 +194,7 @@ function DrawingToolGroup({
         </PopoverTrigger>
       </div>
       <PopoverPopup
+        instant
         style={{ background: "#1f1f1f", backdropFilter: "none" }}
         side="right"
         align="start"
@@ -308,6 +314,7 @@ export function DrawingTools({
           <TooltipPopup side="right">Drawing objects</TooltipPopup>
         </Tooltip>
         <PopoverPopup
+          instant
           style={{ background: "#1f1f1f", backdropFilter: "none" }}
           side="right"
           className="w-80 max-w-[calc(100vw-4rem)] space-y-3 p-3"
@@ -424,6 +431,7 @@ export function DrawingTools({
           </PopoverTrigger>
         </div>
         <PopoverPopup
+          instant
           style={{ background: "#1f1f1f", backdropFilter: "none" }}
           side="right"
           align="start"
@@ -502,6 +510,7 @@ export function DrawingTools({
           </PopoverTrigger>
         </div>
         <PopoverPopup
+          instant
           style={{ background: "#1f1f1f", backdropFilter: "none" }}
           side="right"
           align="start"
@@ -559,6 +568,7 @@ export function DrawingTools({
           <TooltipPopup side="right">Remove drawings</TooltipPopup>
         </Tooltip>
         <PopoverPopup
+          instant
           style={{ background: "#1f1f1f", backdropFilter: "none" }}
           side="right"
           align="start"

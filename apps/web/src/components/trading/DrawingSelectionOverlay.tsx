@@ -31,11 +31,15 @@ import {
   defaultDrawingStats,
   supportsDrawingLevels,
   defaultDrawingLevelSettings,
+  defaultDrawingLevels,
+  fibTimeAppearancePatch,
   defaultChannelDrawingSettings,
   defaultRegressionDrawingSettings,
   isSpecialChannelDrawing,
+  isFibTimeDrawing,
 } from "./drawingGeometry";
 import { DrawingRegressionSettings } from "./DrawingRegressionSettings";
+import { DrawingFibTimeSettings } from "./DrawingFibTimeSettings";
 import { DrawingLevelSettings } from "./DrawingLevelSettings";
 import { DrawingTemplateMenu } from "./DrawingTemplateMenu";
 import { applyDrawingTemplate } from "./drawingTemplates";
@@ -59,6 +63,8 @@ function titleFor(drawing: ChartDrawing) {
     horizontal: "Horizontal Line",
     "horizontal-ray": "Horizontal Ray",
     fib: "Fib Retracement",
+    "fib-time-zone": "Fib Time Zone",
+    "fib-trend-time": "Trend-based Fib Time",
     channel: "Parallel Channel",
     "flat-channel": "Flat Top/Bottom",
     "disjoint-channel": "Disjoint Channel",
@@ -157,6 +163,10 @@ function DrawingSettings({
   const extendLeft = draft.extendLeft ?? draft.kind === "extended-line";
   const extendRight = draft.extendRight ?? ["ray", "extended-line"].includes(draft.kind);
   const canSave = validDrawingAnchors(draft.kind, draft.anchors);
+  const dialogWidth =
+    tab === "Visibility" || (supportsDrawingLevels(draft.kind) && !isFibTimeDrawing(draft.kind))
+      ? 460
+      : 380;
   return (
     <Dialog
       open
@@ -166,22 +176,17 @@ function DrawingSettings({
     >
       <DialogPopup
         bottomStickOnMobile={false}
-        backdropStyle={{ background: "transparent", backdropFilter: "none" }}
+        backdropStyle={{ background: "transparent", backdropFilter: "none", transition: "none" }}
         ref={measureDialog}
-        className="max-w-[calc(100vw-24px)] overflow-hidden rounded-lg border border-white/10 p-0 text-zinc-100"
+        className="max-w-[calc(100vw-24px)] overflow-hidden rounded-lg border border-white/10 p-0 text-zinc-100 transition-none data-starting-style:scale-100 data-ending-style:scale-100 data-starting-style:opacity-100 data-ending-style:opacity-100"
         style={{
           background: "#202020",
           backdropFilter: "none",
-          width: tab === "Visibility" || supportsDrawingLevels(draft.kind) ? 460 : 380,
+          width: dialogWidth,
           ...(dialogPosition
             ? {
                 position: "fixed",
-                left: Math.min(
-                  dialogPosition.left,
-                  window.innerWidth -
-                    (tab === "Visibility" || supportsDrawingLevels(draft.kind) ? 460 : 380) -
-                    12,
-                ),
+                left: Math.min(dialogPosition.left, window.innerWidth - dialogWidth - 12),
                 top: dialogPosition.top,
                 maxHeight: `calc(100dvh - ${dialogPosition.top + 12}px)`,
               }
@@ -237,7 +242,11 @@ function DrawingSettings({
             <DrawingRegressionSettings drawing={draft} tab={tab} onChange={update} />
           ) : null}
           {tab === "Style" && supportsDrawingLevels(draft.kind) ? (
-            <DrawingLevelSettings drawing={draft} onChange={update} />
+            isFibTimeDrawing(draft.kind) ? (
+              <DrawingFibTimeSettings drawing={draft} onChange={update} />
+            ) : (
+              <DrawingLevelSettings drawing={draft} onChange={update} />
+            )
           ) : null}
           {tab === "Style" &&
           !supportsDrawingLevels(draft.kind) &&
@@ -320,6 +329,7 @@ function DrawingSettings({
                         <ChartIcon name="chevron-down" className="size-4" />
                       </PopoverTrigger>
                       <PopoverPopup
+                        instant
                         style={{ background: "#202020", backdropFilter: "none" }}
                         className="w-52"
                         viewportClassName="p-3 space-y-3"
@@ -732,6 +742,8 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
               });
             }}
           />
+        ) : isFibTimeDrawing(selected.kind) ? (
+          <FibTimeToolbar drawing={selected} onChange={drawings.updateSelected} />
         ) : (
           <>
             <ColorPicker
@@ -768,6 +780,7 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
             </svg>
           </PopoverTrigger>
           <PopoverPopup
+            instant
             style={{ background: "#1f1f1f", backdropFilter: "none" }}
             className="w-48"
             viewportClassName="p-1"
@@ -937,6 +950,41 @@ function ChannelAppearance({
           className="w-44 accent-white"
         />
       </label>
+    </>
+  );
+}
+
+function FibTimeToolbar({
+  drawing,
+  onChange,
+}: {
+  drawing: ChartDrawing;
+  onChange: (patch: DrawingPatch) => void;
+}) {
+  const levels = drawing.levels ?? defaultDrawingLevels(drawing.kind);
+  const first = levels[0];
+  const updateLevels = (patch: DrawingPatch) => onChange(fibTimeAppearancePatch(drawing, patch));
+  const appearance = {
+    ...drawing,
+    width: first?.width ?? 2,
+    lineStyle: first?.lineStyle ?? ("solid" as const),
+  };
+  return (
+    <>
+      <ColorPicker
+        label="All level colors"
+        value={first?.color ?? drawing.color}
+        mixed={new Set(levels.map((level) => level.color ?? drawing.color)).size > 1}
+        onChange={(color) => updateLevels({ color })}
+      />
+      <WidthPicker
+        drawing={appearance}
+        onChange={updateLevels}
+        mixed={new Set(levels.map((level) => level.width ?? 2)).size > 1}
+      />
+      {drawing.kind === "fib-time-zone" ? (
+        <LineStylePicker drawing={appearance} onChange={updateLevels} />
+      ) : null}
     </>
   );
 }

@@ -533,6 +533,82 @@ describe("additional line primitive behavior", () => {
     expect((f.ctx as unknown as CanvasRenderingContext2D).fillStyle).toBe("#0000ff");
   });
 
+  it("isolates zero and partial Fibonacci level opacity from later strokes and labels", () => {
+    const drawing: ChartDrawing = {
+      id: "time-opacity",
+      kind: "fib-trend-time",
+      color: "#2962ff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 400 },
+        { time: 200 as Time, price: 300 },
+        { time: 300 as Time, price: 350 },
+      ],
+      background: false,
+      trendLine: { color: "#2962ff", width: 2, lineStyle: "solid", opacity: 0.6 },
+      levels: [
+        { value: 0, visible: true, opacity: 0 },
+        { value: 1, visible: true, opacity: 0.4 },
+        { value: 2, visible: true },
+      ],
+    };
+    const f = renderFixture(drawing),
+      strokes: number[] = [],
+      labels: number[] = [];
+    f.ctx.stroke.mockImplementation(() => {
+      strokes.push((f.ctx as unknown as CanvasRenderingContext2D).globalAlpha);
+    });
+    f.ctx.fillText.mockImplementation(() => {
+      labels.push((f.ctx as unknown as CanvasRenderingContext2D).globalAlpha);
+    });
+    f.draw();
+    expect(strokes).toEqual([0.6, 0, 0.4, 1]);
+    expect(labels).toEqual([0, 0.4, 1]);
+    expect((f.ctx as unknown as CanvasRenderingContext2D).globalAlpha).toBe(1);
+    drawing.kind = "trend";
+    drawing.anchors = drawing.anchors.slice(0, 2);
+    f.draw();
+    expect(strokes.at(-1)).toBe(1);
+  });
+
+  it("renders Fibonacci time construction and per-level line widths and styles", () => {
+    const drawing: ChartDrawing = {
+      id: "time-styles",
+      kind: "fib-trend-time",
+      color: "#ffffff",
+      width: 1,
+      anchors: [
+        { time: 100 as Time, price: 400 },
+        { time: 200 as Time, price: 300 },
+        { time: 300 as Time, price: 350 },
+      ],
+      background: false,
+      trendLine: { color: "#808080", width: 1, lineStyle: "dashed" },
+      levels: [
+        { value: 0, visible: true, color: "#ff0000", width: 4, lineStyle: "dotted" },
+        { value: 1, visible: true, color: "#00ff00", width: 2, lineStyle: "solid" },
+      ],
+    };
+    const f = renderFixture(drawing);
+    const strokes: Array<[string, number]> = [];
+    f.ctx.stroke.mockImplementation(() => {
+      const ctx = f.ctx as unknown as CanvasRenderingContext2D;
+      strokes.push([String(ctx.strokeStyle), ctx.lineWidth]);
+    });
+    f.draw();
+    expect(strokes).toEqual([
+      ["#808080", 1],
+      ["#ff0000", 4],
+      ["#00ff00", 2],
+    ]);
+    expect(f.ctx.fillText.mock.calls).toEqual([
+      ["0", 305, 495],
+      ["1", 405, 495],
+    ]);
+    expect(f.plugin.hitTest({ x: 400, y: 100 })?.drawing.id).toBe(drawing.id);
+    expect(f.plugin.hitTest({ x: 300, y: 150 })).toMatchObject({ handle: 2 });
+  });
+
   it("distinguishes the disjoint vertical-only square handle from its three round corners", () => {
     const drawing: ChartDrawing = {
       id: "channel-handles",
@@ -939,5 +1015,39 @@ describe("regression data integration", () => {
     }));
     expect(plugin.hitTest({ x: 150, y: 150 })).toBeNull();
     expect(plugin.primitive.priceAxisViews!()).toEqual([]);
+  });
+});
+
+describe("Fibonacci time logical projection", () => {
+  it("keeps future verticals bar-spaced after irregular timestamps are projected by the chart", () => {
+    const { chart, series } = fixture();
+    const scale = chart.timeScale();
+    vi.spyOn(chart, "timeScale").mockReturnValue({
+      ...scale,
+      timeToCoordinate: (time: number) =>
+        new Map([
+          [100, 100],
+          [200, 200],
+          [10000, 300],
+        ]).get(time) ?? null,
+    } as ReturnType<typeof chart.timeScale>);
+    const drawing: ChartDrawing = {
+      id: "gap-time",
+      kind: "fib-time-zone",
+      color: "#2962ff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 400 },
+        { time: 10000 as Time, price: 300 },
+      ],
+      levels: [{ value: 2, visible: true }],
+    };
+    const plugin = createDrawingPrimitive(chart, series, () => ({
+      drawings: [drawing],
+      selected: null,
+    }));
+    expect(plugin.hitTest({ x: 500, y: 450 })?.drawing.id).toBe(drawing.id);
+    expect(plugin.hitTest({ x: 400, y: 450 })).toBeNull();
+    expect(plugin.hitTest({ x: 300, y: 200 })).toMatchObject({ handle: 1 });
   });
 });

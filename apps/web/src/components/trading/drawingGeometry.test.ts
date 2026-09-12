@@ -9,6 +9,8 @@ import {
   DRAWING_ANCHORS,
   defaultDrawingLevels,
   defaultRegressionDrawingSettings,
+  defaultFibTimeDrawingSettings,
+  fibTimeAppearancePatch,
   maximumDrawingAnchors,
   sanitizeDrawingSettings,
   parseChartDrawings,
@@ -1108,5 +1110,250 @@ describe("regression drawing geometry", () => {
         regressionUseUpperDeviation: "yes",
       }),
     ).toEqual({});
+  });
+});
+
+describe("Fibonacci time tools", () => {
+  const build = (shape: ChartDrawing) =>
+    buildDrawingGeometry(
+      shape,
+      ({ time, price }) => ({
+        x:
+          new Map([
+            [100, 100],
+            [200, 200],
+            [10000, 300],
+            [10100, 400],
+          ]).get(Number(time)) ?? 0,
+        y: 500 - price,
+      }),
+      (price) => 500 - price,
+      1000,
+      500,
+    );
+  it("uses logical bar spacing across a market closure rather than elapsed timestamps", () => {
+    const shape = build({
+      ...drawing("fib-time-zone", [
+        [100, 400],
+        [10000, 200],
+      ]),
+      levels: [
+        { value: 0, visible: true },
+        { value: 1, visible: true },
+        { value: 2, visible: true },
+        { value: 3, visible: true },
+      ],
+    });
+    expect(shape.lines.filter((line) => line.label).map((line) => line.from.x)).toEqual([
+      100, 300, 500, 700,
+    ]);
+    expect(
+      shape.lines
+        .filter((line) => line.label)
+        .every((line) => line.from.y === 0 && line.to.y === 500),
+    ).toBe(true);
+    expect(shape.lines[0]).toMatchObject({
+      from: { x: 100, y: 100 },
+      to: { x: 300, y: 300 },
+      lineStyle: "dashed",
+    });
+    expect(shape.polygons).toBeUndefined();
+    expect(shape.lines[1]).toMatchObject({
+      label: "0",
+      labelPoint: { x: 105, y: 495 },
+      labelAlign: "left",
+      labelBaseline: "bottom",
+    });
+    expect(hitDrawingGeometry(shape, { x: 500, y: 250 })).toBe(true);
+    expect(hitDrawingGeometry(shape, { x: 450, y: 250 })).toBe(false);
+  });
+  it("projects from the third anchor and reverses only the spacing when the baseline reverses", () => {
+    const original = drawing("fib-trend-time", [
+      [100, 400],
+      [200, 300],
+      [10100, 200],
+    ]);
+    const options = {
+      levels: [
+        { value: 0, visible: true },
+        { value: 1, visible: true },
+        { value: 2, visible: true },
+      ],
+      showTrendLine: false,
+    };
+    expect(build({ ...original, ...options }).lines.map((line) => line.from.x)).toEqual([
+      400, 500, 600,
+    ]);
+    const reversed = build({
+      ...original,
+      ...options,
+      anchors: [original.anchors[1]!, original.anchors[0]!, original.anchors[2]!],
+    });
+    expect(reversed.lines.map((line) => line.from.x)).toEqual([400, 300, 200]);
+    expect(reversed.polygons).toHaveLength(2);
+    expect(reversed.handles).toHaveLength(3);
+    expect(build({ ...original, ...options, background: false }).polygons).toBeUndefined();
+    expect(
+      build({
+        ...drawing("fib-time-zone", [
+          [100, 400],
+          [200, 300],
+        ]),
+        showTrendLine: false,
+        levels: [],
+      }).lines,
+    ).toHaveLength(1);
+  });
+  it("defaults time backgrounds to20% and validates independent level and construction opacity", () => {
+    const defaults = defaultFibTimeDrawingSettings("fib-trend-time");
+    expect(defaults.backgroundOpacity).toBe(0.2);
+    expect(defaults.trendLine?.opacity).toBe(1);
+    const settings = {
+      levels: [
+        { value: 1, visible: true, opacity: 0 },
+        { value: 2, visible: true, opacity: 0.45 },
+      ],
+      trendLine: { color: "#808080", width: 2, lineStyle: "dashed" as const, opacity: 0.7 },
+    };
+    const shape = {
+      ...drawing("fib-trend-time", [
+        [100, 400],
+        [200, 300],
+        [10100, 200],
+      ]),
+      ...settings,
+    };
+    expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+    expect(build(shape).lines.map((line) => line.opacity)).toEqual([0.7, 0.7, 0, 0.45]);
+    expect(build(shape).polygons?.[0]?.opacity).toBe(0.2);
+    expect(
+      sanitizeDrawingSettings({
+        levels: [
+          { value: 1, visible: true, opacity: -1 },
+          { value: 2, visible: true, opacity: Infinity },
+        ],
+        trendLine: { ...settings.trendLine, opacity: 2 },
+      }),
+    ).toEqual({
+      levels: [
+        { value: 1, visible: true },
+        { value: 2, visible: true },
+      ],
+      trendLine: { color: "#808080", width: 2, lineStyle: "dashed" },
+    });
+  });
+  it("honors each level and construction style and round-trips them without adding ignored text", () => {
+    const shape: ChartDrawing = {
+      ...drawing("fib-trend-time", [
+        [100, 400],
+        [200, 300],
+        [10100, 200],
+      ]),
+      ...defaultFibTimeDrawingSettings("fib-trend-time"),
+      levels: [
+        { value: 0, visible: true, color: "#ff0000", width: 4, lineStyle: "dotted" },
+        { value: 1, visible: false, color: "#00ff00", width: 3, lineStyle: "dashed" },
+      ],
+      trendLine: { color: "#808080", width: 1, lineStyle: "solid" },
+      text: "Ignored",
+      reverse: true,
+      extendLeft: true,
+    };
+    const result = build(shape);
+    expect(
+      result.lines
+        .slice(0, 2)
+        .every(
+          (line) => line.color === "#808080" && line.width === 1 && line.lineStyle === "solid",
+        ),
+    ).toBe(true);
+    expect(result.lines.at(-1)).toMatchObject({
+      from: { x: 400, y: 0 },
+      color: "#ff0000",
+      width: 4,
+      lineStyle: "dotted",
+    });
+    expect(result.text).toBeUndefined();
+    expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+    expect(defaultDrawingLevels("fib-time-zone").map((level) => level.value)).toEqual([
+      0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89,
+    ]);
+    expect(defaultDrawingLevels("fib-trend-time").find((level) => !level.visible)?.value).toBe(0.5);
+    expect(
+      sanitizeDrawingSettings({
+        levels: [{ value: 1, visible: true, width: Infinity, lineStyle: "wrong" }],
+        trendLine: { color: "bad", width: 1, lineStyle: "solid" },
+      }),
+    ).toEqual({ levels: [{ value: 1, visible: true }] });
+    expect(
+      validDrawingAnchors(
+        "fib-time-zone",
+        drawing("fib-time-zone", [
+          [100, 400],
+          [100, 300],
+        ]).anchors,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("Fibonacci time global appearance", () => {
+  const tool = drawing("fib-trend-time", [
+    [100, 400],
+    [200, 300],
+    [300, 200],
+  ]);
+  it("changes all widths while preserving independent colors, opacity, visibility and construction dashes", () => {
+    const original: ChartDrawing = {
+      ...tool,
+      levels: [
+        { value: 0, visible: true, color: "#ff0000", opacity: 0.2, width: 1, lineStyle: "dotted" },
+        { value: 0.5, visible: false, color: "#00ff00", opacity: 0, width: 2, lineStyle: "solid" },
+      ],
+      trendLine: { color: "#808080", width: 2, lineStyle: "dashed", opacity: 0.6 },
+    };
+    const patch = fibTimeAppearancePatch(original, { width: 3 });
+    expect(patch.levels).toEqual(original.levels!.map((level) => ({ ...level, width: 3 })));
+    expect(patch.trendLine).toEqual({ ...original.trendLine, width: 3 });
+    expect(original.levels?.[0]?.width).toBe(1);
+  });
+  it("applies color to disabled levels and only the trend-time construction, resetting alpha unless explicit", () => {
+    const original: ChartDrawing = {
+      ...tool,
+      levels: [{ value: 0.5, visible: false, color: "#00ff00", opacity: 0.2 }],
+    };
+    const patch = fibTimeAppearancePatch(original, { color: "#ff0000" });
+    expect(patch.levels).toEqual([{ value: 0.5, visible: false, color: "#ff0000", opacity: 1 }]);
+    expect(patch.trendLine).toEqual({
+      color: "#ff0000",
+      width: 2,
+      lineStyle: "dashed",
+      opacity: 1,
+    });
+    expect(
+      fibTimeAppearancePatch({ ...original, kind: "fib-time-zone" }, { color: "#ff0000" })
+        .trendLine,
+    ).toBeUndefined();
+    expect(
+      fibTimeAppearancePatch(original, { color: "#ff0000", opacity: 0 }).levels?.[0]?.opacity,
+    ).toBe(0);
+    const updated: ChartDrawing = {
+      ...original,
+      ...patch,
+      levels: patch.levels!.map((level) => ({ ...level, color: "#0000ff" })),
+    };
+    expect(fibTimeAppearancePatch(updated, { width: 4 }).levels?.[0]?.color).toBe("#0000ff");
+    expect(updated.trendLine?.color).toBe("#ff0000");
+  });
+  it("filters unsupported keys and invalid values without changing geometry or background", () => {
+    const input = { color: "#ff0000", visible: false, value: 99, background: false };
+    const patch = fibTimeAppearancePatch(tool, input);
+    expect(Object.keys(patch).sort()).toEqual(["levels", "trendLine"]);
+    expect(patch.levels?.[0]).toMatchObject({ value: 0, visible: true });
+    expect(patch.background).toBeUndefined();
+    expect(fibTimeAppearancePatch(tool, { width: Infinity, opacity: -1, color: "bad" })).toEqual(
+      {},
+    );
+    expect(fibTimeAppearancePatch({ ...tool, kind: "trend" }, { color: "#ff0000" })).toEqual({});
   });
 });
