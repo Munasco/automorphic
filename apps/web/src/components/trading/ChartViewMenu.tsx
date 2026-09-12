@@ -77,7 +77,7 @@ export function ChartViewMenu({
       >
         {item("chart", "Chart")}
         <MenuSeparator />
-        <MenuGroup className="space-y-1">
+        <MenuGroup className="space-y-1 pb-1">
           <MenuGroupLabel className="px-3 py-2 text-[10px] font-medium uppercase tracking-widest text-zinc-500">
             Analysis
           </MenuGroupLabel>
