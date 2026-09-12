@@ -2,6 +2,7 @@ import { DRAWING_DEFAULTS_KEY } from "./drawingDefaults";
 import { defaultDrawingTemplateSettings } from "./drawingTemplates";
 import { describe, expect, it, vi } from "vite-plus/test";
 import type {
+  BarPrice,
   CandlestickData,
   Coordinate,
   IChartApi,
@@ -13,6 +14,7 @@ import type {
 } from "lightweight-charts";
 import { createChartDrawingSession } from "./useChartDrawings";
 import { sanitizeDrawingVisibility } from "./drawingVisibility";
+import type { ChartDrawing } from "./drawingGeometry";
 
 function fixture(symbol: string, initial: string | null = null, candles: CandlestickData[] = []) {
   let listener: ((event: MouseEventParams<Time>) => void) | undefined;
@@ -104,6 +106,8 @@ function fixture(symbol: string, initial: string | null = null, candles: Candles
   return {
     open,
     click,
+    chart,
+    series,
     priceLines,
     lines,
     change,
@@ -1082,6 +1086,129 @@ describe("drawing settings interactions", () => {
     expect(f.priceLines).toMatchObject([{ price: 4875, axisLabelVisible: false }]);
     session.updateSelected({ showPriceLabel: true });
     expect(f.priceLines).toMatchObject([{ price: 4875, axisLabelVisible: true }]);
+    session.dispose();
+  });
+});
+
+describe("parallel channel coordinate offsets", () => {
+  it.each([
+    {
+      name: "linear",
+      times: [100, 300, 200],
+      prices: [100, 300, 250],
+      log: false,
+      initial: 50,
+      offset: -25,
+      expected: 175,
+    },
+    {
+      name: "gapped time",
+      times: [100, 100000, 200],
+      prices: [100, 300, 250],
+      log: false,
+      initial: 50,
+      offset: 25,
+      expected: 225,
+    },
+    {
+      name: "logarithmic",
+      times: [100, 300, 200],
+      prices: [100, 400, 250],
+      log: true,
+      initial: 50,
+      offset: -25,
+      expected: 175,
+    },
+  ])(
+    "reads and commits $name offsets in chart space while preserving anchor time",
+    ({ name, times, prices, log, initial, offset, expected }) => {
+      const original: ChartDrawing = {
+        id: "parallel",
+        kind: "channel",
+        color: "#2962ff",
+        width: 2,
+        anchors: times.map((time, index) => ({ time: time as Time, price: prices[index]! })),
+      };
+      const f = fixture(`channel-coordinate-${name}`, JSON.stringify([original]));
+      // Three consecutive chart bars may be separated by a weekend or session gap in real time.
+      const positions = new Map([
+        [times[0]!, 100],
+        [times[1]!, 300],
+        [times[2]!, 200],
+      ]);
+      const scale = f.chart.timeScale();
+      vi.spyOn(f.chart, "timeScale").mockReturnValue({
+        ...scale,
+        timeToCoordinate: (time: Time) =>
+          (positions.get(Number(time)) as Coordinate | undefined) ?? null,
+      });
+      if (log) {
+        vi.spyOn(f.series, "priceToCoordinate").mockImplementation((price) =>
+          price > 0 ? (-Math.log(price) as Coordinate) : null,
+        );
+        vi.spyOn(f.series, "coordinateToPrice").mockImplementation(
+          (coordinate) => Math.exp(-coordinate) as BarPrice,
+        );
+      }
+      const session = f.open();
+      session.selectDrawing(original.id);
+      expect(session.channelPriceOffset(original)).toBeCloseTo(initial, 10);
+      const anchors = session.channelAnchorsAtOffset(original, offset)!;
+      expect(anchors.slice(0, 2)).toEqual(original.anchors.slice(0, 2));
+      expect(anchors[2]?.time).toBe(original.anchors[2]?.time);
+      expect(anchors[2]?.price).toBeCloseTo(expected, 10);
+      expect(session.channelPriceOffset({ ...original, anchors })).toBeCloseTo(offset, 10);
+      expect(original.anchors[2]?.price).toBe(prices[2]);
+      session.openSettings();
+      session.previewSettings({ anchors });
+      expect(f.change).toHaveBeenLastCalledWith(
+        expect.objectContaining({ selected: { ...original, anchors } }),
+      );
+      expect(f.writes()).toBe(0);
+      session.closeSettings();
+      expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ selected: original }));
+      expect(JSON.parse(f.saved()!)).toEqual([original]);
+      session.openSettings();
+      session.previewSettings({ anchors });
+      session.applySettings({});
+      expect(f.writes()).toBe(1);
+      expect(JSON.parse(f.saved()!)).toEqual([{ ...original, anchors }]);
+      session.undo();
+      expect(JSON.parse(f.saved()!)).toEqual([original]);
+      session.redo();
+      expect(JSON.parse(f.saved()!)).toEqual([{ ...original, anchors }]);
+      if (log) expect(session.channelAnchorsAtOffset(original, -300)).toBeNull();
+      session.dispose();
+    },
+  );
+
+  it("declines offsets when the baseline cannot be projected or the result is invalid", () => {
+    const original: ChartDrawing = {
+      id: "parallel",
+      kind: "channel",
+      color: "#2962ff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 100 },
+        { time: 300 as Time, price: 300 },
+        { time: 200 as Time, price: 250 },
+      ],
+    };
+    const f = fixture("channel-coordinate-invalid"),
+      session = f.open();
+    expect(session.channelAnchorsAtOffset(original, NaN)).toBeNull();
+    expect(session.channelAnchorsAtOffset(original, Infinity)).toBeNull();
+    expect(session.channelPriceOffset({ ...original, kind: "triangle" })).toBeNull();
+    expect(
+      session.channelPriceOffset({
+        ...original,
+        anchors: [original.anchors[0]!, original.anchors[0]!, original.anchors[2]!],
+      }),
+    ).toBeNull();
+    vi.spyOn(f.series, "coordinateToPrice").mockReturnValue(null);
+    expect(session.channelPriceOffset(original)).toBeNull();
+    expect(session.channelAnchorsAtOffset(original, 25)).toBeNull();
+    expect(f.writes()).toBe(0);
     session.dispose();
   });
 });

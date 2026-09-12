@@ -867,6 +867,42 @@ export function createChartDrawingSession(
     if (selectedId === id) selectedId = null;
     changed();
   };
+  const channelBaselinePrice = (drawing: ChartDrawing): number | null => {
+    if (disposed || drawing.kind !== "channel" || drawing.anchors.length !== 3) return null;
+    const { project } = drawingProjection(chart, series);
+    const points = drawing.anchors.map(project);
+    if (points.some((point) => !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)))
+      return null;
+    const [first, second, third] = points as DrawingPoint[];
+    if (!first || !second || !third || first.x === second.x) return null;
+    // Match the rendered baseline in chart space: candle gaps and log scales are nonlinear in
+    // timestamps/prices, so interpolating either directly would produce a different channel.
+    const y = first.y + ((second.y - first.y) * (third.x - first.x)) / (second.x - first.x);
+    const price = Number.isFinite(y) ? series.coordinateToPrice(y) : null;
+    return price !== null && Number.isFinite(price) ? price : null;
+  };
+  const channelPriceOffset = (drawing: ChartDrawing): number | null => {
+    const baseline = channelBaselinePrice(drawing);
+    const third = drawing.anchors[2];
+    if (baseline === null || !third) return null;
+    const offset = third.price - baseline;
+    return Number.isFinite(offset) ? offset : null;
+  };
+  const channelAnchorsAtOffset = (
+    drawing: ChartDrawing,
+    offset: number,
+  ): DrawingAnchor[] | null => {
+    if (!Number.isFinite(offset)) return null;
+    const baseline = channelBaselinePrice(drawing);
+    if (baseline === null) return null;
+    const price = baseline + offset;
+    if (!Number.isFinite(price)) return null;
+    const y = series.priceToCoordinate(price);
+    if (y === null || !Number.isFinite(y)) return null;
+    return drawing.anchors.map((anchor, index) =>
+      index === 2 ? { ...anchor, price } : { ...anchor },
+    );
+  };
   // The chart library suppresses a second quick click even at a different position.
   // DOM placement handles every anchor; the chart retains its cursor-selection behavior.
   const chartClick = (event: MouseEventParams<Time>) => {
@@ -898,6 +934,8 @@ export function createChartDrawingSession(
     previewText,
     commitText,
     cancelTextEdit,
+    channelPriceOffset,
+    channelAnchorsAtOffset,
     coordinatePrice: (price: number) => {
       const format = series.options().priceFormat;
       const precision = format && "precision" in format ? format.precision : 2;
@@ -1315,6 +1353,15 @@ export function useChartDrawings(
   );
   const deleteDrawing = useCallback((id: string) => session.current?.deleteDrawing(id), []);
   const duplicateDrawing = useCallback((id: string) => session.current?.duplicateDrawing(id), []);
+  const channelPriceOffset = useCallback(
+    (drawing: ChartDrawing) => session.current?.channelPriceOffset(drawing) ?? null,
+    [],
+  );
+  const channelAnchorsAtOffset = useCallback(
+    (drawing: ChartDrawing, offset: number) =>
+      session.current?.channelAnchorsAtOffset(drawing, offset) ?? null,
+    [],
+  );
   const coordinatePrice = useCallback(
     (price: number) => session.current?.coordinatePrice(price) ?? price,
     [],
@@ -1368,6 +1415,8 @@ export function useChartDrawings(
   );
   return {
     ...state,
+    channelPriceOffset,
+    channelAnchorsAtOffset,
     coordinatePrice,
     anchorBar,
     anchorAtBar,
