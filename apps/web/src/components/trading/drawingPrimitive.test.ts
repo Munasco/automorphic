@@ -577,11 +577,12 @@ describe("additional line primitive behavior", () => {
     extraDrawings: ChartDrawing[] = [],
   ) {
     const { chart, series } = fixture();
-    let selected: string | null = null;
+    let selected: string | null = null,
+      hovered: string | null = null;
     const plugin = createDrawingPrimitive(
       chart,
       series,
-      () => ({ drawings: [drawing, ...extraDrawings], selected }),
+      () => ({ drawings: [drawing, ...extraDrawings], selected, hovered }),
       regressionSeries ?? series,
     );
     const ctx = {
@@ -619,6 +620,9 @@ describe("additional line primitive behavior", () => {
       series,
       select: () => {
         selected = drawing.id;
+      },
+      hover: (id: string | null) => {
+        hovered = id;
       },
     };
   }
@@ -752,6 +756,79 @@ describe("additional line primitive behavior", () => {
     f.draw();
     expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual(["200"]);
     drawing.stats = [];
+    f.draw();
+    expect(f.ctx.fillText).not.toHaveBeenCalled();
+  });
+
+  it("shows default Info line statistics only while the unselected line is hovered when always-show is off", () => {
+    const drawing = { ...line("info-line"), alwaysShowStats: false };
+    const f = renderFixture(drawing);
+    f.draw();
+    expect(f.ctx.fillText).not.toHaveBeenCalled();
+    f.hover(drawing.id);
+    f.draw();
+    expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual([
+      "-100.00 (-25.00%), -400",
+      "1 bars (1m 40s), distance: 141 px",
+      "-45.00°",
+    ]);
+    f.hover(null);
+    f.draw();
+    expect(f.ctx.fillText).not.toHaveBeenCalled();
+    f.hover("another-line");
+    f.draw();
+    expect(f.ctx.fillText).not.toHaveBeenCalled();
+    drawing.alwaysShowStats = true;
+    f.draw();
+    expect(f.ctx.fillText).toHaveBeenCalledTimes(3);
+    drawing.alwaysShowStats = false;
+    f.select();
+    f.draw();
+    expect(f.ctx.fillText).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(["trend", "info-line", "extended-line", "trend-angle"] as const)(
+    "honors the chosen statistics for a hovered %s without revealing hidden drawings",
+    (kind) => {
+      const drawing: ChartDrawing = {
+        ...line(kind),
+        alwaysShowStats: false,
+        stats: ["ticks"],
+      };
+      const f = renderFixture(drawing);
+      f.hover(drawing.id);
+      f.draw();
+      expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual([
+        ...(kind === "trend-angle" ? ["-45°"] : []),
+        kind === "info-line" ? "-400" : "-400 ticks",
+      ]);
+      drawing.stats = [];
+      f.draw();
+      expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual(
+        kind === "trend-angle" ? ["-45°"] : [],
+      );
+      drawing.stats = ["ticks"];
+      drawing.hidden = true;
+      f.draw();
+      expect(f.ctx.fillText).not.toHaveBeenCalled();
+    },
+  );
+
+  it("shows a locked Info line's hover statistics without drawing editable anchor handles", () => {
+    const drawing = { ...line("info-line"), alwaysShowStats: false, locked: true };
+    const f = renderFixture(drawing);
+    f.hover(drawing.id);
+    f.draw();
+    expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual([
+      "-100.00 (-25.00%), -400",
+      "1 bars (1m 40s), distance: 141 px",
+      "-45.00°",
+    ]);
+    // The panel's angle glyph has an arc; no endpoint handles should be painted.
+    expect(f.ctx.arc.mock.calls.map((call) => call[2])).toEqual([5]);
+    expect(f.plugin.primitive.priceAxisViews!()).toEqual([]);
+    expect(f.plugin.primitive.timeAxisViews!()).toEqual([]);
+    f.hover(null);
     f.draw();
     expect(f.ctx.fillText).not.toHaveBeenCalled();
   });

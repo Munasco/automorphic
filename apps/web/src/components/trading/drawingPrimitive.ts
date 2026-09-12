@@ -460,6 +460,7 @@ export function createDrawingPrimitive(
               if (
                 statKinds.length &&
                 (drawing.id === state.selected ||
+                  drawing.id === state.hovered ||
                   (drawing.alwaysShowStats ?? drawing.kind === "info-line"))
               ) {
                 const scale = chart.timeScale();
