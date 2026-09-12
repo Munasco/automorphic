@@ -42,6 +42,19 @@ export function defaultDrawingTemplateSettings(kind: DrawingKind): DrawingTempla
     ...(kind === "flat-channel" || kind === "disjoint-channel"
       ? { color: kind === "flat-channel" ? "#ff9800" : "#089981", backgroundOpacity: 0.2 }
       : {}),
+    ...(kind === "channel"
+      ? {
+          background: true,
+          backgroundOpacity: 0.2,
+          levels: [-0.25, 0, 0.25, 0.5, 0.75, 1, 1.25].map((value) => ({
+            value,
+            visible: value === 0 || value === 0.5 || value === 1,
+            color: "#2962ff",
+            width: value === 0 || value === 1 ? 2 : 1,
+            lineStyle: value === 0.5 ? ("dashed" as const) : ("solid" as const),
+          })),
+        }
+      : {}),
     // Factory-only values: sparse saved pitchforks retain their historical fallback palette.
     ...(isPitchforkDrawingTool(kind)
       ? {

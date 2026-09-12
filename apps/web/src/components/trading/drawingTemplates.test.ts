@@ -49,6 +49,41 @@ beforeEach(() => {
 });
 
 describe("drawing templates", () => {
+  it("resets parallel channels to styled rails without altering saved custom or sparse appearances", () => {
+    const target: ChartDrawing = {
+      ...drawing,
+      kind: "channel",
+      anchors: [...drawing.anchors, { time: 300 as Time, price: 15 }],
+      backgroundOpacity: 0.65,
+    };
+    const saved = saveDrawingTemplate([], target, "Custom parallel channel")!;
+    const restored = normalizeDrawingTemplates(JSON.parse(JSON.stringify(saved)))[0]!;
+    const reset = applyDrawingTemplate(target, defaultDrawingTemplateSettings("channel"));
+    expect(reset).toMatchObject({
+      id: target.id,
+      anchors: target.anchors,
+      background: true,
+      backgroundOpacity: 0.2,
+    });
+    expect(reset.levels?.filter((level) => level.visible)).toEqual([
+      { value: 0, visible: true, color: "#2962ff", width: 2, lineStyle: "solid" },
+      { value: 0.5, visible: true, color: "#2962ff", width: 1, lineStyle: "dashed" },
+      { value: 1, visible: true, color: "#2962ff", width: 2, lineStyle: "solid" },
+    ]);
+    expect(parseChartDrawings(JSON.stringify([reset]))).toEqual([reset]);
+    expect(applyDrawingTemplate(reset, restored.settings)).toEqual(target);
+    const {
+      levels: _levels,
+      background: _background,
+      backgroundOpacity: _opacity,
+      ...legacy
+    } = target;
+    expect(parseChartDrawings(JSON.stringify([legacy]))).toEqual([legacy]);
+    expect(defaultChannelDrawingSettings("channel")).toMatchObject({
+      background: false,
+      backgroundOpacity: 0.12,
+    });
+  });
   it.each([
     ["flat-channel", "#ff9800"],
     ["disjoint-channel", "#089981"],
@@ -254,7 +289,7 @@ describe("drawing templates", () => {
     expect(reset("regression-trend")).not.toHaveProperty("levels");
   });
 
-  it("roundtrips channel level styles and resets to its inherited three-line appearance", () => {
+  it("roundtrips channel level styles and resets to factory rails and shading", () => {
     const channel: ChartDrawing = {
       ...drawing,
       kind: "channel",
@@ -288,14 +323,14 @@ describe("drawing templates", () => {
     });
     const reset = applyDrawingTemplate(applied, defaultDrawingTemplateSettings("channel"));
     expect(reset).toMatchObject({
-      background: false,
-      backgroundOpacity: 0.12,
+      background: true,
+      backgroundOpacity: 0.2,
       extendLeft: false,
       extendRight: false,
       id: channel.id,
       anchors: channel.anchors,
     });
-    expect(reset).not.toHaveProperty("levels");
+    expect(reset.levels).toHaveLength(7);
     expect(reset).not.toHaveProperty("backgroundColor");
   });
 

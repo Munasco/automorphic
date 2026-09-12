@@ -658,14 +658,16 @@ export function createDrawingPrimitive(
               drawing !== state.preview;
             ctx.setLineDash([]);
             ctx.globalAlpha = hovering ? 0.6 : 1;
-            ctx.lineWidth = hovering ? 1 : drawing.width;
+            ctx.lineWidth = hovering ? 1 : drawing.kind === "channel" ? 1.5 : drawing.width;
             for (const index of geometry.handleIndices ??
               geometry.handles.map((_, index) => index)) {
               const point = geometry.handles[index]!;
               ctx.beginPath();
-              const radius = hovering ? 6 : drawing.locked ? 3 : 4;
+              const radius = hovering ? 6 : drawing.locked ? 3 : drawing.kind === "channel" ? 5 : 4;
               // The disjoint channel's third anchor changes only the opposite right price.
-              if (drawing.kind === "disjoint-channel" && index === 2)
+              if (drawing.kind === "channel" && (index === 1 || index === 4))
+                ctx.roundRect(point.x - radius, point.y - radius, radius * 2, radius * 2, 2);
+              else if (drawing.kind === "disjoint-channel" && index === 2)
                 ctx.rect(point.x - radius, point.y - radius, radius * 2, radius * 2);
               else ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
               ctx.fillStyle = "#15171a";
@@ -707,7 +709,9 @@ export function createDrawingPrimitive(
           if (!selected && !persistent) return [];
           const projection = drawingProjection(chart, series);
           const selectedAnchors =
-            isSpecialChannelDrawing(drawing.kind) || drawing.kind === "regression-trend"
+            isSpecialChannelDrawing(drawing.kind) ||
+            drawing.kind === "regression-trend" ||
+            drawing.kind === "channel"
               ? buildDrawingGeometry(
                   drawing,
                   projection.project,
@@ -717,7 +721,8 @@ export function createDrawingPrimitive(
                   undefined,
                   undefined,
                   regressionFit(drawing),
-                ).handles.flatMap((point) => {
+                ).handles.flatMap((point, index) => {
+                  if (drawing.kind === "channel" && (index === 1 || index === 4)) return [];
                   const anchor = projection.unproject(point);
                   return anchor ? [anchor] : [];
                 })

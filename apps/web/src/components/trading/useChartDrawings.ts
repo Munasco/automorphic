@@ -486,8 +486,47 @@ export function createChartDrawingSession(
         }
       }
     }
+    let channelPoints: DrawingPoint[] | undefined;
+    if (activeDrag.drawing.kind === "channel" && activeDrag.handle >= 0) {
+      const [first, second, third] = activeDrag.points;
+      if (!first || !second || !third || first.x === second.x) return;
+      const slope = (second.y - first.y) / (second.x - first.x);
+      const offset = third.y - (first.y + slope * (third.x - first.x));
+      channelPoints = activeDrag.points.map((point) => ({ ...point }));
+      if (activeDrag.handle === 1 || activeDrag.handle === 4) {
+        // Rail midpoints change width: the dragged parallel passes through the pointer.
+        const shift = dy - slope * dx;
+        if (activeDrag.handle === 1) {
+          channelPoints[0]!.y += shift;
+          channelPoints[1]!.y += shift;
+        } else channelPoints[2]!.y += shift;
+      } else {
+        // Either corner of an end moves that whole end, retaining the channel width.
+        const index = activeDrag.handle === 0 || activeDrag.handle === 3 ? 0 : 1;
+        const movedEndpoint = projection.unproject({
+          x: channelPoints[index]!.x + dx,
+          y: channelPoints[index]!.y + dy,
+        });
+        const endpoint = movedEndpoint && projection.project(quantizePointerAnchor(movedEndpoint));
+        if (!endpoint) return;
+        channelPoints[index] = endpoint;
+        const [a, b] = channelPoints;
+        if (!a || !b || a.x === b.x) return;
+        channelPoints[2]!.y = a.y + ((b.y - a.y) * (third.x - a.x)) / (b.x - a.x) + offset;
+      }
+    }
     const moved = activeDrag.drawing.anchors
       .map((anchor, index) => {
+        if (channelPoints) {
+          const old = activeDrag.points[index]!;
+          const next = channelPoints[index]!;
+          if (old.x === next.x && old.y === next.y) return anchor;
+          if (old.x === next.x) {
+            const price = series.coordinateToPrice(next.y);
+            return price === null ? null : { ...anchor, price };
+          }
+          return projection.unproject(next);
+        }
         if (vertical) {
           const time = drawingPaneTimeAtCoordinate(chart, series, activeDrag.points[index]!.x + dx);
           return time === null ? null : { ...anchor, time: Math.abs(dx) < 1 ? anchor.time : time };

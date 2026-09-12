@@ -594,6 +594,7 @@ describe("additional line primitive behavior", () => {
       font: "",
       measureText: vi.fn((text: string) => ({ width: text.length * 6 })),
       fillRect: vi.fn(),
+      roundRect: vi.fn(),
       save: vi.fn(),
       translate: vi.fn(),
       rotate: vi.fn(),
@@ -1537,6 +1538,52 @@ describe("additional line primitive behavior", () => {
     ]);
     expect(f.plugin.hitTest({ x: 400, y: 100 })?.drawing.id).toBe(drawing.id);
     expect(f.plugin.hitTest({ x: 300, y: 150 })).toMatchObject({ handle: 2 });
+  });
+
+  it("renders six parallel-channel construction handles with square rail midpoints", () => {
+    const drawing: ChartDrawing = {
+      id: "parallel-handles",
+      kind: "channel",
+      color: "#2962ff",
+      width: 4,
+      anchors: [
+        { time: 100 as Time, price: 250 },
+        { time: 300 as Time, price: 350 },
+        { time: 300 as Time, price: 250 },
+      ],
+      levels: [
+        { value: 0.2, visible: true },
+        { value: 0.8, visible: true },
+      ],
+    };
+    const f = renderFixture(drawing);
+    f.select();
+    f.draw();
+    expect(f.ctx.roundRect.mock.calls).toEqual([
+      [195, 195, 10, 10, 2],
+      [195, 295, 10, 10, 2],
+    ]);
+    expect(f.ctx.arc.mock.calls.map(([x, y, r]) => [x, y, r])).toEqual([
+      [100, 250, 5],
+      [300, 150, 5],
+      [100, 350, 5],
+      [300, 250, 5],
+    ]);
+    expect(f.plugin.hitTest({ x: 200, y: 200 })).toMatchObject({ handle: 1 });
+    expect(f.plugin.hitTest({ x: 200, y: 300 })).toMatchObject({ handle: 4 });
+    expect(f.plugin.primitive.priceAxisViews!().map((view) => view.text())).toEqual([
+      "250.00",
+      "350.00",
+      "150.00",
+    ]);
+    expect(f.plugin.primitive.timeAxisViews!()).toHaveLength(2);
+    drawing.anchors[2] = { time: 300 as Time, price: 275 };
+    expect(f.plugin.primitive.priceAxisViews!().map((view) => view.text())).toEqual([
+      "250.00",
+      "350.00",
+      "175.00",
+      "275.00",
+    ]);
   });
 
   it("distinguishes the disjoint vertical-only square handle from its three round corners", () => {

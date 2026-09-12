@@ -847,6 +847,17 @@ describe("native drawing geometry", () => {
       { from: { x: 100, y: 150 }, to: { x: 300, y: 250 } },
       { from: { x: 100, y: 125 }, to: { x: 300, y: 225 } },
     ]);
+    expect(channel.handles).toEqual([
+      { x: 100, y: 100 },
+      { x: 200, y: 150 },
+      { x: 300, y: 200 },
+      { x: 100, y: 150 },
+      { x: 200, y: 200 },
+      { x: 300, y: 250 },
+    ]);
+    channel.handles.forEach((point, index) => {
+      expect(hitDrawingHandle(channel, point)).toBe(index);
+    });
     expect(hitDrawingGeometry(channel, { x: 200, y: 200 })).toBe(true);
   });
   it("pads legacy channel settings with disabled rows without changing its original appearance", () => {
@@ -882,7 +893,97 @@ describe("native drawing geometry", () => {
       }),
     ).toContainEqual({ value: -0.75, visible: true, color: "#ff0000" });
   });
-  it("edits channel ratios and line appearance without changing its three placement handles", () => {
+  it("retains edited primary channel ratios and extra rows when reopening saved settings", () => {
+    const original = drawing("channel", [
+      [100, 400],
+      [300, 300],
+      [200, 300],
+    ]);
+    const levels = parallelChannelSettingsLevels(original).map((level, index) => {
+      if (index === 1) return { ...level, value: 0.2, color: "#ff0000", width: 4, opacity: 0.4 };
+      if (index === 5) return { ...level, value: 0.8, lineStyle: "dotted" as const };
+      return level;
+    });
+    levels.push({ value: 1.8, visible: false, color: "#00ff00" });
+    const [restored] = parseChartDrawings(JSON.stringify([{ ...original, levels }]));
+    const reopened = parallelChannelSettingsLevels(restored!);
+    expect(reopened).toEqual(levels);
+    expect(parallelChannelSettingsLevels({ ...original, levels: reopened })).toEqual(levels);
+    expect(geometry({ ...original, levels: reopened }).lines).toEqual([
+      {
+        from: { x: 100, y: 110 },
+        to: { x: 300, y: 210 },
+        color: "#ff0000",
+        width: 4,
+        opacity: 0.4,
+      },
+      { from: { x: 100, y: 125 }, to: { x: 300, y: 225 } },
+      {
+        from: { x: 100, y: 140 },
+        to: { x: 300, y: 240 },
+        lineStyle: "dotted",
+      },
+    ]);
+    expect(geometry({ ...original, levels: reopened }).handles).toEqual(geometry(original).handles);
+  });
+  it.each([
+    { ratios: [0.2, 0.5, 1], min: 0.2, max: 1 },
+    { ratios: [-0.25, 0.2, 0.5, 1], min: -0.25, max: 1 },
+    { ratios: [1.2, 0.5, -0.4], min: -0.4, max: 1.2 },
+  ])(
+    "fills the visible channel bounds for $ratios while keeping placement handles",
+    ({ ratios, min, max }) => {
+      const original = drawing("channel", [
+        [100, 400],
+        [300, 300],
+        [200, 300],
+      ]);
+      const edited = {
+        ...original,
+        background: true,
+        levels: [
+          { value: -10, visible: false },
+          ...ratios.map((value) => ({ value, visible: true })),
+          { value: 10, visible: false },
+        ],
+      };
+      expect(geometry(edited).polygons).toEqual([
+        {
+          points: [
+            { x: 100, y: 100 + 50 * min },
+            { x: 300, y: 200 + 50 * min },
+            { x: 300, y: 200 + 50 * max },
+            { x: 100, y: 100 + 50 * max },
+          ],
+          color: original.color,
+          opacity: 0.12,
+        },
+      ]);
+      expect(geometry(edited).handles).toEqual(geometry(original).handles);
+      expect(geometry(parseChartDrawings(JSON.stringify([edited]))[0]!)).toEqual(geometry(edited));
+    },
+  );
+  it.each([{ ratios: [] }, { ratios: [0.2] }, { ratios: [0.2, 0.2] }])(
+    "does not fill an unbounded or collapsed channel with ratios $ratios",
+    ({ ratios }) => {
+      const base = drawing("channel", [
+        [100, 400],
+        [300, 300],
+        [200, 300],
+      ]);
+      expect(
+        geometry({
+          ...base,
+          background: true,
+          levels: [
+            { value: 2, visible: false },
+            ...ratios.map((value) => ({ value, visible: true })),
+          ],
+        }).polygons,
+      ).toBeUndefined();
+    },
+  );
+  it("edits channel ratios and line appearance without moving the construction handles", () => {
     const base = drawing("channel", [
       [100, 400],
       [300, 300],
@@ -918,7 +1019,7 @@ describe("native drawing geometry", () => {
         opacity: 0,
       },
     ]);
-    expect(hitDrawingHandle(shape, { x: 200, y: 200 })).toBe(2);
+    expect(hitDrawingHandle(shape, { x: 200, y: 200 })).toBe(4);
     expect(geometry(parseChartDrawings(JSON.stringify([edited]))[0]!)).toEqual(shape);
     const extended = geometry({ ...edited, extendLeft: true, extendRight: true });
     expect(extended.handles).toEqual(original.handles);
@@ -945,14 +1046,17 @@ describe("native drawing geometry", () => {
       const base = drawing("channel", points);
       const edited = {
         ...base,
-        levels: [],
+        levels: [
+          { value: 0, visible: true },
+          { value: 1, visible: true },
+        ],
         background: true,
         backgroundColor: "#00ff00",
         backgroundOpacity: 0.4,
         extendLeft: true,
       };
       const shape = geometry(edited);
-      expect(shape.lines).toEqual([]);
+      expect(shape.lines).toHaveLength(2);
       expect(shape.handles).toEqual(geometry(base).handles);
       expect(shape.polygons).toEqual([
         {

@@ -112,7 +112,7 @@ function titleFor(drawing: ChartDrawing) {
     fib: "Fib Retracement",
     "fib-time-zone": "Fib Time Zone",
     "fib-trend-time": "Trend-based Fib Time",
-    channel: "Parallel Channel",
+    channel: "Parallel channel",
     "flat-channel": "Flat top/bottom",
     "disjoint-channel": "Disjoint channel",
     "rotated-rectangle": "Rotated Rectangle",

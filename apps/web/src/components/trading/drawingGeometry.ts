@@ -280,7 +280,8 @@ export function defaultParallelChannelLevels(): DrawingLevel[] {
 /** Seven settings rows from the official channel Style panel; legacy appearance stays sparse. */
 export function parallelChannelSettingsLevels(drawing: ChartDrawing): DrawingLevel[] {
   const levels = drawing.levels ?? defaultParallelChannelLevels();
-  if (levels.length >= 7 && levels[1]?.value === 0 && levels[5]?.value === 1)
+  // Once expanded, row positions identify the primary rails: their ratios are editable.
+  if (levels.length >= 7)
     return levels.map((level, index) =>
       index === 1 || index === 5 ? { ...level, visible: true } : { ...level },
     );
@@ -1113,13 +1114,23 @@ function buildBaseDrawingGeometry(
       line(first, second);
       return result;
     }
-    result.handles.push(third);
     const baselineY = first.y + (second.y - first.y) * ((third.x - first.x) / (second.x - first.x));
     const offset = third.y - baselineY;
+    const middle = { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+    result.handles = [
+      first,
+      middle,
+      second,
+      { x: first.x, y: first.y + offset },
+      { x: middle.x, y: middle.y + offset },
+      { x: second.x, y: second.y + offset },
+    ];
     // Ratio 0 is the original baseline; ratio 1 is the parallel through the third anchor.
     // Keep this separate from Fibonacci routing: channels have no level/price labels or reversal.
-    for (const level of drawing.levels ?? defaultParallelChannelLevels()) {
-      if (!level.visible) continue;
+    const visibleLevels = (drawing.levels ?? defaultParallelChannelLevels()).filter(
+      (level) => level.visible,
+    );
+    for (const level of visibleLevels) {
       const { value, visible: _visible, ...appearance } = level;
       result.lines.push({
         from: { x: first.x, y: first.y + offset * value },
@@ -1127,7 +1138,9 @@ function buildBaseDrawingGeometry(
         ...appearance,
       });
     }
-    if (drawing.background === true) {
+    const lowerRatio = Math.min(...visibleLevels.map((level) => level.value));
+    const upperRatio = Math.max(...visibleLevels.map((level) => level.value));
+    if (drawing.background === true && lowerRatio < upperRatio) {
       const left = drawing.extendLeft ? 0 : Math.min(first.x, second.x),
         right = drawing.extendRight ? width : Math.max(first.x, second.x);
       const at = (x: number, ratio: number) => ({
@@ -1136,7 +1149,12 @@ function buildBaseDrawingGeometry(
       });
       result.polygons = [
         {
-          points: [at(left, 0), at(right, 0), at(right, 1), at(left, 1)],
+          points: [
+            at(left, lowerRatio),
+            at(right, lowerRatio),
+            at(right, upperRatio),
+            at(left, upperRatio),
+          ],
           color: drawing.backgroundColor ?? drawing.color,
           opacity: drawing.backgroundOpacity ?? 0.12,
         },

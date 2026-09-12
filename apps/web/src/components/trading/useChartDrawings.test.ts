@@ -2966,6 +2966,174 @@ describe("inline drawing text transactions", () => {
   });
 });
 
+describe("parallel channel construction handles", () => {
+  const shape: ChartDrawing = {
+    id: "parallel",
+    kind: "channel",
+    color: "#2962ff",
+    width: 2,
+    anchors: [
+      { time: 100 as Time, price: 4900 },
+      { time: 300 as Time, price: 4800 },
+      { time: 200 as Time, price: 4700 },
+    ],
+    levels: [
+      { value: 0.2, visible: true },
+      { value: 0.8, visible: true },
+    ],
+  };
+  it.each([
+    {
+      name: "baseline first",
+      from: [100, 100],
+      to: [140, 140],
+      expected: [
+        [140, 4860],
+        [300, 4800],
+        [200, 4687.5],
+      ],
+    },
+    {
+      name: "baseline midpoint",
+      from: [200, 150],
+      to: [240, 190],
+      expected: [
+        [100, 4880],
+        [300, 4780],
+        [200, 4700],
+      ],
+    },
+    {
+      name: "baseline second",
+      from: [300, 200],
+      to: [260, 240],
+      expected: [
+        [100, 4900],
+        [260, 4760],
+        [200, 4662.5],
+      ],
+    },
+    {
+      name: "opposite first",
+      from: [100, 250],
+      to: [140, 290],
+      expected: [
+        [140, 4860],
+        [300, 4800],
+        [200, 4687.5],
+      ],
+    },
+    {
+      name: "opposite midpoint",
+      from: [200, 300],
+      to: [240, 340],
+      expected: [
+        [100, 4900],
+        [300, 4800],
+        [200, 4680],
+      ],
+    },
+    {
+      name: "opposite second",
+      from: [300, 350],
+      to: [260, 390],
+      expected: [
+        [100, 4900],
+        [260, 4760],
+        [200, 4662.5],
+      ],
+    },
+  ])(
+    "edits $name at construction ratios despite customized rails in one reversible write",
+    ({ name, from, to, expected }) => {
+      const f = fixture(`parallel-${name}`, JSON.stringify([shape]));
+      const session = f.open();
+      expect(session.beginDrag({ x: from[0]!, y: from[1]! })).toBe(true);
+      session.dragTo({ x: to[0]!, y: to[1]! });
+      expect(f.writes()).toBe(0);
+      session.endDrag();
+      expect(f.writes()).toBe(1);
+      const edited = JSON.parse(f.saved()!)[0];
+      expect(edited.anchors).toEqual(expected.map(([time, price]) => ({ time, price })));
+      expect(edited.levels).toEqual(shape.levels);
+      session.undo();
+      expect(JSON.parse(f.saved()!)).toEqual([shape]);
+      session.redo();
+      expect(JSON.parse(f.saved()!)).toEqual([edited]);
+      session.dispose();
+      const reopened = f.open();
+      reopened.selectDrawing(shape.id);
+      expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ selected: edited }));
+      reopened.dispose();
+    },
+  );
+  it("keeps midpoint movement along its existing rail inert and cancels an actual resize", () => {
+    const f = fixture("parallel-midpoint-cancel", JSON.stringify([shape]));
+    const session = f.open();
+    expect(session.beginDrag({ x: 200, y: 150 })).toBe(true);
+    session.dragTo({ x: 240, y: 170 });
+    session.endDrag();
+    expect(f.writes()).toBe(0);
+    session.beginDrag({ x: 200, y: 300 });
+    session.dragTo({ x: 240, y: 340 });
+    session.endDrag(false);
+    expect(f.writes()).toBe(0);
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ selected: shape }));
+    expect(JSON.parse(f.saved()!)).toEqual([shape]);
+    session.dispose();
+  });
+  it("retains width after the endpoint snaps to a candle across a timestamp gap", () => {
+    const original = {
+      ...shape,
+      anchors: [
+        shape.anchors[0]!,
+        { ...shape.anchors[1]!, time: 100000 as Time },
+        shape.anchors[2]!,
+      ],
+    };
+    const f = fixture("parallel-snapped-candle", JSON.stringify([original]));
+    const scale = f.chart.timeScale();
+    vi.spyOn(f.chart, "timeScale").mockReturnValue({
+      ...scale,
+      timeToCoordinate: (time: Time) =>
+        (Number(time) === 100000 ? 300 : Number(time)) as Coordinate,
+      coordinateToTime: (x: number) => {
+        const center = Math.round(x / 100) * 100;
+        return (center === 300 ? 100000 : center) as Time;
+      },
+    });
+    const session = f.open();
+    expect(session.beginDrag({ x: 100, y: 100 })).toBe(true);
+    session.dragTo({ x: 140, y: 140 });
+    session.endDrag();
+    const edited = JSON.parse(f.saved()!)[0];
+    expect(edited.anchors).toEqual([
+      { time: 100, price: 4860 },
+      { time: 100000, price: 4800 },
+      { time: 200, price: 4680 },
+    ]);
+    expect(session.channelPriceOffset(edited)).toBe(session.channelPriceOffset(original));
+    session.dispose();
+  });
+  it("preserves the width when the stored third anchor lies outside the endpoint times", () => {
+    const original = {
+      ...shape,
+      anchors: [shape.anchors[0]!, shape.anchors[1]!, { time: 500 as Time, price: 4550 }],
+    };
+    const f = fixture("parallel-exterior-anchor", JSON.stringify([original]));
+    const session = f.open();
+    expect(session.beginDrag({ x: 100, y: 250 })).toBe(true);
+    session.dragTo({ x: 140, y: 290 });
+    session.endDrag();
+    expect(JSON.parse(f.saved()!)[0].anchors).toEqual([
+      { time: 140, price: 4860 },
+      { time: 300, price: 4800 },
+      { time: 500, price: 4575 },
+    ]);
+    session.dispose();
+  });
+});
+
 describe("channel corner editing", () => {
   const shape = (kind: "flat-channel" | "disjoint-channel") => ({
     id: "channel",
