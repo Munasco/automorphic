@@ -308,6 +308,34 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
               if (quote) send({ type: "quote", quote });
             }
           } else if (message.e === "chart" && Array.isArray(message.d?.charts)) {
+            if (calendar) {
+              const history: Candle[] = [];
+              const live: Candle[] = [];
+              for (const chart of message.d.charts) {
+                if (!chart || !Number.isSafeInteger(chart.id)) continue;
+                if (chart.id === historicalId) {
+                  history.push(...normalizeBars(chart.bars));
+                  if (chart.eoh) finishedHistory = true;
+                } else if (chart.id === realtimeId) {
+                  live.push(...normalizeBars(chart.bars));
+                }
+              }
+              if (history.length || live.length) {
+                const historicalBars = calendar.accept(history, true);
+                const bars = live.length ? calendar.accept(live, false) : historicalBars;
+                receivedBars = true;
+                clearTimeout(timeout);
+                send({
+                  type: "bars",
+                  bars,
+                  historical: !live.length,
+                  snapshot: true,
+                  symbol,
+                  ...intervalMetadata,
+                });
+              }
+              continue;
+            }
             for (const chart of message.d.charts) {
               if (!chart || !Number.isSafeInteger(chart.id)) continue;
               if (chart.id !== historicalId && chart.id !== realtimeId) continue;
@@ -343,11 +371,7 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
                 if (chart.id === historicalId && chart.eoh) finishedHistory = true;
                 continue;
               }
-              const incomingBars = normalizeBars(chart.bars);
-              const bars =
-                calendar && incomingBars.length
-                  ? calendar.accept(incomingBars, chart.id === historicalId)
-                  : incomingBars;
+              const bars = normalizeBars(chart.bars);
               if (bars.length) {
                 receivedBars = true;
                 clearTimeout(timeout);
@@ -355,7 +379,6 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
                   type: "bars",
                   bars,
                   historical: !finishedHistory,
-                  ...(calendar ? { snapshot: true } : {}),
                   symbol,
                   ...intervalMetadata,
                 });

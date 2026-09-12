@@ -374,9 +374,22 @@ describe("selected Tradovate contract", () => {
             intervalKey: `${intervalUnit ?? "minute"}:${interval}`,
           });
         const barMessages = messages.filter((message) => message.type === "bars");
+        const calendar = intervalUnit === "week" || intervalUnit === "month";
         expect(barMessages.map((message) => message.bars[0].volume)).toEqual(
-          intervalUnit === "tick" ? (interval === 1 ? [1, 1] : [18, 19]) : [18, 18],
+          calendar
+            ? [18]
+            : intervalUnit === "tick"
+              ? interval === 1
+                ? [1, 1]
+                : [18, 19]
+              : [18, 18],
         );
+        if (calendar)
+          expect(barMessages[0]).toMatchObject({
+            snapshot: true,
+            historical: false,
+            bars: [{ close: 102 }],
+          });
         if (intervalUnit === "tick") {
           expect(messages).toContainEqual(
             expect.objectContaining({ type: "status", state: "disconnected", resetRequired: true }),
@@ -408,7 +421,7 @@ describe("selected Tradovate contract", () => {
         expect(output).toContain('"low":4300.1');
         expect(output).not.toContain("19000");
         expect(output.match(/"type":"quote"/g)).toHaveLength(1);
-        expect(output.match(/"type":"bars"/g)).toHaveLength(2);
+        expect(output.match(/"type":"bars"/g)).toHaveLength(calendar ? 1 : 2);
         expect(output).not.toContain("88888");
         expect(output).not.toContain("77777");
         expect(output).toContain(`"symbol":"${symbol}"`);
