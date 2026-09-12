@@ -1,7 +1,6 @@
 import {
   applyChartBarBatch,
   createChartTimeFormatters,
-  readTickHistoryQuality,
   tickHistoryNotice,
   type TickHistoryQuality,
 } from "./tickChartData";
@@ -9,15 +8,18 @@ import { useInitialBalanceHistory } from "./useInitialBalanceHistory";
 import {
   chartIntervalKey,
   chartIntervalMinutes,
-  chartIntervalQuery,
   formatChartInterval,
   type ChartInterval,
 } from "./tradingIntervals";
 import { ChartTechnicals, chartTechnicalReadings } from "./ChartTechnicals";
 import type { InstrumentRoot } from "./tradingInstruments";
-import { openTradingStream } from "./tradingTransport";
+import { hashKey, useQuery, useQueryClient } from "@tanstack/react-query";
+import { chartMarketQueryOptions, type ChartMarketSnapshot } from "./chartMarketQuery";
+import { tradingQueryScope } from "./tradingQueries";
+import { tradingWorkspaceStorage } from "./workspaceStorage";
+import { cancelInactiveTradingStream } from "./tradingStreamIterable";
 import { ChartIcon } from "./ChartIcon";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import {
   createChart,
   CandlestickSeries,
@@ -130,15 +132,39 @@ export function TradovateChart({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const settings = useChartPreferences();
+  const queryClient = useQueryClient();
+  const workspace = useSyncExternalStore(
+    tradingWorkspaceStorage.subscribe,
+    tradingWorkspaceStorage.getSnapshot,
+  );
+  const environmentBase = tradingQueryScope()[1];
+  const marketOptions = useMemo(
+    () =>
+      chartMarketQueryOptions(
+        ["trading", environmentBase],
+        workspace.projectId ?? "",
+        symbol,
+        interval,
+      ),
+    [environmentBase, workspace.projectId, symbol, interval],
+  );
+  // Query owns the shared stream. Canvas updates subscribe imperatively below, without a React render per packet.
+  const marketActive = workspace.ready && !!workspace.projectId && !!symbol;
+  useQuery({ ...marketOptions, enabled: marketActive, notifyOnChangeProps: [] });
+  useEffect(() => {
+    if (!marketActive) void cancelInactiveTradingStream(queryClient, marketOptions.queryKey);
+  }, [marketActive, queryClient, marketOptions]);
+  const intraday =
+    interval.unit === "minute" || interval.unit === "second" || interval.unit === "tick";
   const visibleIndicators = useMemo(
     () =>
       Object.fromEntries(
         INDICATOR_CATALOG.map(({ key }) => [
           key,
-          settings.indicators[key] && !settings.hiddenIndicators[key],
+          settings.indicators[key] && !settings.hiddenIndicators[key] && (key !== "ib" || intraday),
         ]),
       ) as ChartIndicators,
-    [settings.indicators, settings.hiddenIndicators],
+    [settings.indicators, settings.hiddenIndicators, intraday],
   );
   const auxiliaryHistory = useInitialBalanceHistory(
     symbol,
@@ -230,8 +256,8 @@ export function TradovateChart({
         ...(interval.unit === "tick"
           ? { tickMarkFormatter: timeFormatters.tickMarkFormatter }
           : {}),
-        timeVisible: true,
-        secondsVisible: interval.unit !== "minute",
+        timeVisible: intraday,
+        secondsVisible: interval.unit === "second" || interval.unit === "tick",
         borderColor: "#242730",
         rightOffset: 5,
       },
@@ -343,8 +369,6 @@ export function TradovateChart({
       if (volumeData && "value" in volumeData) values.volume = volumeData.value;
       setHoverReadings(values);
     });
-    let source: ReturnType<typeof openTradingStream> | undefined;
-    let retry: ReturnType<typeof setTimeout>;
     let render: number | undefined;
     let fitted = false;
     let renderedTime = -Infinity;
@@ -415,84 +439,44 @@ export function TradovateChart({
           source: "bar",
         });
     };
-    const connect = () => {
-      if (state.disposed) return;
-      source = openTradingStream(
-        `/api/trading/stream?${new URLSearchParams({ symbol, ...chartIntervalQuery(interval) })}`,
-        {
-          onMessage: (data) => {
-            let message;
-            try {
-              message = JSON.parse(data);
-            } catch {
-              return;
-            }
-            if (
-              (message.type === "bars" || message.type === "status") &&
-              message.intervalKey !== chartIntervalKey(interval)
-            )
-              return;
-            if (
-              interval.unit === "tick" &&
-              (message.type === "bars" || message.type === "status")
-            ) {
-              const quality = readTickHistoryQuality(message.tickHistory);
-              if (quality || message.snapshot === true)
-                setTickHistory((previous) =>
-                  JSON.stringify(previous) === JSON.stringify(quality) ? previous : quality,
-                );
-            }
-            if (message.type === "status") {
-              setStatus(message.message);
-              if (message.state === "disconnected" || message.state === "connecting")
-                onQuote?.(null);
-              return;
-            }
-            if (
-              message.type === "quote" &&
-              message.quote?.symbol === symbol &&
-              Number.isFinite(message.quote.last)
-            ) {
-              receivedQuote = true;
-              onQuote?.(message.quote);
-              return;
-            }
-            if (message.type === "bars" && Array.isArray(message.bars)) {
-              // A raw-trade reconnect can have a different grouping origin and display keys.
-              // Replace its snapshot instead of retaining bars from the previous subscription.
-              if (message.snapshot === true) {
-                replaceHistory = true;
-                renderedTime = -Infinity;
-                setHovered(null);
-                setHoverReadings(null);
-              }
-              applyChartBarBatch(bars, pending, message.bars, message.snapshot === true);
-              setStatus("Tradovate connected");
-              if (render === undefined) render = requestAnimationFrame(renderBars);
-            }
-          },
-          onError: () => {
-            source?.close();
-            if (!state.disposed) {
-              onQuote?.(null);
-              setStatus("Reconnecting to Tradovate…");
-              retry = setTimeout(connect, 5000);
-            }
-          },
-        },
-      );
+    let revision: number | null = null;
+    let previousQuote: MarketQuote | null = null;
+    const syncCache = () => {
+      const snapshot = queryClient.getQueryData<ChartMarketSnapshot>(marketOptions.queryKey);
+      if (!snapshot || state.disposed) return;
+      setStatus(snapshot.status);
+      setTickHistory(snapshot.tickHistory);
+      receivedQuote = snapshot.quote !== null;
+      if (snapshot.quote !== previousQuote) {
+        previousQuote = snapshot.quote;
+        onQuote?.(snapshot.quote);
+      }
+      if (snapshot.revision === revision) return;
+      const replace = revision === null || snapshot.replace || snapshot.revision !== revision + 1;
+      revision = snapshot.revision;
+      if (replace) {
+        replaceHistory = true;
+        renderedTime = -Infinity;
+        setHovered(null);
+        setHoverReadings(null);
+      }
+      applyChartBarBatch(bars, pending, replace ? snapshot.bars : snapshot.updates, replace);
+      if (render === undefined) render = requestAnimationFrame(renderBars);
     };
-    connect();
+    const queryHash = hashKey(marketOptions.queryKey);
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (event.type === "updated" && event.query.queryHash === queryHash) syncCache();
+    });
+    syncCache();
     return () => {
       document.fonts.removeEventListener("loadingdone", syncFont);
       fontObserver.disconnect();
       state.disposed = true;
-      source?.close();
-      clearTimeout(retry);
+      unsubscribe();
       if (render !== undefined) cancelAnimationFrame(render);
       chart.remove();
     };
-  }, [symbol, interval, onQuote, root]);
+  }, [symbol, interval, intraday, onQuote, root, queryClient, marketOptions]);
 
   useEffect(() => {
     if (!engine || engine.disposed) return;

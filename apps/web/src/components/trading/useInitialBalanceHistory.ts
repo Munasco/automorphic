@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
+import {
+  experimental_streamedQuery,
+  queryOptions,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { tradingQueryScope } from "./tradingQueries";
+import { tradingWorkspaceStorage } from "./workspaceStorage";
+import { cancelInactiveTradingStream, tradingStreamIterable } from "./tradingStreamIterable";
 import type { Candle, IndicatorPoint } from "./chartIndicators";
 import { openTradingStream } from "./tradingTransport";
 
@@ -30,12 +39,13 @@ export function subscribeInitialBalanceHistory(
   symbol: string,
   onChange: (history: InitialBalanceHistory) => void,
   open: typeof openTradingStream = openTradingStream,
+  initialBars: readonly Candle[] = [],
 ) {
   let disposed = false;
   let source: ReturnType<typeof openTradingStream> | undefined;
   let retry: ReturnType<typeof setTimeout> | undefined;
   let notification: ReturnType<typeof setTimeout> | undefined;
-  const bars = new Map<number, Candle>();
+  const bars = new Map<number, Candle>(initialBars.map((bar) => [bar.time, bar]));
   let status = "Loading initial balance minute history…";
   const publish = () => {
     if (notification !== undefined || disposed) return;
@@ -125,21 +135,67 @@ export function subscribeInitialBalanceHistory(
   };
 }
 
-export function useInitialBalanceHistory(symbol: string, enabled: boolean): InitialBalanceHistory {
-  const [history, setHistory] = useState<InitialBalanceHistory>({
-    symbol: "",
+export function initialBalanceHistoryQueryOptions(
+  scope: readonly string[],
+  projectId: string | null,
+  symbol: string,
+  open: typeof openTradingStream = openTradingStream,
+) {
+  const initialValue: InitialBalanceHistory = {
+    symbol,
     bars: [],
-    status: "",
+    status: "Loading initial balance minute history…",
+  };
+  return queryOptions({
+    queryKey: [...scope, projectId, "initial-balance-history", symbol, "minute:1"],
+    queryFn: experimental_streamedQuery<InitialBalanceHistory, InitialBalanceHistory>({
+      refetchMode: "append",
+      initialValue,
+      reducer: (_previous, snapshot) => snapshot,
+      streamFn: ({ signal, client, queryKey }) => {
+        const cached = client.getQueryData<InitialBalanceHistory>(queryKey);
+        const seed = {
+          ...(cached ?? initialValue),
+          status: "Loading initial balance minute history…",
+        };
+        return tradingStreamIterable(
+          signal,
+          (emit) => subscribeInitialBalanceHistory(symbol, emit, open, seed.bars),
+          seed,
+        );
+      },
+    }),
+    staleTime: Infinity,
+    gcTime: 5 * 60_000,
+    refetchOnMount: (query) => (query.state.fetchStatus === "fetching" ? false : "always"),
+    refetchOnWindowFocus: false,
+    retry: false,
   });
+}
+
+export function useInitialBalanceHistory(symbol: string, enabled: boolean): InitialBalanceHistory {
+  const workspace = useSyncExternalStore(
+    tradingWorkspaceStorage.subscribe,
+    tradingWorkspaceStorage.getSnapshot,
+  );
+  const environmentBase = tradingQueryScope()[1];
+  const client = useQueryClient();
+  const options = useMemo(
+    () =>
+      initialBalanceHistoryQueryOptions(["trading", environmentBase], workspace.projectId, symbol),
+    [environmentBase, workspace.projectId, symbol],
+  );
+  const active = enabled && !!symbol && workspace.ready;
+  const query = useQuery({ ...options, enabled: active });
   useEffect(() => {
-    if (!enabled || !symbol) return;
-    return subscribeInitialBalanceHistory(symbol, setHistory);
-  }, [symbol, enabled]);
+    if (active) return;
+    void cancelInactiveTradingStream(client, options.queryKey);
+  }, [active, client, options.queryKey]);
   return useMemo(
     () =>
-      enabled && history.symbol === symbol
-        ? history
+      active && query.data
+        ? query.data
         : { symbol, bars: [], status: enabled ? "Loading initial balance minute history…" : "" },
-    [enabled, history, symbol],
+    [active, query.data, symbol, enabled],
   );
 }
