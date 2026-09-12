@@ -15,7 +15,9 @@ Keep generated output inside the active workspace at .work/.diagrams/<topic-or-r
 
 ## Rendering style
 
-For component-based generated UI, load the bundled json-render, json-render-react and json-render-shadcn skills to define a catalog and render a validated spec. Use the bundled design-review skill to review every visual design before delivery. These skills are installed for both Claude and Codex; their instructions do not imply that npm runtime packages are already installed in an artifact.
+Before designing a report, chart explanation or dashboard, read the bundled [json-render skill](../json-render/SKILL.md) and [design-review skill](../design-review/SKILL.md). For component-based UI, use json-render's catalog and validated spec workflow together with [json-render-react](../json-render-react/SKILL.md) and [json-render-shadcn](../json-render-shadcn/SKILL.md). For a portable candlestick schematic, use [assets/mock-chart.html](assets/mock-chart.html); simple standalone HTML/SVG reports can use the bundled stylesheet without adding a React runtime.
+
+Apply design-review to every generated visual before delivery, fix the findings, and verify the result in the available preview. These sibling skills are installed alongside trading-visuals for both Claude and Codex; read their actual SKILL.md files rather than relying on their names. Their instructions do not imply that npm runtime packages are already installed in an artifact.
 
 Read [assets/report.css](assets/report.css) before building a custom report and embed it in the HTML's style element so the report remains portable. trading_create_chart already uses this stylesheet. Use its tokens and components (.metrics/.metric, .report-grid/.card, .rules/.rule, .verdict) as the starting point; adapt composition to the question rather than inventing a new visual theme each time.
 
