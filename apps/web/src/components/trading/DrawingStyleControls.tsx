@@ -8,7 +8,7 @@ import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popov
 import type { ChartDrawing } from "./drawingGeometry";
 import type { DrawingPatch } from "./useChartDrawings";
 import { cn } from "../../lib/utils";
-import { useState, type ComponentProps } from "react";
+import { useRef, useState, type ComponentProps } from "react";
 import { DrawingCustomColorEditor } from "./DrawingCustomColorEditor";
 import { useDrawingCustomColors } from "./drawingCustomColors";
 import { TradingSelect } from "./TradingSelect";
@@ -544,30 +544,44 @@ export function WidthPicker({
     </Popover>
   );
 }
-export function LineExtensionPicker({
-  left,
-  right,
-  onChange,
+export function DrawingMultiSelect<T extends string>({
+  label,
+  placeholder,
+  options,
+  selected,
+  onCheckedChange,
 }: {
-  left: boolean;
-  right: boolean;
-  onChange: (patch: Pick<DrawingPatch, "extendLeft" | "extendRight">) => void;
+  label: string;
+  placeholder: string;
+  options: readonly (readonly [T, string])[];
+  selected: readonly T[];
+  onCheckedChange: (key: T, checked: boolean) => void;
 }) {
-  const label =
-    [left && "Extend left line", right && "Extend right line"].filter(Boolean).join(", ") ||
-    "Don't extend";
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const selectedOptions = options.filter(([key]) => selected.includes(key));
   return (
-    <Menu>
+    <Menu
+      onOpenChange={(open, details) => {
+        // Checkbox menus stay open while the pointer returns to the chart.
+        if (!open && details.reason === "trigger-hover") details.cancel();
+      }}
+    >
       <MenuTrigger
-        aria-label="Extend line"
-        title={label}
+        ref={triggerRef}
+        openOnHover={false}
+        aria-label={label}
+        title={selectedOptions.map(([, text]) => text).join(", ") || placeholder}
         className="group flex h-[34px] w-[180px] shrink-0 items-center gap-2 rounded border border-white/15 bg-transparent px-2 text-sm leading-[18px] text-zinc-200 outline-none hover:border-white/30 focus-visible:border-blue-500 aria-expanded:border-white/50"
       >
         <span className="min-w-0 flex-1 truncate text-left">
-          {left && <span className="inline-block">Extend left line</span>}
-          {left && right && ",\u00a0"}
-          {right && <span className="inline-block">Extend right line</span>}
-          {!left && !right && "Don't extend"}
+          {selectedOptions.length
+            ? selectedOptions.map(([key, text], index) => (
+                <span key={key}>
+                  {index > 0 && ",\u00a0"}
+                  <span className="inline-block">{text}</span>
+                </span>
+              ))
+            : placeholder}
         </span>
         <svg
           width="18"
@@ -580,42 +594,68 @@ export function LineExtensionPicker({
         </svg>
       </MenuTrigger>
       <MenuPopup
+        finalFocus={triggerRef}
         align="start"
         sideOffset={0}
         style={drawingContextMenuStyle}
         className="w-[180px] rounded-[10px] [&>div]:p-1.5"
       >
-        {(
-          [
-            ["extendLeft", "Extend left line", left],
-            ["extendRight", "Extend right line", right],
-          ] as const
-        ).map(([key, text, checked]) => (
-          <MenuPrimitive.CheckboxItem
-            key={key}
-            checked={checked}
-            closeOnClick={false}
-            onCheckedChange={(value) => onChange({ [key]: value })}
-            className="flex h-8 items-center gap-2.5 rounded px-2 text-sm leading-[18px] whitespace-nowrap outline-none data-highlighted:bg-white/10"
-          >
-            <span
-              aria-hidden="true"
-              className={cn(
-                "flex size-[18px] shrink-0 items-center justify-center rounded-[3px] border",
-                checked ? "border-zinc-200 bg-zinc-200 text-zinc-900" : "border-zinc-400",
-              )}
+        {options.map(([key, text]) => {
+          const checked = selected.includes(key);
+          return (
+            <MenuPrimitive.CheckboxItem
+              key={key}
+              checked={checked}
+              closeOnClick={false}
+              onCheckedChange={(value) => onCheckedChange(key, value)}
+              className="flex h-8 items-center gap-2.5 rounded px-2 text-sm leading-[18px] whitespace-nowrap outline-none data-highlighted:bg-white/10"
             >
-              <MenuPrimitive.CheckboxItemIndicator>
-                <svg width="11" height="9" viewBox="0 0 11 9" fill="none">
-                  <path stroke="currentColor" strokeWidth="2" d="M1 4 4 7 10 1" />
-                </svg>
-              </MenuPrimitive.CheckboxItemIndicator>
-            </span>
-            {text}
-          </MenuPrimitive.CheckboxItem>
-        ))}
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "flex size-[18px] shrink-0 items-center justify-center rounded-[3px] border",
+                  checked ? "border-zinc-200 bg-zinc-200 text-zinc-900" : "border-zinc-400",
+                )}
+              >
+                <MenuPrimitive.CheckboxItemIndicator>
+                  <svg width="11" height="9" viewBox="0 0 11 9" fill="none">
+                    <path stroke="currentColor" strokeWidth="2" d="M1 4 4 7 10 1" />
+                  </svg>
+                </MenuPrimitive.CheckboxItemIndicator>
+              </span>
+              {text}
+            </MenuPrimitive.CheckboxItem>
+          );
+        })}
       </MenuPopup>
     </Menu>
+  );
+}
+export function LineExtensionPicker({
+  left,
+  right,
+  onChange,
+}: {
+  left: boolean;
+  right: boolean;
+  onChange: (patch: Pick<DrawingPatch, "extendLeft" | "extendRight">) => void;
+}) {
+  return (
+    <DrawingMultiSelect
+      label="Extend line"
+      placeholder="Don't extend"
+      options={
+        [
+          ["extendLeft", "Extend left line"],
+          ["extendRight", "Extend right line"],
+        ] as const
+      }
+      selected={[
+        ...(left ? ["extendLeft" as const] : []),
+        ...(right ? ["extendRight" as const] : []),
+      ]}
+      onCheckedChange={(key, value) => onChange({ [key]: value })}
+    />
   );
 }
 export function MarkerPicker({

@@ -6,13 +6,13 @@ import { DrawingVisibilitySettings } from "./DrawingVisibilitySettings";
 import {
   ColorPicker,
   DrawingSelect,
+  DrawingMultiSelect,
   WidthPicker,
   LineStylePicker,
   MarkerPicker,
   LineExtensionPicker,
   LineAppearancePicker,
   Check,
-  inputClass,
 } from "./DrawingStyleControls";
 import {
   useCallback,
@@ -26,7 +26,6 @@ import {
 } from "react";
 import { ContextMenu } from "@base-ui/react/context-menu";
 import { Dialog, DialogClose, DialogPopup, DialogTitle } from "../ui/dialog";
-import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   Menu,
@@ -574,54 +573,33 @@ function DrawingSettings({
                   </h4>
                   <div className="flex items-center gap-2 text-sm">
                     <span className="w-[100px] shrink-0">Stats</span>
-                    <Popover>
-                      <PopoverTrigger
-                        className={cn(inputClass, "flex w-45 items-center justify-between")}
-                      >
-                        {selectedStats.length
-                          ? `${({ price: "Price range", percent: "Percent change", ticks: "Ticks", bars: "Bars range", datetime: "Date/time range", distance: "Distance", angle: "Angle" } as const)[selectedStats[0]!]}${selectedStats.length > 1 ? ", ..." : ""}`
-                          : "Hidden"}
-                        <ChartIcon name="chevron-down" className="size-4" />
-                      </PopoverTrigger>
-                      <PopoverPopup
-                        instant
-                        style={{ background: "#202020", backdropFilter: "none" }}
-                        className="w-52"
-                        viewportClassName="p-3 space-y-3"
-                      >
-                        <PopoverTitle className="sr-only">Line statistics</PopoverTitle>
-                        {(
-                          [
-                            ["price", "Price range"],
-                            ["percent", "Percent change"],
-                            ["ticks", "Ticks"],
-                            ["bars", "Bars range"],
-                            ["datetime", "Date/time range"],
-                            ["distance", "Distance"],
-                            ["angle", "Angle"],
-                          ] as const
-                        )
-                          .filter(
-                            ([key]) =>
-                              draft.kind !== "trend-angle" ||
-                              !["datetime", "distance", "angle"].includes(key),
-                          )
-                          .map(([key, label]) => (
-                            <Check
-                              key={key}
-                              label={label}
-                              checked={selectedStats.includes(key)}
-                              onChange={(checked) =>
-                                update({
-                                  stats: checked
-                                    ? [...selectedStats, key]
-                                    : selectedStats.filter((stat) => stat !== key),
-                                })
-                              }
-                            />
-                          ))}
-                      </PopoverPopup>
-                    </Popover>
+                    <DrawingMultiSelect
+                      label="Line statistics"
+                      placeholder="Hidden"
+                      selected={selectedStats}
+                      options={(
+                        [
+                          ["price", "Price range"],
+                          ["percent", "Percent change"],
+                          ["ticks", "Ticks"],
+                          ["bars", "Bars range"],
+                          ["datetime", "Date/time range"],
+                          ["distance", "Distance"],
+                          ["angle", "Angle"],
+                        ] as const
+                      ).filter(
+                        ([key]) =>
+                          draft.kind !== "trend-angle" ||
+                          !["datetime", "distance", "angle"].includes(key),
+                      )}
+                      onCheckedChange={(key, checked) =>
+                        update({
+                          stats: checked
+                            ? [...selectedStats, key]
+                            : selectedStats.filter((stat) => stat !== key),
+                        })
+                      }
+                    />
                   </div>
                   <label className="flex items-center gap-2 text-sm">
                     <span className="w-[100px] shrink-0">Stats position</span>
