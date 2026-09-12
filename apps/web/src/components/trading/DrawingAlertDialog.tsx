@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { DrawingAlertExpiration } from "./DrawingAlertExpiration";
 import { DrawingSelect, inputClass } from "./DrawingStyleControls";
 import type { ChartDrawing } from "./drawingGeometry";
 import type { DrawingAlertCondition, DrawingAlertTrigger } from "./drawingAlerts";
@@ -34,7 +35,7 @@ const triggers: readonly (readonly [DrawingAlertTrigger, string])[] = [
 const actionClass =
   "h-[34px] rounded-md border border-[#575757] px-[11px] text-base leading-6 hover:bg-white/10 disabled:cursor-wait disabled:opacity-50";
 const rowButtonClass =
-  "inline-flex max-w-full items-center gap-1 rounded text-left text-sm leading-[18px] hover:bg-white/5 focus-visible:outline focus-visible:outline-blue-500";
+  "inline-flex h-[30px] max-w-full items-center gap-1 rounded text-left text-sm leading-[18px] hover:bg-white/5 focus-visible:outline focus-visible:outline-blue-500";
 const drawingLabels: Partial<Record<ChartDrawing["kind"], string>> = {
   trend: "Trendline",
   "info-line": "Info line",
@@ -46,8 +47,8 @@ const drawingLabels: Partial<Record<ChartDrawing["kind"], string>> = {
   "horizontal-ray": "Horizontal ray",
 };
 
-function monthAhead() {
-  const date = new Date();
+function monthAhead(now = Date.now()) {
+  const date = new Date(now);
   const day = date.getDate();
   date.setDate(1);
   date.setMonth(date.getMonth() + 1);
@@ -55,12 +56,6 @@ function monthAhead() {
   date.setDate(Math.min(day, lastDay));
   date.setSeconds(0, 0);
   return date.getTime();
-}
-
-function localDateTime(timestamp: number) {
-  const date = new Date(timestamp);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function expirationLabel(timestamp: number | null) {
@@ -102,9 +97,8 @@ export function DrawingAlertDialog({
   const [notifications, setNotifications] = useState({ toast: true, sound: true, desktop: true });
   const [notificationDraft, setNotificationDraft] = useState(notifications);
   const [expirationOpen, setExpirationOpen] = useState(false);
+  const [expirationNow, setExpirationNow] = useState(Date.now);
   const [customExpiration, setCustomExpiration] = useState(false);
-  const [dateDraft, setDateDraft] = useState(() => localDateTime(expiresAt!));
-  const [dateError, setDateError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const submitting = useRef(false);
@@ -131,7 +125,6 @@ export function DrawingAlertDialog({
 
   function setExpiration(value: number | null) {
     setExpiresAt(value);
-    setDateError(null);
     setExpirationOpen(false);
     setCustomExpiration(false);
   }
@@ -176,7 +169,7 @@ export function DrawingAlertDialog({
         showCloseButton={false}
         bottomStickOnMobile={false}
         backdropStyle={{ background: "transparent", backdropFilter: "none" }}
-        className="fixed left-1/2 w-[480px] max-w-[calc(100vw-32px)] -translate-x-1/2 translate-y-0 scale-100 overflow-hidden rounded-md border-0 bg-[#1f1f1f] p-0 text-[#dbdbdb] shadow-xl transition-opacity data-starting-style:scale-100 data-ending-style:scale-100"
+        className="fixed left-1/2 w-[480px] max-w-[calc(100vw-32px)] -translate-x-1/2 translate-y-0 scale-100 overflow-hidden rounded-md border-0 bg-[#1f1f1f] p-0 text-[#dbdbdb] shadow-xl transition-none data-starting-style:scale-100 data-ending-style:scale-100 data-starting-style:opacity-100 data-ending-style:opacity-100"
         style={{
           top: `max(20px, min(calc(50dvh - 237.5px), calc(100dvh - ${height}px - 20px)))`,
           maxHeight: "calc(100dvh - 40px)",
@@ -245,14 +238,14 @@ export function DrawingAlertDialog({
                 />
               </div>
               <div className="mb-4 mt-[50px] border-t border-white/10" />
-              <div className="grid grid-cols-[minmax(90px,30%)_minmax(0,1fr)] items-center gap-y-3 pr-[5px] leading-[18px]">
+              <div className="grid grid-cols-[minmax(90px,30%)_minmax(0,1fr)] items-center pr-[5px] leading-[18px]">
                 <span className="text-[#8c8c8c]">Trigger</span>
                 <DrawingSelect
                   label="Alert trigger"
                   value={trigger}
                   options={triggers}
                   variant="ghost"
-                  className="h-[18px] min-h-0 w-fit max-w-full border-0 bg-transparent p-0 text-sm shadow-none sm:min-h-0"
+                  className="h-[30px] min-h-0 w-fit max-w-full border-0 bg-transparent p-0 text-sm shadow-none sm:min-h-0"
                   onChange={(value) => {
                     const next = triggers.find(([key]) => key === value);
                     if (next) setTrigger(next[0]);
@@ -263,9 +256,9 @@ export function DrawingAlertDialog({
                   open={expirationOpen}
                   onOpenChange={(open) => {
                     setExpirationOpen(open);
+                    if (open) setExpirationNow(Date.now());
                     if (!open) {
                       setCustomExpiration(false);
-                      setDateError(null);
                     }
                   }}
                 >
@@ -275,74 +268,66 @@ export function DrawingAlertDialog({
                   </PopoverTrigger>
                   <PopoverPopup
                     align="start"
-                    sideOffset={4}
-                    className="w-[285px] rounded-md border-0 bg-[#1f1f1f] p-1.5 text-[#dbdbdb] shadow-xl"
+                    side={customExpiration ? "top" : "bottom"}
+                    sideOffset={-2}
+                    className={`${customExpiration ? "w-[286px]" : "w-[209px]"} max-w-[calc(100vw-24px)] rounded-md border-0 bg-[#1f1f1f] p-0 text-[#dbdbdb] shadow-xl`}
+                    style={{ background: "#1f1f1f", backdropFilter: "none", border: 0 }}
+                    viewportClassName="p-0"
+                    instant
+                    alignOffset={-8}
                   >
                     {customExpiration ? (
-                      <div className="space-y-3 p-1.5">
-                        <div className="font-medium">Set custom date</div>
-                        <input
-                          aria-label="Expiration date and time"
-                          type="datetime-local"
-                          className={`${inputClass} w-full [color-scheme:dark]`}
-                          value={dateDraft}
-                          onChange={(event) => setDateDraft(event.target.value)}
-                        />
-                        {dateError ? (
-                          <p role="alert" className="text-xs text-red-400">
-                            {dateError}
-                          </p>
-                        ) : null}
+                      <DrawingAlertExpiration
+                        value={expiresAt ?? monthAhead()}
+                        onBack={() => setCustomExpiration(false)}
+                        onSelect={setExpiration}
+                      />
+                    ) : (
+                      <div className="flex flex-col gap-0.5 p-1.5">
+                        {(
+                          [
+                            ["Open-ended", null],
+                            [
+                              "End of day",
+                              (() => {
+                                const date = new Date(expirationNow);
+                                date.setHours(23, 59, 59, 999);
+                                return date.getTime();
+                              })(),
+                            ],
+                            [
+                              "1 week",
+                              (() => {
+                                const date = new Date(expirationNow);
+                                date.setDate(date.getDate() + 7);
+                                return date.getTime();
+                              })(),
+                            ],
+                            ["1 month", monthAhead(expirationNow)],
+                          ] as const
+                        ).map(([text, value]) => (
+                          <button
+                            key={text}
+                            type="button"
+                            className="flex h-8 w-full items-center justify-between gap-2 rounded px-1 text-left text-sm hover:bg-white/10"
+                            onClick={() => setExpiration(value)}
+                          >
+                            <span>{text}</span>
+                            <span className="text-xs text-[#8c8c8c]">
+                              {value === null
+                                ? "Won’t expire"
+                                : `${new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric" })}, ${String(new Date(value).getHours()).padStart(2, "0")}:${String(new Date(value).getMinutes()).padStart(2, "0")}`}
+                            </span>
+                          </button>
+                        ))}
                         <button
                           type="button"
-                          className={`${actionClass} w-full`}
-                          onClick={() => {
-                            const date = new Date(dateDraft).getTime();
-                            if (!Number.isFinite(date) || date <= Date.now())
-                              setDateError("Choose a date and time in the future.");
-                            else setExpiration(date);
-                          }}
+                          className="flex h-8 w-full items-center justify-between rounded px-1 text-left text-sm hover:bg-white/10"
+                          onClick={() => setCustomExpiration(true)}
                         >
-                          Set date
+                          Custom date <ChevronRight className="size-[18px]" />
                         </button>
                       </div>
-                    ) : (
-                      [
-                        ["Open-ended", () => setExpiration(null)],
-                        [
-                          "End of day",
-                          () => {
-                            const date = new Date();
-                            date.setHours(23, 59, 59, 999);
-                            setExpiration(date.getTime());
-                          },
-                        ],
-                        [
-                          "1 week",
-                          () => {
-                            const date = new Date();
-                            date.setDate(date.getDate() + 7);
-                            setExpiration(date.getTime());
-                          },
-                        ],
-                        ["1 month", () => setExpiration(monthAhead())],
-                        [
-                          "Custom date",
-                          () => {
-                            setDateDraft(localDateTime(expiresAt ?? monthAhead()));
-                            setCustomExpiration(true);
-                          },
-                        ],
-                      ].map(([text, action]) => (
-                        <button
-                          key={String(text)}
-                          type="button"
-                          className="flex h-[34px] w-full items-center rounded px-2 text-left text-sm hover:bg-white/10"
-                          onClick={action as () => void}
-                        >
-                          {String(text)}
-                        </button>
-                      ))
                     )}
                   </PopoverPopup>
                 </Popover>
