@@ -33,6 +33,12 @@ Supply a saved `datasetId`, a list of `{time, direction}` signals, and explicit 
 
 The engine cannot establish that user-generated signals avoid future information. It does not optimize strategies or validate dataset completeness; those remain explicit parts of the research process.
 
+## Visual setup reviews
+
+Ask “Show me this double bottom, mark the neckline and invalidation, and explain what would confirm it.” The agent can create an annotated chart from saved candles and return an HTML report you can open in the browser preview. Numbered notes link the explanation to the candles; the report includes its source data and timestamps. The chart is a saved review, not a live order or alert.
+
+The bundled trading-visuals skill also guides agents to create diagrams and interactive HTML reports when those explain an idea better. Custom HTML/SVG files use the existing file and browser preview tools. Optional hosted drawing tools can be added through Plugins; they are not required for local reports.
+
 ## Custom integrations
 
 Settings → Integrations → Plugins manages optional MCP connections and server bundles. Add/edit, enable/disable and remove are persisted to the environment with revision checks. Global plugins apply to newly started Claude and Codex sessions in every workspace. Existing sessions retain the connections they started with. The stored schema also supports a project-scoped plugin via `projectId`.

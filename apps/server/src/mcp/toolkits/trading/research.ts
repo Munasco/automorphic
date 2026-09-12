@@ -12,6 +12,7 @@ import { ServerConfig } from "../../../config.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { McpInvocationContext, requireMcpCapability } from "../../McpInvocationContext.ts";
 import { getHistoricalBars, type HistoryRequest } from "../../../trading/mcpMarketData.ts";
+import { renderChartReport, type ChartReportInput } from "../../../trading/chartReport.ts";
 import {
   backtestSignals,
   type BacktestRules,
@@ -72,6 +73,27 @@ const base = {
   ],
 };
 export const ResearchToolkit = Toolkit.make(
+  Tool.make("trading_create_chart", {
+    ...base,
+    description:
+      "Create a self-contained HTML candlestick report from a saved dataset, with numbered setup annotations and price levels. Reads actual candles, never model-supplied OHLC. Saves the selected data/provenance and annotation specification alongside the HTML. Return the path as a Markdown file link so the user can open its browser preview. Choose offset/limit to focus on a setup (at most 500 bars); annotation times must exactly match displayed candles, in epoch seconds. Does not change the live chart or activate orders/alerts.",
+    parameters: Schema.Struct({
+      datasetId: Schema.String,
+      offset: Schema.optionalKey(Schema.Int),
+      limit: Schema.optionalKey(Schema.Int),
+      title: Schema.String,
+      summary: Schema.String,
+      annotations: Schema.Array(
+        Schema.Struct({
+          time: Schema.Finite,
+          price: Schema.Finite,
+          label: Schema.String,
+          detail: Schema.String,
+        }),
+      ),
+      levels: Schema.Array(Schema.Struct({ price: Schema.Finite, label: Schema.String })),
+    }),
+  }).annotate(Tool.Readonly, false),
   Tool.make("trading_export_dataset", {
     ...base,
     description:
@@ -207,6 +229,51 @@ const make = Effect.gen(function* () {
     updatedAt: Schema.Finite,
   });
   return {
+    trading_create_chart: (
+      input: ChartReportInput & { datasetId: string; offset?: number; limit?: number },
+    ) =>
+      Effect.gen(function* () {
+        const directory = yield* root;
+        const bounds = yield* Effect.try(() => page(input.offset, input.limit ?? 150));
+        if (bounds.limit > 500)
+          return yield* Effect.fail(
+            new ResearchError({ message: "Display at most 500 candles per report." }),
+          );
+        const saved = yield* Schema.decodeUnknownEffect(dataset)(
+          yield* read(directory, "datasets", input.datasetId),
+        );
+        const bars = saved.bars.slice(bounds.offset, bounds.offset + bounds.limit);
+        const evidence = {
+          symbol: saved.request.symbol,
+          interval: saved.request.interval,
+          unit: saved.request.unit,
+          source: saved.source,
+          datasetId: input.datasetId,
+          updatedAt: saved.updatedAt,
+          generatedAt: yield* Clock.currentTimeMillis,
+          totalBars: saved.bars.length,
+          offset: bounds.offset,
+        };
+        const html = yield* Effect.try({
+          try: () => renderChartReport(bars, input, evidence),
+          catch: (error) =>
+            new ResearchError({
+              message:
+                error instanceof Error ? error.message : "Chart report could not be rendered.",
+            }),
+        });
+        const id = yield* crypto.randomUUIDv4;
+        const specPath = yield* write(directory, "visuals", id, {
+          ...input,
+          offset: bounds.offset,
+          limit: bounds.limit,
+          evidence,
+          bars,
+        });
+        const reportPath = path.join(directory, "visuals", `${id}.html`);
+        yield* fs.writeFileString(reportPath, html, { flag: "wx", mode: 0o600 });
+        return { reportId: id, path: reportPath, specPath, barCount: bars.length, evidence };
+      }).pipe(Effect.mapError((error) => (isResearchError(error) ? error : fail()))),
     trading_export_dataset: (input: { request: HistoryRequest; datasetId?: string }) =>
       lock.withPermit(
         Effect.gen(function* () {

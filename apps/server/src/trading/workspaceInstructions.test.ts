@@ -17,11 +17,23 @@ it.effect("preserves existing instruction files and file symlinks when seeded co
       );
       assert.equal(yield* fs.readFileString(`${root}/custom.md`), "User-owned instructions");
       assert.include(yield* fs.readFileString(`${root}/CLAUDE.md`), "@AGENTS.md");
+      assert.equal(
+        yield* fs.readFileString(`${root}/.agents/skills/trading-visuals/SKILL.md`),
+        yield* fs.readFileString(`${root}/.claude/skills/trading-visuals/SKILL.md`),
+      );
+      yield* fs.writeFileString(
+        `${root}/.agents/skills/trading-visuals/SKILL.md`,
+        "Custom visual workflow",
+      );
       yield* fs.writeFileString(`${root}/.claude/skills/trading-workflow/SKILL.md`, "Custom skill");
       yield* seedTradingWorkspaceInstructions(root);
       assert.equal(
         yield* fs.readFileString(`${root}/.claude/skills/trading-workflow/SKILL.md`),
         "Custom skill",
+      );
+      assert.equal(
+        yield* fs.readFileString(`${root}/.agents/skills/trading-visuals/SKILL.md`),
+        "Custom visual workflow",
       );
     }),
   ).pipe(Effect.provide(NodeServices.layer)),

@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import { TRADING_VISUALS_SKILL } from "./visualWorkflow.ts";
 
 export const TRADING_WORKSPACE_INSTRUCTIONS = `# Automorphic trading workspace
 
@@ -52,6 +53,8 @@ This is a trader's workspace, not a general software project. Act as a trading r
 
 ## Workspace organization
 
+Use the trading-visuals skill when the trader asks to see a setup, diagram, or interactive report. trading_create_chart produces an annotated HTML chart from an exported dataset and saves its evidence; return the saved path as a clickable file link. Use self-contained HTML/SVG for conceptual diagrams and richer reports, and verify available browser previews. Screenshots can support visual interpretation but do not establish exact prices or backtest success rates.
+
 Use research/ for hypotheses and macro notes, backtests/ for reproducible experiments and results, journal/ for trade records and reviews, and indicators/ and alerts/ for their definitions and tests. Create folders as needed, preserve existing work, and keep each experiment's assumptions with its results.
 
 The bundled trading-workflow skill provides a practical research and review checklist. Follow additional user instructions and respect any more specific instructions in subfolders.
@@ -85,6 +88,8 @@ Read and follow AGENTS.md for the shared trading research, journaling, risk, and
 `,
   ".agents/skills/trading-workflow/SKILL.md": TRADING_WORKFLOW_SKILL,
   ".claude/skills/trading-workflow/SKILL.md": TRADING_WORKFLOW_SKILL,
+  ".agents/skills/trading-visuals/SKILL.md": TRADING_VISUALS_SKILL,
+  ".claude/skills/trading-visuals/SKILL.md": TRADING_VISUALS_SKILL,
 } as const;
 
 /** Seed missing guidance only; never overwrite a trader's instructions or follow an existing file symlink. */

@@ -1,0 +1,27 @@
+export const TRADING_VISUALS_SKILL = `---
+name: trading-visuals
+description: Explain a trading setup with an annotated price chart, illustrate a market scenario or decision process, or present backtest evidence in a visual HTML report in Automorphic.
+---
+
+# Trading visuals
+
+Choose the output that answers the trader's question:
+
+- **Explain an observed setup:** use actual OHLCV and timestamped annotations. Read trading_get_workspace for the current chart context, export the relevant history with trading_export_dataset, inspect a window using trading_read_dataset, then call trading_create_chart with that datasetId, offset/limit, title, summary, annotations and levels. Its HTML has hoverable candles, numbered notes, levels and the source data. Annotations use exact displayed candle timestamps in epoch seconds. Keep the window focused (usually 50–150 bars, maximum 500). Use levels for support, entry, invalidation or targets; explain which are observations and which are hypotheses. Return the saved HTML path as a Markdown file link, with one concise finding. The user can open the file's browser preview.
+- **Explain a concept or decision:** draw a labeled SVG or self-contained HTML diagram under research/visuals/<topic>/. An invented double-bottom sketch must say it is schematic; it is not historical evidence. Use an available Excalidraw integration if the user requests an editable sketch. Verify its actual tools and preview support first; do not imply it is installed merely because this skill mentions it.
+- **Compare or explore results:** build a self-contained HTML report under research/visuals/<topic>/ with the saved results, a concise conclusion, and only controls that change a meaningful scenario. Save source data and assumptions next to the report. Drawdown, expectancy and sample size matter alongside win rate. Generated dashboards must not contain invented performance or trade data.
+
+If trading_create_chart is not listed in an existing session, use available file tools to create a local report from verified bars, or start a new session after the server has been updated. Never claim a tool ran when it was unavailable.
+
+## Read charts and verify the result
+
+A model can interpret a screenshot when its provider supports image input, but a screenshot alone does not provide exact prices, complete history or a measured success rate. Confirm contract, interval, timezone and visible date range; corroborate precise claims with saved bars. Distinguish visible evidence, interpretation and uncertainty. Never silently replace a real chart with plausible synthetic candles.
+
+Use available preview_open, preview_snapshot and preview interaction tools to inspect generated pages when the runtime supports them. A chart report file link can use Automorphic's HTML browser preview; do not invent localhost URLs or assume a server is running. Check labels, readable small-screen layout and interactive controls before claiming verification. If preview tools or vision input are unavailable, say what was verified from data/code instead.
+
+## Keep the artifact useful
+
+Use the trader's contract, timezone and units. Anchor price-chart marks to data coordinates, not guessed screenshot pixels. Keep notes concise; don't cover the candles with paragraphs. Persist the report, underlying data, annotations and assumptions, and link to the actual saved output. Explain what would invalidate a setup. A visual explanation neither activates an alert nor places a trade.
+
+HTML and SVG can be authored with the agent's existing file tools; no hosted UI generator is required. Optional external MCP tools belong in Settings > Integrations > Plugins and apply to new sessions. Do not upload private charts, trades or account data to a hosted design service merely to draw a local explanation. Keep generated pages self-contained by default.
+`;
