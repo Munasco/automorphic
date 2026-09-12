@@ -1,4 +1,4 @@
-import { chartIntervalKey } from "./tradingIntervals";
+import { chartIntervalKey, type ChartInterval } from "./tradingIntervals";
 import { ChartViewMenu, type ChartView } from "./ChartViewMenu";
 import { INSTRUMENTS, INSTRUMENT_ROOTS } from "./tradingInstruments";
 import { AlertIcon } from "./AlertIcon";
@@ -36,7 +36,10 @@ function ReadyTradingPanel({
 }) {
   const settings = useTradingPreferences();
   const [view, setView] = useState<ChartView>("chart");
-  const [technicalSource, setTechnicalSource] = useState<string | null>(null);
+  const [technicalInterval, setTechnicalInterval] = useState<ChartInterval>({
+    unit: "day",
+    value: 1,
+  });
   const { contracts, queries: contractQueries, scope } = useTradingContracts();
   const queryClient = useQueryClient();
   const selectedQuery = contractQueries[INSTRUMENT_ROOTS.indexOf(settings.root)]!;
@@ -49,15 +52,9 @@ function ReadyTradingPanel({
     )?.name ??
     contracts.find((contract) => contract.root === settings.root)?.name ??
     "";
-  const technicalsAvailable =
-    !settings.useTradingView &&
-    technicalSource === `${symbol}:${chartIntervalKey(settings.interval)}`;
+  // Availability is independent of enabled studies or whether the history has arrived yet.
+  const technicalsAvailable = !settings.useTradingView;
   const activeView = view === "technicals" && !technicalsAvailable ? "chart" : view;
-  const handleTechnicalsAvailability = useCallback(
-    (available: boolean) =>
-      setTechnicalSource(available ? `${symbol}:${chartIntervalKey(settings.interval)}` : null),
-    [symbol, settings.interval],
-  );
   const alerts = useChartAlerts(symbol);
   const { observeQuote } = alerts;
   const handleQuote = useCallback(
@@ -246,7 +243,9 @@ function ReadyTradingPanel({
               panelActions={panelActions}
               navigationControl={navigationControl}
               technicals={activeView === "technicals"}
-              onTechnicalsAvailabilityChange={handleTechnicalsAvailability}
+              technicalInterval={technicalInterval}
+              onTechnicalIntervalChange={setTechnicalInterval}
+              onBackFromTechnicals={() => setView("chart")}
               settingsControl={settingsControl}
             />
           )}

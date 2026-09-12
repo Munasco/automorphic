@@ -11,7 +11,8 @@ import {
   formatChartInterval,
   type ChartInterval,
 } from "./tradingIntervals";
-import { ChartTechnicals, chartTechnicalReadings } from "./ChartTechnicals";
+import { ChartTechnicals } from "./ChartTechnicals";
+import { chartTechnicalsMarketState } from "./chartTechnicalsMarket";
 import type { InstrumentRoot } from "./tradingInstruments";
 import { hashKey, useQuery, useQueryClient } from "@tanstack/react-query";
 import { chartMarketQueryOptions, type ChartMarketSnapshot } from "./chartMarketQuery";
@@ -105,6 +106,66 @@ function ChartAction({
   );
 }
 
+/** A separate observer shares matching chart queries without rerendering the canvas per quote. */
+function TechnicalsMarket({
+  symbol,
+  name,
+  interval,
+  onIntervalChange,
+  onBack,
+  environmentBase,
+  projectId,
+  ready,
+}: {
+  symbol: string;
+  name: string;
+  interval: ChartInterval;
+  onIntervalChange: (interval: ChartInterval) => void;
+  onBack: () => void;
+  environmentBase: string;
+  projectId: string | null;
+  ready: boolean;
+}) {
+  const client = useQueryClient();
+  const options = useMemo(
+    () => chartMarketQueryOptions(["trading", environmentBase], projectId ?? "", symbol, interval),
+    [environmentBase, projectId, symbol, interval],
+  );
+  const active = ready && !!projectId && !!symbol;
+  const query = useQuery({ ...options, enabled: active });
+  useEffect(() => {
+    if (!active) void cancelInactiveTradingStream(client, options.queryKey);
+  }, [active, client, options]);
+  const market = chartTechnicalsMarketState(
+    active ? query.data : undefined,
+    active ? query.error : null,
+  );
+  const unavailable = !symbol
+    ? "Select a contract to load its technicals."
+    : ready && !projectId
+      ? "Select a workspace to load technicals."
+      : null;
+  return (
+    <ChartTechnicals
+      symbol={symbol}
+      name={name}
+      interval={interval}
+      onIntervalChange={onIntervalChange}
+      onBack={onBack}
+      candles={market.candles}
+      loading={!unavailable && market.loading}
+      error={unavailable ?? market.error}
+      {...(active
+        ? {
+            onRetry: () => {
+              void query.refetch();
+            },
+          }
+        : {})}
+    />
+  );
+}
+
 export function TradovateChart({
   symbol,
   interval,
@@ -116,7 +177,9 @@ export function TradovateChart({
   settingsControl,
   navigationControl,
   technicals = false,
-  onTechnicalsAvailabilityChange,
+  technicalInterval,
+  onTechnicalIntervalChange,
+  onBackFromTechnicals,
 }: {
   symbol: string;
   interval: ChartInterval;
@@ -128,7 +191,9 @@ export function TradovateChart({
   settingsControl?: ReactNode;
   navigationControl?: ReactNode;
   technicals?: boolean;
-  onTechnicalsAvailabilityChange?: (available: boolean) => void;
+  technicalInterval: ChartInterval;
+  onTechnicalIntervalChange: (interval: ChartInterval) => void;
+  onBackFromTechnicals: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const settings = useChartPreferences();
@@ -197,14 +262,6 @@ export function TradovateChart({
     !engine.disposed
       ? engine
       : null;
-  const technicalRows = useMemo(
-    () => chartTechnicalReadings(readings, visibleIndicators, settings.indicatorInputs),
-    [readings, visibleIndicators, settings.indicatorInputs],
-  );
-  const hasTechnicals = !!activeEngine && !!last && technicalRows.length > 0;
-  useEffect(() => {
-    onTechnicalsAvailabilityChange?.(hasTechnicals);
-  }, [hasTechnicals, onTechnicalsAvailabilityChange]);
   const drawings = useChartDrawings(
     activeEngine?.chart ?? null,
     activeEngine?.prices[settings.style] ?? null,
@@ -660,12 +717,16 @@ export function TradovateChart({
             </div>
           </div>
         </div>
-        {technicals && hasTechnicals ? (
-          <ChartTechnicals
+        {technicals ? (
+          <TechnicalsMarket
             symbol={symbol}
-            interval={interval}
-            time={last ? (last.actualEndTime ?? last.actualTime ?? last.time) : null}
-            rows={technicalRows}
+            name={INSTRUMENTS[root].name}
+            interval={technicalInterval}
+            onIntervalChange={onTechnicalIntervalChange}
+            onBack={onBackFromTechnicals}
+            environmentBase={environmentBase}
+            projectId={workspace.projectId}
+            ready={workspace.ready}
           />
         ) : null}
       </div>
