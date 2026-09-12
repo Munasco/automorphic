@@ -9,7 +9,8 @@ vi.mock("./workspaceStorage", () => ({
   },
 }));
 
-import { useChartPreferences } from "./chartPreferences";
+import { useChartPreferences, normalizeChartPreferences } from "./chartPreferences";
+import { DEFAULT_INITIAL_BALANCE } from "./initialBalanceSettings";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
 
 beforeEach(() => {
@@ -101,5 +102,51 @@ describe("global indicator actions", () => {
     } finally {
       unsubscribe();
     }
+  });
+});
+
+describe("initial balance background preferences", () => {
+  it("migrates older session settings without changing their schedule or visibility", () => {
+    const legacy = {
+      startTime: "08:30",
+      timeZone: "America/Chicago",
+      durationMinutes: 60,
+      showBox: false,
+      showQuarters: false,
+    };
+    expect(normalizeChartPreferences({ initialBalance: legacy }).initialBalance).toMatchObject({
+      ...legacy,
+      backgroundColor: DEFAULT_INITIAL_BALANCE.backgroundColor,
+      backgroundOpacity: DEFAULT_INITIAL_BALANCE.backgroundOpacity,
+    });
+  });
+  it("persists independent background settings and restores transparent or disabled boxes", async () => {
+    const store = useChartPreferences.getState();
+    const appearance = store.appearance;
+    store.setInitialBalance({
+      ...store.initialBalance,
+      backgroundColor: "#aabbcc",
+      backgroundOpacity: 0,
+      showBox: false,
+    });
+    expect(useChartPreferences.getState().appearance).toBe(appearance);
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    await useChartPreferences.persist.rehydrate();
+    expect(useChartPreferences.getState().initialBalance).toMatchObject({
+      backgroundColor: "#aabbcc",
+      backgroundOpacity: 0,
+      showBox: false,
+    });
+  });
+  it("rejects malformed background values without overwriting valid preferences", () => {
+    const store = useChartPreferences.getState();
+    const initial = store.initialBalance;
+    for (const backgroundOpacity of [-1, 1.1, NaN, Infinity])
+      store.setInitialBalance({ ...initial, backgroundOpacity });
+    store.setInitialBalance({ ...initial, backgroundColor: "not-a-color" });
+    expect(useChartPreferences.getState().initialBalance).toBe(initial);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
   });
 });

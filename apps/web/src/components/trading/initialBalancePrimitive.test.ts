@@ -138,6 +138,16 @@ describe("initial balance visual geometry", () => {
       fill: vi.fn(),
       measureText: (label: string) => ({ width: label.length * 6 }),
     };
+    const fills: Array<{ color: string; opacity: number }> = [];
+    const strokes: Array<{ color: string; opacity: number }> = [];
+    ctx.fillRect.mockImplementation(() => {
+      const canvas = ctx as unknown as CanvasRenderingContext2D;
+      fills.push({ color: String(canvas.fillStyle), opacity: canvas.globalAlpha });
+    });
+    ctx.stroke.mockImplementation(() => {
+      const canvas = ctx as unknown as CanvasRenderingContext2D;
+      strokes.push({ color: String(canvas.strokeStyle), opacity: canvas.globalAlpha });
+    });
     const plugin = createInitialBalancePrimitive(chart, series);
     plugin.update(range, DEFAULT_INITIAL_BALANCE, [], 5);
     const draw = () => {
@@ -167,6 +177,31 @@ describe("initial balance visual geometry", () => {
       minValue: 90,
       maxValue: 120,
     });
+    expect(fills[0]).toEqual({
+      color: DEFAULT_INITIAL_BALANCE.backgroundColor,
+      opacity: DEFAULT_INITIAL_BALANCE.backgroundOpacity,
+    });
+    plugin.update(
+      range,
+      { ...DEFAULT_INITIAL_BALANCE, backgroundColor: "#ff0000", backgroundOpacity: 0.5 },
+      [],
+      5,
+    );
+    draw();
+    expect(fills.at(-1)).toEqual({ color: "#ff0000", opacity: 0.5 });
+    expect(strokes.slice(-9).map((stroke) => stroke.color)).toEqual(
+      initialBalanceLevels(range, DEFAULT_INITIAL_BALANCE).map((level) => level.color),
+    );
+    expect(strokes.every((stroke) => stroke.opacity === 1)).toBe(true);
+    plugin.update(
+      range,
+      { ...DEFAULT_INITIAL_BALANCE, backgroundColor: "#00ff00", backgroundOpacity: 0 },
+      [],
+      5,
+    );
+    draw();
+    expect(fills.at(-1)).toEqual({ color: "#00ff00", opacity: 0 });
+    expect(strokes.every((stroke) => stroke.opacity === 1)).toBe(true);
     ctx.fillRect.mockClear();
     ctx.stroke.mockClear();
     ctx.fillText.mockClear();

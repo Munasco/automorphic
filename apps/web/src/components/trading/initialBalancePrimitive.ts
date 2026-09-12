@@ -183,16 +183,19 @@ export function createInitialBalancePrimitive(chart: IChartApi, series: ISeriesA
       if (!shape) return;
       const width = chart.timeScale().width();
       const height = series.getPane().getHeight();
-      const showLabels = resolveInitialBalanceSettings(state.settings).showLabels;
+      const settings = resolveInitialBalanceSettings(state.settings);
+      const showLabels = settings.showLabels;
       target.useMediaCoordinateSpace(({ context: ctx }) => {
         ctx.save();
+        ctx.globalAlpha = 1;
         ctx.beginPath();
         ctx.rect(0, 0, width, height);
         ctx.clip();
         if (layer === "box") {
           if (shape.box) {
             const box = shape.box;
-            ctx.fillStyle = "#6b88a522";
+            ctx.fillStyle = settings.backgroundColor;
+            ctx.globalAlpha = settings.backgroundOpacity;
             ctx.fillRect(box.left, box.top, box.right - box.left, box.bottom - box.top);
           }
         } else {

@@ -7,6 +7,8 @@ export type InitialBalanceSettings = {
   showMidpoint?: boolean;
   showQuarters?: boolean;
   showBox?: boolean;
+  backgroundColor?: string;
+  backgroundOpacity?: number;
   showLabels?: boolean;
   showExpansions?: boolean;
   showHistory?: boolean;
@@ -20,6 +22,8 @@ export const DEFAULT_INITIAL_BALANCE: Required<InitialBalanceSettings> = {
   showMidpoint: true,
   showQuarters: true,
   showBox: true,
+  backgroundColor: "#6b88a5",
+  backgroundOpacity: 0.13,
   showLabels: true,
   showExpansions: true,
   showHistory: true,
@@ -34,6 +38,18 @@ export function resolveInitialBalanceSettings(
     showMidpoint: settings.showMidpoint ?? true,
     showQuarters: settings.showQuarters ?? true,
     showBox: settings.showBox ?? true,
+    backgroundColor:
+      typeof settings.backgroundColor === "string" &&
+      /^#[a-f\d]{6}$/i.test(settings.backgroundColor)
+        ? settings.backgroundColor
+        : DEFAULT_INITIAL_BALANCE.backgroundColor,
+    backgroundOpacity:
+      typeof settings.backgroundOpacity === "number" &&
+      Number.isFinite(settings.backgroundOpacity) &&
+      settings.backgroundOpacity >= 0 &&
+      settings.backgroundOpacity <= 1
+        ? settings.backgroundOpacity
+        : DEFAULT_INITIAL_BALANCE.backgroundOpacity,
     showLabels: settings.showLabels ?? true,
     showExpansions: settings.showExpansions ?? true,
     showHistory: settings.showHistory ?? true,
@@ -51,6 +67,14 @@ export function isValidInitialBalanceSettings(value: unknown): value is InitialB
   const endMinutes =
     typeof endTime === "string" ? Number(endTime.slice(0, 2)) * 60 + Number(endTime.slice(3)) : NaN;
   return (
+    (settings.backgroundColor === undefined ||
+      (typeof settings.backgroundColor === "string" &&
+        /^#[a-f\d]{6}$/i.test(settings.backgroundColor))) &&
+    (settings.backgroundOpacity === undefined ||
+      (typeof settings.backgroundOpacity === "number" &&
+        Number.isFinite(settings.backgroundOpacity) &&
+        settings.backgroundOpacity >= 0 &&
+        settings.backgroundOpacity <= 1)) &&
     typeof endTime === "string" &&
     /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(endTime) &&
     startMinutes + (settings.durationMinutes ?? NaN) <= endMinutes &&

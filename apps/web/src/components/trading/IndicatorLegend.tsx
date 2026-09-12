@@ -1,3 +1,4 @@
+import { ColorPicker, DrawingSelect } from "./DrawingStyleControls";
 import { resolveIndicatorStyle } from "./indicatorStyles";
 import { useState } from "react";
 import { ChartIcon } from "./ChartIcon";
@@ -8,6 +9,7 @@ import {
   getIndicatorInputs,
   getIndicatorLabel,
   INITIAL_BALANCE_TIME_ZONES,
+  DEFAULT_INITIAL_BALANCE,
   type InitialBalanceSettings,
 } from "./indicatorCatalog";
 import { INDICATOR_COLORS, type IndicatorReadings } from "./chartIndicatorRenderer";
@@ -190,20 +192,15 @@ export function IndicatorLegend({
                                   {plotStyle.kind !== "fill" && (
                                     <label className="flex items-center justify-between">
                                       Line width
-                                      <select
-                                        aria-label={`${label} ${plotStyle.label} width`}
-                                        className={inputClass}
-                                        value={style.lineWidth}
-                                        onChange={(event) =>
-                                          update({ lineWidth: Number(event.target.value) })
-                                        }
-                                      >
-                                        {[1, 2, 3, 4].map((width) => (
-                                          <option key={width} value={width}>
-                                            {width} px
-                                          </option>
-                                        ))}
-                                      </select>
+                                      <DrawingSelect
+                                        label={`${label} ${plotStyle.label} width`}
+                                        value={String(style.lineWidth)}
+                                        onChange={(value) => update({ lineWidth: Number(value) })}
+                                        options={[1, 2, 3, 4].map(
+                                          (width) => [String(width), `${width} px`] as const,
+                                        )}
+                                        className="w-20"
+                                      />
                                     </label>
                                   )}
                                 </div>
@@ -257,26 +254,62 @@ export function IndicatorLegend({
                                 }
                               />
                             </label>
-                            <select
-                              aria-label="Initial balance time zone"
-                              className={cn(inputClass, "w-full")}
+                            <DrawingSelect
+                              label="Initial balance time zone"
                               value={settings.initialBalance.timeZone}
-                              onChange={(event) =>
+                              onChange={(timeZone) =>
                                 settings.setInitialBalance({
                                   ...settings.initialBalance,
-                                  timeZone: event.target
-                                    .value as InitialBalanceSettings["timeZone"],
+                                  timeZone: timeZone as InitialBalanceSettings["timeZone"],
                                 })
                               }
-                            >
-                              {INITIAL_BALANCE_TIME_ZONES.map((zone) => (
-                                <option key={zone}>{zone}</option>
-                              ))}
-                            </select>
+                              options={INITIAL_BALANCE_TIME_ZONES.map(
+                                (zone) => [zone, zone] as const,
+                              )}
+                              className="w-full"
+                            />
                             <div className="space-y-3 border-t border-white/10 pt-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <label className="flex items-center gap-2">
+                                  <input
+                                    type="checkbox"
+                                    aria-label="First-hour background"
+                                    checked={settings.initialBalance.showBox ?? true}
+                                    onChange={(event) =>
+                                      settings.setInitialBalance({
+                                        ...settings.initialBalance,
+                                        showBox: event.target.checked,
+                                      })
+                                    }
+                                  />
+                                  Background
+                                </label>
+                                <ColorPicker
+                                  label="Initial balance background color"
+                                  value={
+                                    settings.initialBalance.backgroundColor ??
+                                    DEFAULT_INITIAL_BALANCE.backgroundColor
+                                  }
+                                  opacity={
+                                    settings.initialBalance.backgroundOpacity ??
+                                    DEFAULT_INITIAL_BALANCE.backgroundOpacity
+                                  }
+                                  onChange={(backgroundColor) =>
+                                    settings.setInitialBalance({
+                                      ...settings.initialBalance,
+                                      backgroundColor,
+                                    })
+                                  }
+                                  onOpacityChange={(backgroundOpacity) =>
+                                    settings.setInitialBalance({
+                                      ...settings.initialBalance,
+                                      backgroundOpacity,
+                                    })
+                                  }
+                                />
+                              </div>
                               {(
                                 [
-                                  ["showBox", "First-hour shading"],
                                   ["showMidpoint", "50% midpoint"],
                                   ["showQuarters", "25% and 75% levels"],
                                   ["showExpansions", "0.5× and 1× expansions"],
@@ -316,6 +349,8 @@ export function IndicatorLegend({
                                   showMidpoint: true,
                                   showQuarters: true,
                                   showBox: true,
+                                  backgroundColor: DEFAULT_INITIAL_BALANCE.backgroundColor,
+                                  backgroundOpacity: DEFAULT_INITIAL_BALANCE.backgroundOpacity,
                                   showLabels: true,
                                   showExpansions: true,
                                   showHistory: true,
