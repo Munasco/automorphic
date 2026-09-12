@@ -9,15 +9,15 @@ if (!source || source === "--help") {
   );
   process.exit(source ? 0 : 1);
 }
-const destination = fileURLToPath(new URL("../public/workspace-snapshot.jpg", import.meta.url));
+const destination = fileURLToPath(new URL("../public/workspace-snapshot.webp", import.meta.url));
 const temporary = `${destination}.${process.pid}.tmp`;
 try {
   // Read first so the existing snapshot can also be used as the source.
   const input = await readFile(source);
   const output = await sharp(input, { limitInputPixels: 40_000_000 })
     .rotate()
-    .resize({ width: 2400, withoutEnlargement: true })
-    .jpeg({ quality: 90, mozjpeg: true })
+    .resize({ width: 3840, withoutEnlargement: true })
+    .webp({ lossless: true, effort: 6 })
     .toBuffer();
   await writeFile(temporary, output);
   await rename(temporary, destination);
