@@ -1,8 +1,9 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { internalAction, internalMutation, internalQuery } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, query } from "./_generated/server";
+import { authComponent } from "./auth";
 
-// Every database entry point is internal: tokens are never exposed as client queries.
+// Token-bearing database entry points stay internal; clients subscribe only to status.
 export const session = internalQuery({
   args: {},
   handler: (ctx) =>
@@ -129,5 +130,38 @@ export const status = internalQuery({
           status: current.status,
         }
       : { status: "not-configured" };
+  },
+});
+
+export const connectionStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (!user?.emailVerified) return null;
+    const current = await ctx.db
+      .query("brokerSessions")
+      .withIndex("by_name", (q) => q.eq("name", "owner"))
+      .unique();
+    if (!current?.ownerEmail || current.ownerEmail !== user.email.trim().toLowerCase()) return null;
+    return {
+      environment: current.environment,
+      expiration: current.expiration,
+      lastRenewedAt: current.lastRenewedAt,
+      status: current.status ?? "valid",
+    };
+  },
+});
+
+export const bindOwner = internalMutation({
+  args: { email: v.string() },
+  handler: async (ctx, { email }) => {
+    const current = await ctx.db
+      .query("brokerSessions")
+      .withIndex("by_name", (q) => q.eq("name", "owner"))
+      .unique();
+    if (!current) throw new Error("No existing broker session.");
+    const ownerEmail = email.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(ownerEmail)) throw new Error("Invalid owner email.");
+    await ctx.db.patch(current._id, { ownerEmail });
   },
 });

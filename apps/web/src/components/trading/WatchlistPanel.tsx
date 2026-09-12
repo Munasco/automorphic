@@ -1,4 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { tradingQueryScope } from "./tradingQueries";
+import { useTradingConnectionVersion } from "./BrokerSessionSync";
 import { ArrowDownAZIcon, MoreHorizontalIcon, PlusIcon, XIcon } from "lucide-react";
 import { Menu, MenuTrigger, MenuPopup, MenuItem, MenuCheckboxItem } from "../ui/menu";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
@@ -41,26 +44,39 @@ export function WatchlistPanel({
 }) {
   const roots = useTradingPreferences((state) => state.watchlistRoots);
   const setRoots = useTradingPreferences((state) => state.setWatchlistRoots);
-  const [quotes, setQuotes] = useState<Partial<Record<InstrumentRoot, MarketQuote>>>({});
-  const [activeContracts, setActiveContracts] = useState<
-    Partial<Record<InstrumentRoot, FuturesContract>>
-  >({});
-  const [status, setStatus] = useState("Connecting prices…");
+  const client = useQueryClient();
+  const version = useTradingConnectionVersion();
   const key = roots.join(",");
+  const base = tradingQueryScope()[1];
+  type Feed = {
+    quotes: Partial<Record<InstrumentRoot, MarketQuote>>;
+    activeContracts: Partial<Record<InstrumentRoot, FuturesContract>>;
+    status: string;
+  };
+  const initial: Feed = { quotes: {}, activeContracts: {}, status: "Connecting prices…" };
+  const feed = useQuery<Feed>({
+    queryKey: ["trading", base, "watchlist", key],
+    enabled: false,
+    initialData: initial,
+    staleTime: Infinity,
+  });
+  const { quotes, activeContracts, status } = feed.data!;
   useEffect(() => {
-    // A changed subscription must discard prices from the previous contract set.
-    // eslint-disable-next-line react/set-state-in-effect
-    setQuotes({});
-    setActiveContracts({});
-    if (!key) {
-      setStatus("");
-      return;
-    }
+    if (!key) return;
+    const queryKey = ["trading", base, "watchlist", key];
+    const update = (patch: Partial<Feed>) =>
+      client.setQueryData<Feed>(queryKey, (current) => ({
+        quotes: {},
+        activeContracts: {},
+        status: "",
+        ...current,
+        ...patch,
+      }));
     let disposed = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let stream: ReturnType<typeof openTradingStream> | undefined;
     const connect = () => {
-      setStatus("Connecting prices…");
+      update({ status: "Connecting prices…" });
       stream = openTradingStream(`/api/trading/watchlist-stream?roots=${encodeURIComponent(key)}`, {
         onMessage(data) {
           if (disposed) return;
@@ -84,7 +100,7 @@ export function WatchlistPanel({
               )
                 next[root] = contract;
             }
-            setActiveContracts(next);
+            update({ activeContracts: next });
           } else if (
             message?.type === "quote" &&
             isInstrumentRoot(message.root) &&
@@ -92,15 +108,18 @@ export function WatchlistPanel({
             Number.isFinite(message.quote.last) &&
             rootFromSymbol(message.quote.symbol) === message.root
           ) {
-            setQuotes((current) => ({ ...current, [message.root]: message.quote }));
-            setStatus("");
+            client.setQueryData<Feed>(queryKey, (current) => ({
+              quotes: { ...current?.quotes, [message.root]: message.quote },
+              activeContracts: current?.activeContracts ?? {},
+              status: "",
+            }));
           } else if (message?.type === "unavailable") {
-            setStatus("Some prices are unavailable.");
+            update({ status: "Some prices are unavailable." });
           }
         },
         onError() {
           if (disposed) return;
-          setStatus("Reconnecting prices…");
+          update({ status: "Reconnecting prices…" });
           retry = setTimeout(connect, 5000);
         },
       });
@@ -111,7 +130,9 @@ export function WatchlistPanel({
       clearTimeout(retry);
       stream?.close();
     };
-  }, [key]);
+    // The session version intentionally restarts the authenticated stream.
+    // eslint-disable-next-line react/exhaustive-effect-dependencies
+  }, [key, base, client, version]);
 
   const move = (root: InstrumentRoot, direction: -1 | 1) => {
     const index = roots.indexOf(root);
@@ -241,7 +262,7 @@ export function WatchlistPanel({
           </p>
         )}
       </div>
-      {status && (
+      {key && status && (
         <p role="status" className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
           {status}
         </p>

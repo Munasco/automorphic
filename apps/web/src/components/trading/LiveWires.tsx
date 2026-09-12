@@ -1,3 +1,5 @@
+import { useQuery } from "@tanstack/react-query";
+import { tradingQueryScope } from "./tradingQueries";
 import { tradingFetch } from "./tradingTransport";
 import { useEffect, useState } from "react";
 import { ArrowDownRight, ArrowUpRight, Minus, RefreshCw } from "lucide-react";
@@ -32,51 +34,36 @@ export function LiveWires({
   root?: "MGC" | "NQ";
   projectId?: string | null;
 }) {
-  const [feed, setFeed] = useState<{ root: string; items: Wire[]; updated: number }>({
-    root,
-    items: [],
-    updated: 0,
+  const query = useQuery({
+    queryKey: [...tradingQueryScope(), "news", projectId ?? null, root],
+    queryFn: async ({ signal }) => {
+      const response = await tradingFetch(
+        `/api/trading/news?root=${root}${projectId ? `&projectId=${encodeURIComponent(projectId)}` : ""}`,
+        { signal },
+      );
+      if (!response.ok) throw new Error("News feed unavailable. Retrying shortly.");
+      const data = await response.json();
+      if (!Array.isArray(data.items)) throw new Error("No headlines received");
+      return {
+        items: data.items as Wire[],
+        updated: data.fetchedAt as number,
+        stale: Boolean(data.stale),
+        analysisPending: data.analysisStatus === "pending",
+      };
+    },
+    staleTime: 30_000,
+    refetchInterval: (current) => (current.state.data?.analysisPending ? 2500 : 60_000),
   });
+  const feed = query.data;
+  const error =
+    query.error?.message ?? (feed?.stale ? "Showing cached headlines. Feed is reconnecting." : "");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All news");
-  const [error, setError] = useState("");
-  const [refresh, setRefresh] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 15_000);
     return () => window.clearInterval(timer);
   }, []);
-  useEffect(() => {
-    const abort = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    const load = async () => {
-      let delay = 60_000;
-      try {
-        const response = await tradingFetch(
-          `/api/trading/news?root=${root}${projectId ? `&projectId=${encodeURIComponent(projectId)}` : ""}`,
-          {
-            signal: abort.signal,
-            credentials: "same-origin",
-          },
-        );
-        if (!response.ok) throw Error("News feed unavailable");
-        const data = await response.json();
-        if (!Array.isArray(data.items)) throw Error("No headlines received");
-        if (abort.signal.aborted) return;
-        setFeed({ root, items: data.items, updated: data.fetchedAt });
-        setError(data.stale ? "Showing cached headlines. Feed is reconnecting." : "");
-        if (data.analysisStatus === "pending") delay = 2500;
-      } catch {
-        if (!abort.signal.aborted) setError("News feed unavailable. Retrying shortly.");
-      }
-      if (!abort.signal.aborted) timer = setTimeout(() => void load(), delay);
-    };
-    void load();
-    return () => {
-      abort.abort();
-      clearTimeout(timer);
-    };
-  }, [refresh, root, projectId]);
-  const items = feed.root === root ? feed.items : [];
+  const items = feed?.items ?? [];
   const breaking = !error ? selectBreakingNews(items, now) : null;
   const regularItems = items.filter((item) => item.id !== breaking?.id);
   const filtered =
@@ -134,7 +121,7 @@ export function LiveWires({
               <button
                 type="button"
                 aria-label="Refresh news"
-                onClick={() => setRefresh((value) => value + 1)}
+                onClick={() => void query.refetch()}
                 className="ml-auto shrink-0 rounded p-1.5 text-zinc-500 hover:text-zinc-200"
               />
             }
@@ -143,7 +130,7 @@ export function LiveWires({
           </TooltipTrigger>
           <TooltipPopup>
             Refresh news
-            {feed.updated
+            {feed?.updated
               ? ` · Updated ${new Date(feed.updated).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`
               : ""}
           </TooltipPopup>

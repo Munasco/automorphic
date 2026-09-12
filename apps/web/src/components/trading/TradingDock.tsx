@@ -1,10 +1,12 @@
 import { TradingSelect } from "./TradingSelect";
-import { useEffect, useId, useState } from "react";
-import type { TradingAccountRow, TradingAccountSnapshot } from "@t3tools/contracts";
+import { useId, useState } from "react";
+import type { TradingAccountRow } from "@t3tools/contracts";
 import { PanelBottomIcon, RefreshCw, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { ACCOUNT_POLL_MS, tradingAccountCache } from "./tradingAccountCache";
+import { ACCOUNT_POLL_MS, fetchTradingAccount } from "./tradingAccountCache";
+import { useQuery } from "@tanstack/react-query";
+import { tradingQueryScope } from "./tradingQueries";
 import { cn } from "../../lib/utils";
 
 const tabs = ["Positions", "Orders", "History"] as const;
@@ -55,58 +57,26 @@ export function TradingDock({ onClose, height }: { onClose?: () => void; height?
   const id = useId();
   const [tab, setTab] = useState<Tab>("Positions");
   const [accountId, setAccountId] = useState<number | null>(null);
-  const [result, setResult] = useState<{ key: number | null; data: TradingAccountSnapshot } | null>(
-    () => {
-      const data = tradingAccountCache.peek(null);
-      return data ? { key: null, data } : null;
-    },
-  );
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<{ key: number | null; message: string } | null>(null);
-  const [refresh, setRefresh] = useState(0);
-  useEffect(() => {
-    const abort = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let inFlight = false;
-    const load = async (force: boolean) => {
-      if (abort.signal.aborted || document.hidden || inFlight) return;
-      inFlight = true;
-      setLoading(true);
-      try {
-        const data = await tradingAccountCache.load(accountId, abort.signal, force);
-        if (abort.signal.aborted) return;
-        setResult({ key: accountId, data });
-        setError(null);
-      } catch (failure) {
-        if (abort.signal.aborted) return;
-        setError({
-          key: accountId,
-          message: failure instanceof Error ? failure.message : "Account unavailable.",
-        });
-      } finally {
-        if (!abort.signal.aborted) {
-          setLoading(false);
-          inFlight = false;
-          if (!document.hidden) timer = setTimeout(() => void load(true), ACCOUNT_POLL_MS);
-        }
-      }
-    };
-    const onVisibilityChange = () => {
-      clearTimeout(timer);
-      if (!document.hidden) void load(false);
-    };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    void load(refresh > 0);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-      abort.abort();
-      clearTimeout(timer);
-    };
-  }, [accountId, refresh]);
-  const data = result?.key === accountId ? result.data : tradingAccountCache.peek(accountId);
-  const accounts = data?.accounts ?? result?.data.accounts ?? [];
+  const scope = tradingQueryScope();
+  const accountList = useQuery({
+    queryKey: [...scope, "account", null],
+    queryFn: ({ signal }) => fetchTradingAccount(null, signal),
+    staleTime: ACCOUNT_POLL_MS,
+    refetchInterval: accountId === null ? ACCOUNT_POLL_MS : false,
+  });
+  const selectedAccount = useQuery({
+    queryKey: [...scope, "account", accountId],
+    queryFn: ({ signal }) => fetchTradingAccount(accountId, signal),
+    enabled: accountId !== null,
+    staleTime: ACCOUNT_POLL_MS,
+    refetchInterval: ACCOUNT_POLL_MS,
+  });
+  const query = accountId === null ? accountList : selectedAccount;
+  const data = query.data;
+  const loading = query.isFetching;
+  const accounts = data?.accounts ?? accountList.data?.accounts ?? [];
   const currentAccount = accountId ?? data?.accountId ?? "";
-  const currentError = error?.key === accountId ? error.message : null;
+  const currentError = query.error?.message;
   const rows = data
     ? tab === "Positions"
       ? data.positions
@@ -209,7 +179,7 @@ export function TradingDock({ onClose, height }: { onClose?: () => void; height?
                   size="icon-xs"
                   aria-label="Refresh trading account"
                   disabled={loading}
-                  onClick={() => setRefresh((value) => value + 1)}
+                  onClick={() => void query.refetch()}
                 />
               }
             >
@@ -253,7 +223,7 @@ export function TradingDock({ onClose, height }: { onClose?: () => void; height?
             variant="ghost"
             size="xs"
             disabled={loading}
-            onClick={() => setRefresh((value) => value + 1)}
+            onClick={() => void query.refetch()}
           >
             Retry
           </Button>

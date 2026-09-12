@@ -8,6 +8,7 @@ export default defineSchema({
   }).index("by_email", ["email"]),
   brokerSessions: defineTable({
     name: v.literal("owner"),
+    ownerEmail: v.optional(v.string()),
     accessToken: v.string(),
     environment: v.union(v.literal("demo"), v.literal("live")),
     expiration: v.number(),

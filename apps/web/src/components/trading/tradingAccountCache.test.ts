@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import { ACCOUNT_POLL_MS, createTradingAccountCache } from "./tradingAccountCache";
-
+import { QueryClient } from "@tanstack/react-query";
+import { ACCOUNT_POLL_MS, fetchTradingAccount } from "./tradingAccountCache";
 const snapshot = (accountId: number | null = 1) => ({
   accounts: accountId === null ? [] : [{ id: accountId, name: `Account ${accountId}` }],
   accountId,
@@ -11,88 +11,62 @@ const snapshot = (accountId: number | null = 1) => ({
   fetchedAt: "2026-09-12T02:00:00.000Z",
   historyScope: "available-session-fills",
 });
-const json = (value: unknown) => new Response(JSON.stringify(value));
+const json = (value: unknown) => Response.json(value);
 const signal = () => new AbortController().signal;
-
-describe("broker account cache", () => {
-  it("reuses fresh snapshots, aliases the selected account, and refreshes expired data", async () => {
-    let now = 1000;
-    const request = vi.fn<typeof fetch>().mockImplementation(async () => json(snapshot()));
-    const cache = createTradingAccountCache(request, () => now);
-    const first = await cache.load(null, signal());
-    expect(await cache.load(1, signal())).toBe(first);
-    expect(request).toHaveBeenCalledTimes(1);
-    now += ACCOUNT_POLL_MS;
-    await cache.load(1, signal());
-    expect(request).toHaveBeenCalledTimes(2);
-    expect(request.mock.calls[1]?.[0]).toBe("/api/trading/account?accountId=1");
-  });
-  it("forces refresh on request and keeps account snapshots separate", async () => {
+describe("broker account queries", () => {
+  it("deduplicates reads, separates accounts, and retains data when refresh fails", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+    });
     const request = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(json(snapshot(1)))
       .mockResolvedValueOnce(json(snapshot(2)))
-      .mockResolvedValueOnce(json(snapshot(1)));
-    const cache = createTradingAccountCache(request);
-    await cache.load(1, signal());
-    await cache.load(2, signal());
-    await cache.load(1, signal(), true);
-    expect(cache.peek(1)?.accountId).toBe(1);
-    expect(cache.peek(2)?.accountId).toBe(2);
-    expect(request).toHaveBeenCalledTimes(3);
-    expect(
-      request.mock.calls.every(
-        ([, options]) => options?.method === undefined && options?.body === undefined,
-      ),
-    ).toBe(true);
-  });
-  it("accepts a connected demo response with no accounts without inventing rows", async () => {
-    const cache = createTradingAccountCache(
-      vi.fn<typeof fetch>().mockResolvedValue(json(snapshot(null))),
-    );
-    const data = await cache.load(null, signal());
-    expect(data).toMatchObject({
-      accounts: [],
-      accountId: null,
-      environment: "demo",
-      positions: [],
-      orders: [],
-      history: [],
-    });
-  });
-  it("retains the last snapshot after a failed refresh and returns the server error", async () => {
-    const request = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(json(snapshot()))
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ error: "Session expired" }), { status: 401 }),
       );
-    const cache = createTradingAccountCache(request);
-    await cache.load(1, signal());
-    await expect(cache.load(1, signal(), true)).rejects.toThrow("Session expired");
-    expect(cache.peek(1)?.accountId).toBe(1);
-  });
-  it("does not cache a late response after the dock closes or switches account", async () => {
-    let finish!: (value: Response) => void;
-    const response = new Promise<Response>((resolve) => {
-      finish = resolve;
+    const options = (id: number) => ({
+      queryKey: ["trading", "test-environment", "account", id],
+      queryFn: ({ signal }: { signal: AbortSignal }) => fetchTradingAccount(id, signal, request),
+      staleTime: ACCOUNT_POLL_MS,
     });
-    const cache = createTradingAccountCache(vi.fn<typeof fetch>().mockReturnValue(response));
-    const controller = new AbortController();
-    const pending = cache.load(1, controller.signal);
-    controller.abort();
-    finish(json(snapshot()));
-    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
-    expect(cache.peek(1)).toBeNull();
+    try {
+      const [first, duplicate] = await Promise.all([
+        client.fetchQuery(options(1)),
+        client.fetchQuery(options(1)),
+      ]);
+      expect(first).toBe(duplicate);
+      expect(request).toHaveBeenCalledTimes(1);
+      await client.fetchQuery(options(2));
+      await client.invalidateQueries({ queryKey: options(1).queryKey, refetchType: "none" });
+      await expect(client.fetchQuery(options(1))).rejects.toThrow("Session expired");
+      expect(client.getQueryData(options(1).queryKey)).toMatchObject({ accountId: 1 });
+      expect(client.getQueryData(options(2).queryKey)).toMatchObject({ accountId: 2 });
+    } finally {
+      client.clear();
+    }
   });
-  it("rejects malformed and mismatched account responses", async () => {
+  it("accepts a connected account with no trades without inventing rows", async () => {
+    expect(
+      await fetchTradingAccount(null, signal(), async () => json(snapshot(null))),
+    ).toMatchObject({ accounts: [], accountId: null, positions: [], orders: [], history: [] });
+  });
+  it("rejects late responses after cancellation", async () => {
+    const abort = new AbortController();
+    const request: typeof fetch = async () => {
+      abort.abort();
+      return json(snapshot());
+    };
+    await expect(fetchTradingAccount(1, abort.signal, request)).rejects.toMatchObject({
+      name: "AbortError",
+    });
+  });
+  it("rejects malformed and mismatched accounts", async () => {
     const request = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(json({ ...snapshot(), positions: [{ id: "invalid" }] }))
       .mockResolvedValueOnce(json(snapshot(2)));
-    const cache = createTradingAccountCache(request);
-    await expect(cache.load(1, signal())).rejects.toThrow("unreadable");
-    await expect(cache.load(1, signal())).rejects.toThrow("different account");
-    expect(cache.peek(1)).toBeNull();
+    await expect(fetchTradingAccount(1, signal(), request)).rejects.toThrow("unreadable");
+    await expect(fetchTradingAccount(1, signal(), request)).rejects.toThrow("different account");
   });
 });

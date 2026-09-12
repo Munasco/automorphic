@@ -1,13 +1,13 @@
 import { chartIntervalKey } from "./tradingIntervals";
 import { ChartViewMenu, type ChartView } from "./ChartViewMenu";
-import { INSTRUMENTS, INSTRUMENT_ROOTS, type InstrumentRoot } from "./tradingInstruments";
+import { INSTRUMENTS, INSTRUMENT_ROOTS } from "./tradingInstruments";
 import { AlertIcon } from "./AlertIcon";
 import { WatchlistPanel } from "./WatchlistPanel";
-import { tradingFetch } from "./tradingTransport";
-import { loadMarketContracts } from "./contractLoader";
+import { useQueryClient } from "@tanstack/react-query";
+import { contractQueryOptions, useTradingContracts } from "./tradingQueries";
 import { ChartAlerts, useChartAlerts } from "./ChartAlertsPanel";
 import { ChartIcon } from "./ChartIcon";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Button } from "../ui/button";
 import { useTradingPreferences } from "./tradingPreferences";
@@ -15,7 +15,7 @@ import { TradovateChart } from "./TradovateChart";
 import { TradingViewEmbedPanel } from "./TradingViewEmbedPanel";
 import { LiveWires } from "./LiveWires";
 import { InstrumentHeader, type MarketQuote } from "./InstrumentHeader";
-import { SymbolPicker, type FuturesContract } from "./SymbolPicker";
+import { SymbolPicker } from "./SymbolPicker";
 import { SolarSettingsIcon } from "./SolarSettingsIcon";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
@@ -37,55 +37,12 @@ function ReadyTradingPanel({
   const settings = useTradingPreferences();
   const [view, setView] = useState<ChartView>("chart");
   const [technicalSource, setTechnicalSource] = useState<string | null>(null);
-  const [contracts, setContracts] = useState<FuturesContract[]>([]);
-  const [errors, setErrors] = useState<Partial<Record<InstrumentRoot, string>>>({});
-  const [loadingRoots, setLoadingRoots] = useState<Partial<Record<InstrumentRoot, boolean>>>(
-    Object.fromEntries(INSTRUMENT_ROOTS.map((root) => [root, true])),
-  );
-  const loading = Object.values(loadingRoots).some(Boolean);
+  const { contracts, queries: contractQueries, scope } = useTradingContracts();
+  const queryClient = useQueryClient();
+  const selectedQuery = contractQueries[INSTRUMENT_ROOTS.indexOf(settings.root)]!;
+  const loading = contractQueries.some((query) => query.isPending);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [quote, setQuote] = useState<MarketQuote | null>(null);
-  const request = useRef<AbortController | null>(null);
-  const loadContracts = useCallback(
-    async (signal: AbortSignal, roots: readonly InstrumentRoot[] = INSTRUMENT_ROOTS) => {
-      setLoadingRoots((current) => ({
-        ...current,
-        ...Object.fromEntries(roots.map((root) => [root, true])),
-      }));
-      await loadMarketContracts(roots, signal, tradingFetch, (result) => {
-        if (result.contracts) {
-          setContracts((previous) => [
-            ...previous.filter((contract) => contract.root !== result.root),
-            ...result.contracts,
-          ]);
-        }
-        // Keep the existing chart if this market's refresh fails.
-        setErrors((previous) => ({ ...previous, [result.root]: result.error }));
-        setLoadingRoots((previous) => ({ ...previous, [result.root]: false }));
-      });
-    },
-    [],
-  );
-  useEffect(() => {
-    const abort = new AbortController();
-    request.current = abort;
-    // Track the pending external market subscriptions when mounting.
-    // eslint-disable-next-line react/set-state-in-effect
-    void loadContracts(abort.signal);
-    const refresh = () => {
-      if (document.visibilityState !== "visible") return;
-      request.current?.abort();
-      request.current = new AbortController();
-      void loadContracts(request.current.signal);
-    };
-    const timer = window.setInterval(refresh, 15 * 60_000);
-    window.addEventListener("focus", refresh);
-    return () => {
-      request.current?.abort();
-      window.clearInterval(timer);
-      window.removeEventListener("focus", refresh);
-    };
-  }, [loadContracts]);
   const symbol =
     contracts.find(
       (contract) => contract.root === settings.root && contract.name === settings.selectedSymbol,
@@ -111,7 +68,7 @@ function ReadyTradingPanel({
     [observeQuote],
   );
   const [sideView, setSideView] = useState<"watchlist" | "alerts" | null>(null);
-  const error = errors[settings.root];
+  const error = selectedQuery.error?.message;
   const settingsControl = (
     <Tooltip>
       <TooltipTrigger
@@ -259,14 +216,10 @@ function ReadyTradingPanel({
           <Button
             variant="outline"
             size="sm"
-            disabled={loadingRoots[settings.root]}
-            onClick={() => {
-              if (!request.current || request.current.signal.aborted)
-                request.current = new AbortController();
-              void loadContracts(request.current.signal, [settings.root]);
-            }}
+            disabled={selectedQuery.isFetching}
+            onClick={() => void selectedQuery.refetch()}
           >
-            {loadingRoots[settings.root] ? "Retrying…" : "Retry"}
+            {selectedQuery.isFetching ? "Retrying…" : "Retry"}
           </Button>
         </div>
       ) : null}
@@ -317,8 +270,7 @@ function ReadyTradingPanel({
                 selected={symbol}
                 onClose={() => setSideView(null)}
                 onSelect={(contract) => {
-                  setContracts((current) => [
-                    ...current.filter((item) => item.root !== contract.root),
+                  queryClient.setQueryData(contractQueryOptions(scope, contract.root).queryKey, [
                     contract,
                   ]);
                   settings.setRoot(contract.root);
