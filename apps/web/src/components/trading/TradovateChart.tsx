@@ -624,6 +624,10 @@ export function TradovateChart({
         navigationControl={navigationControl}
       />
       <div className="relative flex min-h-0 min-w-0 flex-1">
+        <DrawingSelectionOverlay
+          drawings={drawings}
+          onOpenObjectTree={() => setObjectTreeOpen(true)}
+        />
         <div
           role="toolbar"
           aria-label="Drawing tools"
@@ -667,10 +671,7 @@ export function TradovateChart({
           <div className="relative min-h-0 min-w-0 flex-1 overflow-y-auto">
             <div className="relative h-full" style={{ minHeight: 240 + paneCount * 110 }}>
               <div ref={host} className="absolute inset-0" />
-              <DrawingSelectionOverlay
-                drawings={drawings}
-                onOpenObjectTree={() => setObjectTreeOpen(true)}
-              />
+
               <DrawingInlineTextEditor
                 chart={activeEngine?.chart ?? null}
                 series={activeEngine?.prices[settings.style] ?? null}

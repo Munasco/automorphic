@@ -41,11 +41,13 @@ export function DrawingTemplateMenu({
           title={compact ? "Drawing templates" : undefined}
           className={cn(
             "flex shrink-0 items-center justify-center gap-2 rounded text-sm text-zinc-200 hover:bg-white/10",
-            compact ? "size-8" : "h-[34px] border border-white/20 px-[11px] text-base",
+            compact
+              ? "size-[38px] aria-expanded:bg-white/10"
+              : "h-[34px] border border-white/20 px-[11px] text-base",
           )}
         >
           {compact ? (
-            <ChartIcon name="layout-grid-add" className="size-5" />
+            <ChartIcon name="layout-grid-add" className="size-7" />
           ) : (
             <>
               Template <ChartIcon name="chevron-down" className="size-3" />

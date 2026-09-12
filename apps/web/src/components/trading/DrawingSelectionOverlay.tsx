@@ -16,6 +16,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ClipboardEvent,
@@ -133,7 +134,7 @@ function IconButton({
             aria-pressed={active}
             onClick={onClick}
             className={cn(
-              "flex size-8 shrink-0 items-center justify-center rounded text-zinc-300 hover:bg-white/10 focus-visible:outline-blue-500",
+              "flex size-[38px] shrink-0 items-center justify-center rounded text-zinc-300 hover:bg-white/10 focus-visible:outline-blue-500",
               active && "bg-blue-500/15 text-blue-400",
             )}
           />
@@ -715,10 +716,34 @@ export function DrawingSelectionOverlay({
   onOpenObjectTree?: (() => void) | undefined;
 }) {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [compactToolbar, setCompactToolbar] = useState(false);
+  const toolbarRef = useRef<HTMLDivElement>(null);
   const [settingsTab, setSettingsTab] = useState("Style");
   const [templateDrawing, setTemplateDrawing] = useState<ChartDrawing | null>(null);
   const drag = useRef<{ x: number; y: number; originX: number; originY: number } | null>(null);
   const selected = drawings.selected;
+  useLayoutEffect(() => {
+    const toolbar = toolbarRef.current;
+    const chart = toolbar?.parentElement;
+    if (!toolbar || !chart) return;
+    const resize = () => {
+      setCompactToolbar(chart.clientWidth < 440);
+      const limit = Math.max(0, (chart.clientWidth - toolbar.offsetWidth) / 2 - 8);
+      const bottom = Math.max(0, chart.clientHeight - toolbar.offsetHeight - 12);
+      setOffset((previous) => {
+        const x = Math.max(-limit, Math.min(limit, previous.x));
+        const y = Math.max(0, Math.min(bottom, previous.y));
+        return x === previous.x && y === previous.y ? previous : { x, y };
+      });
+    };
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(chart);
+    observer.observe(toolbar);
+    return () => observer.disconnect();
+    // Selection/tool changes mount or replace the toolbar node observed above.
+    // eslint-disable-next-line react/exhaustive-effect-dependencies
+  }, [selected?.id, drawings.tool]);
   if (!selected || drawings.tool !== "cursor") return null;
   const regression =
     selected.kind === "regression-trend"
@@ -772,16 +797,22 @@ export function DrawingSelectionOverlay({
   return (
     <>
       <div
+        ref={toolbarRef}
         role="toolbar"
         aria-label="Selected drawing"
-        className="absolute left-1/2 top-3 z-20 flex max-w-[calc(100%-16px)] -translate-x-1/2 items-center gap-0.5 rounded-lg border border-white/15 bg-[#1f1f1f] p-1 text-zinc-200 shadow-lg"
-        style={{ marginLeft: offset.x, marginTop: offset.y }}
+        className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center rounded-[6px] bg-[#1f1f1f] text-zinc-200 shadow-lg"
+        style={{
+          marginLeft: offset.x,
+          marginTop: offset.y,
+          fontFamily: '-apple-system, system-ui, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
+        }}
       >
         <button
           type="button"
           aria-label="Move drawing toolbar"
-          className="flex h-8 w-5 shrink-0 cursor-grab touch-none items-center justify-center text-zinc-500 active:cursor-grabbing"
+          className="flex h-[38px] w-6 shrink-0 cursor-grab touch-none items-center justify-center text-zinc-500 active:cursor-grabbing"
           onPointerDown={(event) => {
+            if (event.button !== 0 || !event.isPrimary) return;
             const parent = event.currentTarget.parentElement!;
             drag.current = {
               x: event.clientX,
@@ -808,7 +839,12 @@ export function DrawingSelectionOverlay({
               ),
             });
           }}
-          onPointerUp={() => {
+          onPointerUp={(event) => {
+            drag.current = null;
+            if (event.currentTarget.hasPointerCapture(event.pointerId))
+              event.currentTarget.releasePointerCapture(event.pointerId);
+          }}
+          onLostPointerCapture={() => {
             drag.current = null;
           }}
           onPointerCancel={() => {
@@ -824,6 +860,8 @@ export function DrawingSelectionOverlay({
         <DrawingTemplateMenu compact drawing={selected} onApply={drawings.applySelectedTemplate} />
         {selected.kind === "regression-trend" ? (
           <WidthPicker
+            variant="toolbar"
+            compact={compactToolbar}
             drawing={{ ...selected, width: regression!.regressionBaseLine.width }}
             mixed={
               new Set([
@@ -845,6 +883,7 @@ export function DrawingSelectionOverlay({
         ) : selected.kind === "text" ? (
           <>
             <ColorPicker
+              variant="toolbar"
               label="Text color"
               icon="letter-t"
               value={selected.textColor ?? selected.color}
@@ -881,6 +920,7 @@ export function DrawingSelectionOverlay({
         ) : (
           <>
             <ColorPicker
+              variant="toolbar"
               value={toolbarAppearance.color}
               icon="pencil"
               mixed={
@@ -894,6 +934,7 @@ export function DrawingSelectionOverlay({
             />
             {supportsInlineDrawingText(selected.kind) ? (
               <ColorPicker
+                variant="toolbar"
                 label="Text color"
                 icon="letter-t"
                 value={selected.textColor ?? selected.color}
@@ -903,6 +944,8 @@ export function DrawingSelectionOverlay({
               />
             ) : null}
             <WidthPicker
+              variant="toolbar"
+              compact={compactToolbar}
               drawing={toolbarAppearance}
               onChange={updateLineAppearance}
               mixed={
@@ -911,27 +954,34 @@ export function DrawingSelectionOverlay({
                   : false
               }
             />
-            <LineStylePicker drawing={toolbarAppearance} onChange={updateLineAppearance} />
+            <LineStylePicker
+              variant="toolbar"
+              drawing={toolbarAppearance}
+              onChange={updateLineAppearance}
+            />
           </>
         )}
-        <span className="mx-1 h-6 border-l border-white/10" />
-        <IconButton label="Drawing settings" onClick={drawings.openSettings}>
-          <SolarSettingsIcon className="size-5" />
-        </IconButton>
-        <IconButton
-          label={selected.locked ? "Unlock drawing" : "Lock drawing"}
-          active={selected.locked ?? false}
-          onClick={() => drawings.updateSelected({ locked: !selected.locked })}
-        >
-          <DrawingToolIcon name={selected.locked ? "lock" : "lock-open"} className="size-5" />
-        </IconButton>
+        {!compactToolbar ? (
+          <>
+            <IconButton label="Drawing settings" onClick={drawings.openSettings}>
+              <SolarSettingsIcon className="size-7" />
+            </IconButton>
+            <IconButton
+              label={selected.locked ? "Unlock drawing" : "Lock drawing"}
+              active={selected.locked ?? false}
+              onClick={() => drawings.updateSelected({ locked: !selected.locked })}
+            >
+              <DrawingToolIcon name={selected.locked ? "lock" : "lock-open"} className="size-7" />
+            </IconButton>
+          </>
+        ) : null}
         <IconButton label="Delete drawing" onClick={drawings.deleteSelected}>
-          <ChartIcon name="trash" className="size-5" />
+          <ChartIcon name="trash" className="size-7" />
         </IconButton>
         <Menu>
           <MenuTrigger
             aria-label="More drawing options"
-            className="flex size-8 shrink-0 items-center justify-center rounded hover:bg-white/10"
+            className="flex size-[38px] shrink-0 items-center justify-center rounded hover:bg-white/10 aria-expanded:bg-white/10"
           >
             <svg width="20" height="20" aria-hidden="true" fill="currentColor">
               {[4, 10, 16].map((x) => (

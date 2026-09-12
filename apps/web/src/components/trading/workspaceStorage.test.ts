@@ -31,6 +31,40 @@ function legacyStorage(values: Record<string, string>) {
 }
 
 describe("trading workspace persistence", () => {
+  it("loads custom palettes and keeps their writes scoped to the originating workspace", async () => {
+    const key = "automorphic:drawing-custom-colors:v1";
+    const palette = (color: string) => JSON.stringify({ state: { colors: [color] }, version: 0 });
+    const values: Record<string, Record<string, string>> = {
+      first: { [key]: palette("#112233") },
+      second: { [key]: palette("#abcdef") },
+    };
+    const request = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+      const id = new URL(String(input), "http://localhost").searchParams.get("projectId")!;
+      if (init?.method === "PUT") {
+        const body = JSON.parse(init.body as string) as { key: string; value: string };
+        values[id]![body.key] = body.value;
+        return json({});
+      }
+      return json({ ...payload(values[id]), projectId: id });
+    });
+    const router = createTradingWorkspaceRouter(request);
+    await router.selectProject("first");
+    expect(router.getSnapshot().ready).toBe(true);
+    expect(router.getItem(key)).toBe(palette("#112233"));
+    const first = router.capture();
+    await router.selectProject("second");
+    expect(router.getItem(key)).toBe(palette("#abcdef"));
+    first.setItem(key, palette("#445566"));
+    await first.flush();
+    expect(router.getItem(key)).toBe(palette("#abcdef"));
+    const writes = request.mock.calls.filter((call) => call[1]?.method === "PUT");
+    expect(writes).toHaveLength(1);
+    expect(String(writes[0]![0])).toContain("projectId=first");
+    expect(JSON.parse(writes[0]![1]!.body as string)).toEqual({ key, value: palette("#445566") });
+    await router.selectProject("first");
+    expect(router.getItem(key)).toBe(palette("#445566"));
+  });
+
   it("loads and saves remembered drawing appearance through workspace storage", async () => {
     const key = "automorphic:drawing-defaults:v1";
     const saved = JSON.stringify({ trend: { color: "#2962ff", width: 2 } });

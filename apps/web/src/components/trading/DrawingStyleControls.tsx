@@ -7,6 +7,7 @@ import type { DrawingPatch } from "./useChartDrawings";
 import { cn } from "../../lib/utils";
 import { useState, type ComponentProps } from "react";
 import { DrawingCustomColorEditor } from "./DrawingCustomColorEditor";
+import { useDrawingCustomColors } from "./drawingCustomColors";
 import { TradingSelect } from "./TradingSelect";
 const colors = [
   "#ffffff",
@@ -107,22 +108,27 @@ export function ColorPicker({
   label?: string;
   mixed?: boolean;
   icon?: "pencil" | "letter-t";
-  variant?: "default" | "settings";
+  variant?: "default" | "settings" | "toolbar";
   opacity?: number | undefined;
   onOpacityChange?: (opacity: number) => void;
 }) {
+  const [open, setOpen] = useState(false);
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         aria-label={label}
         className={cn(
           "flex shrink-0 items-center justify-center rounded hover:bg-white/10",
-          variant === "settings" ? "size-[34px] border border-white/15" : "size-8",
+          variant === "settings"
+            ? "size-[34px] border border-white/15"
+            : variant === "toolbar"
+              ? "size-[38px] aria-expanded:bg-white/10"
+              : "size-8",
         )}
       >
         {icon ? (
           <span className="relative flex size-6 items-center justify-center pb-1">
-            <DrawingToolIcon name={icon} className="size-5" />
+            <DrawingToolIcon name={icon} className={variant === "toolbar" ? "size-4" : "size-5"} />
             <span
               className="absolute inset-x-0 bottom-0 h-0.5 rounded"
               style={{ background: value }}
@@ -146,14 +152,17 @@ export function ColorPicker({
         instant
         style={{ background: "#1f1f1f", backdropFilter: "none", border: 0 }}
         align="start"
-        sideOffset={0}
-        className="w-[250px] rounded border-0"
+        sideOffset={variant === "toolbar" ? 2 : 0}
+        className={cn("w-[250px] rounded border-0", variant === "toolbar" && "w-[248px]")}
         viewportClassName="p-0"
       >
         <PopoverTitle className="sr-only">{label}</PopoverTitle>
         <ColorSettingsPanel
           value={value}
-          onChange={onChange}
+          onChange={(color) => {
+            onChange(color);
+            if (variant === "toolbar") setOpen(false);
+          }}
           label={label}
           opacity={opacity}
           onOpacityChange={onOpacityChange}
@@ -180,15 +189,14 @@ function ColorSettingsPanel({
   onDrawingChange?: (patch: DrawingPatch) => void;
 }) {
   const [custom, setCustom] = useState(false);
-  const [customColors, setCustomColors] = useState<string[]>([]);
+  const customColors = useDrawingCustomColors((state) => state.colors);
+  const addCustomColor = useDrawingCustomColors((state) => state.addColor);
   if (custom) {
     return (
       <DrawingCustomColorEditor
         initialColor={value}
         onAdd={(color) => {
-          setCustomColors((previous) =>
-            previous.includes(color) ? previous : [...previous, color],
-          );
+          addCustomColor(color);
           onChange(color);
           setCustom(false);
         }}
@@ -377,15 +385,21 @@ export function OpacityControl({
 export function LineStylePicker({
   drawing,
   onChange,
+  variant = "default",
 }: {
   drawing: ChartDrawing;
   onChange: (patch: DrawingPatch) => void;
+  variant?: "default" | "toolbar";
 }) {
+  const [open, setOpen] = useState(false);
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         aria-label="Line style"
-        className="flex size-8 items-center justify-center rounded hover:bg-white/10"
+        className={cn(
+          "flex size-8 shrink-0 items-center justify-center rounded hover:bg-white/10 aria-expanded:bg-white/10",
+          variant === "toolbar" && "size-[38px]",
+        )}
       >
         <svg width="22" height="12" aria-hidden="true">
           <line
@@ -407,25 +421,41 @@ export function LineStylePicker({
       </PopoverTrigger>
       <PopoverPopup
         instant
-        style={{ background: "#1f1f1f", backdropFilter: "none" }}
-        className="w-44"
-        viewportClassName="p-1"
+        align="start"
+        sideOffset={2}
+        style={{
+          background: "#1f1f1f",
+          backdropFilter: "none",
+          border: 0,
+          fontFamily: '-apple-system, system-ui, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
+        }}
+        className="w-max rounded"
+        viewportClassName="px-0 py-1.5"
       >
         <PopoverTitle className="sr-only">Line style</PopoverTitle>
-        {(["solid", "dashed", "dotted"] as const).map((style) => (
+        {(
+          [
+            ["solid", "Line"],
+            ["dashed", "Dashed line"],
+            ["dotted", "Dotted line"],
+          ] as const
+        ).map(([style, label]) => (
           <button
             type="button"
             key={style}
             aria-pressed={(drawing.lineStyle ?? "solid") === style}
-            onClick={() => onChange({ lineStyle: style })}
-            className="flex w-full items-center gap-3 rounded px-3 py-2 text-[13px] capitalize hover:bg-white/10 aria-pressed:bg-zinc-100 aria-pressed:text-zinc-950"
+            onClick={() => {
+              onChange({ lineStyle: style });
+              setOpen(false);
+            }}
+            className="flex h-8 w-full items-center gap-1.5 whitespace-nowrap pl-2 pr-5 text-sm hover:bg-white/10 aria-pressed:bg-white/15"
           >
-            <svg width="35" height="12" aria-hidden="true">
+            <svg width="28" height="28" aria-hidden="true">
               <line
-                x1="0"
-                y1="6"
-                x2="35"
-                y2="6"
+                x1="4"
+                y1="14"
+                x2="24"
+                y2="14"
                 stroke="currentColor"
                 strokeWidth="2"
                 strokeDasharray={
@@ -433,7 +463,7 @@ export function LineStylePicker({
                 }
               />
             </svg>
-            {style}
+            {label}
           </button>
         ))}
       </PopoverPopup>
@@ -444,16 +474,24 @@ export function WidthPicker({
   drawing,
   onChange,
   mixed = false,
+  variant = "default",
+  compact = false,
 }: {
   drawing: ChartDrawing;
   mixed?: boolean;
+  compact?: boolean;
   onChange: (patch: DrawingPatch) => void;
+  variant?: "default" | "toolbar";
 }) {
+  const [open, setOpen] = useState(false);
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         aria-label="Line width"
-        className="h-8 rounded px-2 text-[13px] hover:bg-white/10"
+        className={cn(
+          "flex h-8 shrink-0 items-center justify-center gap-2 rounded px-2 text-sm hover:bg-white/10 aria-expanded:bg-white/10",
+          variant === "toolbar" && "h-[38px] gap-[7px] pl-[10px] pr-[11px]",
+        )}
       >
         {mixed ? (
           <svg width="22" height="18" aria-hidden="true" stroke="currentColor">
@@ -462,14 +500,26 @@ export function WidthPicker({
             <path d="M1 15H21" strokeWidth="3" />
           </svg>
         ) : (
-          `${drawing.width}px`
+          <>
+            {variant === "toolbar" && !compact ? (
+              <span className="w-[18px] bg-current" style={{ height: drawing.width }} />
+            ) : null}
+            {drawing.width}px
+          </>
         )}
       </PopoverTrigger>
       <PopoverPopup
         instant
-        style={{ background: "#1f1f1f", backdropFilter: "none" }}
-        className="w-36"
-        viewportClassName="p-1"
+        align="start"
+        sideOffset={2}
+        style={{
+          background: "#1f1f1f",
+          backdropFilter: "none",
+          border: 0,
+          fontFamily: '-apple-system, system-ui, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
+        }}
+        className="w-max rounded"
+        viewportClassName="px-0 py-1.5"
       >
         <PopoverTitle className="sr-only">Line width</PopoverTitle>
         {[1, 2, 3, 4].map((width) => (
@@ -477,10 +527,13 @@ export function WidthPicker({
             type="button"
             key={width}
             aria-pressed={!mixed && drawing.width === width}
-            onClick={() => onChange({ width })}
-            className="flex w-full items-center gap-3 rounded px-3 py-2 text-[13px] hover:bg-white/10 aria-pressed:bg-zinc-100 aria-pressed:text-zinc-950"
+            onClick={() => {
+              onChange({ width });
+              setOpen(false);
+            }}
+            className="flex h-8 w-full items-center gap-[11px] whitespace-nowrap pl-[13px] pr-[14px] text-sm hover:bg-white/10 aria-pressed:bg-white/15"
           >
-            <span className="w-10 bg-current" style={{ height: width }} />
+            <span className="w-[18px] bg-current" style={{ height: width }} />
             {width}px
           </button>
         ))}

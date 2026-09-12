@@ -30,6 +30,16 @@ it("rejects unrelated keys, malformed JSON and oversized settings", () => {
   );
   assert.deepEqual(
     parseWorkspaceValue({
+      key: "automorphic:drawing-custom-colors:v1",
+      value: '{"state":{"colors":["#123456"]},"version":0}',
+    }),
+    {
+      key: "automorphic:drawing-custom-colors:v1",
+      value: '{"state":{"colors":["#123456"]},"version":0}',
+    },
+  );
+  assert.deepEqual(
+    parseWorkspaceValue({
       key: "automorphic:drawing-defaults:v1",
       value: '{"trend":{"color":"#2962ff","width":2}}',
     }),
