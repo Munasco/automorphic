@@ -32,8 +32,10 @@ import {
   supportsDrawingLevels,
   defaultDrawingLevelSettings,
   defaultChannelDrawingSettings,
+  defaultRegressionDrawingSettings,
   isSpecialChannelDrawing,
 } from "./drawingGeometry";
+import { DrawingRegressionSettings } from "./DrawingRegressionSettings";
 import { DrawingLevelSettings } from "./DrawingLevelSettings";
 import { DrawingTemplateMenu } from "./DrawingTemplateMenu";
 import { applyDrawingTemplate } from "./drawingTemplates";
@@ -115,14 +117,18 @@ function DrawingSettings({
   const [draft, setDraft] = useState(() => ({
     ...defaultDrawingLevelSettings(drawing.kind),
     ...defaultChannelDrawingSettings(drawing.kind),
+    ...(drawing.kind === "regression-trend" ? defaultRegressionDrawingSettings() : {}),
     ...drawing,
   }));
   const [replaceAppearance, setReplaceAppearance] = useState(false);
-  const availableTabs = supportsDrawingLevels(draft.kind)
-    ? ["Style", "Coordinates", "Visibility"]
-    : isSpecialChannelDrawing(draft.kind)
-      ? ["Style", "Text", "Visibility"]
-      : ["Style", "Text", "Coordinates", "Visibility"];
+  const availableTabs =
+    draft.kind === "regression-trend"
+      ? ["Inputs", "Style", "Coordinates", "Visibility"]
+      : supportsDrawingLevels(draft.kind)
+        ? ["Style", "Coordinates", "Visibility"]
+        : isSpecialChannelDrawing(draft.kind)
+          ? ["Style", "Text", "Visibility"]
+          : ["Style", "Text", "Coordinates", "Visibility"];
   const tab = availableTabs.includes(requestedTab) ? requestedTab : "Style";
   const [anchorKeys] = useState(() =>
     drawing.anchors.map((_, index) => `${drawing.id}-anchor-${index}`),
@@ -227,10 +233,15 @@ function DrawingSettings({
           aria-labelledby={`drawing-tab-${tab}`}
           className="max-h-[calc(100dvh-220px)] min-h-40 space-y-6 overflow-y-auto p-5"
         >
+          {draft.kind === "regression-trend" && (tab === "Style" || tab === "Inputs") ? (
+            <DrawingRegressionSettings drawing={draft} tab={tab} onChange={update} />
+          ) : null}
           {tab === "Style" && supportsDrawingLevels(draft.kind) ? (
             <DrawingLevelSettings drawing={draft} onChange={update} />
           ) : null}
-          {tab === "Style" && !supportsDrawingLevels(draft.kind) ? (
+          {tab === "Style" &&
+          !supportsDrawingLevels(draft.kind) &&
+          draft.kind !== "regression-trend" ? (
             <>
               <div className="flex items-center gap-2">
                 <span className="w-24 shrink-0 text-sm">{line ? "Line" : "Stroke"}</span>
@@ -547,24 +558,28 @@ function DrawingSettings({
             <>
               {draft.anchors.map((anchor, index) => (
                 <div key={anchorKeys[index]} className="space-y-2">
-                  <span className="text-sm text-zinc-400">#{index + 1} (price, bar)</span>
+                  <span className="text-sm text-zinc-400">
+                    #{index + 1} ({draft.kind === "regression-trend" ? "bar" : "price, bar"})
+                  </span>
                   <div className="flex gap-3">
-                    <input
-                      aria-label={`Point ${index + 1} price`}
-                      type="number"
-                      step="any"
-                      value={drawings.coordinatePrice(anchor.price)}
-                      onChange={(event) => {
-                        const price = event.target.valueAsNumber;
-                        if (Number.isFinite(price))
-                          update({
-                            anchors: draft.anchors.map((point, i) =>
-                              i === index ? { ...point, price } : point,
-                            ),
-                          });
-                      }}
-                      className={cn(inputClass, "w-28")}
-                    />
+                    {draft.kind !== "regression-trend" ? (
+                      <input
+                        aria-label={`Point ${index + 1} price`}
+                        type="number"
+                        step="any"
+                        value={drawings.coordinatePrice(anchor.price)}
+                        onChange={(event) => {
+                          const price = event.target.valueAsNumber;
+                          if (Number.isFinite(price))
+                            update({
+                              anchors: draft.anchors.map((point, i) =>
+                                i === index ? { ...point, price } : point,
+                              ),
+                            });
+                        }}
+                        className={cn(inputClass, "w-28")}
+                      />
+                    ) : null}
                     <input
                       aria-label={`Point ${index + 1} bar`}
                       type="number"
@@ -600,6 +615,7 @@ function DrawingSettings({
                 setDraft({
                   ...defaultDrawingLevelSettings(next.kind),
                   ...defaultChannelDrawingSettings(next.kind),
+                  ...(next.kind === "regression-trend" ? defaultRegressionDrawingSettings() : {}),
                   ...next,
                 });
                 setReplaceAppearance(true);
@@ -636,6 +652,10 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
   const drag = useRef<{ x: number; y: number; originX: number; originY: number } | null>(null);
   const selected = drawings.selected;
   if (!selected || drawings.tool !== "cursor") return null;
+  const regression =
+    selected.kind === "regression-trend"
+      ? { ...defaultRegressionDrawingSettings(), ...selected }
+      : null;
   const closeThen = (action: () => void) => {
     drawings.closeContextMenu();
     action();
@@ -692,12 +712,36 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
             )}
           </svg>
         </button>
-        <ColorPicker
-          value={selected.color}
-          onChange={(color) => drawings.updateSelected({ color })}
-        />
-        <WidthPicker drawing={selected} onChange={drawings.updateSelected} />
-        <LineStylePicker drawing={selected} onChange={drawings.updateSelected} />
+        {selected.kind === "regression-trend" ? (
+          <WidthPicker
+            drawing={{ ...selected, width: regression!.regressionBaseLine.width }}
+            mixed={
+              new Set([
+                regression!.regressionBaseLine.width,
+                regression!.regressionUpperLine.width,
+                regression!.regressionLowerLine.width,
+              ]).size > 1
+            }
+            onChange={({ width }) => {
+              if (width === undefined) return;
+              const settings = { ...defaultRegressionDrawingSettings(), ...selected };
+              drawings.updateSelected({
+                regressionBaseLine: { ...settings.regressionBaseLine, width },
+                regressionUpperLine: { ...settings.regressionUpperLine, width },
+                regressionLowerLine: { ...settings.regressionLowerLine, width },
+              });
+            }}
+          />
+        ) : (
+          <>
+            <ColorPicker
+              value={selected.color}
+              onChange={(color) => drawings.updateSelected({ color })}
+            />
+            <WidthPicker drawing={selected} onChange={drawings.updateSelected} />
+            <LineStylePicker drawing={selected} onChange={drawings.updateSelected} />
+          </>
+        )}
         <span className="mx-1 h-6 border-l border-white/10" />
         <IconButton label="Drawing settings" onClick={drawings.openSettings}>
           <SolarSettingsIcon className="size-5" />

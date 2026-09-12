@@ -21,8 +21,12 @@ import {
   type DrawingAnchor,
   type DrawingKind,
   type DrawingPoint,
+  type DrawingRegressionFit,
+  defaultRegressionDrawingSettings,
 } from "./drawingGeometry";
 import { calculateDrawingStats, formatDrawingStats } from "./drawingStats";
+
+import { calculateChartRegression } from "./chartRegression";
 
 const SELECTION_COLOR = "#2962ff";
 
@@ -133,8 +137,63 @@ export function createDrawingPrimitive(
     hovered?: string | null;
     interactive?: boolean;
   },
+  regressionSeries: ISeriesApi<SeriesType> = series,
 ) {
   let requestUpdate = () => {};
+  let regressionData: ReturnType<typeof regressionSeries.data> | undefined;
+  const regressionCache = new Map<string, { key: string; fit: DrawingRegressionFit | undefined }>();
+  const invalidateRegression = () => {
+    regressionData = undefined;
+    regressionCache.clear();
+    requestUpdate();
+  };
+  const regressionFit = (drawing: ChartDrawing): DrawingRegressionFit | undefined => {
+    if (drawing.kind !== "regression-trend" || drawing.anchors.length !== 2) return undefined;
+    const defaults = defaultRegressionDrawingSettings();
+    const options = {
+      source: drawing.regressionSource ?? defaults.regressionSource,
+      upperDeviation: drawing.regressionUpperDeviation ?? defaults.regressionUpperDeviation,
+      lowerDeviation: drawing.regressionLowerDeviation ?? defaults.regressionLowerDeviation,
+      useUpperDeviation:
+        drawing.regressionUseUpperDeviation ?? defaults.regressionUseUpperDeviation,
+      useLowerDeviation:
+        drawing.regressionUseLowerDeviation ?? defaults.regressionUseLowerDeviation,
+    };
+    const times = drawing.anchors.map((anchor) => drawingTimeValue(anchor.time)!);
+    const start = Math.min(...times),
+      end = Math.max(...times);
+    const key = JSON.stringify([start, end, options]);
+    const cached = regressionCache.get(drawing.id);
+    if (cached?.key === key) return cached.fit;
+    regressionData ??= regressionSeries.data();
+    if (
+      !regressionData.length ||
+      start < drawingTimeValue(regressionData[0]!.time)! ||
+      end > drawingTimeValue(regressionData.at(-1)!.time)!
+    ) {
+      regressionCache.set(drawing.id, { key, fit: undefined });
+      return undefined;
+    }
+    const bound = (time: number, inclusive: boolean) => {
+      let lo = 0,
+        hi = regressionData!.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1,
+          value = drawingTimeValue(regressionData![mid]!.time)!;
+        if (value < time || (inclusive && value === time)) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo;
+    };
+    const bars = regressionData.slice(bound(start, false), bound(end, true));
+    const result = calculateChartRegression(
+      bars.map((bar) => ("open" in bar ? bar : undefined)),
+      options,
+    );
+    const fit = result ? { result, start: bars[0]!.time, end: bars.at(-1)!.time } : undefined;
+    regressionCache.set(drawing.id, { key, fit });
+    return fit;
+  };
   const hitTest = (point: DrawingPoint): DrawingPrimitiveHit | null => {
     const state = read();
     if (state.hidden || state.interactive === false) return null;
@@ -157,6 +216,9 @@ export function createDrawingPrimitive(
         projection.priceY,
         projection.width,
         projection.height,
+        undefined,
+        undefined,
+        regressionFit(drawing),
       );
       const handle = hitDrawingHandle(geometry, point);
       let candidate: DrawingPrimitiveHit;
@@ -164,7 +226,7 @@ export function createDrawingPrimitive(
         const anchor = geometry.handles[handle]!;
         candidate = {
           drawing,
-          handle: drawing.locked ? -1 : handle,
+          handle: drawing.locked ? -1 : (geometry.handleAnchorIndices?.[handle] ?? handle),
           handlePoint: anchor,
           cursorStyle: "default",
           distance: Math.hypot(point.x - anchor.x, point.y - anchor.y),
@@ -228,6 +290,7 @@ export function createDrawingPrimitive(
             height,
             (price) => series.priceFormatter().format(price),
             (coordinate) => series.coordinateToPrice(coordinate),
+            regressionFit(drawing),
           );
           ctx.textAlign = "left";
           ctx.textBaseline = "alphabetic";
@@ -265,16 +328,20 @@ export function createDrawingPrimitive(
             let previous: DrawingPoint | undefined;
             let activeColor = drawing.color;
             let activeStyle = drawing.lineStyle ?? "solid";
+            let activeWidth = geometry.strokeWidth ?? drawing.width;
             const visibleLines = nativeLine ? geometry.lines.slice(1) : geometry.lines;
             for (const line of visibleLines) {
               const color = line.color ?? drawing.color;
               const style = line.lineStyle ?? drawing.lineStyle ?? "solid";
-              if (color !== activeColor || style !== activeStyle) {
+              const lineWidth = line.width ?? geometry.strokeWidth ?? drawing.width;
+              if (color !== activeColor || style !== activeStyle || lineWidth !== activeWidth) {
                 if (previous) ctx.stroke();
                 ctx.beginPath();
                 ctx.strokeStyle = color;
                 activeColor = color;
                 activeStyle = style;
+                activeWidth = lineWidth;
+                ctx.lineWidth = lineWidth;
                 ctx.setLineDash(style === "dashed" ? [8, 5] : style === "dotted" ? [2, 4] : []);
                 previous = undefined;
               }
@@ -307,7 +374,13 @@ export function createDrawingPrimitive(
               const rows = text.value.split(/\r?\n/);
               const rowHeight = size * 1.2;
               ctx.font = `${drawing.textItalic ? "italic " : ""}${drawing.textBold ? "bold " : ""}${size}px ${chart.options().layout.fontFamily}`;
-              ctx.fillStyle = drawing.textColor ?? drawing.color;
+              ctx.fillStyle =
+                drawing.kind === "regression-trend"
+                  ? (
+                      drawing.regressionLowerLine ??
+                      defaultRegressionDrawingSettings().regressionLowerLine
+                    ).color
+                  : (drawing.textColor ?? drawing.color);
               ctx.textAlign = text.align ?? "left";
               ctx.textBaseline = "top";
               const rotated = text.angle !== undefined && text.angle !== 0;
@@ -436,20 +509,24 @@ export function createDrawingPrimitive(
             supportsDrawingPriceLabels(drawing.kind);
           if (!selected && !persistent) return [];
           const projection = drawingProjection(chart, series);
-          const selectedAnchors = isSpecialChannelDrawing(drawing.kind)
-            ? buildDrawingGeometry(
-                drawing,
-                projection.project,
-                projection.priceY,
-                projection.width,
-                projection.height,
-              ).handles.flatMap((point) => {
-                const anchor = projection.unproject(point);
-                return anchor ? [anchor] : [];
-              })
-            : drawing.anchors;
+          const selectedAnchors =
+            isSpecialChannelDrawing(drawing.kind) || drawing.kind === "regression-trend"
+              ? buildDrawingGeometry(
+                  drawing,
+                  projection.project,
+                  projection.priceY,
+                  projection.width,
+                  projection.height,
+                  undefined,
+                  undefined,
+                  regressionFit(drawing),
+                ).handles.flatMap((point) => {
+                  const anchor = projection.unproject(point);
+                  return anchor ? [anchor] : [];
+                })
+              : drawing.anchors;
           const anchors = selected
-            ? selectedAnchors.length > 4
+            ? selectedAnchors.length > 4 && drawing.kind !== "regression-trend"
               ? [selectedAnchors[0]!, selectedAnchors.at(-1)!]
               : selectedAnchors
             : drawing.anchors.slice(0, 2);
@@ -512,8 +589,12 @@ export function createDrawingPrimitive(
   const primitive: ISeriesPrimitive<Time> = {
     attached: (parameters) => {
       requestUpdate = parameters.requestUpdate;
+      regressionSeries.subscribeDataChanged?.(invalidateRegression);
     },
     detached: () => {
+      regressionSeries.unsubscribeDataChanged?.(invalidateRegression);
+      regressionData = undefined;
+      regressionCache.clear();
       requestUpdate = () => {};
     },
     hitTest: (x, y) => {

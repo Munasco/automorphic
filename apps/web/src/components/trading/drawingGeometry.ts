@@ -1,3 +1,4 @@
+import type { ChartRegression, RegressionSource } from "./chartRegression";
 import { sanitizeDrawingVisibility, type DrawingVisibility } from "./drawingVisibility";
 import type { Time } from "lightweight-charts";
 export type DrawingKind =
@@ -18,6 +19,7 @@ export type DrawingKind =
   | "schiff-pitchfork"
   | "modified-schiff-pitchfork"
   | "inside-pitchfork"
+  | "regression-trend"
   | "channel"
   | "flat-channel"
   | "disjoint-channel"
@@ -39,7 +41,25 @@ export type DrawingKind =
   | "double-curve";
 export type DrawingAnchor = { time: Time; price: number };
 export type DrawingLevel = { value: number; visible: boolean; color?: string };
+export type DrawingRegressionLine = {
+  /** Fill opacity; boundary strokes remain opaque. */
+  opacity?: number;
+  visible: boolean;
+  color: string;
+  width: number;
+  lineStyle: "solid" | "dashed" | "dotted";
+};
+export type DrawingRegressionFit = { result: ChartRegression; start: Time; end: Time };
 export type DrawingSettings = {
+  regressionSource?: RegressionSource;
+  regressionUpperDeviation?: number;
+  regressionLowerDeviation?: number;
+  regressionUseUpperDeviation?: boolean;
+  regressionUseLowerDeviation?: boolean;
+  regressionShowPearson?: boolean;
+  regressionBaseLine?: DrawingRegressionLine;
+  regressionUpperLine?: DrawingRegressionLine;
+  regressionLowerLine?: DrawingRegressionLine;
   levels?: DrawingLevel[];
   useOneColor?: boolean;
   extendLines?: boolean;
@@ -89,6 +109,7 @@ export type ChartDrawing = DrawingSettings & {
 };
 export type DrawingPoint = { x: number; y: number };
 export type DrawingLine = {
+  width?: number;
   from: DrawingPoint;
   to: DrawingPoint;
   label?: string;
@@ -113,6 +134,7 @@ export type DrawingGeometry = {
   handles: DrawingPoint[];
   /** Original anchor indices for the visible, editable handles of dense freehand strokes. */
   handleIndices?: number[];
+  handleAnchorIndices?: number[];
   polygons?: Array<{ points: DrawingPoint[]; opacity: number; color?: string }>;
   strokeWidth?: number;
   opacity?: number;
@@ -136,6 +158,7 @@ export const DRAWING_ANCHORS: Record<DrawingKind, number> = {
   "modified-schiff-pitchfork": 3,
   "inside-pitchfork": 3,
   channel: 3,
+  "regression-trend": 2,
   "flat-channel": 3,
   "disjoint-channel": 3,
   text: 1,
@@ -244,6 +267,56 @@ function isAnchor(value: unknown): value is DrawingAnchor {
     Number.isFinite(value.price)
   );
 }
+export type RegressionDrawingSettings = Required<
+  Pick<
+    DrawingSettings,
+    | "regressionSource"
+    | "regressionUpperDeviation"
+    | "regressionLowerDeviation"
+    | "regressionUseUpperDeviation"
+    | "regressionUseLowerDeviation"
+    | "regressionShowPearson"
+    | "regressionBaseLine"
+    | "regressionUpperLine"
+    | "regressionLowerLine"
+    | "extendLines"
+  >
+>;
+export function defaultRegressionDrawingSettings(): RegressionDrawingSettings;
+export function defaultRegressionDrawingSettings(kind: DrawingKind): DrawingSettings;
+export function defaultRegressionDrawingSettings(kind?: DrawingKind): DrawingSettings {
+  if (kind !== undefined && kind !== "regression-trend") return {};
+  return {
+    regressionSource: "close",
+    regressionUpperDeviation: 2,
+    regressionLowerDeviation: -2,
+    regressionUseUpperDeviation: true,
+    regressionUseLowerDeviation: true,
+    regressionShowPearson: true,
+    regressionBaseLine: {
+      visible: true,
+      color: "#f23645",
+      width: 1,
+      lineStyle: "dashed",
+      opacity: 0.3,
+    },
+    regressionUpperLine: {
+      visible: true,
+      color: "#2962ff",
+      width: 2,
+      lineStyle: "solid",
+      opacity: 0.3,
+    },
+    regressionLowerLine: {
+      visible: true,
+      color: "#2962ff",
+      width: 2,
+      lineStyle: "solid",
+      opacity: 0.3,
+    },
+    extendLines: false,
+  };
+}
 export const isSpecialChannelDrawing = (kind: DrawingKind) =>
   kind === "flat-channel" || kind === "disjoint-channel";
 export function defaultChannelDrawingSettings(kind: DrawingKind): DrawingSettings {
@@ -349,9 +422,53 @@ export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
     ];
   if (["left", "center", "right"].includes(source.statsPosition ?? ""))
     result.statsPosition = source.statsPosition!;
+  if (
+    typeof source.regressionSource === "string" &&
+    ["open", "high", "low", "close", "hl2", "hlc3", "ohlc4", "hlcc4"].includes(
+      String(source.regressionSource),
+    )
+  )
+    result.regressionSource = source.regressionSource as RegressionSource;
+  for (const key of ["regressionUpperDeviation", "regressionLowerDeviation"] as const)
+    if (
+      typeof source[key] === "number" &&
+      Number.isFinite(source[key]) &&
+      Math.abs(source[key]) <= 100
+    )
+      result[key] = source[key];
+  for (const key of ["regressionBaseLine", "regressionUpperLine", "regressionLowerLine"] as const) {
+    const line = source[key];
+    if (
+      line &&
+      typeof line === "object" &&
+      typeof line.visible === "boolean" &&
+      typeof line.color === "string" &&
+      /^#[a-f\d]{6}$/i.test(line.color) &&
+      typeof line.width === "number" &&
+      Number.isInteger(line.width) &&
+      line.width >= 1 &&
+      line.width <= 8 &&
+      ["solid", "dashed", "dotted"].includes(line.lineStyle)
+    )
+      result[key] = {
+        visible: line.visible,
+        color: line.color,
+        width: line.width,
+        lineStyle: line.lineStyle,
+        ...(typeof line.opacity === "number" &&
+        Number.isFinite(line.opacity) &&
+        line.opacity >= 0 &&
+        line.opacity <= 1
+          ? { opacity: line.opacity }
+          : {}),
+      };
+  }
   for (const key of [
     "useOneColor",
     "extendLines",
+    "regressionUseUpperDeviation",
+    "regressionUseLowerDeviation",
+    "regressionShowPearson",
     "reverse",
     "background",
     "showPrices",
@@ -990,6 +1107,79 @@ export function extendDrawingLine(
   };
 }
 
+function buildRegressionDrawingGeometry(
+  drawing: ChartDrawing,
+  fit: DrawingRegressionFit | undefined,
+  project: (anchor: DrawingAnchor) => DrawingPoint | null,
+  width: number,
+  height: number,
+): DrawingGeometry {
+  const shape: DrawingGeometry = { lines: [], handles: [], handleAnchorIndices: [], polygons: [] };
+  if (!fit || drawing.hidden) return shape;
+  const settings = { ...defaultRegressionDrawingSettings(), ...drawing };
+  const anchorOrder =
+    drawingTimeValue(drawing.anchors[0]!.time)! <= drawingTimeValue(drawing.anchors[1]!.time)!
+      ? [0, 1]
+      : [1, 0];
+  const boundaries = [
+    [fit.result.base, settings.regressionBaseLine],
+    [fit.result.upper, settings.regressionUpperLine],
+    [fit.result.lower, settings.regressionLowerLine],
+  ] as const;
+  const projected = boundaries.map(([values]) => ({
+    from: project({ time: fit.start, price: values.start }),
+    to: project({ time: fit.end, price: values.end }),
+  }));
+  if (projected.some(({ from, to }) => !from || !to)) return shape;
+  const lines = projected.map(({ from, to }) => ({ from: from!, to: to! }));
+  const extended = lines.map((line) =>
+    settings.extendLines ? extendDrawingLine(line, width, height, false, true) : line,
+  );
+  boundaries.forEach(([, style], index) => {
+    if (!style.visible) return;
+    const line = extended[index];
+    if (line)
+      shape.lines.push({
+        ...line,
+        color: style.color,
+        width: style.width,
+        lineStyle: style.lineStyle,
+      });
+    shape.handles.push(lines[index]!.from, lines[index]!.to);
+    shape.handleAnchorIndices!.push(...anchorOrder);
+  });
+  for (const index of [1, 2]) {
+    const boundary = boundaries[index]![1];
+    if (!boundary.visible || !settings.regressionBaseLine.visible) continue;
+    const fillStyle = index === 1 ? settings.regressionUpperLine : settings.regressionBaseLine;
+    const base = lines[0]!,
+      band = lines[index]!;
+    const right = settings.extendLines ? width : base.to.x;
+    const at = (line: typeof base) => ({
+      x: right,
+      y:
+        line.from.y +
+        ((line.to.y - line.from.y) * (right - line.from.x)) / (line.to.x - line.from.x),
+    });
+    shape.polygons!.push({
+      points: [base.from, at(base), at(band), band.from],
+      opacity: fillStyle.opacity ?? 0.3,
+      color: fillStyle.color,
+    });
+  }
+  if (settings.regressionShowPearson) {
+    const lower = lines[2]!.from;
+    shape.text = {
+      point: { x: lower.x, y: lower.y + 6 },
+      value: String(fit.result.pearsonR),
+      align: "center",
+      baseline: "top",
+      fontSize: 12,
+    };
+  }
+  return shape;
+}
+
 export function buildDrawingGeometry(
   drawing: ChartDrawing,
   project: (anchor: DrawingAnchor) => DrawingPoint | null,
@@ -998,7 +1188,10 @@ export function buildDrawingGeometry(
   height: number,
   formatPrice: (price: number) => string = (price) => String(Number(price.toFixed(6))),
   coordinatePrice?: (coordinate: number) => number | null,
+  regressionFit?: DrawingRegressionFit,
 ): DrawingGeometry {
+  if (drawing.kind === "regression-trend")
+    return buildRegressionDrawingGeometry(drawing, regressionFit, project, width, height);
   if (isSpecialChannelDrawing(drawing.kind))
     drawing = { ...defaultChannelDrawingSettings(drawing.kind), ...drawing };
   const result = supportsDrawingLevels(drawing.kind)
@@ -1297,7 +1490,7 @@ export function validDrawingAnchors(kind: DrawingKind, anchors: DrawingAnchor[])
       drawingTimeValue(first.time) !== drawingTimeValue(second.time) &&
       (first.price !== second.price || third.price !== first.price)
     );
-  if (["trend", "rectangle", "fib", "channel"].includes(kind))
+  if (["trend", "rectangle", "fib", "channel", "regression-trend"].includes(kind))
     return drawingTimeValue(first.time) !== drawingTimeValue(second.time);
   if (kind === "ellipse")
     return (

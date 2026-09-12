@@ -141,8 +141,10 @@ export function LineStylePicker({
 export function WidthPicker({
   drawing,
   onChange,
+  mixed = false,
 }: {
   drawing: ChartDrawing;
+  mixed?: boolean;
   onChange: (patch: DrawingPatch) => void;
 }) {
   return (
@@ -151,7 +153,15 @@ export function WidthPicker({
         aria-label="Line width"
         className="h-8 rounded px-2 text-[13px] hover:bg-white/10"
       >
-        {drawing.width}px
+        {mixed ? (
+          <svg width="22" height="18" aria-hidden="true" stroke="currentColor">
+            <path d="M1 3H21" strokeWidth="1" />
+            <path d="M1 9H21" strokeWidth="2" />
+            <path d="M1 15H21" strokeWidth="3" />
+          </svg>
+        ) : (
+          `${drawing.width}px`
+        )}
       </PopoverTrigger>
       <PopoverPopup
         style={{ background: "#1f1f1f", backdropFilter: "none" }}
@@ -163,7 +173,7 @@ export function WidthPicker({
           <button
             type="button"
             key={width}
-            aria-pressed={drawing.width === width}
+            aria-pressed={!mixed && drawing.width === width}
             onClick={() => onChange({ width })}
             className="flex w-full items-center gap-3 rounded px-3 py-2 text-[13px] hover:bg-white/10 aria-pressed:bg-zinc-100 aria-pressed:text-zinc-950"
           >
@@ -232,14 +242,20 @@ export function MarkerPicker({
 export function LineAppearancePicker({
   drawing,
   onChange,
+  label = "Line appearance",
+  fillOpacity,
+  onFillOpacityChange,
 }: {
   drawing: ChartDrawing;
+  label?: string;
+  fillOpacity?: number;
+  onFillOpacityChange?: (opacity: number) => void;
   onChange: (patch: DrawingPatch) => void;
 }) {
   return (
     <Popover>
       <PopoverTrigger
-        aria-label="Line appearance"
+        aria-label={label}
         className="flex h-8 items-center gap-2 rounded border border-white/20 px-1.5 hover:bg-white/10"
       >
         <span className="size-5 rounded" style={{ background: drawing.color }} />
@@ -263,12 +279,26 @@ export function LineAppearancePicker({
         className="w-48"
         viewportClassName="p-2"
       >
-        <PopoverTitle className="sr-only">Line appearance</PopoverTitle>
+        <PopoverTitle className="sr-only">{label}</PopoverTitle>
         <div className="flex items-center justify-between">
           <ColorPicker value={drawing.color} onChange={(color) => onChange({ color })} />
           <WidthPicker drawing={drawing} onChange={onChange} />
           <LineStylePicker drawing={drawing} onChange={onChange} />
         </div>
+        {fillOpacity !== undefined && onFillOpacityChange ? (
+          <label className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-300">
+            Opacity <span>{Math.round(fillOpacity * 100)}%</span>
+            <input
+              type="range"
+              aria-label={`${label} opacity`}
+              min={0}
+              max={100}
+              value={Math.round(fillOpacity * 100)}
+              onChange={(event) => onFillOpacityChange(event.target.valueAsNumber / 100)}
+              className="w-full accent-[#2962ff]"
+            />
+          </label>
+        ) : null}
       </PopoverPopup>
     </Popover>
   );

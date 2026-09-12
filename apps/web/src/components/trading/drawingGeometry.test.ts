@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { calculateChartRegression } from "./chartRegression";
 import type { Time } from "lightweight-charts";
 import {
   buildDrawingGeometry,
@@ -7,6 +8,7 @@ import {
   validDrawingAnchors,
   DRAWING_ANCHORS,
   defaultDrawingLevels,
+  defaultRegressionDrawingSettings,
   maximumDrawingAnchors,
   sanitizeDrawingSettings,
   parseChartDrawings,
@@ -986,5 +988,125 @@ describe("three-anchor non-parallel channels", () => {
     expect(sanitizeDrawingSettings({ backgroundColor: "#00ff00" })).toEqual({
       backgroundColor: "#00ff00",
     });
+  });
+});
+
+describe("regression drawing geometry", () => {
+  const regression = drawing("regression-trend", [
+    [100, 9999],
+    [300, -9999],
+  ]);
+  const result = calculateChartRegression([100, 120, 110].map((close) => ({ close })))!;
+  const build = (shape: ChartDrawing = regression) =>
+    buildDrawingGeometry(
+      shape,
+      ({ time, price }) => ({ x: Number(time), y: 500 - price }),
+      (price) => 500 - price,
+      1000,
+      500,
+      undefined,
+      undefined,
+      { result, start: 100 as Time, end: 300 as Time },
+    );
+  it("projects fitted prices independently of clicked prices and maps all six handles onto bar endpoints", () => {
+    const shape = build();
+    expect(shape.handles).toHaveLength(6);
+    expect(shape.handles.slice(0, 2)).toEqual([
+      { x: 100, y: 395 },
+      { x: 300, y: 385 },
+    ]);
+    expect(shape.handleAnchorIndices).toEqual([0, 1, 0, 1, 0, 1]);
+    expect(shape.lines[0]).toMatchObject({ color: "#f23645", lineStyle: "dashed", width: 1 });
+    expect(shape.polygons).toHaveLength(2);
+    expect(shape.text?.value).toBe(String(result.pearsonR));
+    expect(shape.text?.point.x).toBe(100);
+    expect(
+      build({ ...regression, anchors: regression.anchors.toReversed() }).handleAnchorIndices,
+    ).toEqual([1, 0, 1, 0, 1, 0]);
+    expect(geometry(regression)).toEqual({
+      lines: [],
+      handles: [],
+      handleAnchorIndices: [],
+      polygons: [],
+    });
+  });
+  it("extends right only and respects independent styles, visibility, and the Pearson toggle", () => {
+    const defaults = defaultRegressionDrawingSettings();
+    const shape = build({
+      ...regression,
+      extendLines: true,
+      regressionShowPearson: false,
+      regressionUpperLine: { ...defaults.regressionUpperLine, visible: false },
+      regressionBaseLine: {
+        ...defaults.regressionBaseLine,
+        color: "#00ff00",
+        width: 4,
+        lineStyle: "dotted",
+      },
+    });
+    expect(shape.lines).toHaveLength(2);
+    expect(shape.lines[0]).toMatchObject({
+      from: { x: 100, y: 395 },
+      to: { x: 1000, y: 350 },
+      color: "#00ff00",
+      width: 4,
+      lineStyle: "dotted",
+    });
+    expect(shape.handles).toHaveLength(4);
+    expect(shape.polygons).toHaveLength(1);
+    expect(shape.text).toBeUndefined();
+  });
+  it("uses Up fill above Base and Base fill below, preserving opaque boundaries at zero opacity", () => {
+    const defaults = defaultRegressionDrawingSettings();
+    const shape = build({
+      ...regression,
+      regressionUpperLine: { ...defaults.regressionUpperLine, color: "#00ff00", opacity: 0.8 },
+      regressionBaseLine: { ...defaults.regressionBaseLine, color: "#ff0000", opacity: 0 },
+      regressionLowerLine: { ...defaults.regressionLowerLine, color: "#0000ff", opacity: 1 },
+    });
+    expect(shape.polygons?.map(({ color, opacity }) => ({ color, opacity }))).toEqual([
+      { color: "#00ff00", opacity: 0.8 },
+      { color: "#ff0000", opacity: 0 },
+    ]);
+    expect(shape.lines).toHaveLength(3);
+    expect(shape.opacity).toBeUndefined();
+    expect(
+      sanitizeDrawingSettings({
+        regressionBaseLine: { ...defaults.regressionBaseLine, opacity: 0 },
+      }).regressionBaseLine?.opacity,
+    ).toBe(0);
+    expect(
+      sanitizeDrawingSettings({
+        regressionBaseLine: { ...defaults.regressionBaseLine, opacity: Infinity },
+      }).regressionBaseLine?.opacity,
+    ).toBeUndefined();
+    const { opacity: _, ...legacy } = defaults.regressionBaseLine;
+    expect(sanitizeDrawingSettings({ regressionBaseLine: legacy }).regressionBaseLine).toEqual(
+      legacy,
+    );
+  });
+  it("round-trips typed inputs and styles while rejecting corrupt values and single-bar ranges", () => {
+    const shape = {
+      ...regression,
+      ...defaultRegressionDrawingSettings(),
+      regressionSource: "hlcc4" as const,
+    };
+    expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+    expect(defaultRegressionDrawingSettings("trend")).toEqual({});
+    expect(
+      validDrawingAnchors("regression-trend", [
+        { time: 100 as Time, price: 1 },
+        { time: 100 as Time, price: 2 },
+      ]),
+    ).toBe(false);
+    expect(
+      sanitizeDrawingSettings({
+        regressionSource: "bad",
+        regressionUpperDeviation: Infinity,
+        regressionLowerDeviation: 101,
+        regressionBaseLine: { visible: true, color: "bad", width: 1, lineStyle: "solid" },
+        regressionUseUpperDeviation: "yes",
+      }),
+    ).toEqual({});
   });
 });

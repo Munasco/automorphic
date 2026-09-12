@@ -1612,3 +1612,42 @@ describe("channel corner editing", () => {
     session.dispose();
   });
 });
+
+describe("regression bar-range interaction", () => {
+  it("ignores clicked prices and vertical drag, then edits either fitted endpoint in one undoable write", () => {
+    const initial = {
+      id: "regression",
+      kind: "regression-trend",
+      color: "#ffffff",
+      width: 2,
+      anchors: [
+        { time: 100, price: 9999 },
+        { time: 300, price: -9999 },
+      ],
+    };
+    const candles = [100, 200, 300, 400].map((time, index) => ({
+      time: time as UTCTimestamp,
+      open: 4900 - index * 100,
+      high: 4900 - index * 100,
+      low: 4900 - index * 100,
+      close: 4900 - index * 100,
+    }));
+    const f = fixture("regression-drag", JSON.stringify([initial]), candles),
+      session = f.open();
+    expect(session.beginDrag({ x: 100, y: 100 })).toBe(true);
+    session.dragTo({ x: 100, y: 180 });
+    session.endDrag();
+    expect(f.writes()).toBe(0);
+    expect(session.beginDrag({ x: 300, y: 300 })).toBe(true);
+    session.dragTo({ x: 400, y: 450 });
+    session.endDrag();
+    expect(JSON.parse(f.saved()!)[0].anchors).toEqual([
+      { time: 100, price: 9999 },
+      { time: 400, price: -9999 },
+    ]);
+    expect(f.writes()).toBe(1);
+    session.undo();
+    expect(JSON.parse(f.saved()!)[0]).toEqual(initial);
+    session.dispose();
+  });
+});

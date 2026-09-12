@@ -86,6 +86,7 @@ export function createChartDrawingSession(
   onChange: (state: DrawingState) => void,
   storage: DrawingStorage | undefined = tradingWorkspaceStorage,
   intervalMinutes = 1,
+  regressionSeries: ISeriesApi<SeriesType> = series,
 ) {
   const key = `automorphic:chart-drawings:v1:${encodeURIComponent(symbol)}`;
   let drawings: ChartDrawing[] = [];
@@ -161,18 +162,23 @@ export function createChartDrawingSession(
       : drawings;
   const isVisible = (drawing: ChartDrawing) =>
     !hidden && !drawing.hidden && isDrawingVisibleAtInterval(drawing.visibility, intervalMinutes);
-  const primitive = createDrawingPrimitive(chart, series, () => ({
-    drawings: displayedDrawings()
-      .filter(isVisible)
-      .map((drawing) =>
-        textEditing && drawing.id === selectedId ? { ...drawing, text: "" } : drawing,
-      ),
-    selected: selectedId,
-    hovered: hoveredId,
-    interactive: tool === "cursor" && !settingsOpen && !textEditing,
-    preview,
-    hidden,
-  }));
+  const primitive = createDrawingPrimitive(
+    chart,
+    series,
+    () => ({
+      drawings: displayedDrawings()
+        .filter(isVisible)
+        .map((drawing) =>
+          textEditing && drawing.id === selectedId ? { ...drawing, text: "" } : drawing,
+        ),
+      selected: selectedId,
+      hovered: hoveredId,
+      interactive: tool === "cursor" && !settingsOpen && !textEditing,
+      preview,
+      hidden,
+    }),
+    regressionSeries,
+  );
   series.attachPrimitive(primitive.primitive);
   const emit = () => {
     const hovered =
@@ -385,13 +391,16 @@ export function createChartDrawingSession(
     const projection = drawingProjection(chart, series);
     // Snap one reference point, then translate the entire shape by that same offset.
     const reference = activeDrag.handlePoint ?? activeDrag.points[Math.max(0, activeDrag.handle)]!;
+    const regression = activeDrag.drawing.kind === "regression-trend";
+    if (regression) dy = 0;
     const disjoint = activeDrag.drawing.kind === "disjoint-channel";
     if (disjoint && activeDrag.handle === 2) dx = 0;
     const candidate = {
       x: activeDrag.drawing.kind === "horizontal" ? point.x : reference.x + dx,
       y: reference.y + dy,
     };
-    const candidateAnchor = magnetMode !== "off" ? projection.unproject(candidate) : null;
+    const candidateAnchor =
+      magnetMode !== "off" && !regression ? projection.unproject(candidate) : null;
     if (candidateAnchor) {
       const snapped = snapAnchor(candidateAnchor, candidate);
       if (snapped !== candidateAnchor) {
@@ -403,6 +412,16 @@ export function createChartDrawingSession(
       }
     }
     const moved = activeDrag.drawing.anchors.map((anchor, index) => {
+      if (regression) {
+        if (activeDrag.handle >= 0 && index !== activeDrag.handle) return anchor;
+        const time = projection.unproject({
+          x: activeDrag.points[index]!.x + dx,
+          y: activeDrag.points[index]!.y,
+        })?.time;
+        return time === undefined
+          ? null
+          : { ...anchor, time: Math.abs(dx) < 1 ? anchor.time : time };
+      }
       if (disjoint && activeDrag.handle >= 0) {
         const handle = activeDrag.handle;
         const old = activeDrag.points[index]!;
@@ -454,7 +473,7 @@ export function createChartDrawingSession(
       return;
     const next = { ...drag.drawing, anchors: moved as DrawingAnchor[] };
     drawings = drawings.map((item) => (item.id === next.id ? next : item));
-    drag.moved = true;
+    drag.moved = !moved.every((anchor, index) => sameAnchor(drag!.drawing.anchors[index], anchor!));
     if (drag.drawing.kind === "horizontal") render();
     emit();
   };
@@ -995,6 +1014,7 @@ export function useChartDrawings(
   series: ISeriesApi<SeriesType> | null,
   symbol: string,
   intervalMinutes = 1,
+  regressionSeries?: ISeriesApi<SeriesType>,
 ) {
   const [state, setState] = useState<DrawingState>(EMPTY);
   const session = useRef<ReturnType<typeof createChartDrawingSession> | null>(null);
@@ -1007,6 +1027,7 @@ export function useChartDrawings(
       setState,
       tradingWorkspaceStorage,
       intervalMinutes,
+      regressionSeries ?? series,
     );
     session.current = current;
     const element = chart.chartElement();
@@ -1130,7 +1151,7 @@ export function useChartDrawings(
       current.dispose();
       if (session.current === current) session.current = null;
     };
-  }, [chart, series, symbol, intervalMinutes]);
+  }, [chart, series, symbol, intervalMinutes, regressionSeries]);
   const setTool = useCallback((tool: ChartDrawingTool) => session.current?.setTool(tool), []);
   const undo = useCallback(() => session.current?.undo(), []);
   const redo = useCallback(() => session.current?.redo(), []);

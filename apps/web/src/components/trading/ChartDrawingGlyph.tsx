@@ -14,6 +14,12 @@ export function ChartDrawingGlyph({ tool }: { tool: ChartDrawingTool }) {
       strokeLinejoin="round"
     >
       {tool === "cursor" ? <path d="M12 2v7m0 6v7M2 12h7m6 0h7" /> : null}
+      {tool === "regression-trend" ? (
+        <>
+          <path d="m3 16 18-8M3 21 21 13M3 11 21 3" />
+          <path d="m4 17 3-4 3 2 3-6 3 2 4-5" strokeDasharray="2 2" />
+        </>
+      ) : null}
       {tool === "trend" ? (
         <>
           <path d="m5.5 18.5 13-13" />

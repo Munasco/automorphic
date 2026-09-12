@@ -131,6 +131,7 @@ describe("native drawing primitive", () => {
       save: vi.fn(),
       translate: vi.fn(),
       rotate: vi.fn(),
+      closePath: vi.fn(),
       restore: vi.fn(),
       beginPath: vi.fn(),
       rect: vi.fn(),
@@ -191,9 +192,9 @@ describe("native drawing primitive", () => {
       save: vi.fn(),
       translate: vi.fn(),
       rotate: vi.fn(),
+      closePath: vi.fn(),
       restore: vi.fn(),
       beginPath: vi.fn(),
-      closePath: vi.fn(),
       rect: vi.fn(),
       clip: vi.fn(),
       fillRect: vi.fn(),
@@ -260,9 +261,9 @@ describe("native drawing primitive", () => {
       save: vi.fn(),
       translate: vi.fn(),
       rotate: vi.fn(),
+      closePath: vi.fn(),
       restore: vi.fn(),
       beginPath: vi.fn(),
-      closePath: vi.fn(),
       rect: vi.fn(),
       clip: vi.fn(),
       fillRect: vi.fn(),
@@ -362,6 +363,7 @@ describe("native drawing primitive", () => {
       save: vi.fn(),
       translate: vi.fn(),
       rotate: vi.fn(),
+      closePath: vi.fn(),
       restore: vi.fn(),
       beginPath: vi.fn(),
       rect: vi.fn(),
@@ -391,15 +393,21 @@ describe("native drawing primitive", () => {
 });
 
 describe("additional line primitive behavior", () => {
-  function renderFixture(drawing: ChartDrawing) {
+  function renderFixture(drawing: ChartDrawing, regressionSeries?: ISeriesApi<SeriesType>) {
     const { chart, series } = fixture();
     let selected: string | null = null;
-    const plugin = createDrawingPrimitive(chart, series, () => ({ drawings: [drawing], selected }));
+    const plugin = createDrawingPrimitive(
+      chart,
+      series,
+      () => ({ drawings: [drawing], selected }),
+      regressionSeries ?? series,
+    );
     const ctx = {
       font: "",
       save: vi.fn(),
       translate: vi.fn(),
       rotate: vi.fn(),
+      closePath: vi.fn(),
       restore: vi.fn(),
       beginPath: vi.fn(),
       rect: vi.fn(),
@@ -471,6 +479,58 @@ describe("additional line primitive behavior", () => {
     drawing.stats = [];
     f.draw();
     expect(f.ctx.fillText).not.toHaveBeenCalled();
+  });
+
+  it("renders regression boundaries with independent colors, widths and styles, and Pearson in the lower color", () => {
+    const drawing: ChartDrawing = {
+      id: "regression-style",
+      kind: "regression-trend",
+      color: "#ffffff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 9999 },
+        { time: 300 as Time, price: -9999 },
+      ],
+      regressionBaseLine: { visible: true, color: "#ff0000", width: 4, lineStyle: "dotted" },
+      regressionUpperLine: { visible: true, color: "#00ff00", width: 3, lineStyle: "solid" },
+      regressionLowerLine: { visible: true, color: "#0000ff", width: 1, lineStyle: "dashed" },
+    };
+    const source = {
+      data: () =>
+        [400, 300, 200].map((close, index) => ({
+          time: (100 + index * 100) as Time,
+          open: close,
+          high: close,
+          low: close,
+          close,
+        })),
+    } as unknown as ISeriesApi<SeriesType>;
+    const f = renderFixture(drawing, source);
+    const strokes: Array<[string, number]> = [];
+    const fills: Array<[string, number]> = [];
+    f.ctx.fill.mockImplementation(() => {
+      const ctx = f.ctx as unknown as CanvasRenderingContext2D;
+      fills.push([String(ctx.fillStyle), ctx.globalAlpha]);
+    });
+    f.ctx.stroke.mockImplementation(() => {
+      const ctx = f.ctx as unknown as CanvasRenderingContext2D;
+      strokes.push([String(ctx.strokeStyle), ctx.lineWidth]);
+    });
+    f.draw();
+    expect(fills).toEqual([
+      ["#00ff00", 0.3],
+      ["#ff0000", 0.3],
+    ]);
+    expect((f.ctx as unknown as CanvasRenderingContext2D).globalAlpha).toBe(1);
+    expect(strokes).toEqual([
+      ["#ff0000", 4],
+      ["#00ff00", 3],
+      ["#0000ff", 1],
+    ]);
+    expect(f.ctx.setLineDash.mock.calls).toContainEqual([[2, 4]]);
+    expect(f.ctx.setLineDash.mock.calls).toContainEqual([[8, 5]]);
+    expect(f.ctx.fillText.mock.calls).toEqual([["1", 100, 106]]);
+    expect((f.ctx as unknown as CanvasRenderingContext2D).fillStyle).toBe("#0000ff");
   });
 
   it("distinguishes the disjoint vertical-only square handle from its three round corners", () => {
@@ -586,9 +646,9 @@ describe("level colors and labels", () => {
       save: vi.fn(),
       translate: vi.fn(),
       rotate: vi.fn(),
+      closePath: vi.fn(),
       restore: vi.fn(),
       beginPath: vi.fn(),
-      closePath: vi.fn(),
       rect: vi.fn(),
       clip: vi.fn(),
       moveTo: vi.fn(),
@@ -794,5 +854,90 @@ describe("derived channel corner handles", () => {
     expect(plugin.hitTest({ x: 100, y: 250 })).toMatchObject({ handle: 0 });
     expect(plugin.hitTest({ x: 350, y: 190 })).toMatchObject({ handle: 1 });
     expect(plugin.primitive.hitTest!(900, 460)).toBeNull();
+  });
+});
+
+describe("regression data integration", () => {
+  it("caches inclusive OHLC fits across hover and style redraws, invalidates on candle updates, and detaches subscriptions", () => {
+    const { chart, series } = fixture();
+    let bars = [
+      { time: 100 as Time, open: 380, high: 410, low: 370, close: 400 },
+      { time: 200 as Time, open: 300, high: 330, low: 290, close: 300 },
+      { time: 300 as Time, open: 240, high: 260, low: 180, close: 200 },
+    ];
+    let change: (() => void) | undefined;
+    const data = vi.fn(() => bars);
+    const unsubscribeDataChanged = vi.fn();
+    const source = {
+      data,
+      subscribeDataChanged: vi.fn((fn: () => void) => {
+        change = fn;
+      }),
+      unsubscribeDataChanged,
+    } as unknown as ISeriesApi<SeriesType>;
+    const drawing: ChartDrawing = {
+      id: "regression",
+      kind: "regression-trend",
+      color: "#ffffff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 9999 },
+        { time: 300 as Time, price: -9999 },
+      ],
+    };
+    let selected: string | null = null;
+    const plugin = createDrawingPrimitive(
+      chart,
+      series,
+      () => ({ drawings: [drawing], selected }),
+      source,
+    );
+    const requestUpdate = vi.fn();
+    plugin.primitive.attached!({ requestUpdate } as unknown as Parameters<
+      NonNullable<typeof plugin.primitive.attached>
+    >[0]);
+    expect(plugin.hitTest({ x: 200, y: 200 })?.drawing.id).toBe(drawing.id);
+    plugin.hitTest({ x: 200, y: 200 });
+    drawing.color = "#ff0000";
+    plugin.hitTest({ x: 200, y: 200 });
+    expect(data).toHaveBeenCalledTimes(1);
+    selected = drawing.id;
+    expect(plugin.primitive.priceAxisViews!().map((view) => view.text())).toEqual([
+      "400.00",
+      "200.00",
+    ]);
+    drawing.regressionSource = "open";
+    expect(plugin.hitTest({ x: 100, y: 123.33333333333331 })).toMatchObject({ handle: 0 });
+    expect(data).toHaveBeenCalledTimes(1);
+    bars = bars.map((bar) => ({ ...bar, open: bar.open - 100, close: bar.close - 100 }));
+    change!();
+    expect(requestUpdate).toHaveBeenCalledOnce();
+    expect(plugin.hitTest({ x: 100, y: 223.33333333333331 })).toMatchObject({ handle: 0 });
+    expect(data).toHaveBeenCalledTimes(2);
+    bars = bars.slice(1);
+    change!();
+    expect(plugin.hitTest({ x: 200, y: 300 })).toBeNull();
+    expect(plugin.primitive.priceAxisViews!()).toEqual([]);
+    plugin.primitive.detached!();
+    expect(unsubscribeDataChanged).toHaveBeenCalledWith(change);
+  });
+  it("does not invent a regression from close-only display data or a range with missing OHLC", () => {
+    const { chart, series } = fixture();
+    const drawing: ChartDrawing = {
+      id: "missing",
+      kind: "regression-trend",
+      color: "#fff000",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 400 },
+        { time: 200 as Time, price: 300 },
+      ],
+    };
+    const plugin = createDrawingPrimitive(chart, series, () => ({
+      drawings: [drawing],
+      selected: drawing.id,
+    }));
+    expect(plugin.hitTest({ x: 150, y: 150 })).toBeNull();
+    expect(plugin.primitive.priceAxisViews!()).toEqual([]);
   });
 });

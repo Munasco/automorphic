@@ -141,6 +141,7 @@ export function TradovateChart({
     activeEngine?.prices[settings.style] ?? null,
     symbol,
     interval,
+    activeEngine?.prices.candles,
   );
   const shown = hovered ?? last;
 
