@@ -896,6 +896,66 @@ describe("additional line primitive behavior", () => {
 });
 
 describe("level colors and labels", () => {
+  it.each(["rectangle", "circle", "ellipse", "triangle", "rotated-rectangle"] as const)(
+    "paints %s backgrounds independently from borders, then removes only the fill",
+    (kind) => {
+      const { chart, series } = fixture();
+      const shape: ChartDrawing = {
+        id: "shape",
+        kind,
+        color: "#ff0000",
+        width: 2,
+        lineOpacity: 0.25,
+        backgroundColor: "#00ff00",
+        backgroundOpacity: 1,
+        anchors: [
+          { time: 100 as Time, price: 400 },
+          { time: 200 as Time, price: 300 },
+        ],
+      };
+      if (kind === "triangle" || kind === "rotated-rectangle")
+        shape.anchors.push({ time: 100 as Time, price: 200 });
+      const strokes: Array<[string, number]> = [],
+        fills: Array<[string, number]> = [];
+      const ctx = {
+        strokeStyle: "",
+        fillStyle: "",
+        globalAlpha: 1,
+        save: vi.fn(),
+        restore: vi.fn(),
+        beginPath: vi.fn(),
+        closePath: vi.fn(),
+        rect: vi.fn(),
+        clip: vi.fn(),
+        moveTo: vi.fn(),
+        lineTo: vi.fn(),
+        setLineDash: vi.fn(),
+        stroke: () => strokes.push([ctx.strokeStyle, ctx.globalAlpha]),
+        fill: () => fills.push([ctx.fillStyle, ctx.globalAlpha]),
+        fillRect: () => fills.push([ctx.fillStyle, ctx.globalAlpha]),
+      };
+      const plugin = createDrawingPrimitive(chart, series, () => ({
+        drawings: [shape],
+        selected: null,
+      }));
+      const renderer = plugin.primitive.paneViews!()[0]!.renderer()!;
+      const draw = () =>
+        renderer.draw({
+          useMediaCoordinateSpace: (callback: (scope: { context: typeof ctx }) => void) =>
+            callback({ context: ctx }),
+        } as unknown as Parameters<typeof renderer.draw>[0]);
+      draw();
+      expect(fills).toEqual([["#00ff00", 1]]);
+      expect(strokes).toEqual([["#ff0000", 0.25]]);
+      fills.length = 0;
+      strokes.length = 0;
+      shape.background = false;
+      draw();
+      expect(fills).toEqual([]);
+      expect(strokes).toEqual([["#ff0000", 0.25]]);
+    },
+  );
+
   it("paints individual Fibonacci colors and background opacity, formats real prices, and restores the next drawing style", () => {
     const { chart, series } = fixture();
     const strokes: string[] = [];

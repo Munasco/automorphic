@@ -140,6 +140,7 @@ export type DrawingGeometry = {
   priceLabels?: Array<{ point: DrawingPoint; value: string; align: "left" | "right" }>;
   lines: DrawingLine[];
   rectangle?: { x: number; y: number; width: number; height: number };
+  rectangleFill?: { color: string; opacity: number };
   text?: {
     point: DrawingPoint;
     value: string;
@@ -428,6 +429,10 @@ export function defaultRegressionDrawingSettings(kind?: DrawingKind): DrawingSet
     extendLines: false,
   };
 }
+export const DEFAULT_SHAPE_BACKGROUND_OPACITY = 0.12;
+export const supportsShapeBackground = (kind: DrawingKind) =>
+  ["rectangle", "circle", "ellipse", "triangle", "rotated-rectangle"].includes(kind);
+
 export const isSpecialChannelDrawing = (kind: DrawingKind) =>
   kind === "flat-channel" || kind === "disjoint-channel";
 export function defaultChannelDrawingSettings(kind: DrawingKind): DrawingSettings {
@@ -737,6 +742,13 @@ function buildBaseDrawingGeometry(
     drawing.kind === "horizontal" ? (project(a) ?? { x: width / 2, y: ay }) : project(a);
   if (!first) return result;
   result.handles.push(first);
+  const shapeFill =
+    supportsShapeBackground(drawing.kind) && drawing.background !== false
+      ? {
+          color: drawing.backgroundColor ?? drawing.color,
+          opacity: drawing.backgroundOpacity ?? DEFAULT_SHAPE_BACKGROUND_OPACITY,
+        }
+      : undefined;
   const line = (from: DrawingPoint, to: DrawingPoint, label?: string) =>
     result.lines.push({ from, to, ...(label ? { label } : {}) });
   const path = (points: DrawingPoint[], closed = false, fillOpacity?: number) => {
@@ -746,7 +758,7 @@ function buildBaseDrawingGeometry(
       (result.polygons ??= []).push({
         points,
         opacity: fillOpacity,
-        ...(fillOpacity === 1 ? { lineFill: true } : {}),
+        ...(shapeFill ? { color: shapeFill.color } : fillOpacity === 1 ? { lineFill: true } : {}),
       });
   };
   const blockArrow = (from: DrawingPoint, to: DrawingPoint) => {
@@ -840,7 +852,7 @@ function buildBaseDrawingGeometry(
         return { x: center.x + rx * Math.cos(angle), y: center.y + ry * Math.sin(angle) };
       }),
       true,
-      0.12,
+      shapeFill?.opacity,
     );
     return result;
   }
@@ -855,7 +867,7 @@ function buildBaseDrawingGeometry(
       return result;
     }
     if (drawing.kind === "triangle") {
-      path([first, second, third], true, 0.12);
+      path([first, second, third], true, shapeFill?.opacity);
       return result;
     }
     if (drawing.kind === "rotated-rectangle") {
@@ -874,7 +886,7 @@ function buildBaseDrawingGeometry(
           { x: first.x + nx * offset, y: first.y + ny * offset },
         ],
         true,
-        0.12,
+        shapeFill?.opacity,
       );
       return result;
     }
@@ -962,6 +974,7 @@ function buildBaseDrawingGeometry(
     const w = Math.abs(first.x - second.x),
       h = Math.abs(first.y - second.y);
     result.rectangle = { x, y, width: w, height: h };
+    if (shapeFill) result.rectangleFill = shapeFill;
     line({ x, y }, { x: x + w, y });
     line({ x: x + w, y }, { x: x + w, y: y + h });
     line({ x: x + w, y: y + h }, { x, y: y + h });

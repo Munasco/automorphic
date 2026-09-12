@@ -37,6 +37,8 @@ import {
 } from "./drawingVisibility";
 import {
   supportsLineExtensions,
+  supportsShapeBackground,
+  DEFAULT_SHAPE_BACKGROUND_OPACITY,
   supportsLineMarkers,
   supportsDrawingPriceLabels,
   supportsLineStatistics,
@@ -323,6 +325,22 @@ function DrawingSettings({
               ) : null}
               {isSpecialChannelDrawing(draft.kind) ? (
                 <ChannelAppearance drawing={draft} onChange={update} />
+              ) : null}
+              {supportsShapeBackground(draft.kind) ? (
+                <div className="flex items-center justify-between gap-3">
+                  <Check
+                    label="Background"
+                    checked={draft.background ?? true}
+                    onChange={(background) => update({ background })}
+                  />
+                  <ColorPicker
+                    label="Background color"
+                    value={draft.backgroundColor ?? draft.color}
+                    opacity={draft.backgroundOpacity ?? DEFAULT_SHAPE_BACKGROUND_OPACITY}
+                    onChange={(backgroundColor) => update({ backgroundColor })}
+                    onOpacityChange={(backgroundOpacity) => update({ backgroundOpacity })}
+                  />
+                </div>
               ) : null}
               {supportsDrawingPriceLabels(draft.kind) && !isSpecialChannelDrawing(draft.kind) ? (
                 <Check
