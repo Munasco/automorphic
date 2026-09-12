@@ -1,6 +1,14 @@
 import type { SVGProps } from "react";
 // Tabler icons retrieved from Iconify; MIT notice in apps/web/THIRD_PARTY_NOTICES.md.
 const paths = {
+  magnet: "M4 4h5v9a3 3 0 0 0 6 0V4h5v9a8 8 0 0 1-16 0zM4 8h5m6 0h5",
+  eye: "M10 12a2 2 0 1 0 4 0a2 2 0 0 0-4 0M21 12q-3.6 6-9 6t-9-6q3.6-6 9-6t9 6",
+  "eye-off":
+    "M10.585 10.587a2 2 0 0 0 2.829 2.828M16.681 16.673A8.7 8.7 0 0 1 12 18q-5.4 0-9-6q1.908-3.18 4.32-4.674m2.86-1.146A9 9 0 0 1 12 6q5.4 0 9 6q-1 1.665-2.138 2.87M3 3l18 18",
+  lock: "M5 13a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2zM11 16a1 1 0 1 0 2 0a1 1 0 0 0-2 0m-3-5V7a4 4 0 1 1 8 0v4",
+  "lock-open":
+    "M5 13a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2zM11 16a1 1 0 1 0 2 0a1 1 0 1 0-2 0m-3-5V6a4 4 0 0 1 8 0",
+  "arrow-forward-up": "m15 14l4-4l-4-4M19 10H8a4 4 0 1 0 0 8h1",
   "arrow-up-right": "M17 7L7 17M8 7h9v9",
   "arrow-right": "M5 12h14m-6 6l6-6m-6-6l6 6",
   "separator-vertical": "M12 4v16M8 8l-4 4l4 4m8 0l4-4l-4-4",

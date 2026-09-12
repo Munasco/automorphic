@@ -6,6 +6,7 @@ const preferenceKeys = new Set([
   "automorphic:chart:v1",
   "automorphic:trading-settings:v1",
   "automorphic:trading:v1",
+  "automorphic:chart-alerts:v1",
 ]);
 const isWorkspaceKey = (key: string) =>
   preferenceKeys.has(key) || key.startsWith("automorphic:chart-drawings:v1:");
@@ -256,6 +257,8 @@ export function createTradingWorkspaceRouter(request: typeof fetch = tradingFetc
   };
   return {
     selectProject,
+    // Long-lived chart sessions must keep writing to the project they opened in.
+    capture: () => storeFor(activeId),
     initialize: () => selectProject(activeId),
     flush: () => storeFor(activeId).flush(),
     getSnapshot: () => snapshot,

@@ -18,6 +18,13 @@ it("rejects unrelated keys, malformed JSON and oversized settings", () => {
     parseWorkspaceValue({ key: "automorphic:chart-drawings:v1:MGCV6", value: "[]" }),
     { key: "automorphic:chart-drawings:v1:MGCV6", value: "[]" },
   );
+  assert.deepEqual(
+    parseWorkspaceValue({
+      key: "automorphic:chart-alerts:v1",
+      value: '{"version":1,"alerts":[],"history":[]}',
+    }),
+    { key: "automorphic:chart-alerts:v1", value: '{"version":1,"alerts":[],"history":[]}' },
+  );
 });
 
 it.effect("saved settings survive reopening storage and remain isolated by project", () =>

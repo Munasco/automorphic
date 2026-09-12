@@ -3,6 +3,8 @@ import {
   DEFAULT_INDICATORS,
   DEFAULT_INITIAL_BALANCE,
   INDICATOR_CATALOG,
+  getIndicatorInputs,
+  getIndicatorLabel,
   findIndicators,
   isValidInitialBalanceSettings,
 } from "./indicatorCatalog";
@@ -90,12 +92,16 @@ describe("indicator catalog and saved preferences", () => {
   });
   it("searches labels, indicator names and categories without case sensitivity", () => {
     expect(findIndicators(" MOVING average ").map((entry) => entry.key)).toEqual(["sma", "ema"]);
+    expect(findIndicators("chaikin").map((entry) => entry.key)).toEqual(["cmf"]);
+    expect(findIndicators("rate of change").map((entry) => entry.key)).toEqual(["roc"]);
+    expect(findIndicators("stochastic rsi").map((entry) => entry.key)).toEqual(["stochRsi"]);
     expect(findIndicators("initial").map((entry) => entry.key)).toEqual(["ib"]);
     expect(findIndicators("overlays").map((entry) => entry.key)).toEqual([
       "sma",
       "ema",
       "bollinger",
       "donchian",
+      "keltner",
     ]);
     expect(findIndicators("not an indicator")).toEqual([]);
   });
@@ -132,5 +138,69 @@ describe("initial balance settings validation", () => {
       startTime: "08:00",
     });
     useChartPreferences.getState().setInitialBalance(before);
+  });
+});
+
+describe("indicator inputs", () => {
+  it("restores valid inputs while dropping unknown keys and repairing invalid stored values", () => {
+    const restored = normalizeChartPreferences({
+      indicators: { sma: true },
+      indicatorInputs: {
+        sma: { period: 50, unexpected: 99 },
+        bollinger: { period: 5.5, deviations: 1.5 },
+        keltner: { period: 0, atrPeriod: 8, multiplier: Infinity },
+        stochRsi: { rsiPeriod: 10, smoothK: 2 },
+        macd: { fast: 40, slow: 20, signalPeriod: 5 },
+        missing: { period: 12 },
+      },
+    });
+    expect(restored.indicatorInputs).toEqual({
+      sma: { period: 50 },
+      bollinger: { period: 20, deviations: 1.5 },
+      keltner: { period: 20, atrPeriod: 8, multiplier: 2 },
+      stochRsi: { rsiPeriod: 10, stochasticPeriod: 14, smoothK: 2, periodD: 3 },
+      macd: { fast: 12, slow: 26, signalPeriod: 5 },
+    });
+    expect(normalizeChartPreferences({ indicators: { sma: true } }).indicatorInputs).toEqual({});
+    expect(getIndicatorInputs("sma")).toEqual({ period: 20 });
+    expect(getIndicatorLabel("sma", restored.indicatorInputs)).toBe("SMA 50");
+    expect(getIndicatorLabel("stochRsi", restored.indicatorInputs)).toBe(
+      "Stochastic RSI 10 / 14 / 2 / 3",
+    );
+  });
+
+  it("applies valid edits atomically, persists them, and resets only the selected indicator", () => {
+    const original = useChartPreferences.getState();
+    try {
+      const store = useChartPreferences.getState();
+      store.setIndicatorInputs("sma", { period: 50 });
+      store.setIndicatorInputs("bollinger", { deviations: 1.5 });
+      store.setIndicatorInputs("macd", { fast: 30, slow: 40 });
+      const before = useChartPreferences.getState().indicatorInputs;
+      store.setIndicatorInputs("macd", { slow: 20 });
+      store.setIndicatorInputs("sma", { period: 501 });
+      store.setIndicatorInputs("bollinger", { period: 5, deviations: -1 });
+      store.setIndicatorInputs("sma", { multiplier: 2 });
+      expect(useChartPreferences.getState().indicatorInputs).toBe(before);
+      const restored = normalizeChartPreferences(
+        JSON.parse(JSON.stringify(useChartPreferences.getState())),
+      );
+      expect(restored.indicatorInputs).toEqual(before);
+      store.resetIndicatorInputs("sma");
+      expect(getIndicatorInputs("sma", useChartPreferences.getState().indicatorInputs)).toEqual({
+        period: 20,
+      });
+      expect(useChartPreferences.getState().indicatorInputs.bollinger).toEqual({
+        period: 20,
+        deviations: 1.5,
+      });
+      expect(useChartPreferences.getState().indicatorInputs.macd).toEqual({
+        fast: 30,
+        slow: 40,
+        signalPeriod: 9,
+      });
+    } finally {
+      useChartPreferences.setState(original, true);
+    }
   });
 });

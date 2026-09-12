@@ -16,6 +16,10 @@ export type ChartDrawing = {
   anchors: DrawingAnchor[];
   color: string;
   width: number;
+  lineStyle?: "solid" | "dashed" | "dotted";
+  locked?: boolean;
+  hidden?: boolean;
+  name?: string;
   text?: string;
 };
 export type DrawingPoint = { x: number; y: number };
@@ -103,6 +107,12 @@ export function parseChartDrawings(value: string | null): ChartDrawing[] {
             anchors,
             color: /^#[a-f\d]{6}$/i.test(record.color) ? record.color : "#729bff",
             width: [1, 2, 3, 4].includes(record.width) ? record.width : 2,
+            ...(["solid", "dashed", "dotted"].includes(record.lineStyle)
+              ? { lineStyle: record.lineStyle as NonNullable<ChartDrawing["lineStyle"]> }
+              : {}),
+            ...(record.locked === true ? { locked: true } : {}),
+            ...(record.hidden === true ? { hidden: true } : {}),
+            ...(typeof record.name === "string" ? { name: record.name.trim().slice(0, 80) } : {}),
             ...(kind === "text"
               ? { text: typeof record.text === "string" ? record.text.slice(0, 140) : "Text" }
               : {}),
@@ -122,6 +132,7 @@ export function buildDrawingGeometry(
   height: number,
 ): DrawingGeometry {
   const result: DrawingGeometry = { lines: [], handles: [] };
+  if (drawing.hidden) return result;
   const a = drawing.anchors[0];
   if (!a) return result;
   const ay = priceY(a.price);
@@ -228,5 +239,25 @@ export function hitDrawingGeometry(
   }
   return geometry.handles.some(
     (handle) => Math.hypot(handle.x - point.x, handle.y - point.y) <= tolerance,
+  );
+}
+
+/** Handles take priority over the body so a selected endpoint can be resized precisely. */
+export function hitDrawingHandle(geometry: DrawingGeometry, point: DrawingPoint, tolerance = 9) {
+  return geometry.handles.findIndex(
+    (handle) => Math.hypot(handle.x - point.x, handle.y - point.y) <= tolerance,
+  );
+}
+
+export function validDrawingAnchors(kind: DrawingKind, anchors: DrawingAnchor[]) {
+  if (anchors.length !== DRAWING_ANCHORS[kind] || !anchors.every(isAnchor)) return false;
+  const [first, second] = anchors;
+  if (!first || !second) return true;
+  if (["trend", "rectangle", "fib", "channel"].includes(kind))
+    return drawingTimeValue(first.time) !== drawingTimeValue(second.time);
+  return (
+    kind !== "ray" ||
+    drawingTimeValue(first.time) !== drawingTimeValue(second.time) ||
+    first.price !== second.price
   );
 }

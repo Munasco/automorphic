@@ -66,6 +66,115 @@ const disabled = Object.fromEntries(
 ) as ChartIndicators;
 
 describe("native indicator renderer", () => {
+  it("recalculates configured inputs in place and restores original warmups on reset", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.1);
+    const input = inputBars(6);
+    const enabled = {
+      ...disabled,
+      sma: true,
+      ema: true,
+      rsi: true,
+      bollinger: true,
+      keltner: true,
+      cmf: true,
+      roc: true,
+    };
+    expect(renderer.update(input, enabled, DEFAULT_INITIAL_BALANCE, 1).readings).toEqual({});
+    const originalSeries = harness.series.slice();
+    const result = renderer.update(
+      input,
+      enabled,
+      DEFAULT_INITIAL_BALANCE,
+      1,
+      {},
+      {
+        sma: { period: 3 },
+        ema: { period: 3 },
+        rsi: { period: 2 },
+        bollinger: { period: 3, deviations: 0.5 },
+        keltner: { period: 3, atrPeriod: 2, multiplier: 0.5 },
+        cmf: { period: 3 },
+        roc: { period: 2 },
+      },
+    );
+    expect(result.readings).toMatchObject({
+      sma: 104,
+      ema: 104,
+      rsi: 100,
+      bollinger: 104,
+      keltner: 104,
+      cmf: 0,
+    });
+    expect(result.readings.roc).toBeCloseTo(200 / 103);
+    expect(harness.series).toEqual(originalSeries);
+    const overlayValues = harness.series
+      .filter((series) => series.pane === 0)
+      .map((series) => series.data.at(-1)!.value);
+    expect(overlayValues).toEqual([
+      104,
+      104,
+      104 + Math.sqrt(2 / 3) * 0.5,
+      104,
+      104 - Math.sqrt(2 / 3) * 0.5,
+      105,
+      104,
+      103,
+    ]);
+    expect(renderer.update(input, enabled, DEFAULT_INITIAL_BALANCE, 1).readings).toEqual({});
+    expect(harness.series.every((series) => series.data.length === 0)).toBe(true);
+  });
+
+  it("uses all four Stochastic RSI inputs when determining its smoothing warmup", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.1);
+    const input = inputBars(12).map((bar, index) => ({ ...bar, close: 100 + Math.sin(index) }));
+    const result = renderer.update(
+      input,
+      { ...disabled, stochRsi: true },
+      DEFAULT_INITIAL_BALANCE,
+      1,
+      {},
+      {
+        stochRsi: { rsiPeriod: 2, stochasticPeriod: 3, smoothK: 2, periodD: 2 },
+      },
+    );
+    expect(harness.series.find((series) => series.options.title === "%K")?.data[0]?.time).toBe(
+      input[5]?.time,
+    );
+    expect(harness.series.find((series) => series.options.title === "%D")?.data[0]?.time).toBe(
+      input[6]?.time,
+    );
+    expect(result.readings.stochRsi).toBeTypeOf("number");
+  });
+
+  it("renders new indicators with independent panes and retained overlay series", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.1);
+    const input = inputBars().map((bar, index) => ({
+      ...bar,
+      close: 100 + index + Math.sin(index) * 3,
+      high: 105 + index,
+      low: 95 + index,
+    }));
+    const enabled = { ...disabled, keltner: true, stochRsi: true, cmf: true, roc: true };
+    const result = renderer.update(input, enabled, DEFAULT_INITIAL_BALANCE, 1);
+    expect(harness.paneCount()).toBe(4);
+    expect(harness.series.filter((series) => series.pane === 0)).toHaveLength(3);
+    expect(
+      harness.series.filter((series) => series.pane === 1).map((series) => series.options.title),
+    ).toEqual(["%K", "%D"]);
+    expect(harness.series.find((series) => series.options.title === "CMF")?.pane).toBe(2);
+    expect(harness.series.find((series) => series.options.title === "ROC")?.pane).toBe(3);
+    expect(Object.keys(result.readings).sort()).toEqual(["cmf", "keltner", "roc", "stochRsi"]);
+    expect(harness.series.every((series) => series.data.length > 0)).toBe(true);
+    const overlays = harness.series.filter((series) => series.pane === 0);
+    renderer.update(input, { ...enabled, stochRsi: false }, DEFAULT_INITIAL_BALANCE, 1);
+    expect(harness.paneCount()).toBe(3);
+    expect(harness.series.find((series) => series.options.title === "CMF")?.pane).toBe(1);
+    expect(harness.series.filter((series) => series.pane === 0)).toEqual(overlays);
+  });
+
   it("accepts empty initial history with every indicator enabled", () => {
     const harness = chartHarness();
     const renderer = createIndicatorRenderer(harness.chart, 0.1);
@@ -75,7 +184,7 @@ describe("native indicator renderer", () => {
     const result = renderer.update([], all, DEFAULT_INITIAL_BALANCE, 15);
     expect(result.readings).toEqual({});
     expect(result.initialBalanceStatus).toContain("waiting");
-    expect(harness.paneCount()).toBe(9);
+    expect(harness.paneCount()).toBe(12);
     expect(harness.series.every((series) => series.data.length === 0)).toBe(true);
     expect(() => renderer.update([], disabled, DEFAULT_INITIAL_BALANCE, 15)).not.toThrow();
     expect(harness.series).toHaveLength(0);

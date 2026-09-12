@@ -115,6 +115,7 @@ export function TradovateChart({
   );
   const indicatorSettings = useRef(visibleIndicators);
   const appearanceSettings = useRef(settings.appearance);
+  const inputSettings = useRef(settings.indicatorInputs);
   const volumeColors = useRef(settings.volumeColors);
   const initialBalanceSettings = useRef(settings.initialBalance);
   const [initialBalanceStatus, setInitialBalanceStatus] = useState("");
@@ -140,6 +141,7 @@ export function TradovateChart({
   useEffect(() => {
     indicatorSettings.current = visibleIndicators;
     appearanceSettings.current = settings.appearance;
+    inputSettings.current = settings.indicatorInputs;
     volumeColors.current = settings.volumeColors;
     initialBalanceSettings.current = settings.initialBalance;
     if (engine && !engine.disposed) engine.refreshIndicators();
@@ -148,6 +150,7 @@ export function TradovateChart({
     visibleIndicators,
     settings.initialBalance,
     settings.appearance,
+    settings.indicatorInputs,
     settings.volumeColors,
   ]);
 
@@ -238,6 +241,7 @@ export function TradovateChart({
           initialBalanceSettings.current,
           interval,
           appearanceSettings.current,
+          inputSettings.current,
         );
         const latestVolume = sorted.at(-1)?.volume;
         if (latestVolume !== undefined) result.readings.volume = latestVolume;
@@ -354,6 +358,8 @@ export function TradovateChart({
             }
             if (message.type === "status") {
               setStatus(message.message);
+              if (message.state === "disconnected" || message.state === "connecting")
+                onQuote?.(null);
               return;
             }
             if (
@@ -382,6 +388,7 @@ export function TradovateChart({
           onError: () => {
             source?.close();
             if (!state.disposed) {
+              onQuote?.(null);
               setStatus("Reconnecting to Tradovate…");
               retry = setTimeout(connect, 5000);
             }

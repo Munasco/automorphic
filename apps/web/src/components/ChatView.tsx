@@ -1981,6 +1981,9 @@ export default function ChatView(props: ChatViewProps) {
   const canMaximizeRightPanel = rightPanelOpen && !shouldUseRightPanelSheet;
   const rightPanelMaximized =
     canMaximizeRightPanel && maximizedRightPanelThreadKey === routeThreadKey;
+  const [chartAiOpen, setChartAiOpen] = useState(false);
+  const expandedChartAiVisible =
+    rightPanelMaximized && renderedRightPanelSurface?.kind === "trading" && chartAiOpen;
   const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUseRightPanelSheet;
 
   useEffect(() => {
@@ -8128,6 +8131,8 @@ export default function ChatView(props: ChatViewProps) {
       <TradingPanel
         projectId={activeProject?.id ?? null}
         expanded={rightPanelMaximized}
+        aiOpen={chartAiOpen}
+        onToggleAi={() => setChartAiOpen((open) => !open)}
         onToggleExpand={canMaximizeRightPanel ? toggleRightPanelMaximized : undefined}
       />
     ) : renderedRightPanelSurface?.kind === "agents" ? (
@@ -8232,9 +8237,15 @@ export default function ChatView(props: ChatViewProps) {
       <div
         className={cn(
           "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
-          rightPanelMaximized ? "w-0 flex-none" : "flex-1",
+          expandedChartAiVisible
+            ? "order-last w-[min(360px,40%)] shrink-0 border-l border-border"
+            : rightPanelMaximized
+              ? "w-0 flex-none"
+              : "flex-1",
         )}
-        data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
+        data-chat-column-maximized-away={
+          rightPanelMaximized && !expandedChartAiVisible ? "true" : "false"
+        }
       >
         {/* Top bar */}
         <WorkspacePageHeader

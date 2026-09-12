@@ -12,6 +12,7 @@ import {
   drawingTimeValue,
   type ChartDrawing,
   type DrawingAnchor,
+  type DrawingPoint,
 } from "./drawingGeometry";
 
 export function drawingProjection(chart: IChartApi, series: ISeriesApi<SeriesType>) {
@@ -34,7 +35,7 @@ export function drawingProjection(chart: IChartApi, series: ISeriesApi<SeriesTyp
           if (drawingTimeValue(data[mid]!.time)! < target) left = mid + 1;
           else right = mid;
         }
-        const upper = data[left]!,
+        const upper = data[Math.min(data.length - 1, Math.max(1, left))]!,
           lower = data[Math.max(0, left - 1)]!;
         const ux = scale.timeToCoordinate(upper.time),
           lx = scale.timeToCoordinate(lower.time);
@@ -46,30 +47,59 @@ export function drawingProjection(chart: IChartApi, series: ISeriesApi<SeriesTyp
     }
     return x === null || y === null ? null : { x, y };
   };
-  return { width, height, priceY, project };
+  const unproject = (point: DrawingPoint): DrawingAnchor | null => {
+    const price = series.coordinateToPrice(point.y);
+    if (price === null || !Number.isFinite(price)) return null;
+    const time = scale.coordinateToTime(point.x);
+    if (time !== null) return { time, price };
+    // The chart returns null in empty future space; extend the nearest candle interval.
+    const data = series.data();
+    if (data.length < 2) return null;
+    const firstX = scale.timeToCoordinate(data[0]!.time);
+    const start = firstX !== null && point.x < firstX ? 0 : data.length - 2;
+    const a = data[start]!,
+      b = data[start + 1]!;
+    const ax = scale.timeToCoordinate(a.time),
+      bx = scale.timeToCoordinate(b.time);
+    const at = drawingTimeValue(a.time),
+      bt = drawingTimeValue(b.time);
+    if (ax === null || bx === null || ax === bx || at === null || bt === null) return null;
+    const value = at + ((point.x - ax) / (bx - ax)) * (bt - at);
+    return { time: Math.round(value) as Time, price };
+  };
+  return { width, height, priceY, project, unproject };
 }
 
 export function createDrawingPrimitive(
   chart: IChartApi,
   series: ISeriesApi<SeriesType>,
-  read: () => { drawings: ChartDrawing[]; selected: string | null },
+  read: () => {
+    drawings: ChartDrawing[];
+    selected: string | null;
+    preview?: ChartDrawing | null;
+    hidden?: boolean;
+  },
 ) {
   let requestUpdate = () => {};
   const renderer: IPrimitivePaneRenderer = {
     draw(target) {
       const { width, height, priceY, project } = drawingProjection(chart, series);
       const state = read();
+      if (state.hidden) return;
       target.useMediaCoordinateSpace(({ context: ctx }) => {
         ctx.save();
         ctx.beginPath();
         ctx.rect(0, 0, width, height);
         ctx.clip();
-        for (const drawing of state.drawings) {
+        for (const drawing of [...state.drawings, ...(state.preview ? [state.preview] : [])]) {
           const geometry = buildDrawingGeometry(drawing, project, priceY, width, height);
           ctx.strokeStyle = drawing.color;
           ctx.fillStyle = drawing.color;
           ctx.lineWidth = drawing.width;
-          const nativeLine = drawing.kind === "horizontal" || drawing.kind === "trend";
+          ctx.setLineDash(
+            drawing.lineStyle === "dashed" ? [8, 5] : drawing.lineStyle === "dotted" ? [2, 4] : [],
+          );
+          const nativeLine = drawing.kind === "horizontal" && drawing !== state.preview;
           if (!nativeLine) {
             if (geometry.rectangle) {
               const rect = geometry.rectangle;
@@ -90,7 +120,8 @@ export function createDrawingPrimitive(
               ctx.fillText(geometry.text.value, geometry.text.point.x, geometry.text.point.y);
             }
           }
-          if (drawing.id === state.selected) {
+          if ((drawing.id === state.selected && !drawing.locked) || drawing === state.preview) {
+            ctx.setLineDash([]);
             for (const point of geometry.handles) {
               ctx.beginPath();
               ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);

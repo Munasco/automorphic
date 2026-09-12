@@ -260,6 +260,25 @@ describe("project-scoped trading storage", () => {
     expect(request).toHaveBeenCalledTimes(2);
     expect(router.getItem(chartKey)).toBeNull();
   });
+
+  it("hydrates saved alerts and keeps a captured chart session in its original workspace", async () => {
+    const alertKey = "automorphic:chart-alerts:v1";
+    const saved = JSON.stringify({ version: 1, alerts: [], history: [] });
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ ...payload({ [alertKey]: saved }), projectId: "A" }))
+      .mockResolvedValueOnce(json({ ...payload(), projectId: "B" }))
+      .mockResolvedValue(json({}));
+    const router = createTradingWorkspaceRouter(request);
+    await router.selectProject("A");
+    const captured = router.capture();
+    expect(captured.getItem(alertKey)).toBe(saved);
+    await router.selectProject("B");
+    captured.setItem(alertKey, '{"version":1,"alerts":[],"history":[{"id":"trigger"}]}');
+    await captured.flush();
+    expect(router.getItem(alertKey)).toBeNull();
+    expect(request.mock.calls.at(-1)?.[0]).toBe("/api/trading/workspace?projectId=A");
+  });
 });
 
 describe("Zustand workspace hydration", () => {

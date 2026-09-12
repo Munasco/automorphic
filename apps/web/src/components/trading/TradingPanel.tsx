@@ -1,4 +1,5 @@
 import { tradingFetch } from "./tradingTransport";
+import { ChartAlerts, useChartAlerts } from "./ChartAlertsPanel";
 import { ChartIcon } from "./ChartIcon";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
@@ -18,10 +19,14 @@ function ReadyTradingPanel({
   projectId,
   expanded,
   onToggleExpand,
+  aiOpen,
+  onToggleAi,
 }: {
   projectId: string | null;
   expanded: boolean;
   onToggleExpand?: (() => void) | undefined;
+  aiOpen?: boolean | undefined;
+  onToggleAi?: (() => void) | undefined;
 }) {
   const settings = useTradingPreferences();
   const [view, setView] = useState<"chart" | "news">("chart");
@@ -83,6 +88,16 @@ function ReadyTradingPanel({
       ?.name ??
     contracts.find((contract) => contract.root === settings.root)?.name ??
     "";
+  const alerts = useChartAlerts(symbol);
+  const { observeQuote } = alerts;
+  const handleQuote = useCallback(
+    (next: MarketQuote | null) => {
+      observeQuote(next);
+      setQuote(next);
+    },
+    [observeQuote],
+  );
+  const [sideView, setSideView] = useState<"contracts" | "alerts" | null>(null);
   const error = errors[settings.root];
   const settingsControl = (
     <Tooltip>
@@ -102,6 +117,59 @@ function ReadyTradingPanel({
   );
   const panelActions = (
     <div className="ml-auto flex shrink-0 items-center gap-1">
+      {!settings.useTradingView
+        ? [
+            { name: "list-details" as const, label: "Contracts", view: "contracts" as const },
+            { name: "bell" as const, label: "Price alerts", view: "alerts" as const },
+          ].map((item) => (
+            <Tooltip key={item.view}>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label={item.label}
+                    aria-pressed={sideView === item.view}
+                    onClick={() => {
+                      setView("chart");
+                      setSideView(sideView === item.view ? null : item.view);
+                    }}
+                    className={cn(
+                      "relative flex size-7 items-center justify-center rounded hover:bg-accent",
+                      sideView === item.view ? "text-blue-400 bg-accent" : "text-muted-foreground",
+                    )}
+                  />
+                }
+              >
+                <ChartIcon name={item.name} className="size-4" />
+                {item.view === "alerts" && alerts.activeCount > 0 ? (
+                  <span className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-blue-400" />
+                ) : null}
+              </TooltipTrigger>
+              <TooltipPopup>{item.label}</TooltipPopup>
+            </Tooltip>
+          ))
+        : null}
+      {expanded && onToggleAi ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                aria-label="Toggle AI chat"
+                aria-pressed={aiOpen}
+                onClick={onToggleAi}
+                className={cn(
+                  "flex size-7 items-center justify-center rounded hover:bg-accent",
+                  aiOpen ? "text-blue-400 bg-accent" : "text-muted-foreground",
+                )}
+              />
+            }
+          >
+            <ChartIcon name="message-chatbot" className="size-4" />
+          </TooltipTrigger>
+          <TooltipPopup>AI chat</TooltipPopup>
+        </Tooltip>
+      ) : null}
       {onToggleExpand ? (
         <Tooltip>
           <TooltipTrigger
@@ -205,7 +273,7 @@ function ReadyTradingPanel({
           </Button>
         </div>
       ) : null}
-      <div className={cn("min-h-0 min-w-0 flex-1", view === "chart" ? "flex" : "hidden")}>
+      <div className={cn("relative min-h-0 min-w-0 flex-1", view === "chart" ? "flex" : "hidden")}>
         <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
           {settings.useTradingView ? (
             <TradingViewEmbedPanel expanded={expanded} settingsControl={settingsControl} />
@@ -214,7 +282,7 @@ function ReadyTradingPanel({
               key={`${symbol}:${settings.interval}`}
               symbol={symbol}
               interval={settings.interval}
-              onQuote={setQuote}
+              onQuote={handleQuote}
               root={settings.root}
               onSelectSymbol={() => setPickerOpen(true)}
               onIntervalChange={settings.setInterval}
@@ -223,7 +291,65 @@ function ReadyTradingPanel({
             />
           )}
         </div>
-        {settings.showLiveWires ? (
+        {sideView && !settings.useTradingView ? (
+          <aside
+            aria-label={sideView === "alerts" ? "Chart alerts sidebar" : "Chart contracts sidebar"}
+            className="absolute inset-y-0 right-0 z-20 flex w-[min(300px,100%)] flex-col overflow-hidden border-l border-border bg-background shadow-xl @min-[800px]:static @min-[800px]:h-full @min-[800px]:shrink-0 @min-[800px]:shadow-none"
+          >
+            {sideView === "alerts" ? (
+              <ChartAlerts
+                key={symbol}
+                controller={alerts}
+                symbol={symbol}
+                lastPrice={quote?.last}
+                onClose={() => setSideView(null)}
+              />
+            ) : (
+              <>
+                <header className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
+                  <h2 className="text-xs font-semibold">Contracts</h2>
+                  <button
+                    type="button"
+                    aria-label="Close contracts"
+                    onClick={() => setSideView(null)}
+                    className="rounded px-2 py-1 text-muted-foreground hover:bg-accent"
+                  >
+                    ×
+                  </button>
+                </header>
+                <div className="min-h-0 flex-1 overflow-y-auto p-1">
+                  {contracts.map((contract) => (
+                    <button
+                      key={contract.id}
+                      type="button"
+                      aria-pressed={symbol === contract.name}
+                      onClick={() => {
+                        settings.setRoot(contract.root);
+                        settings.setSelectedSymbol(contract.name);
+                      }}
+                      className={cn(
+                        "flex w-full items-center justify-between gap-3 rounded px-3 py-2.5 text-sm",
+                        symbol === contract.name
+                          ? "bg-accent text-foreground"
+                          : "text-muted-foreground hover:bg-accent/50",
+                      )}
+                    >
+                      <span className="font-medium">{contract.name}</span>
+                      <span className="text-xs">
+                        {contract.root === "MGC" ? "Micro Gold" : "Nasdaq 100"}
+                      </span>
+                    </button>
+                  ))}
+                  {!contracts.length ? (
+                    <p className="p-3 text-xs text-muted-foreground">
+                      {loading ? "Loading contracts…" : "No contracts available."}
+                    </p>
+                  ) : null}
+                </div>
+              </>
+            )}
+          </aside>
+        ) : settings.showLiveWires ? (
           <aside className="hidden h-full w-[300px] shrink-0 overflow-hidden border-l border-border @min-[800px]:block">
             <LiveWires root={settings.root} projectId={projectId} />
           </aside>
@@ -242,6 +368,8 @@ export function TradingPanel(props: {
   projectId: string | null;
   expanded: boolean;
   onToggleExpand?: (() => void) | undefined;
+  aiOpen?: boolean | undefined;
+  onToggleAi?: (() => void) | undefined;
 }) {
   const workspace = useTradingWorkspace(props.projectId);
   if (!workspace.ready)

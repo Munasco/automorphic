@@ -1,8 +1,11 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { ChartIcon } from "./ChartIcon";
 import { SolarSettingsIcon } from "./SolarSettingsIcon";
 import {
   INDICATOR_CATALOG,
+  INDICATOR_INPUTS,
+  getIndicatorInputs,
+  getIndicatorLabel,
   INITIAL_BALANCE_TIME_ZONES,
   type InitialBalanceSettings,
 } from "./indicatorCatalog";
@@ -16,45 +19,6 @@ type Preferences = ReturnType<typeof useChartPreferences.getState>;
 const controlClass =
   "inline-flex size-6 items-center justify-center border-r border-white/10 text-zinc-400 last:border-r-0 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400";
 const inputClass = "rounded border border-white/15 bg-zinc-900 px-2 py-1 text-xs text-zinc-200";
-function Action({
-  label,
-  onClick,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <button type="button" aria-label={label} onClick={onClick} className={controlClass} />
-        }
-      >
-        {children}
-      </TooltipTrigger>
-      <TooltipPopup>{label}</TooltipPopup>
-    </Tooltip>
-  );
-}
-function Eye({ hidden }: { hidden: boolean }) {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      aria-hidden="true"
-    >
-      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
-      <circle cx="12" cy="12" r="3" />
-      {hidden && <path d="m3 3 18 18" />}
-    </svg>
-  );
-}
 export function IndicatorLegend({
   settings,
   readings,
@@ -70,7 +34,9 @@ export function IndicatorLegend({
   return (
     <div className="mt-1 flex flex-col items-start text-xs text-zinc-400">
       {!collapsed &&
-        added.map(({ key, label, detail }) => {
+        added.map(({ key, detail }) => {
+          const label = getIndicatorLabel(key, settings.indicatorInputs);
+          const inputs = getIndicatorInputs(key, settings.indicatorInputs);
           const hidden = settings.hiddenIndicators[key];
           const color = settings.appearance[key]?.color ?? INDICATOR_COLORS[key];
           const description =
@@ -78,7 +44,11 @@ export function IndicatorLegend({
               ? initialBalanceStatus || "Waiting for opening-session candles."
               : key === "vwap"
                 ? "VWAP uses loaded bars, reset at 5 p.m. Chicago time."
-                : detail;
+                : INDICATOR_INPUTS[key].length
+                  ? INDICATOR_INPUTS[key]
+                      .map((input) => `${input.label}: ${inputs[input.key] ?? input.defaultValue}`)
+                      .join(" · ")
+                  : detail;
           return (
             <div
               key={key}
@@ -102,13 +72,7 @@ export function IndicatorLegend({
                 <TooltipPopup>{description}</TooltipPopup>
               </Tooltip>
               <div className="relative flex min-w-[6.25rem] items-center">
-                <span
-                  className={cn(
-                    "tabular-nums group-hover/indicator:invisible group-focus-within/indicator:invisible",
-                    hidden && "invisible",
-                  )}
-                  style={{ color }}
-                >
+                <span className={cn("tabular-nums", hidden && "invisible")} style={{ color }}>
                   {readings[key]?.toLocaleString(
                     "en-US",
                     key === "volume" || key === "obv"
@@ -116,13 +80,7 @@ export function IndicatorLegend({
                       : { minimumFractionDigits: 2, maximumFractionDigits: 2 },
                   ) ?? "—"}
                 </span>
-                <div className="absolute left-0 z-10 inline-flex overflow-hidden rounded border border-white/15 bg-[#14171d] opacity-0 pointer-events-none group-hover/indicator:pointer-events-auto group-hover/indicator:opacity-100 group-focus-within/indicator:pointer-events-auto group-focus-within/indicator:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100">
-                  <Action
-                    label={`${hidden ? "Show" : "Hide"} ${label}`}
-                    onClick={() => settings.toggleIndicatorVisibility(key)}
-                  >
-                    <Eye hidden={hidden} />
-                  </Action>
+                <div className="absolute -right-1 z-10 inline-flex overflow-hidden rounded border border-white/15 bg-[#14171d] opacity-0 pointer-events-none group-hover/indicator:pointer-events-auto group-hover/indicator:opacity-100 group-focus-within/indicator:pointer-events-auto group-focus-within/indicator:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100">
                   <Popover>
                     <PopoverTrigger
                       className={controlClass}
@@ -134,6 +92,47 @@ export function IndicatorLegend({
                     <PopoverPopup align="start" className="w-64">
                       <PopoverTitle className="mb-4 text-sm">{label}</PopoverTitle>
                       <div className="space-y-3 text-xs">
+                        <label className="flex items-center justify-between">
+                          Visible
+                          <input
+                            type="checkbox"
+                            aria-label={`Show ${label}`}
+                            checked={!hidden}
+                            onChange={() => settings.toggleIndicatorVisibility(key)}
+                          />
+                        </label>
+                        {INDICATOR_INPUTS[key].map((input) => (
+                          <label
+                            key={input.key}
+                            className="flex items-center justify-between gap-2"
+                          >
+                            {input.label}
+                            <input
+                              type="number"
+                              aria-label={`${label} ${input.label}`}
+                              min={input.min}
+                              max={input.max}
+                              step={input.step}
+                              className={cn(inputClass, "w-20")}
+                              value={inputs[input.key] ?? input.defaultValue}
+                              onChange={(event) => {
+                                if (event.target.value)
+                                  settings.setIndicatorInputs(key, {
+                                    [input.key]: Number(event.target.value),
+                                  });
+                              }}
+                            />
+                          </label>
+                        ))}
+                        {INDICATOR_INPUTS[key].length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => settings.resetIndicatorInputs(key)}
+                            className="text-zinc-400 hover:text-white"
+                          >
+                            Reset inputs
+                          </button>
+                        ) : null}
                         {key === "volume" ? (
                           (["up", "down"] as const).map((direction) => (
                             <label key={direction} className="flex items-center justify-between">
@@ -155,7 +154,10 @@ export function IndicatorLegend({
                         ) : (
                           <>
                             <label className="flex items-center justify-between">
-                              {key === "macd" || key === "adx" || key === "stochastic"
+                              {key === "macd" ||
+                              key === "adx" ||
+                              key === "stochastic" ||
+                              key === "stochRsi"
                                 ? "Primary line"
                                 : "Line color"}
                               <input
@@ -241,48 +243,26 @@ export function IndicatorLegend({
                             </select>
                           </>
                         )}
+                        <div className="flex items-center justify-between border-t border-white/10 pt-3">
+                          <button
+                            type="button"
+                            onClick={() => settings.resetIndicatorAppearance(key)}
+                            className="rounded px-2 py-1.5 hover:bg-white/10"
+                          >
+                            Reset appearance
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => settings.toggleIndicator(key)}
+                            className="rounded px-2 py-1.5 text-red-400 hover:bg-white/10"
+                          >
+                            Remove
+                          </button>
+                        </div>
                         <p className="border-t border-white/10 pt-3 leading-relaxed text-zinc-500">
                           {description}
                         </p>
                       </div>
-                    </PopoverPopup>
-                  </Popover>
-                  <Action label={`Remove ${label}`} onClick={() => settings.toggleIndicator(key)}>
-                    <ChartIcon name="trash" size={15} />
-                  </Action>
-                  <Popover>
-                    <PopoverTrigger
-                      className={controlClass}
-                      aria-label={`More ${label} options`}
-                      title="More"
-                    >
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        aria-hidden="true"
-                      >
-                        <circle cx="5" cy="12" r="1.5" />
-                        <circle cx="12" cy="12" r="1.5" />
-                        <circle cx="19" cy="12" r="1.5" />
-                      </svg>
-                    </PopoverTrigger>
-                    <PopoverPopup align="start" className="w-44" viewportClassName="p-1">
-                      <button
-                        type="button"
-                        onClick={() => settings.resetIndicatorAppearance(key)}
-                        className="w-full rounded px-3 py-2 text-left text-xs hover:bg-white/10"
-                      >
-                        Reset appearance
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => settings.toggleIndicator(key)}
-                        className="w-full rounded px-3 py-2 text-left text-xs hover:bg-white/10"
-                      >
-                        Remove
-                      </button>
                     </PopoverPopup>
                   </Popover>
                 </div>

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import type {
+  CandlestickData,
   Coordinate,
   IChartApi,
   ISeriesApi,
@@ -10,7 +11,7 @@ import type {
 } from "lightweight-charts";
 import { createChartDrawingSession } from "./useChartDrawings";
 
-function fixture(symbol: string, initial: string | null = null) {
+function fixture(symbol: string, initial: string | null = null, candles: CandlestickData[] = []) {
   let listener: ((event: MouseEventParams<Time>) => void) | undefined;
   const priceLines: unknown[] = [];
   const lines: Array<{ options: Record<string, unknown>; data: unknown[] }> = [];
@@ -19,7 +20,8 @@ function fixture(symbol: string, initial: string | null = null) {
     priceToCoordinate: (price: number) => 5000 - price,
     attachPrimitive: vi.fn(),
     detachPrimitive: vi.fn(),
-    data: () => [],
+    data: () => candles,
+    dataByIndex: (index: number) => candles.find((candle) => candle.time === index * 100) ?? null,
     options: () => ({ priceScaleId: "right" }),
     getPane: () => ({ paneIndex: () => 0, getHeight: () => 500 }),
     createPriceLine: (options: unknown) => {
@@ -31,7 +33,14 @@ function fixture(symbol: string, initial: string | null = null) {
     },
   } as unknown as ISeriesApi<SeriesType>;
   const chart = {
-    timeScale: () => ({ width: () => 1000, timeToCoordinate: (time: number) => time }),
+    timeScale: () => ({
+      width: () => 1000,
+      timeToCoordinate: (time: number) => time,
+      coordinateToTime: (x: number) => x,
+      coordinateToLogical: (x: number) => x / 100,
+    }),
+    subscribeCrosshairMove: vi.fn(),
+    unsubscribeCrosshairMove: vi.fn(),
     subscribeClick: (callback: typeof listener) => {
       listener = callback;
     },
@@ -92,7 +101,7 @@ describe("native chart drawing lifecycle", () => {
     second.dispose();
   });
 
-  it("sorts backward trend clicks, ignores same-candle clicks, and excludes the line from autoscaling", () => {
+  it("retains backwards trend anchors, ignores same-candle clicks, and avoids inserting artificial series data", () => {
     const f = fixture("draw-test-trend"),
       session = f.open();
     session.setTool("trend");
@@ -103,14 +112,11 @@ describe("native chart drawing lifecycle", () => {
     f.click(200, 130);
     expect(f.lines).toHaveLength(0);
     f.click(100, 150);
-    expect(f.lines[0]?.data).toEqual([
-      { time: 100, value: 4850 },
-      { time: 200, value: 4900 },
+    expect(JSON.parse(f.saved()!)[0].anchors).toEqual([
+      { time: 200, price: 4900 },
+      { time: 100, price: 4850 },
     ]);
-    const trend = f.lines[0];
-    if (!trend) throw new Error("Expected a rendered trend");
-    expect((trend.options.autoscaleInfoProvider as () => null)()).toBeNull();
-    expect(f.lines[0]?.options.priceScaleId).toBe("right");
+    expect(f.lines).toHaveLength(0);
     session.dispose();
   });
 
@@ -132,11 +138,10 @@ describe("native chart drawing lifecycle", () => {
     session.dispose();
   });
 
-  it("ignores other panes and missing trend times; cancelling never persists half a drawing", () => {
+  it("ignores other panes; cancelling never persists half a drawing", () => {
     const f = fixture("draw-test-cancel"),
       session = f.open();
     session.setTool("trend");
-    f.click(undefined);
     f.click(100, 100, 1);
     expect(f.change).toHaveBeenLastCalledWith(
       expect.objectContaining({ tool: "trend", count: 0, pending: false }),
@@ -254,6 +259,254 @@ describe("native chart drawing lifecycle", () => {
     f.click(100, 100);
     session.updateSelected({ text: "Buy only above range" });
     expect(JSON.parse(f.saved()!)[0].text).toBe("Buy only above range");
+    session.dispose();
+  });
+
+  it("moves a complete drawing without changing its shape, commits once, and restores undo/redo", () => {
+    const f = fixture("drawing-drag"),
+      session = f.open();
+    session.setTool("rectangle");
+    f.click(100, 100);
+    f.click(200, 200);
+    const before = f.saved();
+    expect(session.beginDrag({ x: 150, y: 100 })).toBe(true);
+    session.dragTo({ x: 175, y: 125 });
+    session.dragTo({ x: 200, y: 150 });
+    expect(f.saved()).toBe(before);
+    session.endDrag();
+    const after = f.saved();
+    expect(JSON.parse(after!)[0].anchors).toEqual([
+      { time: 150, price: 4850 },
+      { time: 250, price: 4750 },
+    ]);
+    session.undo();
+    expect(f.saved()).toBe(before);
+    session.redo();
+    expect(f.saved()).toBe(after);
+    session.dispose();
+    const restored = f.open();
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ count: 1 }));
+    restored.dispose();
+  });
+
+  it("resizes only the chosen handle, rejects collapsed anchors, and cancels without persistence", () => {
+    const f = fixture("drawing-resize"),
+      session = f.open();
+    session.setTool("trend");
+    f.click(100, 100);
+    f.click(200, 200);
+    const before = f.saved();
+    expect(session.beginDrag({ x: 200, y: 200 })).toBe(true);
+    session.dragTo({ x: 100, y: 250 });
+    session.endDrag();
+    expect(f.saved()).toBe(before);
+    session.beginDrag({ x: 200, y: 200 });
+    session.dragTo({ x: 300, y: 250 });
+    session.cancel();
+    expect(f.saved()).toBe(before);
+    session.beginDrag({ x: 200, y: 200 });
+    session.dragTo({ x: 300, y: 250 });
+    session.endDrag();
+    expect(JSON.parse(f.saved()!)[0].anchors).toEqual([
+      { time: 100, price: 4900 },
+      { time: 300, price: 4750 },
+    ]);
+    session.dispose();
+  });
+
+  it("persists locks and line styles, makes hidden drawings inert, and invalidates redo on new edits", () => {
+    const f = fixture("drawing-lock"),
+      session = f.open();
+    session.setTool("horizontal");
+    f.click(100, 100);
+    session.updateSelected({ locked: true, lineStyle: "dotted" });
+    expect(session.beginDrag({ x: 300, y: 100 })).toBe(false);
+    session.dispose();
+    const restored = f.open();
+    f.click(100, 100);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        selected: expect.objectContaining({ locked: true, lineStyle: "dotted" }),
+      }),
+    );
+    restored.updateSelected({ locked: false });
+    restored.toggleHidden();
+    expect(f.priceLines).toHaveLength(0);
+    expect(restored.beginDrag({ x: 300, y: 100 })).toBe(false);
+    restored.toggleHidden();
+    expect(f.priceLines).toHaveLength(1);
+    expect(restored.beginDrag({ x: 300, y: 100 })).toBe(true);
+    restored.dragTo({ x: 400, y: 150 });
+    restored.endDrag();
+    expect(f.priceLines).toMatchObject([{ price: 4850 }]);
+    restored.undo();
+    expect(f.priceLines).toMatchObject([{ price: 4900 }]);
+    restored.setTool("text");
+    f.click(200, 200);
+    restored.redo();
+    expect(JSON.parse(f.saved()!).map((drawing: { kind: string }) => drawing.kind)).toEqual([
+      "horizontal",
+      "text",
+    ]);
+    restored.dispose();
+  });
+
+  it("snaps placement to nearby OHLC only while magnet is enabled and leaves gaps free", () => {
+    const f = fixture("drawing-magnet-placement", null, [
+      { time: 100 as UTCTimestamp, open: 4890, high: 4940, low: 4840, close: 4870 },
+    ]);
+    const session = f.open();
+    session.setTool("horizontal");
+    f.click(100, 115, 0, 100);
+    expect(f.priceLines).toMatchObject([{ price: 4885 }]);
+    session.toggleMagnet();
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ magnet: true }));
+    for (const [y, price] of [
+      [115, 4890],
+      [55, 4940],
+      [165, 4840],
+      [135, 4870],
+    ]) {
+      session.setTool("horizontal");
+      f.click(100, y, 0, 104);
+      expect(JSON.parse(f.saved()!).at(-1).anchors).toEqual([{ time: 100, price }]);
+    }
+    session.setTool("text");
+    f.click(100, 10, 0, 100);
+    expect(JSON.parse(f.saved()!).at(-1).anchors).toEqual([{ time: 100, price: 4990 }]);
+    session.setTool("text");
+    f.click(300, 115, 0, 300);
+    expect(JSON.parse(f.saved()!).at(-1).anchors).toEqual([{ time: 300, price: 4885 }]);
+    session.toggleMagnet();
+    session.setTool("horizontal");
+    f.click(100, 115, 0, 100);
+    expect(JSON.parse(f.saved()!).at(-1).anchors).toEqual([{ time: 100, price: 4885 }]);
+    session.dispose();
+  });
+
+  it("snaps dragged handles and translates whole drawings without distorting their shape", () => {
+    const f = fixture("drawing-magnet-drag", null, [
+      { time: 200 as UTCTimestamp, open: 4860, high: 4900, low: 4800, close: 4840 },
+      { time: 300 as UTCTimestamp, open: 4760, high: 4790, low: 4740, close: 4750 },
+    ]);
+    const session = f.open();
+    session.setTool("rectangle");
+    f.click(100, 100);
+    f.click(200, 200);
+    session.toggleMagnet();
+    expect(session.beginDrag({ x: 150, y: 100 })).toBe(true);
+    session.dragTo({ x: 253, y: 137 });
+    session.endDrag();
+    expect(JSON.parse(f.saved()!)[0].anchors).toEqual([
+      { time: 200, price: 4860 },
+      { time: 300, price: 4760 },
+    ]);
+    session.undo();
+    expect(session.beginDrag({ x: 200, y: 200 })).toBe(true);
+    // First click selects the object; a second gesture addresses its resize handle.
+    session.endDrag();
+    expect(session.beginDrag({ x: 200, y: 200 })).toBe(true);
+    session.dragTo({ x: 304, y: 246 });
+    session.endDrag();
+    expect(JSON.parse(f.saved()!)[0].anchors).toEqual([
+      { time: 100, price: 4900 },
+      { time: 300, price: 4750 },
+    ]);
+    session.undo();
+    expect(JSON.parse(f.saved()!)[0].anchors).toEqual([
+      { time: 100, price: 4900 },
+      { time: 200, price: 4800 },
+    ]);
+    session.dispose();
+  });
+  it("manages object names, visibility and locks independently and restores them", () => {
+    const f = fixture("object-manager"),
+      session = f.open();
+    session.setTool("horizontal");
+    f.click(100, 100);
+    const firstId = JSON.parse(f.saved()!)[0].id;
+    session.setTool("rectangle");
+    f.click(200, 200);
+    f.click(300, 300);
+    const secondId = JSON.parse(f.saved()!)[1].id;
+    session.selectDrawing(firstId);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        objects: expect.arrayContaining([
+          expect.objectContaining({ id: firstId }),
+          expect.objectContaining({ id: secondId }),
+        ]),
+        selected: expect.objectContaining({ id: firstId }),
+      }),
+    );
+    session.updateDrawing(firstId, { name: "  Entry  ", hidden: true, locked: true });
+    expect(f.priceLines).toHaveLength(0);
+    expect(session.beginDrag({ x: 50, y: 100 })).toBe(false);
+    session.selectDrawing(secondId);
+    session.updateDrawing(secondId, { hidden: true });
+    expect(session.beginDrag({ x: 250, y: 200 })).toBe(false);
+    session.undo();
+    expect(session.beginDrag({ x: 250, y: 200 })).toBe(true);
+    session.endDrag(false);
+    session.redo();
+    expect(session.beginDrag({ x: 250, y: 200 })).toBe(false);
+    session.dispose();
+    const restored = f.open();
+    expect(f.priceLines).toHaveLength(0);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        objects: expect.arrayContaining([
+          expect.objectContaining({ id: firstId, name: "Entry", hidden: true, locked: true }),
+          expect.objectContaining({ id: secondId, hidden: true }),
+        ]),
+      }),
+    );
+    restored.updateDrawing(firstId, { hidden: false });
+    expect(f.priceLines).toHaveLength(1);
+    expect(restored.beginDrag({ x: 50, y: 100 })).toBe(false);
+    restored.updateDrawing(firstId, { locked: false });
+    expect(restored.beginDrag({ x: 50, y: 100 })).toBe(true);
+    restored.endDrag(false);
+    restored.dispose();
+  });
+
+  it("duplicates independent objects and undoes deletion without losing metadata", () => {
+    const f = fixture("object-copy"),
+      session = f.open();
+    session.setTool("text");
+    f.click(100, 100);
+    const originalId = JSON.parse(f.saved()!)[0].id;
+    session.updateDrawing(originalId, { name: "Plan", text: "Wait for breakout", locked: true });
+    session.duplicateDrawing(originalId);
+    const objects = JSON.parse(f.saved()!);
+    const copyId = objects[1].id;
+    expect(copyId).not.toBe(originalId);
+    expect(objects[1]).toMatchObject({
+      name: "Plan copy",
+      text: "Wait for breakout",
+      locked: false,
+      anchors: objects[0].anchors,
+    });
+    session.updateDrawing(copyId, { name: "Alternate", text: "Wait for retest" });
+    expect(JSON.parse(f.saved()!)[0]).toMatchObject({ name: "Plan", text: "Wait for breakout" });
+    session.deleteDrawing(originalId);
+    expect(JSON.parse(f.saved()!).map((item: { id: string }) => item.id)).toEqual([copyId]);
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toHaveLength(2);
+    session.redo();
+    expect(JSON.parse(f.saved()!)).toHaveLength(1);
+    session.selectDrawing(copyId);
+    session.redrawSelected();
+    f.click(300, 200);
+    expect(JSON.parse(f.saved()!)[0]).toMatchObject({
+      name: "Alternate",
+      text: "Wait for retest",
+      anchors: [{ time: 300, price: 4800 }],
+    });
+    const saved = f.saved();
+    session.deleteDrawing("missing");
+    session.updateDrawing("missing", { name: "Invalid" });
+    expect(f.saved()).toBe(saved);
     session.dispose();
   });
 });

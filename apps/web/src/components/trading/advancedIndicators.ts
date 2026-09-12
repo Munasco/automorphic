@@ -1,4 +1,4 @@
-import { calculateEMA, type Candle, type IndicatorPoint } from "./chartIndicators";
+import { calculateEMA, calculateRSI, type Candle, type IndicatorPoint } from "./chartIndicators";
 
 export interface IndicatorBands {
   upper: IndicatorPoint[];
@@ -322,6 +322,109 @@ export function calculateDonchian(bars: readonly Candle[], period = 20): Indicat
       add(result.upper, point.time, point.high);
       add(result.lower, point.time, point.low);
       add(result.middle, point.time, point.high / 2 + point.low / 2);
+    }
+  }
+  return result;
+}
+
+/** Stochastic of Wilder RSI, displayed on the 0–100 scale with separate K/D SMAs.
+ * https://www.tradingview.com/support/solutions/43000502333-stochastic-rsi-stoch-rsi/
+ */
+export function calculateStochasticRSI(
+  bars: readonly Candle[],
+  rsiPeriod = 14,
+  stochasticPeriod = 14,
+  smoothK = 3,
+  periodD = 3,
+) {
+  const result: { k: IndicatorPoint[]; d: IndicatorPoint[] } = { k: [], d: [] };
+  if (![rsiPeriod, stochasticPeriod, smoothK, periodD].every(validPeriod)) return result;
+  for (const segment of segments(bars, validClose)) {
+    const rsi = calculateRSI(segment, rsiPeriod).map(({ time, value }) => ({
+      time,
+      open: value,
+      high: value,
+      low: value,
+      close: value,
+      volume: 0,
+    }));
+    const stochastic = calculateStochastic(rsi, stochasticPeriod, smoothK, periodD);
+    result.k.push(...stochastic.k);
+    result.d.push(...stochastic.d);
+  }
+  return result;
+}
+
+/** EMA basis ± multiplier × Wilder ATR, aligned after both complete their warmup.
+ * https://www.tradingview.com/support/solutions/43000502266-keltner-channels-kc/
+ */
+export function calculateKeltnerChannels(
+  bars: readonly Candle[],
+  period = 20,
+  atrPeriod = 10,
+  multiplier = 2,
+): IndicatorBands {
+  const result = emptyBands();
+  if (![period, atrPeriod].every(validPeriod) || !Number.isFinite(multiplier) || multiplier < 0)
+    return result;
+  for (const segment of segments(bars, validRange)) {
+    const atr = new Map(calculateATR(segment, atrPeriod).map((point) => [point.time, point.value]));
+    for (const point of calculateEMA(segment, period)) {
+      const range = atr.get(point.time);
+      if (range === undefined) continue;
+      const upper = point.value + multiplier * range;
+      const lower = point.value - multiplier * range;
+      if (![upper, lower].every(Number.isFinite)) continue;
+      result.middle.push(point);
+      add(result.upper, point.time, upper);
+      add(result.lower, point.time, lower);
+    }
+  }
+  return result;
+}
+
+/** Rolling money-flow volume / total volume, in [-1, 1]. Flat bars have no flow;
+ * an all-zero-volume window is undefined rather than a synthetic neutral reading.
+ * https://www.tradingview.com/support/solutions/43000501974-chaikin-money-flow-cmf/
+ */
+export function calculateCMF(bars: readonly Candle[], period = 20): IndicatorPoint[] {
+  if (!validPeriod(period)) return [];
+  const result: IndicatorPoint[] = [];
+  for (const segment of segments(
+    bars,
+    (bar) => validRange(bar) && Number.isFinite(bar.volume) && bar.volume >= 0,
+  )) {
+    const flows = segment.map((bar) =>
+      bar.high === bar.low
+        ? 0
+        : ((bar.close - bar.low - (bar.high - bar.close)) / (bar.high - bar.low)) * bar.volume,
+    );
+    let flow = 0;
+    let volume = 0;
+    for (let i = 0; i < segment.length; i += 1) {
+      flow += flows[i]!;
+      volume += segment[i]!.volume;
+      if (i >= period) {
+        flow -= flows[i - period]!;
+        volume -= segment[i - period]!.volume;
+      }
+      if (i >= period - 1 && volume > 0) add(result, segment[i]!.time, flow / volume);
+    }
+  }
+  return result;
+}
+
+/** Percent change from the close exactly N bars ago; zero denominators are omitted.
+ * https://www.tradingview.com/support/solutions/43000502343-rate-of-change-roc/
+ */
+export function calculateROC(bars: readonly Candle[], period = 9): IndicatorPoint[] {
+  if (!validPeriod(period)) return [];
+  const result: IndicatorPoint[] = [];
+  for (const segment of segments(bars, validClose)) {
+    for (let i = period; i < segment.length; i += 1) {
+      const previous = segment[i - period]!.close;
+      if (previous !== 0)
+        add(result, segment[i]!.time, 100 * ((segment[i]!.close - previous) / previous));
     }
   }
   return result;

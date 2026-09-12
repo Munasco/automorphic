@@ -9,11 +9,13 @@ function fixture() {
     timeScale: () => ({
       width: () => 1000,
       timeToCoordinate: (time: number) => (time === 150 ? null : time),
+      coordinateToTime: (x: number) => (x > 200 || x < 100 ? null : x),
     }),
   } as unknown as IChartApi;
   const series = {
     getPane: () => ({ getHeight: () => 500 }),
     priceToCoordinate: (price: number) => 500 - price,
+    coordinateToPrice: (y: number) => 500 - y,
     data: () => [{ time: 100 }, { time: 200 }],
   } as unknown as ISeriesApi<SeriesType>;
   return { chart, series };
@@ -26,6 +28,12 @@ describe("native drawing primitive", () => {
       x: 150,
       y: 200,
     });
+  });
+  it("allows drawing and dragging into empty future and past chart space", () => {
+    const { chart, series } = fixture();
+    const projection = drawingProjection(chart, series);
+    expect(projection.unproject({ x: 300, y: 200 })).toEqual({ time: 300, price: 300 });
+    expect(projection.unproject({ x: 50, y: 200 })).toEqual({ time: 50, price: 300 });
   });
   it("paints rectangle, fib and text geometry and stops requesting updates when detached", () => {
     const { chart, series } = fixture();
@@ -82,6 +90,7 @@ describe("native drawing primitive", () => {
       fillText: vi.fn(),
       arc: vi.fn(),
       fill: vi.fn(),
+      setLineDash: vi.fn(),
     };
     const renderer = plugin.primitive.paneViews!()[0]!.renderer()!;
     renderer.draw({

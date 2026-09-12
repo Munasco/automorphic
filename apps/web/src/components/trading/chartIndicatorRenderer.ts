@@ -20,6 +20,10 @@ import {
   calculateATR,
   calculateBollingerBands,
   calculateCCI,
+  calculateCMF,
+  calculateKeltnerChannels,
+  calculateROC,
+  calculateStochasticRSI,
   calculateDonchian,
   calculateMACD,
   calculateOBV,
@@ -30,6 +34,8 @@ import { calculateInitialBalance } from "./initialBalance";
 import type { ChartAppearance } from "./chartPreferences";
 import {
   INDICATOR_CATALOG,
+  getIndicatorInputs,
+  type IndicatorInputSettings,
   type ChartIndicators,
   type IndicatorKey,
   type InitialBalanceSettings,
@@ -41,6 +47,10 @@ export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
   vwap: "#c084fc",
   bollinger: "#60a5fa",
   donchian: "#2dd4bf",
+  keltner: "#f472b6",
+  stochRsi: "#a78bfa",
+  cmf: "#34d399",
+  roc: "#fbbf24",
   rsi: "#c084fc",
   macd: "#60a5fa",
   atr: "#fbbf24",
@@ -85,7 +95,9 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
     ibSettings: InitialBalanceSettings,
     interval: number,
     appearance: ChartAppearance = {},
+    indicatorInputs: IndicatorInputSettings = {},
   ) => {
+    const inputs = (key: IndicatorKey) => getIndicatorInputs(key, indicatorInputs);
     const oscillatorKeys = OSCILLATORS.filter((key) => enabled[key]);
     const nextSignature = oscillatorKeys.join(",");
     const changedPanes = nextSignature !== paneSignature;
@@ -186,30 +198,50 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
       if (plot.primary && latest && latest.time === latestTime) readings[indicator] = latest.value;
     };
     const bands = (
-      indicator: "bollinger" | "donchian",
+      indicator: "bollinger" | "donchian" | "keltner",
       result: ReturnType<typeof calculateBollingerBands>,
     ) => {
       line(`${indicator}.upper`, indicator, result.upper, { primary: false });
       line(`${indicator}.middle`, indicator, result.middle, {
-        color: indicator === "bollinger" ? "#93c5fd" : "#99f6e4",
+        color:
+          indicator === "bollinger" ? "#93c5fd" : indicator === "keltner" ? "#fbcfe8" : "#99f6e4",
       });
       line(`${indicator}.lower`, indicator, result.lower, { primary: false });
     };
-    if (enabled.sma) line("sma", "sma", calculateSMA(bars, 20));
-    if (enabled.ema) line("ema", "ema", calculateEMA(bars, 20));
+    if (enabled.sma) line("sma", "sma", calculateSMA(bars, inputs("sma").period ?? 20));
+    if (enabled.ema) line("ema", "ema", calculateEMA(bars, inputs("ema").period ?? 20));
     if (enabled.vwap) line("vwap", "vwap", calculateVWAP(bars));
-    if (enabled.bollinger) bands("bollinger", calculateBollingerBands(bars));
-    if (enabled.donchian) bands("donchian", calculateDonchian(bars));
+    if (enabled.bollinger)
+      bands(
+        "bollinger",
+        calculateBollingerBands(bars, inputs("bollinger").period, inputs("bollinger").deviations),
+      );
+    if (enabled.donchian) bands("donchian", calculateDonchian(bars, inputs("donchian").period));
+    if (enabled.keltner)
+      bands(
+        "keltner",
+        calculateKeltnerChannels(
+          bars,
+          inputs("keltner").period,
+          inputs("keltner").atrPeriod,
+          inputs("keltner").multiplier,
+        ),
+      );
     // Create panes in catalog order, including when several are enabled together.
     for (const key of oscillatorKeys) {
       if (key === "rsi")
-        line("rsi", "rsi", calculateRSI(bars, 14), {
+        line("rsi", "rsi", calculateRSI(bars, inputs("rsi").period ?? 14), {
           title: "RSI",
           bounds: [0, 100],
           levels: [30, 70],
         });
       else if (key === "macd") {
-        const result = calculateMACD(bars);
+        const result = calculateMACD(
+          bars,
+          inputs("macd").fast,
+          inputs("macd").slow,
+          inputs("macd").signalPeriod,
+        );
         line("macd.histogram", "macd", result.histogram, {
           title: "Histogram",
           histogram: true,
@@ -221,22 +253,37 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
           color: "#fb923c",
           primary: false,
         });
-      } else if (key === "atr") line("atr", "atr", calculateATR(bars), { title: "ATR" });
-      else if (key === "stochastic") {
-        const result = calculateStochastic(bars);
-        line("stochastic.k", "stochastic", result.k, {
+      } else if (key === "atr")
+        line("atr", "atr", calculateATR(bars, inputs("atr").period), { title: "ATR" });
+      else if (key === "stochastic" || key === "stochRsi") {
+        const result =
+          key === "stochRsi"
+            ? calculateStochasticRSI(
+                bars,
+                inputs(key).rsiPeriod,
+                inputs(key).stochasticPeriod,
+                inputs(key).smoothK,
+                inputs(key).periodD,
+              )
+            : calculateStochastic(
+                bars,
+                inputs(key).period,
+                inputs(key).smoothK,
+                inputs(key).periodD,
+              );
+        line(`${key}.k`, key, result.k, {
           title: "%K",
           bounds: [0, 100],
           levels: [20, 80],
         });
-        line("stochastic.d", "stochastic", result.d, {
+        line(`${key}.d`, key, result.d, {
           title: "%D",
           bounds: [0, 100],
           color: "#fb923c",
           primary: false,
         });
       } else if (key === "adx") {
-        const result = calculateADX(bars);
+        const result = calculateADX(bars, inputs("adx").period, inputs("adx").adxPeriod);
         line("adx.adx", "adx", result.adx, { title: "ADX", bounds: [0, 100], levels: [25] });
         line("adx.plus", "adx", result.plusDI, {
           title: "+DI",
@@ -250,11 +297,18 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
           color: "#ef5350",
           primary: false,
         });
-      } else if (key === "obv") line("obv", "obv", calculateOBV(bars), { title: "OBV" });
+      } else if (key === "cmf")
+        line("cmf", "cmf", calculateCMF(bars, inputs("cmf").period), { title: "CMF", levels: [0] });
+      else if (key === "roc")
+        line("roc", "roc", calculateROC(bars, inputs("roc").period), { title: "ROC", levels: [0] });
+      else if (key === "obv") line("obv", "obv", calculateOBV(bars), { title: "OBV" });
       else if (key === "cci")
-        line("cci", "cci", calculateCCI(bars), { title: "CCI", levels: [-100, 0, 100] });
+        line("cci", "cci", calculateCCI(bars, inputs("cci").period), {
+          title: "CCI",
+          levels: [-100, 0, 100],
+        });
       else if (key === "williams")
-        line("williams", "williams", calculateWilliamsR(bars), {
+        line("williams", "williams", calculateWilliamsR(bars, inputs("williams").period), {
           title: "%R",
           bounds: [-100, 0],
           levels: [-80, -20],

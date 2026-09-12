@@ -5,6 +5,10 @@ import {
   calculateATR,
   calculateBollingerBands,
   calculateCCI,
+  calculateCMF,
+  calculateKeltnerChannels,
+  calculateROC,
+  calculateStochasticRSI,
   calculateDonchian,
   calculateMACD,
   calculateOBV,
@@ -35,12 +39,76 @@ const calculators = [
   (input: readonly Candle[]) => calculateStochastic(input, 2, 2, 2),
   (input: readonly Candle[]) => calculateADX(input, 2, 2),
   calculateOBV,
+  (input: readonly Candle[]) => calculateCMF(input, 3),
+  (input: readonly Candle[]) => calculateKeltnerChannels(input, 3, 2),
+  (input: readonly Candle[]) => calculateROC(input, 2),
+  (input: readonly Candle[]) => calculateStochasticRSI(input, 2, 3, 2, 2),
   (input: readonly Candle[]) => calculateCCI(input, 3),
   (input: readonly Candle[]) => calculateWilliamsR(input, 3),
   (input: readonly Candle[]) => calculateDonchian(input, 3),
 ];
 
 describe("common chart indicators", () => {
+  it("calculates Stochastic RSI from RSI extrema before smoothing K and D", () => {
+    const input = bars([1, 2, 1, 2, 1, 2, 1, 2]);
+    const result = calculateStochasticRSI(input, 2, 3, 2, 2);
+    near(result.k, [125 / 3, 125 / 3, 525 / 11]);
+    near(result.d, [125 / 3, 1475 / 33]);
+    expect(result.k[0]?.time).toBe(input[5]?.time);
+    expect(result.d[0]?.time).toBe(input[6]?.time);
+    expect(calculateStochasticRSI(bars([10, 10, 10, 10, 10, 10]), 2, 2, 1, 1)).toEqual({
+      k: [],
+      d: [],
+    });
+    const longer = bars(Array.from({ length: 60 }, (_, i) => 100 + Math.sin(i)));
+    expect(calculateStochasticRSI(longer).k[0]?.time).toBe(longer[29]?.time);
+    expect(calculateStochasticRSI(longer).d[0]?.time).toBe(longer[31]?.time);
+  });
+
+  it("aligns Keltner EMA and ATR warmups and uses the configured multiplier", () => {
+    const input = bars([10, 14, 13, 18]);
+    const result = calculateKeltnerChannels(input, 3, 2, 2);
+    near(result.middle, [37 / 3, 91 / 6]);
+    near(result.upper, [107 / 6, 287 / 12]);
+    near(result.lower, [41 / 6, 77 / 12]);
+    expect(result.middle[0]?.time).toBe(input[2]?.time);
+    expect(calculateKeltnerChannels(input, 2, 4).middle[0]?.time).toBe(input[3]?.time);
+    const zeroWidth = calculateKeltnerChannels(input, 3, 2, 0);
+    expect(zeroWidth.upper).toEqual(zeroWidth.lower);
+    expect(zeroWidth.upper).toEqual(zeroWidth.middle);
+  });
+
+  it("weights CMF by volume rather than averaging range positions", () => {
+    const input = bars([12, 8, 10, 11]).map((bar, index) => ({
+      ...bar,
+      high: 12,
+      low: 8,
+      volume: (index + 1) * 10,
+    }));
+    near(calculateCMF(input, 2), [-1 / 3, -0.4, 2 / 7]);
+    expect(calculateCMF(input, 2)[0]?.time).toBe(input[1]?.time);
+    const flat = input.map((bar) => ({ ...bar, high: bar.close, low: bar.close }));
+    near(calculateCMF(flat, 2), [0, 0, 0]);
+    expect(
+      calculateCMF(
+        input.map((bar) => ({ ...bar, volume: 0 })),
+        2,
+      ),
+    ).toEqual([]);
+    const invalidVolume = input.map((bar, index) => ({
+      ...bar,
+      volume: index === 1 ? -1 : bar.volume,
+    }));
+    expect(calculateCMF(invalidVolume, 2)).toEqual(calculateCMF(invalidVolume.slice(2), 2));
+  });
+
+  it("uses exactly N prior closes for ROC, skips zero denominators, and supports losses", () => {
+    const input = bars([10, 20, 15, 30]);
+    near(calculateROC(input, 2), [50, 50]);
+    expect(calculateROC(input, 2)[0]?.time).toBe(input[2]?.time);
+    near(calculateROC(bars([10, 5, 0, 10, 5]), 1), [-50, -100, -50]);
+  });
+
   it("uses population deviation for Bollinger bands", () => {
     const input = bars([2, 4, 4, 4, 5, 5, 7, 9]);
     const bands = calculateBollingerBands(input, 8);
@@ -156,11 +224,21 @@ describe("common chart indicators", () => {
       expect(calculateATR(input, period)).toEqual([]);
       expect(flatten(calculateStochastic(input, period))).toEqual([]);
       expect(flatten(calculateADX(input, period))).toEqual([]);
+      expect(calculateCMF(input, period)).toEqual([]);
+      expect(calculateROC(input, period)).toEqual([]);
+      expect(flatten(calculateKeltnerChannels(input, period))).toEqual([]);
+      expect(flatten(calculateKeltnerChannels(input, 2, period))).toEqual([]);
+      expect(flatten(calculateStochasticRSI(input, period))).toEqual([]);
+      expect(flatten(calculateStochasticRSI(input, 2, period))).toEqual([]);
+      expect(flatten(calculateStochasticRSI(input, 2, 2, period))).toEqual([]);
+      expect(flatten(calculateStochasticRSI(input, 2, 2, 2, period))).toEqual([]);
       expect(calculateCCI(input, period)).toEqual([]);
       expect(calculateWilliamsR(input, period)).toEqual([]);
       expect(flatten(calculateDonchian(input, period))).toEqual([]);
     }
     expect(flatten(calculateMACD(input, 3, 2))).toEqual([]);
+    for (const multiplier of [-1, NaN, Infinity])
+      expect(flatten(calculateKeltnerChannels(input, 2, 2, multiplier))).toEqual([]);
     expect(flatten(calculateBollingerBands(input, 2, -1))).toEqual([]);
     expect(flatten(calculateBollingerBands(input, 2, Infinity))).toEqual([]);
   });

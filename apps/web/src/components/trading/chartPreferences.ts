@@ -7,6 +7,10 @@ import {
   DEFAULT_INITIAL_BALANCE,
   INDICATOR_CATALOG,
   isValidInitialBalanceSettings,
+  normalizeIndicatorInputs,
+  updateIndicatorInputs,
+  type IndicatorInputSettings,
+  type IndicatorInputValues,
   type ChartStyle,
   type ChartIndicators,
   type IndicatorKey,
@@ -32,6 +36,7 @@ type SavedChartPreferences = {
   indicators: ChartIndicators;
   hiddenIndicators: ChartIndicators;
   appearance: ChartAppearance;
+  indicatorInputs: IndicatorInputSettings;
   volumeColors: typeof DEFAULT_VOLUME_COLORS;
   initialBalance: InitialBalanceSettings;
   showGrid: boolean;
@@ -65,6 +70,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     indicators,
     hiddenIndicators,
     appearance,
+    indicatorInputs: normalizeIndicatorInputs(saved.indicatorInputs),
     volumeColors: {
       up: validColor(saved.volumeColors?.up) ? saved.volumeColors.up : DEFAULT_VOLUME_COLORS.up,
       down: validColor(saved.volumeColors?.down)
@@ -83,6 +89,7 @@ export const useChartPreferences = create<{
   indicators: ChartIndicators;
   hiddenIndicators: ChartIndicators;
   appearance: ChartAppearance;
+  indicatorInputs: IndicatorInputSettings;
   volumeColors: typeof DEFAULT_VOLUME_COLORS;
   initialBalance: InitialBalanceSettings;
   setInitialBalance: (settings: InitialBalanceSettings) => void;
@@ -93,6 +100,8 @@ export const useChartPreferences = create<{
   toggleIndicatorVisibility: (key: IndicatorKey) => void;
   setIndicatorAppearance: (key: IndicatorKey, patch: IndicatorAppearance) => void;
   resetIndicatorAppearance: (key: IndicatorKey) => void;
+  setIndicatorInputs: (key: IndicatorKey, patch: IndicatorInputValues) => void;
+  resetIndicatorInputs: (key: IndicatorKey) => void;
   setVolumeColors: (colors: typeof DEFAULT_VOLUME_COLORS) => void;
   toggleGrid: () => void;
   toggleLogScale: () => void;
@@ -103,6 +112,7 @@ export const useChartPreferences = create<{
       indicators: { ...DEFAULT_INDICATORS },
       hiddenIndicators: hiddenDefaults(),
       appearance: {},
+      indicatorInputs: {},
       volumeColors: { ...DEFAULT_VOLUME_COLORS },
       initialBalance: { ...DEFAULT_INITIAL_BALANCE },
       setInitialBalance: (settings) => {
@@ -137,6 +147,17 @@ export const useChartPreferences = create<{
             appearance,
             ...(key === "volume" ? { volumeColors: { ...DEFAULT_VOLUME_COLORS } } : {}),
           };
+        }),
+      setIndicatorInputs: (key, patch) =>
+        set((state) => {
+          const indicatorInputs = updateIndicatorInputs(key, state.indicatorInputs, patch);
+          return indicatorInputs ? { indicatorInputs } : state;
+        }),
+      resetIndicatorInputs: (key) =>
+        set((state) => {
+          const indicatorInputs = { ...state.indicatorInputs };
+          delete indicatorInputs[key];
+          return { indicatorInputs };
         }),
       setVolumeColors: (colors) => {
         if (validColor(colors.up) && validColor(colors.down)) set({ volumeColors: { ...colors } });

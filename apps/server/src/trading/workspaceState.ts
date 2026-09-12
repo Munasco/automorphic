@@ -5,6 +5,7 @@ const SETTINGS_KEYS = new Set([
   "automorphic:trading-settings:v1",
   "automorphic:chart:v1",
   "automorphic:trading:v1",
+  "automorphic:chart-alerts:v1",
 ]);
 export function parseWorkspaceValue(input: unknown): { key: string; value: string } | null {
   if (!input || typeof input !== "object") return null;
