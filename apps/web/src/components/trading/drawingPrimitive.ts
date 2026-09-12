@@ -26,7 +26,7 @@ import {
   type DrawingRegressionFit,
   defaultRegressionDrawingSettings,
 } from "./drawingGeometry";
-import { calculateDrawingStats, formatDrawingStats, formatInfoLineStats } from "./drawingStats";
+import { calculateDrawingStats, formatInfoLineStats } from "./drawingStats";
 
 import { calculateChartRegression } from "./chartRegression";
 
@@ -475,9 +475,6 @@ export function createDrawingPrimitive(
                       ? 1 / priceFormat.base
                       : priceFormat.minMove,
                 });
-                const rows = formatDrawingStats(stats, statKinds, (price) =>
-                  series.priceFormatter().format(price),
-                );
                 const left = a.x <= b.x ? a : b;
                 const right = a.x <= b.x ? b : a;
                 const position =
@@ -489,90 +486,77 @@ export function createDrawingPrimitive(
                       ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
                       : right;
                 ctx.font = `12px ${chart.options().layout.fontFamily}`;
-                if (drawing.kind === "info-line") {
-                  const groups = formatInfoLineStats(stats, statKinds, (price) =>
-                    series.priceFormatter().format(price),
+                const groups = formatInfoLineStats(stats, statKinds, (price) =>
+                  series.priceFormatter().format(price),
+                );
+                if (groups.length) {
+                  const panelWidth =
+                    Math.max(0, ...groups.map((row) => ctx.measureText(row.text).width)) + 48;
+                  const panelHeight = groups.length * 26 + 16;
+                  const panelX = Math.max(0, Math.min(width - panelWidth, point.x + 12));
+                  const panelY = Math.max(
+                    0,
+                    Math.min(height - panelHeight, point.y - panelHeight - 12),
                   );
-                  if (groups.length) {
-                    const panelWidth =
-                      Math.max(0, ...groups.map((row) => ctx.measureText(row.text).width)) + 48;
-                    const panelHeight = groups.length * 26 + 16;
-                    const panelX = Math.max(
-                      0,
-                      Math.min(
-                        width - panelWidth,
-                        position === "left" ? point.x - panelWidth - 12 : point.x + 12,
-                      ),
-                    );
-                    const panelY = Math.max(0, Math.min(height - panelHeight, point.y + 12));
-                    const layout = chart.options().layout;
-                    const background = layout.background;
-                    ctx.globalAlpha = 0.94;
-                    ctx.fillStyle =
-                      background?.type === "solid"
-                        ? background.color
-                        : background?.type === "gradient"
-                          ? background.topColor
-                          : "#202020";
-                    ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
-                    ctx.globalAlpha = 0.05;
-                    ctx.fillStyle = layout.textColor ?? "#dbdbdb";
-                    ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
-                    ctx.globalAlpha = 1;
-                    ctx.fillStyle = layout.textColor ?? "#dbdbdb";
-                    ctx.strokeStyle = layout.textColor ?? "#dbdbdb";
-                    ctx.lineWidth = 1;
-                    ctx.textAlign = "left";
-                    ctx.textBaseline = "middle";
-                    groups.forEach((row, index) => {
-                      const y = panelY + 21 + index * 26,
-                        x = panelX + 18;
-                      ctx.beginPath();
-                      if (row.kind === "price") {
-                        ctx.moveTo(x, y - 5);
-                        ctx.lineTo(x, y + 5);
-                        ctx.moveTo(x - 3, y - 2);
-                        ctx.lineTo(x, y - 5);
-                        ctx.lineTo(x + 3, y - 2);
-                        ctx.moveTo(x - 3, y + 2);
-                        ctx.lineTo(x, y + 5);
-                        ctx.lineTo(x + 3, y + 2);
-                        ctx.moveTo(x - 5, y - 7);
-                        ctx.lineTo(x + 5, y - 7);
-                        ctx.moveTo(x - 5, y + 7);
-                        ctx.lineTo(x + 5, y + 7);
-                      } else if (row.kind === "range") {
-                        ctx.moveTo(x - 5, y);
-                        ctx.lineTo(x + 5, y);
-                        ctx.moveTo(x - 2, y - 3);
-                        ctx.lineTo(x - 5, y);
-                        ctx.lineTo(x - 2, y + 3);
-                        ctx.moveTo(x + 2, y - 3);
-                        ctx.lineTo(x + 5, y);
-                        ctx.lineTo(x + 2, y + 3);
-                        ctx.moveTo(x - 7, y - 5);
-                        ctx.lineTo(x - 7, y + 5);
-                        ctx.moveTo(x + 7, y - 5);
-                        ctx.lineTo(x + 7, y + 5);
-                      } else {
-                        ctx.moveTo(x + 6, y + 5);
-                        ctx.lineTo(x - 5, y + 5);
-                        ctx.lineTo(x + 1, y - 6);
-                        ctx.moveTo(x, y + 5);
-                        ctx.arc(x - 5, y + 5, 5, 0, -Math.PI / 3, true);
-                      }
-                      ctx.stroke();
-                      ctx.fillText(row.text, panelX + 40, y);
-                    });
-                  }
-                } else {
-                  ctx.textAlign =
-                    position === "left" ? "right" : position === "center" ? "center" : "left";
-                  ctx.textBaseline = "bottom";
-                  const x = point.x + (position === "left" ? -8 : position === "right" ? 8 : 0);
-                  rows.forEach((row, index) =>
-                    ctx.fillText(row, x, point.y - 8 - (rows.length - index - 1) * 16),
-                  );
+                  const layout = chart.options().layout;
+                  const background = layout.background;
+                  ctx.globalAlpha = 0.94;
+                  ctx.fillStyle =
+                    background?.type === "solid"
+                      ? background.color
+                      : background?.type === "gradient"
+                        ? background.topColor
+                        : "#202020";
+                  ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+                  ctx.globalAlpha = 0.05;
+                  ctx.fillStyle = layout.textColor ?? "#dbdbdb";
+                  ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+                  ctx.globalAlpha = 1;
+                  ctx.fillStyle = layout.textColor ?? "#dbdbdb";
+                  ctx.strokeStyle = layout.textColor ?? "#dbdbdb";
+                  ctx.lineWidth = 1;
+                  ctx.textAlign = "left";
+                  ctx.textBaseline = "middle";
+                  groups.forEach((row, index) => {
+                    const y = panelY + 21 + index * 26,
+                      x = panelX + 18;
+                    ctx.beginPath();
+                    if (row.kind === "price") {
+                      ctx.moveTo(x, y - 5);
+                      ctx.lineTo(x, y + 5);
+                      ctx.moveTo(x - 3, y - 2);
+                      ctx.lineTo(x, y - 5);
+                      ctx.lineTo(x + 3, y - 2);
+                      ctx.moveTo(x - 3, y + 2);
+                      ctx.lineTo(x, y + 5);
+                      ctx.lineTo(x + 3, y + 2);
+                      ctx.moveTo(x - 5, y - 7);
+                      ctx.lineTo(x + 5, y - 7);
+                      ctx.moveTo(x - 5, y + 7);
+                      ctx.lineTo(x + 5, y + 7);
+                    } else if (row.kind === "range") {
+                      ctx.moveTo(x - 5, y);
+                      ctx.lineTo(x + 5, y);
+                      ctx.moveTo(x - 2, y - 3);
+                      ctx.lineTo(x - 5, y);
+                      ctx.lineTo(x - 2, y + 3);
+                      ctx.moveTo(x + 2, y - 3);
+                      ctx.lineTo(x + 5, y);
+                      ctx.lineTo(x + 2, y + 3);
+                      ctx.moveTo(x - 7, y - 5);
+                      ctx.lineTo(x - 7, y + 5);
+                      ctx.moveTo(x + 7, y - 5);
+                      ctx.lineTo(x + 7, y + 5);
+                    } else {
+                      ctx.moveTo(x + 6, y + 5);
+                      ctx.lineTo(x - 5, y + 5);
+                      ctx.lineTo(x + 1, y - 6);
+                      ctx.moveTo(x, y + 5);
+                      ctx.arc(x - 5, y + 5, 5, 0, -Math.PI / 3, true);
+                    }
+                    ctx.stroke();
+                    ctx.fillText(row.text, panelX + 40, y);
+                  });
                 }
               }
             }

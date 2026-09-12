@@ -304,6 +304,8 @@ describe("native drawing primitive", () => {
     let selected: string | null = drawing.id;
     const plugin = createDrawingPrimitive(chart, series, () => ({ drawings: [drawing], selected }));
     const ctx = {
+      measureText: vi.fn((text: string) => ({ width: text.length * 6 })),
+      fillRect: vi.fn(),
       save: vi.fn(),
       translate: vi.fn(),
       rotate: vi.fn(),
@@ -330,9 +332,8 @@ describe("native drawing primitive", () => {
     draw();
     expect(ctx.arc).toHaveBeenCalledWith(150, 150, 3, 0, Math.PI * 2);
     expect(ctx.fillText.mock.calls).toEqual([
-      ["-100.00", 150, 110],
-      ["-400 ticks", 150, 126],
-      ["1 bars", 150, 142],
+      ["-100.00, -400", 202, 91],
+      ["1 bars", 202, 117],
     ]);
     selected = null;
     ctx.fillText.mockClear();
@@ -341,8 +342,8 @@ describe("native drawing primitive", () => {
     drawing.alwaysShowStats = true;
     drawing.statsPosition = "left";
     draw();
-    expect(ctx.textAlign).toBe("right");
-    expect(ctx.fillText.mock.calls.at(-1)).toEqual(["1 bars", 92, 92]);
+    expect(ctx.textAlign).toBe("left");
+    expect(ctx.fillText.mock.calls.at(-1)).toEqual(["1 bars", 152, 67]);
     drawing.hidden = true;
     ctx.fillText.mockClear();
     ctx.arc.mockClear();
@@ -770,6 +771,100 @@ describe("additional line primitive behavior", () => {
     expect(f.ctx.fillText).not.toHaveBeenCalled();
   });
 
+  it.each(["trend", "info-line", "extended-line", "trend-angle"] as const)(
+    "groups %s measurements into fixed price, range and angle rows with panel icons",
+    (kind) => {
+      const drawing: ChartDrawing = {
+        ...line(kind),
+        // Selection order must not change the panel's semantic row grouping.
+        stats: ["angle", "distance", "ticks", "datetime", "percent", "bars", "price"],
+        alwaysShowStats: true,
+        statsPosition: "center",
+      };
+      const f = renderFixture(drawing);
+      f.draw();
+      expect(f.ctx.fillText.mock.calls.slice(-3).map((call) => call[0])).toEqual([
+        "-100.00 (-25.00%), -400",
+        "1 bars (1m 40s), distance: 141 px",
+        "-45.00°",
+      ]);
+      expect(f.ctx.fillRect).toHaveBeenCalledTimes(2);
+      expect(f.ctx.fillRect.mock.calls[0]).toEqual([162, 44, 246, 94]);
+      expect(f.ctx.fillRect.mock.calls[1]).toEqual(f.ctx.fillRect.mock.calls[0]);
+      expect(f.ctx.moveTo).toHaveBeenCalledWith(180, 60);
+      expect(f.ctx.moveTo).toHaveBeenCalledWith(175, 91);
+      expect(f.ctx.arc).toHaveBeenCalledWith(175, 122, 5, 0, -Math.PI / 3, true);
+    },
+  );
+
+  it.each(["trend", "info-line"] as const)(
+    "places %s panels above and right of the chosen time-side anchor, independent of anchor order",
+    (kind) => {
+      for (const reversed of [false, true]) {
+        for (const [statsPosition, x, y] of [
+          ["left", 287, 204],
+          ["center", 374.5, 259],
+          ["right", 462, 314],
+        ] as const) {
+          const anchors = [
+            { time: 275 as Time, price: 190 },
+            { time: 450 as Time, price: 80 },
+          ];
+          const drawing: ChartDrawing = {
+            ...line(kind),
+            anchors: reversed ? anchors.toReversed() : anchors,
+            stats: ["price", "bars", "angle"],
+            statsPosition,
+            alwaysShowStats: true,
+          };
+          const f = renderFixture(drawing);
+          f.draw();
+          expect(f.ctx.fillRect.mock.calls[0]?.slice(0, 2)).toEqual([x, y]);
+          expect(f.ctx.fillRect.mock.calls[0]?.[3]).toBe(94);
+          expect(f.ctx.fillText.mock.calls.map((call) => call.slice(1))).toEqual([
+            [x + 40, y + 21],
+            [x + 40, y + 47],
+            [x + 40, y + 73],
+          ]);
+        }
+      }
+    },
+  );
+
+  it("retains ordinary-line panel visibility for hover, lock and provisional placement", () => {
+    const drawing: ChartDrawing = {
+      ...line("trend"),
+      stats: ["price", "bars", "angle"],
+      alwaysShowStats: false,
+    };
+    const f = renderFixture(drawing);
+    f.draw();
+    expect(f.ctx.fillText).not.toHaveBeenCalled();
+    f.hover(drawing.id);
+    f.draw();
+    expect(f.ctx.fillText).toHaveBeenCalledTimes(3);
+    drawing.locked = true;
+    f.ctx.arc.mockClear();
+    f.draw();
+    expect(f.ctx.fillText).toHaveBeenCalledTimes(3);
+    expect(f.ctx.arc.mock.calls.map((call) => call[2])).toEqual([5]);
+    f.hover(null);
+    f.draw();
+    expect(f.ctx.fillText).not.toHaveBeenCalled();
+    f.preview({ ...drawing, id: "provisional", locked: false });
+    f.draw();
+    expect(f.ctx.fillText).toHaveBeenCalledTimes(3);
+    f.preview(null);
+    f.draw();
+    expect(f.ctx.fillText).not.toHaveBeenCalled();
+    f.select();
+    f.draw();
+    expect(f.ctx.fillText).toHaveBeenCalledTimes(3);
+    drawing.hidden = true;
+    f.draw();
+    expect(f.ctx.fillText).not.toHaveBeenCalled();
+  });
+
   it("shows default Info line statistics only while the unselected line is hovered when always-show is off", () => {
     const drawing = { ...line("info-line"), alwaysShowStats: false };
     const f = renderFixture(drawing);
@@ -810,7 +905,7 @@ describe("additional line primitive behavior", () => {
       f.draw();
       expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual([
         ...(kind === "trend-angle" ? ["-45°"] : []),
-        kind === "info-line" ? "-400" : "-400 ticks",
+        "-400",
       ]);
       drawing.stats = [];
       f.draw();
