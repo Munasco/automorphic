@@ -123,6 +123,20 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
                 lineWidth: 1,
                 lineType: options.steps ? LineType.WithSteps : LineType.Simple,
                 ...(options.invisible ? { lineVisible: false, crosshairMarkerVisible: false } : {}),
+                ...(indicator === "ib" && options.invisible
+                  ? {
+                      // IB's invisible data series retain crosshair readings; only its
+                      // visible overlay levels and box should expand the price scale.
+                      autoscaleInfoProvider: () => {
+                        const primitive = plots.get(id)?.initialBalance?.primitive;
+                        if (!primitive) return null;
+                        const visible = chart.timeScale().getVisibleLogicalRange();
+                        return visible
+                          ? (primitive.autoscaleInfo?.(visible.from, visible.to) ?? null)
+                          : null;
+                      },
+                    }
+                  : {}),
                 ...(options.bounds
                   ? {
                       autoscaleInfoProvider: () => ({

@@ -21,7 +21,167 @@ const range: InitialBalanceRange = {
   status: "complete",
 };
 
+function styleFixture() {
+  const chart = {
+    timeScale: () => ({
+      width: () => 500,
+      timeToCoordinate: (time: number) => time / 60,
+      logicalToCoordinate: (logical: number) => logical,
+    }),
+    options: () => ({ layout: { fontFamily: "Inter" } }),
+  } as unknown as IChartApi;
+  const series = {
+    priceToCoordinate: (price: number) => 500 - price,
+    priceFormatter: () => ({ format: (price: number) => price.toFixed(2) }),
+    getPane: () => ({ getHeight: () => 500 }),
+  } as unknown as ISeriesApi<"Line">;
+  const strokes: Array<{ color: string; opacity: number; width: number }> = [];
+  const labels: Array<{ text: string; opacity: number }> = [];
+  const fills: Array<{ color: string; opacity: number }> = [];
+  const ctx = {
+    globalAlpha: 1,
+    strokeStyle: "",
+    fillStyle: "",
+    lineWidth: 1,
+    save: vi.fn(),
+    restore: vi.fn(),
+    beginPath: vi.fn(),
+    rect: vi.fn(),
+    clip: vi.fn(),
+    fillRect: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    stroke: vi.fn(),
+    fillText: vi.fn(),
+    setLineDash: vi.fn(),
+    roundRect: vi.fn(),
+    fill: vi.fn(),
+    measureText: (label: string) => ({ width: label.length * 6 }),
+  };
+  ctx.stroke.mockImplementation(() =>
+    strokes.push({
+      color: ctx.strokeStyle,
+      opacity: ctx.globalAlpha,
+      width: ctx.lineWidth,
+    }),
+  );
+  ctx.fillText.mockImplementation((text: string) =>
+    labels.push({ text, opacity: ctx.globalAlpha }),
+  );
+  ctx.fillRect.mockImplementation(() =>
+    fills.push({ color: ctx.fillStyle, opacity: ctx.globalAlpha }),
+  );
+  const plugin = createInitialBalancePrimitive(chart, series);
+  return {
+    ...plugin,
+    strokes,
+    labels,
+    fills,
+    autoscale: (start = 0, end = 500) =>
+      plugin.primitive.autoscaleInfo!(start as Logical, end as Logical),
+    draw: () => {
+      for (const view of plugin.primitive.paneViews!()) {
+        const renderer = view.renderer()!;
+        renderer.draw({
+          useMediaCoordinateSpace: (callback: (scope: { context: typeof ctx }) => void) =>
+            callback({ context: ctx }),
+        } as unknown as Parameters<typeof renderer.draw>[0]);
+      }
+    },
+  };
+}
+
 describe("initial balance visual geometry", () => {
+  it("filters whole high/low/internal groups and keeps partial opacity in projected levels", () => {
+    const styles = {
+      high: { visible: false },
+      low: { opacity: 0 },
+      internal: { opacity: 0.35, color: "#123456", lineWidth: 3 },
+    };
+    const levels = initialBalanceLevels(range, DEFAULT_INITIAL_BALANCE, styles);
+    expect(
+      levels.map((level) => [level.label, level.price, level.color, level.width, level.opacity]),
+    ).toEqual([
+      ["50%", 105, "#123456", 3, 0.35],
+      ["25%", 102.5, "#123456", 3, 0.35],
+      ["75%", 107.5, "#123456", 3, 0.35],
+    ]);
+    const shape = initialBalanceGeometry(
+      range,
+      DEFAULT_INITIAL_BALANCE,
+      (time) => time / 60,
+      (price) => 500 - price,
+      500,
+      styles,
+    )!;
+    expect(shape.levels).toHaveLength(3);
+    expect(shape.box).toEqual({ left: 0, right: 60, top: 390, bottom: 400 });
+    expect(
+      initialBalanceLevels(range, DEFAULT_INITIAL_BALANCE, { internal: { visible: false } }).map(
+        (level) => level.label,
+      ),
+    ).toEqual(["IBH", "IBL", "+0.5x", "-0.5x", "+1.0x", "-1.0x"]);
+  });
+
+  it("paints rail and label opacity independently from the opening-hour background", () => {
+    const f = styleFixture();
+    f.update(
+      range,
+      { ...DEFAULT_INITIAL_BALANCE, backgroundColor: "#abcdef", backgroundOpacity: 0.6 },
+      [],
+      5,
+      {
+        high: { opacity: 0.25, color: "#123456", lineWidth: 3 },
+        low: { opacity: 0.75 },
+        internal: { visible: false },
+      },
+    );
+    f.draw();
+    expect(f.strokes.map((stroke) => stroke.opacity)).toEqual([0.25, 0.75, 0.25, 0.75, 0.25, 0.75]);
+    expect(f.strokes[0]).toEqual({ color: "#123456", width: 3, opacity: 0.25 });
+    expect(f.labels).toEqual([
+      { text: "IBH 110.00", opacity: 0.25 },
+      { text: "IBL 100.00", opacity: 0.75 },
+      { text: "+0.5x", opacity: 0.25 },
+      { text: "-0.5x", opacity: 0.75 },
+      { text: "+1.0x", opacity: 0.25 },
+      { text: "-1.0x", opacity: 0.75 },
+    ]);
+    expect(f.fills).toEqual([{ color: "#abcdef", opacity: 0.6 }]);
+    f.strokes.length = 0;
+    f.labels.length = 0;
+    f.update(range, DEFAULT_INITIAL_BALANCE, [], 5, {
+      high: { visible: false },
+      low: { opacity: 0 },
+      internal: { visible: false },
+    });
+    f.draw();
+    expect(f.strokes).toEqual([]);
+    expect(f.labels).toEqual([]);
+    expect(f.fills).toHaveLength(2);
+  });
+
+  it("autoscales only visible rails and overlapping opaque boxes, never empty infinite bounds", () => {
+    const f = styleFixture();
+    const hidden = { high: { visible: false }, low: { opacity: 0 }, internal: { visible: false } };
+    f.update(range, DEFAULT_INITIAL_BALANCE, [], 5, hidden);
+    expect(f.autoscale()?.priceRange).toEqual({ minValue: 100, maxValue: 110 });
+    expect(f.autoscale(100, 200)).toBeNull();
+    f.update(range, { ...DEFAULT_INITIAL_BALANCE, showBox: false }, [], 5, hidden);
+    expect(f.autoscale()).toBeNull();
+    f.update(range, { ...DEFAULT_INITIAL_BALANCE, backgroundOpacity: 0 }, [], 5, hidden);
+    expect(f.autoscale()).toBeNull();
+    f.update(range, { ...DEFAULT_INITIAL_BALANCE, showBox: false }, [], 5, {
+      ...hidden,
+      internal: { opacity: 0.3 },
+    });
+    expect(f.autoscale()?.priceRange).toEqual({ minValue: 102.5, maxValue: 107.5 });
+    expect(f.autoscale(400, 500)).toBeNull();
+    f.update({ ...range, high: NaN, low: Infinity }, DEFAULT_INITIAL_BALANCE, [], 5);
+    expect(f.autoscale()).toBeNull();
+    f.update(range, DEFAULT_INITIAL_BALANCE, [], 5);
+    expect(f.autoscale()?.priceRange).toEqual({ minValue: 90, maxValue: 120 });
+  });
   it("projects physical exchange times through distinct synthetic chart keys", () => {
     const bars = [100, 100.1, 100.2].map((time, index) => ({
       time,

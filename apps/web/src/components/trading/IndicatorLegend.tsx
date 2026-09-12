@@ -238,29 +238,22 @@ export function IndicatorLegend({
                                   >
                                     <div className="flex items-center justify-between gap-2">
                                       <label className="flex items-center gap-2">
-                                        {key !== "ib" && (
-                                          <input
-                                            type="checkbox"
-                                            aria-label={`Show ${label} ${plotStyle.label}`}
-                                            checked={style.visible}
-                                            onChange={(event) =>
-                                              update({ visible: event.target.checked })
-                                            }
-                                          />
-                                        )}
+                                        <input
+                                          type="checkbox"
+                                          aria-label={`Show ${label} ${plotStyle.label}`}
+                                          checked={style.visible}
+                                          onChange={(event) =>
+                                            update({ visible: event.target.checked })
+                                          }
+                                        />
                                         {plotStyle.label}
                                       </label>
                                       <ColorPicker
                                         label={`${label} ${plotStyle.label} color`}
                                         value={style.color}
                                         onChange={(color) => update({ color })}
-                                        {...(key !== "ib"
-                                          ? {
-                                              opacity: style.opacity,
-                                              onOpacityChange: (opacity: number) =>
-                                                update({ opacity }),
-                                            }
-                                          : {})}
+                                        opacity={style.opacity}
+                                        onOpacityChange={(opacity) => update({ opacity })}
                                       />
                                     </div>
                                     {plotStyle.kind !== "fill" && (

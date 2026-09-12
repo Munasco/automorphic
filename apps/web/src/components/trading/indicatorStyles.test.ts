@@ -78,15 +78,19 @@ describe("declared indicator styles", () => {
   it("saves, restores, and resets independent IB styles without changing its session", () => {
     const before = useChartPreferences.getState();
     try {
-      before.setIndicatorAppearance("ib", { plots: { high: { color: "#123456", lineWidth: 3 } } });
-      before.setIndicatorAppearance("ib", { plots: { low: { color: "#abcdef" } } });
+      before.setIndicatorAppearance("ib", {
+        plots: { high: { color: "#123456", lineWidth: 3, opacity: 0.25 } },
+      });
+      before.setIndicatorAppearance("ib", {
+        plots: { low: { color: "#abcdef", visible: false } },
+      });
       before.setIndicatorAppearance("ib", { plots: { high: { color: "invalid", lineWidth: 99 } } });
       const restored = normalizeChartPreferences(
         JSON.parse(JSON.stringify(useChartPreferences.getState())),
       );
       expect(restored.appearance.ib?.plots).toEqual({
-        high: { color: "#123456", lineWidth: 3 },
-        low: { color: "#abcdef" },
+        high: { color: "#123456", lineWidth: 3, opacity: 0.25 },
+        low: { color: "#abcdef", visible: false },
       });
       const levels = initialBalanceLevels(
         {
@@ -107,11 +111,11 @@ describe("declared indicator styles", () => {
         price: 110,
         color: "#123456",
         width: 3,
+        opacity: 0.25,
       });
-      expect(levels.find((level) => level.label === "IBL")).toMatchObject({
-        price: 100,
-        color: "#abcdef",
-      });
+      expect(levels.some((level) => level.label === "IBL" || level.label.startsWith("-"))).toBe(
+        false,
+      );
       expect(levels.find((level) => level.label === "50%")).toMatchObject({
         price: 105,
         color: "#9ca3af",

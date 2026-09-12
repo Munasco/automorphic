@@ -72,6 +72,53 @@ const disabled = Object.fromEntries(
 ) as ChartIndicators;
 
 describe("native indicator renderer", () => {
+  it("autoscales IB from visible overlays instead of its hidden data series", () => {
+    const harness = chartHarness();
+    const start = Date.parse("2026-09-14T13:30:00Z") / 1000;
+    Object.assign(harness.chart, {
+      timeScale: () => ({
+        getVisibleLogicalRange: () => ({ from: 0, to: 79 }),
+        timeToCoordinate: (time: number) => (time - start) / 60,
+        logicalToCoordinate: (logical: number) => logical,
+        width: () => 80,
+      }),
+    });
+    const renderer = createIndicatorRenderer(harness.chart, 0.25);
+    const bars = Array.from({ length: 80 }, (_, index) => ({
+      time: start + index * 60,
+      open: 105,
+      close: 105,
+      high: 110,
+      low: 100,
+      volume: 1,
+    }));
+    const enabled = { ...disabled, ib: true };
+    const hidden = {
+      high: { visible: false },
+      low: { visible: false },
+      internal: { visible: false },
+    };
+    const ranges = () =>
+      harness.series.map((series) => {
+        const provider = series.options.autoscaleInfoProvider as (
+          original: () => { priceRange: { minValue: number; maxValue: number } },
+        ) => unknown;
+        return provider(() => ({ priceRange: { minValue: 100, maxValue: 110 } }));
+      });
+    renderer.update(bars, enabled, { ...DEFAULT_INITIAL_BALANCE, showBox: false }, 1, {
+      ib: { plots: hidden },
+    });
+    expect(harness.series).toHaveLength(3);
+    expect(harness.series.every((series) => series.data.length > 0)).toBe(true);
+    expect(ranges()).toEqual([null, null, null]);
+    renderer.update(bars, enabled, { ...DEFAULT_INITIAL_BALANCE, showBox: false }, 1, {
+      ib: { plots: { ...hidden, high: { opacity: 0.5 } } },
+    });
+    expect(ranges()).toEqual([{ priceRange: { minValue: 110, maxValue: 120 } }, null, null]);
+    renderer.update(bars, enabled, DEFAULT_INITIAL_BALANCE, 1, { ib: { plots: hidden } });
+    expect(ranges()).toEqual([{ priceRange: { minValue: 100, maxValue: 110 } }, null, null]);
+  });
+
   it("renders default VWAP bands immediately, adds configured pairs, and keeps fills independent of line visibility", () => {
     const harness = chartHarness(),
       renderer = createIndicatorRenderer(harness.chart, 0.1);

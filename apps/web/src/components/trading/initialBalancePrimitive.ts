@@ -24,6 +24,7 @@ type InitialBalanceLevel = {
   color: string;
   dashed: boolean;
   width: number;
+  opacity: number;
 };
 
 export function initialBalanceLevels(
@@ -33,7 +34,7 @@ export function initialBalanceLevels(
 ): InitialBalanceLevel[] {
   const settings = resolveInitialBalanceSettings(config);
   const size = range.high - range.low;
-  const levels: InitialBalanceLevel[] = [
+  const levels: Omit<InitialBalanceLevel, "opacity">[] = [
     { price: range.high, label: "IBH", color: HIGH, dashed: false, width: 2 },
     { price: range.low, label: "IBL", color: LOW, dashed: false, width: 2 },
   ];
@@ -71,13 +72,20 @@ export function initialBalanceLevels(
         width: 1,
       });
     }
-  return levels.map((level) => {
+  return levels.flatMap((level) => {
     const key = level.color === HIGH ? "high" : level.color === LOW ? "low" : "internal";
-    return {
-      ...level,
-      color: styles[key]?.color ?? level.color,
-      width: styles[key]?.lineWidth ?? level.width,
-    };
+    const style = styles[key];
+    const rawOpacity = style?.opacity ?? 1;
+    const opacity = Number.isFinite(rawOpacity) ? Math.max(0, Math.min(1, rawOpacity)) : 1;
+    if (style?.visible === false || opacity === 0 || !Number.isFinite(level.price)) return [];
+    return [
+      {
+        ...level,
+        color: style?.color ?? level.color,
+        width: style?.lineWidth ?? level.width,
+        opacity,
+      },
+    ];
   });
 }
 
@@ -149,6 +157,7 @@ export function initialBalanceGeometry(
     windowEnd === null ||
     high === null ||
     low === null ||
+    ![start, end, windowEnd, high, low].every(Number.isFinite) ||
     end < 0 ||
     start > width
   )
@@ -161,7 +170,7 @@ export function initialBalanceGeometry(
     right: Math.min(width - 4, end),
     levels: initialBalanceLevels(range, settings, styles).flatMap((level) => {
       const y = priceY(level.price);
-      return y === null ? [] : [{ ...level, y }];
+      return y === null || !Number.isFinite(y) ? [] : [{ ...level, y }];
     }),
   };
 }
@@ -213,6 +222,7 @@ export function createInitialBalancePrimitive(chart: IChartApi, series: ISeriesA
           ctx.textBaseline = "middle";
           for (const level of shape.levels) {
             if (level.y < 0 || level.y > height) continue;
+            ctx.globalAlpha = level.opacity;
             ctx.strokeStyle = level.color;
             ctx.lineWidth = level.width;
             ctx.setLineDash(level.dashed ? [5, 4] : []);
@@ -282,15 +292,30 @@ export function createInitialBalancePrimitive(chart: IChartApi, series: ISeriesA
         sessionEnd === null ||
         left === null ||
         right === null ||
+        ![sessionStart, sessionEnd, left, right].every(Number.isFinite) ||
         sessionEnd < left ||
         sessionStart > right
       )
         return null;
-      const levels = initialBalanceLevels(state.range, state.settings, state.styles);
+      const prices = initialBalanceLevels(state.range, state.settings, state.styles).map(
+        (level) => level.price,
+      );
+      const settings = resolveInitialBalanceSettings(state.settings);
+      if (settings.showBox && settings.backgroundOpacity > 0) {
+        const boxEnd = projectInitialBalanceTime(
+          chart,
+          state.bars,
+          state.interval,
+          state.range.endTime,
+        );
+        if (boxEnd !== null && Number.isFinite(boxEnd) && boxEnd >= left && sessionStart <= right)
+          prices.push(...[state.range.high, state.range.low].filter(Number.isFinite));
+      }
+      if (!prices.length) return null;
       return {
         priceRange: {
-          minValue: Math.min(...levels.map((level) => level.price)),
-          maxValue: Math.max(...levels.map((level) => level.price)),
+          minValue: Math.min(...prices),
+          maxValue: Math.max(...prices),
         },
       };
     },
