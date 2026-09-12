@@ -1,21 +1,15 @@
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
-import { useNavigate } from "@tanstack/react-router";
+
 import { type MouseEvent, useCallback } from "react";
 
 import { pullRequestHostOf, type SourceControlProviderKind } from "@t3tools/contracts";
-import { parseChangeRequestUrl, type ChangeRequestLink } from "@t3tools/shared/changeRequestUrl";
-import {
-  canonicalRepositoryKey,
-  sourceControlRepositorySelector,
-} from "@t3tools/shared/sourceControl";
+import { type ChangeRequestLink } from "@t3tools/shared/changeRequestUrl";
+import { canonicalRepositoryKey } from "@t3tools/shared/sourceControl";
 
 import { useOpenLink } from "../browser/useOpenLink";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
-import { useRightPanelStore } from "../rightPanelStore";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 
-import { useProjects, useServerConfigs } from "../state/entities";
-import { usePrimaryEnvironmentId } from "../state/environments";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 
 export {
   parseChangeRequestUrl,
@@ -116,8 +110,8 @@ export function shouldOpenPullRequestExternally(
 }
 
 export function useOpenChangeRequestLink(
-  threadRef?: ScopedThreadRef,
-  panelRef?: ScopedThreadRef,
+  _threadRef?: ScopedThreadRef,
+  _panelRef?: ScopedThreadRef,
 ): (
   event: Pick<
     MouseEvent<HTMLElement>,
@@ -127,110 +121,7 @@ export function useOpenChangeRequestLink(
   targetThreadRef?: ScopedThreadRef,
   targetEnvironmentId?: EnvironmentId,
 ) => boolean {
-  const navigate = useNavigate();
-  const allProjects = useProjects();
-  const serverConfigs = useServerConfigs();
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  return useCallback(
-    (event, targetUrl, targetThreadRef, targetEnvironmentId) => {
-      if (shouldOpenPullRequestExternally(event)) return false;
-      const resolvedThreadRef = targetThreadRef ?? threadRef;
-      const resolvedPanelRef = panelRef ?? resolvedThreadRef;
-      const parsed = parseChangeRequestUrl(targetUrl);
-      if (parsed === null) return false;
-      const reads = (environmentId: string) =>
-        serverConfigs.get(environmentId as EnvironmentId)?.environment.capabilities.pullRequests ===
-        true;
-      // Beside a thread the panel reads on that thread's environment, so a project from another
-      // one could not be read there whatever its remote says: two environments can hold the same
-      // repository, and handing the panel the wrong one's id opens a surface that never loads.
-      //
-      // The page has no such tie — it lists every server at once — so the link is resolved
-      // against all of them, the primary first where two hold the same repository.
-      const projects = resolvedThreadRef
-        ? allProjects.filter((project) => project.environmentId === resolvedThreadRef.environmentId)
-        : targetEnvironmentId
-          ? allProjects.filter((project) => project.environmentId === targetEnvironmentId)
-          : allProjects
-              .filter((project) => reads(project.environmentId))
-              .toSorted(
-                (left, right) =>
-                  Number(right.environmentId === primaryEnvironmentId) -
-                  Number(left.environmentId === primaryEnvironmentId),
-              );
-      const exactProject = findProjectForChangeRequest(projects, parsed);
-      const project =
-        exactProject ??
-        (resolvedPanelRef
-          ? findProjectOnChangeRequestHost(
-              projects.filter(
-                (candidate) =>
-                  serverConfigs.get(candidate.environmentId)?.environment.capabilities
-                    .threadPullRequests === true,
-              ),
-              parsed,
-            )
-          : undefined);
-      if (project === undefined || !reads(project.environmentId)) return false;
-      const repository =
-        serverConfigs.get(project.environmentId)?.environment.capabilities.threadPullRequests ===
-        true
-          ? parsed.repository
-          : (sourceControlRepositorySelector(project.repositoryIdentity) ?? parsed.repository);
-      event.preventDefault();
-      event.stopPropagation();
-      if (resolvedPanelRef) {
-        useRightPanelStore.getState().openPullRequest(resolvedPanelRef, {
-          // The standalone PR panel has a synthetic ref; each tab keeps its real environment.
-          ...(resolvedPanelRef.environmentId === project.environmentId
-            ? {}
-            : { environmentId: project.environmentId }),
-          projectId: project.id,
-          ...(serverConfigs.get(project.environmentId)?.environment.capabilities
-            .threadPullRequests === true
-            ? { host: parsed.host }
-            : {}),
-          repository,
-          url: targetUrl,
-          number: parsed.number,
-        });
-        if (!resolvedThreadRef) {
-          void navigate({
-            to: "/pull-requests",
-            search: (previous) => ({
-              ...previous,
-              involvement: previous.involvement ?? "all",
-              state: previous.state ?? "all",
-              repository,
-              number: parsed.number,
-              selectedHost: parsed.host,
-              selectedProjectId: project.id,
-              selectedEnvironmentId: project.environmentId,
-            }),
-            replace: true,
-          });
-        }
-        return true;
-      }
-      void navigate({
-        to: "/pull-requests",
-        search: {
-          involvement: "all",
-          // Every state, so the pull request being opened is also in the list behind it whether
-          // it is open, merged or closed.
-          state: "all",
-          repository,
-          number: parsed.number,
-          selectedHost: parsed.host,
-          selectedProjectId: project.id,
-          // Named so the page opens the right one of two servers holding this project.
-          selectedEnvironmentId: project.environmentId,
-        },
-      });
-      return true;
-    },
-    [allProjects, navigate, panelRef, primaryEnvironmentId, serverConfigs, threadRef],
-  );
+  return useCallback(() => false, []);
 }
 
 export function useOpenPrLink(threadRef?: ScopedThreadRef) {

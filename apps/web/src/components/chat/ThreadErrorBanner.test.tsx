@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   dismissThreadErrorBannerForSession,
   getThreadErrorBannerKey,
+  hasRecoveredProviderProcessError,
   isThreadErrorBannerDismissedForSession,
   shouldShowThreadErrorBanner,
   ThreadErrorBanner,
@@ -84,5 +85,87 @@ describe("ThreadErrorBanner", () => {
     expect(markup).toContain("min-h-7 pt-1 sm:min-h-6 sm:pt-0.5");
     expect(markup).toContain("h-lh w-4");
     expect(markup).toContain("h-lh self-start");
+  });
+});
+
+describe("provider process error recovery", () => {
+  const error = {
+    message: "Provider adapter process error (codex): spawn failed",
+    at: Date.parse("2026-09-12T03:05:40Z"),
+  };
+  const healthy = {
+    session: { status: "ready", lastError: null },
+    latestTurn: { state: "completed", completedAt: "2026-09-12T03:05:48Z" },
+  };
+  it("clears a launch error only after a later successful turn is confirmed", () => {
+    expect(hasRecoveredProviderProcessError(error, healthy)).toBe(true);
+    expect(hasRecoveredProviderProcessError(error, { ...healthy, latestTurn: null })).toBe(false);
+    expect(
+      hasRecoveredProviderProcessError(error, {
+        ...healthy,
+        latestTurn: { state: "running", completedAt: null },
+      }),
+    ).toBe(false);
+  });
+  it("recognizes the serialized provider error class shown by the installed app", () => {
+    expect(
+      hasRecoveredProviderProcessError(
+        {
+          ...error,
+          message:
+            "ProviderAdapterProcessError: Provider adapter process error (codex): spawn failed",
+        },
+        healthy,
+      ),
+    ).toBe(true);
+    expect(
+      hasRecoveredProviderProcessError(
+        {
+          ...error,
+          message: "OtherError: Provider adapter process error (codex): spawn failed",
+        },
+        healthy,
+      ),
+    ).toBe(false);
+  });
+  it("retains newer failures and active server errors", () => {
+    expect(
+      hasRecoveredProviderProcessError(
+        { ...error, at: Date.parse("2026-09-12T03:05:49Z") },
+        healthy,
+      ),
+    ).toBe(false);
+    expect(
+      hasRecoveredProviderProcessError(error, {
+        ...healthy,
+        session: { status: "error", lastError: "provider exited" },
+      }),
+    ).toBe(false);
+    expect(
+      hasRecoveredProviderProcessError(error, {
+        ...healthy,
+        session: { status: "ready", lastError: "provider exited" },
+      }),
+    ).toBe(false);
+    expect(
+      hasRecoveredProviderProcessError(error, {
+        ...healthy,
+        latestTurn: { ...healthy.latestTurn, state: "error" },
+      }),
+    ).toBe(false);
+  });
+  it("does not dismiss other operation errors or infer recovery from invalid timestamps", () => {
+    expect(
+      hasRecoveredProviderProcessError(
+        { ...error, message: "Failed to upload attachment" },
+        healthy,
+      ),
+    ).toBe(false);
+    expect(
+      hasRecoveredProviderProcessError(error, {
+        ...healthy,
+        latestTurn: { ...healthy.latestTurn, completedAt: "invalid" },
+      }),
+    ).toBe(false);
   });
 });

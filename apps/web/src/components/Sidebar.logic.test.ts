@@ -824,7 +824,7 @@ describe("searchSidebarThreads", () => {
 
 describe("filterSidebarProjectScopeItems", () => {
   const items = [
-    { value: "all", label: "All projects" },
+    { value: "all", label: "All workspaces" },
     { value: "alpha", label: "Alpha workspace" },
     { value: "beta", label: "Beta tools" },
   ] as const;

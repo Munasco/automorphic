@@ -5,13 +5,13 @@ export const BRAND_ASSET_PATHS = {
 
   productionIconComposerProject: "assets/prod/app-icon.icon",
   productionIosIconPng: "assets/prod/black-ios-1024.png",
-  productionMacIconPng: "assets/prod/black-macos-1024.png",
+  productionMacIconPng: "apps/desktop/resources/automorphic-macos-1024.png",
   productionLinuxIconPng: "assets/prod/black-universal-1024.png",
   productionWindowsIconIco: "assets/prod/t3-black-windows.ico",
-  productionWebFaviconIco: "assets/prod/t3-black-web-favicon.ico",
-  productionWebFavicon16Png: "assets/prod/t3-black-web-favicon-16x16.png",
-  productionWebFavicon32Png: "assets/prod/t3-black-web-favicon-32x32.png",
-  productionWebAppleTouchIconPng: "assets/prod/t3-black-web-apple-touch-180.png",
+  productionWebFaviconIco: "assets/automorphic/favicon.ico",
+  productionWebFavicon16Png: "assets/automorphic/favicon-16x16.png",
+  productionWebFavicon32Png: "assets/automorphic/favicon-32x32.png",
+  productionWebAppleTouchIconPng: "assets/automorphic/apple-touch-icon.png",
 
   nightlyIconComposerProject: "assets/nightly/app-icon.icon",
   nightlyIosIconPng: "assets/nightly/nightly-ios-1024.png",

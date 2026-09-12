@@ -290,6 +290,10 @@
     "./dateTime": {
       "types": "./src/dateTime.ts",
       "import": "./src/dateTime.ts"
+    },
+    "./automorphicPaths": {
+      "types": "./src/automorphicPaths.ts",
+      "import": "./src/automorphicPaths.ts"
     }
   },
   "scripts": {

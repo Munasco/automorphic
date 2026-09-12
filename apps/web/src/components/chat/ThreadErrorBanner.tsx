@@ -4,6 +4,27 @@ import { Button } from "../ui/button";
 import { CircleAlertIcon, XIcon } from "lucide-react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
+/** A confirmed successful turn supersedes an earlier local provider launch failure. */
+export function hasRecoveredProviderProcessError(
+  entry: { readonly message: string | null; readonly at: number } | undefined,
+  thread: {
+    readonly session: { readonly status: string; readonly lastError: string | null } | null;
+    readonly latestTurn: { readonly state: string; readonly completedAt: string | null } | null;
+  } | null,
+): boolean {
+  if (
+    !entry?.message ||
+    !/^(?:ProviderAdapterProcessError:\s*)?Provider adapter process error\b/.test(entry.message) ||
+    thread?.session?.status !== "ready" ||
+    thread.session.lastError !== null ||
+    thread.latestTurn?.state !== "completed" ||
+    !thread.latestTurn.completedAt
+  )
+    return false;
+  const completedAt = Date.parse(thread.latestTurn.completedAt);
+  return Number.isFinite(completedAt) && completedAt > entry.at;
+}
+
 export function getThreadErrorBannerKey(threadKey: string, error: string | null): string | null {
   return error === null ? null : `${threadKey}\u0000${error}`;
 }
