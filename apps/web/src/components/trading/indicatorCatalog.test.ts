@@ -187,7 +187,7 @@ describe("indicator inputs", () => {
     });
     expect(restored.indicatorInputs).toEqual({
       sma: { period: 50, source: 0 },
-      bollinger: { period: 20, deviations: 1.5 },
+      bollinger: { period: 20, deviations: 1.5, source: 0 },
       keltner: { period: 20, atrPeriod: 8, multiplier: 2 },
       stochRsi: { rsiPeriod: 10, stochasticPeriod: 14, smoothK: 2, periodD: 3 },
       macd: { fast: 12, slow: 26, signalPeriod: 5 },
@@ -225,6 +225,7 @@ describe("indicator inputs", () => {
       expect(useChartPreferences.getState().indicatorInputs.bollinger).toEqual({
         period: 20,
         deviations: 1.5,
+        source: 0,
       });
       expect(useChartPreferences.getState().indicatorInputs.macd).toEqual({
         fast: 30,
@@ -234,6 +235,31 @@ describe("indicator inputs", () => {
     } finally {
       useChartPreferences.setState(original, true);
     }
+  });
+});
+
+describe("Bollinger Bands price source inputs", () => {
+  it("plots both the basis and spread from the selected price source", () => {
+    const definition = INDICATOR_CATALOG.find((item) => item.key === "bollinger")!;
+    const bars = [
+      { time: 1, open: 4, high: 14, low: 0, close: 10, volume: 1 },
+      { time: 2, open: 8, high: 26, low: 2, close: 12, volume: 1 },
+    ];
+    const calculate = (source?: number) =>
+      definition
+        .calculate({
+          bars,
+          interval: 1,
+          session: DEFAULT_INITIAL_BALANCE,
+          inputs: getIndicatorInputs("bollinger", {
+            bollinger: { period: 2, deviations: 2, ...(source === undefined ? {} : { source }) },
+          }),
+        })
+        .plots.map((plot) => plot.points.at(-1)!.value);
+    expect(calculate(0)).toEqual([13, 11, 9]);
+    expect(calculate(1)).toEqual([10, 6, 2]);
+    expect(calculate()).toEqual(calculate(0));
+    expect(calculate(99)).toEqual(calculate(0));
   });
 });
 

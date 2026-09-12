@@ -1,4 +1,11 @@
-import { calculateEMA, calculateRSI, type Candle, type IndicatorPoint } from "./chartIndicators";
+import {
+  calculateEMA,
+  calculateRSI,
+  sourcePrice,
+  type Candle,
+  type IndicatorPoint,
+  type PriceSource,
+} from "./chartIndicators";
 
 export interface IndicatorBands {
   upper: IndicatorPoint[];
@@ -78,26 +85,30 @@ function ranges(bars: readonly Candle[], period: number) {
   return result;
 }
 
-/** Close SMA ± population standard deviation; defaults 20 bars / 2 deviations.
+/** Selected-source SMA ± population standard deviation; defaults close / 20 bars / 2 deviations.
  * https://www.tradingview.com/support/solutions/43000501840-bollinger-bands-bb/
  */
 export function calculateBollingerBands(
   bars: readonly Candle[],
   period = 20,
   deviations = 2,
+  source: PriceSource = "close",
 ): IndicatorBands {
   const result = emptyBands();
   if (!validPeriod(period) || !Number.isFinite(deviations) || deviations < 0) return result;
-  for (const segment of segments(bars, validClose)) {
+  for (const segment of segments(
+    bars,
+    (bar) => Number.isFinite(bar.time) && Number.isFinite(sourcePrice(bar, source)),
+  )) {
     for (let i = period - 1; i < segment.length; i += 1) {
-      const baseline = segment[i - period + 1]!.close;
+      const baseline = sourcePrice(segment[i - period + 1]!, source);
       let offset = 0;
       for (let j = i - period + 1; j <= i; j += 1)
-        offset += (segment[j]!.close - baseline) / period;
+        offset += (sourcePrice(segment[j]!, source) - baseline) / period;
       const middle = baseline + offset;
       let variance = 0;
       for (let j = i - period + 1; j <= i; j += 1)
-        variance += (segment[j]!.close - middle) ** 2 / period;
+        variance += (sourcePrice(segment[j]!, source) - middle) ** 2 / period;
       const width = deviations * Math.sqrt(variance);
       if (![middle, width, middle + width, middle - width].every(Number.isFinite)) continue;
       const time = segment[i]!.time;

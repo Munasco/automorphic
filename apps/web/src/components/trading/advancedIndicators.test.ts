@@ -121,6 +121,103 @@ describe("common chart indicators", () => {
     expect(values(flat.lower)).toEqual([10]);
   });
 
+  it.each([
+    { source: "close", middle: [12, 22], width: [8, 12] },
+    { source: "open", middle: [6, 14], width: [4, 12] },
+    { source: "high", middle: [18, 30], width: [12, 12] },
+    { source: "low", middle: [2, 8], width: [4, 8] },
+    { source: "hl2", middle: [10, 19], width: [8, 10] },
+    { source: "hlc3", middle: [32 / 3, 20], width: [8, 32 / 3] },
+    { source: "ohlc4", middle: [9.5, 18.5], width: [7, 11] },
+  ] as const)(
+    "uses $source for both the Bollinger mean and population spread",
+    ({ source, middle, width }) => {
+      const input = bars([8, 16, 28]).map((bar, index) => ({
+        ...bar,
+        open: [4, 8, 20][index]!,
+        high: [12, 24, 36][index]!,
+        low: [0, 4, 12][index]!,
+      }));
+      const original = structuredClone(input);
+      const result = calculateBollingerBands(input, 2, 2, source);
+      expect(result.middle.map((point) => point.time)).toEqual(
+        input.slice(1).map((bar) => bar.time),
+      );
+      near(result.middle, [...middle]);
+      near(
+        result.upper,
+        middle.map((value, index) => value + width[index]!),
+      );
+      near(
+        result.lower,
+        middle.map((value, index) => value - width[index]!),
+      );
+      if (source === "close") expect(calculateBollingerBands(input, 2, 2)).toEqual(result);
+      expect(input).toEqual(original);
+    },
+  );
+
+  it.each([
+    { source: "close", field: "close" },
+    { source: "open", field: "open" },
+    { source: "high", field: "high" },
+    { source: "low", field: "low" },
+    { source: "hl2", field: "high" },
+    { source: "hlc3", field: "close" },
+    { source: "ohlc4", field: "open" },
+  ] as const)(
+    "restarts Bollinger $source warmup after an invalid selected component",
+    ({ source, field }) => {
+      for (const invalid of [undefined, NaN, Infinity, -Infinity]) {
+        const input = bars([1, 2, 3, 4, 5, 6]).map((bar) => ({
+          ...bar,
+          high: bar.close,
+          low: bar.close,
+        }));
+        Object.assign(input[2]!, { [field]: invalid });
+        const result = calculateBollingerBands(input, 2, 2, source);
+        expect(result.middle.map((point) => point.time)).toEqual([
+          input[1]!.time,
+          input[4]!.time,
+          input[5]!.time,
+        ]);
+        near(result.middle, [1.5, 4.5, 5.5]);
+        near(result.upper, [2.5, 5.5, 6.5]);
+        near(result.lower, [0.5, 3.5, 4.5]);
+      }
+    },
+  );
+
+  it.each([
+    { source: "close", field: "open" },
+    { source: "open", field: "close" },
+    { source: "high", field: "low" },
+    { source: "low", field: "high" },
+    { source: "hl2", field: "close" },
+    { source: "hlc3", field: "open" },
+    { source: "ohlc4", field: "volume" },
+  ] as const)(
+    "ignores unused $field when computing $source Bollinger bands",
+    ({ source, field }) => {
+      const input = bars([1, 3, 2, 5]).map((bar) => ({ ...bar, [field]: NaN }));
+      expect(calculateBollingerBands(input, 2, 2, source)).toEqual(
+        calculateBollingerBands(bars([1, 3, 2, 5]), 2, 2, source),
+      );
+    },
+  );
+
+  it("restarts selected-source Bollinger windows after invalid chart times", () => {
+    const input = bars([1, 2, 3, 4, 5]);
+    input[2]!.time = NaN;
+    const result = calculateBollingerBands(input, 2, 2, "open");
+    expect(result.middle).toEqual([
+      { time: input[1]!.time, value: 1.5 },
+      { time: input[4]!.time, value: 4.5 },
+    ]);
+    near(result.upper, [2.5, 5.5]);
+    near(result.lower, [0.5, 3.5]);
+  });
+
   it("SMA-seeds fast, slow and signal EMAs before computing the MACD histogram", () => {
     const input = bars([1, 2, 3, 4, 8]);
     const result = calculateMACD(input, 2, 3, 2);

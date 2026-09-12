@@ -39,6 +39,34 @@ function configure() {
   return useChartPreferences.getState();
 }
 
+it("preserves Bollinger sources through independent edits, duplication, and workspace reload", async () => {
+  const store = useChartPreferences.getState();
+  const base = store.addIndicator("bollinger")!;
+  store.setIndicatorInstanceInputs(base, { period: 10, deviations: 1.5, source: 4 });
+  const duplicate = store.duplicateIndicatorInstance(base)!;
+  store.setIndicatorInstanceInputs(duplicate, { source: 6 });
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  const inputs = () =>
+    getChartIndicatorInstances(useChartPreferences.getState())
+      .filter((i) => i.key === "bollinger")
+      .map((i) => i.inputs);
+  expect(inputs()).toEqual([
+    { period: 10, deviations: 1.5, source: 4 },
+    { period: 10, deviations: 1.5, source: 6 },
+  ]);
+  vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+  useChartPreferences.getState().setIndicatorInstanceInputs(duplicate, { source: 99 });
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
+  expect(inputs()).toEqual([
+    { period: 10, deviations: 1.5, source: 4 },
+    { period: 20, deviations: 2, source: 0 },
+  ]);
+});
+
 it("persists independent RSI sources and resets only the selected instance", async () => {
   const store = useChartPreferences.getState();
   const base = store.addIndicator("rsi")!;

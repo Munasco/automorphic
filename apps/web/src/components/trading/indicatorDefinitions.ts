@@ -173,6 +173,7 @@ export const INDICATOR_DEFINITIONS = [
     placement: "overlay",
     inputs: [
       length(20),
+      priceSource,
       {
         key: "deviations",
         label: "Standard deviations",
@@ -189,7 +190,14 @@ export const INDICATOR_DEFINITIONS = [
       { ...style("background", "Background", "#60a5fa"), kind: "fill", opacity: 0.05 },
     ],
     calculate: ({ bars, inputs }) =>
-      bands(calculateBollingerBands(bars, inputs.period, inputs.deviations)),
+      bands(
+        calculateBollingerBands(
+          bars,
+          inputs.period,
+          inputs.deviations,
+          PRICE_SOURCES[inputs.source ?? 0],
+        ),
+      ),
   }),
   defineIndicator({
     key: "donchian",

@@ -22,7 +22,7 @@ export interface IndicatorPoint {
 export const PRICE_SOURCES = ["close", "open", "high", "low", "hl2", "hlc3", "ohlc4"] as const;
 export type PriceSource = (typeof PRICE_SOURCES)[number];
 
-function sourcePrice(bar: Candle, source: PriceSource): number {
+export function sourcePrice(bar: Candle, source: PriceSource): number {
   switch (source) {
     case "hl2":
       return Number.isFinite(bar.high) && Number.isFinite(bar.low)
