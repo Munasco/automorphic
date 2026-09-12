@@ -1,3 +1,6 @@
+import { Menu as MenuPrimitive } from "@base-ui/react/menu";
+import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
+import { drawingContextMenuStyle } from "./drawingContextMenuStyles";
 import { Slider } from "@base-ui/react/slider";
 import { NumberField } from "@base-ui/react/number-field";
 import { DrawingToolIcon } from "./DrawingToolIcon";
@@ -539,6 +542,80 @@ export function WidthPicker({
         ))}
       </PopoverPopup>
     </Popover>
+  );
+}
+export function LineExtensionPicker({
+  left,
+  right,
+  onChange,
+}: {
+  left: boolean;
+  right: boolean;
+  onChange: (patch: Pick<DrawingPatch, "extendLeft" | "extendRight">) => void;
+}) {
+  const label =
+    [left && "Extend left line", right && "Extend right line"].filter(Boolean).join(", ") ||
+    "Don't extend";
+  return (
+    <Menu>
+      <MenuTrigger
+        aria-label="Extend line"
+        title={label}
+        className="group flex h-[34px] w-[180px] shrink-0 items-center gap-2 rounded border border-white/15 bg-transparent px-2 text-sm leading-[18px] text-zinc-200 outline-none hover:border-white/30 focus-visible:border-blue-500 aria-expanded:border-white/50"
+      >
+        <span className="min-w-0 flex-1 truncate text-left">
+          {left && <span className="inline-block">Extend left line</span>}
+          {left && right && ",\u00a0"}
+          {right && <span className="inline-block">Extend right line</span>}
+          {!left && !right && "Don't extend"}
+        </span>
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 18 18"
+          aria-hidden="true"
+          className="shrink-0 group-aria-expanded:rotate-180"
+        >
+          <path fill="currentColor" d="M4 7 9 11.5 14 7l-1-1-4 3.5L5 6Z" />
+        </svg>
+      </MenuTrigger>
+      <MenuPopup
+        align="start"
+        sideOffset={0}
+        style={drawingContextMenuStyle}
+        className="w-[180px] rounded-[10px] [&>div]:p-1.5"
+      >
+        {(
+          [
+            ["extendLeft", "Extend left line", left],
+            ["extendRight", "Extend right line", right],
+          ] as const
+        ).map(([key, text, checked]) => (
+          <MenuPrimitive.CheckboxItem
+            key={key}
+            checked={checked}
+            closeOnClick={false}
+            onCheckedChange={(value) => onChange({ [key]: value })}
+            className="flex h-8 items-center gap-2.5 rounded px-2 text-sm leading-[18px] whitespace-nowrap outline-none data-highlighted:bg-white/10"
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                "flex size-[18px] shrink-0 items-center justify-center rounded-[3px] border",
+                checked ? "border-zinc-200 bg-zinc-200 text-zinc-900" : "border-zinc-400",
+              )}
+            >
+              <MenuPrimitive.CheckboxItemIndicator>
+                <svg width="11" height="9" viewBox="0 0 11 9" fill="none">
+                  <path stroke="currentColor" strokeWidth="2" d="M1 4 4 7 10 1" />
+                </svg>
+              </MenuPrimitive.CheckboxItemIndicator>
+            </span>
+            {text}
+          </MenuPrimitive.CheckboxItem>
+        ))}
+      </MenuPopup>
+    </Menu>
   );
 }
 export function MarkerPicker({

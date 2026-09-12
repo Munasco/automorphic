@@ -9,6 +9,7 @@ import {
   WidthPicker,
   LineStylePicker,
   MarkerPicker,
+  LineExtensionPicker,
   LineAppearancePicker,
   Check,
   inputClass,
@@ -516,31 +517,7 @@ function DrawingSettings({
               {extendable ? (
                 <label className="flex items-center gap-2 text-sm">
                   <span className="w-[100px] shrink-0">Extend</span>
-                  <DrawingSelect
-                    label="Extend line"
-                    value={
-                      extendLeft && extendRight
-                        ? "both"
-                        : extendLeft
-                          ? "left"
-                          : extendRight
-                            ? "right"
-                            : "none"
-                    }
-                    onChange={(value) =>
-                      update({
-                        extendLeft: ["left", "both"].includes(value),
-                        extendRight: ["right", "both"].includes(value),
-                      })
-                    }
-                    options={[
-                      ["none", "Don't extend"],
-                      ["left", "Extend left"],
-                      ["right", "Extend right"],
-                      ["both", "Extend both"],
-                    ]}
-                    className="w-45"
-                  />
+                  <LineExtensionPicker left={extendLeft} right={extendRight} onChange={update} />
                 </label>
               ) : null}
               {supportsLineStatistics(draft.kind) ? (
