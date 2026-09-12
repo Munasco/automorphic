@@ -22,7 +22,7 @@ export const DEFAULT_INITIAL_BALANCE: Required<InitialBalanceSettings> = {
   showMidpoint: true,
   showQuarters: true,
   showBox: true,
-  backgroundColor: "#4caf50",
+  backgroundColor: "#81c784",
   backgroundOpacity: 0.05,
   showLabels: true,
   showExpansions: true,
