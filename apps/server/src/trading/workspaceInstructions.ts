@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import { TRADING_VISUALS_SKILL } from "./visualWorkflow.ts";
+import { TRADING_REPORT_CSS } from "./visualStyle.ts";
 
 export const TRADING_WORKSPACE_INSTRUCTIONS = `# Automorphic trading workspace
 
@@ -90,6 +91,8 @@ Read and follow AGENTS.md for the shared trading research, journaling, risk, and
   ".claude/skills/trading-workflow/SKILL.md": TRADING_WORKFLOW_SKILL,
   ".agents/skills/trading-visuals/SKILL.md": TRADING_VISUALS_SKILL,
   ".claude/skills/trading-visuals/SKILL.md": TRADING_VISUALS_SKILL,
+  ".agents/skills/trading-visuals/assets/report.css": TRADING_REPORT_CSS,
+  ".claude/skills/trading-visuals/assets/report.css": TRADING_REPORT_CSS,
 } as const;
 
 /** Seed missing guidance only; never overwrite a trader's instructions or follow an existing file symlink. */
