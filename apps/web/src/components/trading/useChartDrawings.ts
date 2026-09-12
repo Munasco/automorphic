@@ -11,6 +11,7 @@ import {
   type SeriesType,
   type Time,
   type Logical,
+  type Coordinate,
 } from "lightweight-charts";
 import {
   DRAWING_ANCHORS,
@@ -90,6 +91,7 @@ export function createChartDrawingSession(
   storage: DrawingStorage | undefined = tradingWorkspaceStorage,
   intervalMinutes: number | ChartInterval = 1,
   regressionSeries: ISeriesApi<SeriesType> = series,
+  directPlacement = false,
 ) {
   const key = `automorphic:chart-drawings:v1:${encodeURIComponent(symbol)}`;
   const defaults = createDrawingDefaults(storage);
@@ -608,7 +610,7 @@ export function createChartDrawingSession(
     }
     primitive.redraw();
   };
-  const click = (event: MouseEventParams<Time>) => {
+  const click = (event: Pick<MouseEventParams<Time>, "point" | "time" | "paneIndex">) => {
     if (
       disposed ||
       !event.point ||
@@ -865,12 +867,22 @@ export function createChartDrawingSession(
     if (selectedId === id) selectedId = null;
     changed();
   };
-  chart.subscribeClick(click);
+  // The chart library suppresses a second quick click even at a different position.
+  // DOM placement handles every anchor; the chart retains its cursor-selection behavior.
+  const chartClick = (event: MouseEventParams<Time>) => {
+    if (!directPlacement || tool === "cursor") click(event);
+  };
+  chart.subscribeClick(chartClick);
   chart.subscribeCrosshairMove(move);
   render();
   emit();
   return {
     setTool,
+    placeAt: (point: DrawingPoint) => {
+      if (disposed || tool === "cursor" || isFreehandDrawingTool(tool)) return false;
+      click({ point: { x: point.x as Coordinate, y: point.y as Coordinate } });
+      return true;
+    },
     beginDrag,
     hover,
     blocksChartPan: (point: DrawingPoint) => !disposed && tool === "cursor" && !!hit(point),
@@ -1086,7 +1098,7 @@ export function createChartDrawingSession(
       textEditing = false;
       disposed = true;
       try {
-        chart.unsubscribeClick(click);
+        chart.unsubscribeClick(chartClick);
         chart.unsubscribeCrosshairMove(move);
         series.detachPrimitive(primitive.primitive);
       } catch {
@@ -1116,12 +1128,15 @@ export function useChartDrawings(
       tradingWorkspaceStorage,
       intervalMinutes,
       regressionSeries ?? series,
+      true,
     );
     session.current = current;
     const element = chart.chartElement();
     const originalTabIndex = element.getAttribute("tabindex");
     element.tabIndex = 0;
     let pointerId: number | null = null;
+    let clickOrigin: DrawingPoint | null = null;
+    let dragged = false;
     const pointFor = (event: MouseEvent) => {
       const pane = series.getPane().getHTMLElement();
       if (!pane) return null;
@@ -1145,6 +1160,8 @@ export function useChartDrawings(
         point.y > series.getPane().getHeight()
       )
         return;
+      clickOrigin = point;
+      dragged = false;
       element.focus({ preventScroll: true });
       if (!current.beginDrag(point) && !current.blocksChartPan(point)) return;
       pointerId = event.pointerId;
@@ -1153,8 +1170,15 @@ export function useChartDrawings(
       event.stopPropagation();
     };
     const move = (event: PointerEvent) => {
-      if (event.pointerId !== pointerId) return;
       const point = pointFor(event);
+      if (
+        event.buttons &&
+        point &&
+        clickOrigin &&
+        Math.hypot(point.x - clickOrigin.x, point.y - clickOrigin.y) >= 3
+      )
+        dragged = true;
+      if (event.pointerId !== pointerId) return;
       if (point) current.dragTo(point);
       event.preventDefault();
       event.stopPropagation();
@@ -1169,6 +1193,22 @@ export function useChartDrawings(
         element.releasePointerCapture(event.pointerId);
       event.preventDefault();
       event.stopPropagation();
+    };
+    const place = (event: MouseEvent) => {
+      if (event.button !== 0 || dragged || !clickOrigin) return;
+      const point = pointFor(event);
+      if (
+        !point ||
+        point.x < 0 ||
+        point.x > chart.timeScale().width() ||
+        point.y < 0 ||
+        point.y > series.getPane().getHeight()
+      )
+        return;
+      if (current.placeAt(point)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
     };
     const doubleClick = (event: MouseEvent) => {
       const point = pointFor(event);
@@ -1192,6 +1232,7 @@ export function useChartDrawings(
       if (pointerId === null) current.hover(null);
     };
     element.addEventListener("pointerleave", leave);
+    element.addEventListener("click", place, true);
     element.addEventListener("dblclick", doubleClick, true);
     element.addEventListener("contextmenu", contextMenu, true);
     element.addEventListener("pointerdown", down, true);
@@ -1225,6 +1266,7 @@ export function useChartDrawings(
     return () => {
       window.removeEventListener("keydown", keyboard);
       element.removeEventListener("pointerleave", leave);
+      element.removeEventListener("click", place, true);
       element.removeEventListener("dblclick", doubleClick, true);
       element.removeEventListener("contextmenu", contextMenu, true);
       element.removeEventListener("pointerdown", down, true);
