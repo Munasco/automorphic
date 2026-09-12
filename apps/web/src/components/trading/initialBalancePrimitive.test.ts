@@ -22,6 +22,45 @@ const range: InitialBalanceRange = {
 };
 
 describe("initial balance visual geometry", () => {
+  it("projects physical exchange times through distinct synthetic chart keys", () => {
+    const bars = [100, 100.1, 100.2].map((time, index) => ({
+      time,
+      actualTime: index < 2 ? 10 : 20,
+      open: 100,
+      close: 100,
+      high: 110,
+      low: 90,
+      volume: 1,
+    }));
+    const chart = {
+      timeScale: () => ({
+        timeToCoordinate: (time: number) => ({ 100: 10, 100.1: 20, 100.2: 30 })[time] ?? null,
+        width: () => 400,
+      }),
+    } as unknown as IChartApi;
+    expect(projectInitialBalanceTime(chart, bars, 0, 10)).toBe(10);
+    expect(projectInitialBalanceTime(chart, bars, 0, 15)).toBe(25);
+    expect(projectInitialBalanceTime(chart, bars, 0, 20)).toBe(30);
+  });
+  it("interpolates irregular bars and clamps missing endpoints offscreen without a fake tick duration", () => {
+    const bars = [100, 100.125, 300].map((time) => ({
+      time,
+      open: 100,
+      close: 100,
+      high: 110,
+      low: 90,
+      volume: 1,
+    }));
+    const chart = {
+      timeScale: () => ({
+        timeToCoordinate: (time: number) => ({ 100: 10, 100.125: 20, 300: 30 })[time] ?? null,
+        width: () => 400,
+      }),
+    } as unknown as IChartApi;
+    expect(projectInitialBalanceTime(chart, bars, 0, 100.0625)).toBe(15);
+    expect(projectInitialBalanceTime(chart, bars, 0, 0)).toBe(-1);
+    expect(projectInitialBalanceTime(chart, bars, 0, 400)).toBe(401);
+  });
   it("projects quarter and expansion levels from the observed IB range", () => {
     const levels = initialBalanceLevels(range, DEFAULT_INITIAL_BALANCE);
     expect(levels.map((level) => [level.label, level.price])).toEqual([

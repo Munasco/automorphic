@@ -81,7 +81,7 @@ export function drawingProjection(chart: IChartApi, series: ISeriesApi<SeriesTyp
       bt = drawingTimeValue(b.time);
     if (ax === null || bx === null || ax === bx || at === null || bt === null) return null;
     const value = at + ((point.x - ax) / (bx - ax)) * (bt - at);
-    return { time: Math.round(value) as Time, price };
+    return { time: value as Time, price };
   };
   return { width, height, priceY, project, unproject };
 }

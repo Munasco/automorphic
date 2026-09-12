@@ -1,3 +1,5 @@
+import { initialBalanceChartPoints, type InitialBalanceHistory } from "./useInitialBalanceHistory";
+import { calculateATR } from "./advancedIndicators";
 import { resolveIndicatorStyle } from "./indicatorStyles";
 import {
   HistogramSeries,
@@ -63,6 +65,7 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
     interval: number,
     appearance: ChartAppearance = {},
     indicatorInputs: IndicatorInputSettings = {},
+    sessionHistory?: Pick<InitialBalanceHistory, "bars" | "status">,
   ) => {
     const inputs = (key: IndicatorKey) => getIndicatorInputs(key, indicatorInputs);
     const oscillatorKeys = OSCILLATORS.filter((key) => enabled[key]);
@@ -175,15 +178,57 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
     // Catalog order keeps pane assignment stable when enabling several studies together.
     for (const definition of INDICATOR_CATALOG) {
       if (!enabled[definition.key]) continue;
+      const auxiliary = definition.key === "ib" ? sessionHistory : undefined;
       const result = definition.calculate({
-        bars,
+        bars: auxiliary?.bars ?? bars,
         inputs: inputs(definition.key),
-        interval,
+        interval: auxiliary ? 1 : interval,
         session: ibSettings,
       });
+      if (auxiliary && result.sessionStats) {
+        const last = bars.at(-1);
+        const atr = calculateATR(bars).at(-1);
+        const stats = result.sessionStats;
+        const value = atr && atr.time === last?.time ? atr.value : null;
+        const nearestBoundary =
+          last && Math.abs(last.close - stats.high) <= Math.abs(last.close - stats.low)
+            ? "IBH"
+            : "IBL";
+        result.sessionStats = {
+          ...stats,
+          atr: value,
+          rangeAtrPercent: value && value > 0 ? (stats.range / value) * 100 : null,
+          ...(last
+            ? {
+                position:
+                  last.close > stats.high
+                    ? "Above IBH"
+                    : last.close < stats.low
+                      ? "Below IBL"
+                      : "Inside",
+                nearestBoundary,
+                distance: last.close - (nearestBoundary === "IBH" ? stats.high : stats.low),
+              }
+            : {}),
+        };
+      }
+      const sessionEnd = new Map(
+        result.plots.flatMap((plot) =>
+          plot.overlay?.kind === "initial-balance"
+            ? [[plot.id.split(".")[0]!, plot.overlay.range.sessionEndTime] as const]
+            : [],
+        ),
+      );
       for (const output of result.plots) {
         const id = `${definition.key}.${output.id}`;
-        line(id, definition.key, output.points, output);
+        const points = auxiliary
+          ? initialBalanceChartPoints(
+              output.points,
+              bars,
+              sessionEnd.get(output.id.split(".")[0]!) ?? -Infinity,
+            )
+          : output.points;
+        line(id, definition.key, points, output);
         if (output.overlay?.kind === "initial-balance") {
           const host = plots.get(id)!;
           if (!host.initialBalance) {
@@ -209,7 +254,7 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
       }
       if (result.reading !== undefined) readings[definition.key] = result.reading;
       if (result.sessionStats) initialBalanceStats = result.sessionStats;
-      if (result.status) initialBalanceStatus = result.status;
+      if (result.status) initialBalanceStatus = auxiliary?.status || result.status;
     }
     for (const [id, plot] of plots)
       if (!desired.has(id)) {

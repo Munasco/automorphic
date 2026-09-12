@@ -38,6 +38,25 @@ describe("native drawing primitive", () => {
     expect(projection.unproject({ x: 300, y: 200 })).toEqual({ time: 300, price: 300 });
     expect(projection.unproject({ x: 50, y: 200 })).toEqual({ time: 50, price: 300 });
   });
+  it("preserves subsecond spacing when extending a drawing beyond closely spaced trades", () => {
+    const { chart, series } = fixture();
+    const start = 1_789_160_399.712;
+    const step = 0.000_01;
+    const scale = {
+      width: () => 1000,
+      coordinateToTime: () => null,
+      timeToCoordinate: (time: number) => ((time - start) / step) * 10,
+    };
+    chart.timeScale = () => scale as unknown as ReturnType<IChartApi["timeScale"]>;
+    series.data = () => [{ time: start as Time }, { time: (start + step) as Time }];
+    const projection = drawingProjection(chart, series);
+    const a = projection.unproject({ x: 20, y: 200 })!;
+    const b = projection.unproject({ x: 30, y: 200 })!;
+    expect(Number(a.time)).toBeGreaterThan(start + step);
+    expect(Number(b.time)).toBeGreaterThan(Number(a.time));
+    expect(projection.project(a)?.x).toBeCloseTo(20, 0);
+    expect(projection.project(b)?.x).toBeCloseTo(30, 0);
+  });
   it("shows independent endpoint price-axis labels and hides them with the drawing", () => {
     const { chart, series } = fixture();
     const drawing: ChartDrawing = {

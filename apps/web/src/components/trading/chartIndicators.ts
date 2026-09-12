@@ -1,6 +1,12 @@
 export interface Candle {
-  /** Unix seconds; callers provide distinct bars in chronological order. */
+  /** Unique chart key in Unix seconds; colliding trade times may be separated by fractions. */
   time: number;
+  /** Original exchange timestamps for session calculations and labels. */
+  actualTime?: number;
+  actualEndTime?: number;
+  barId?: string;
+  firstTradeId?: number;
+  lastTradeId?: number;
   open: number;
   high: number;
   low: number;
@@ -104,7 +110,7 @@ export function calculateVWAP(bars: readonly Candle[]): IndicatorPoint[] {
   let volume = 0;
   let value = 0;
   for (const bar of bars) {
-    const nextSession = futuresSession(bar.time);
+    const nextSession = futuresSession(bar.actualTime ?? bar.time);
     if (nextSession === null) continue;
     if (nextSession !== session) {
       session = nextSession;

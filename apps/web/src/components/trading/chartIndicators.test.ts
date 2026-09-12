@@ -100,6 +100,22 @@ describe("chart indicators", () => {
     expect(calculateVWAP(bars([1, 2]).map((bar) => ({ ...bar, volume: 0 })))).toEqual([]);
   });
 
+  it("uses exchange timestamps for session resets while retaining unique chart keys", () => {
+    const boundary = Date.parse("2026-09-11T22:00:00Z") / 1000;
+    const input = bars([10, 20, 40]).map((bar, index) => ({
+      ...bar,
+      high: bar.close,
+      low: bar.close,
+      volume: 1,
+      time: boundary + index * 0.000_01,
+      actualTime: index < 2 ? boundary - 0.001 : boundary,
+    }));
+    expect(calculateVWAP(input)).toEqual([
+      { time: input[0]!.time, value: 10 },
+      { time: input[1]!.time, value: 15 },
+      { time: input[2]!.time, value: 40 },
+    ]);
+  });
   it("resets VWAP at the Chicago 17:00 session boundary, not midnight", () => {
     const input = [
       timed("2026-09-14T20:59:00Z", 10),

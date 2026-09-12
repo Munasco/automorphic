@@ -1,3 +1,4 @@
+import { useInitialBalanceHistory } from "./useInitialBalanceHistory";
 import {
   chartIntervalKey,
   chartIntervalMinutes,
@@ -132,6 +133,11 @@ export function TradovateChart({
       ) as ChartIndicators,
     [settings.indicators, settings.hiddenIndicators],
   );
+  const auxiliaryHistory = useInitialBalanceHistory(
+    symbol,
+    visibleIndicators.ib && interval.unit !== "minute",
+  );
+  const auxiliaryHistoryRef = useRef(auxiliaryHistory);
   const indicatorSettings = useRef(visibleIndicators);
   const appearanceSettings = useRef(settings.appearance);
   const inputSettings = useRef(settings.indicatorInputs);
@@ -173,6 +179,7 @@ export function TradovateChart({
   const shown = hovered ?? last;
 
   useEffect(() => {
+    auxiliaryHistoryRef.current = auxiliaryHistory;
     indicatorSettings.current = visibleIndicators;
     appearanceSettings.current = settings.appearance;
     inputSettings.current = settings.indicatorInputs;
@@ -182,6 +189,7 @@ export function TradovateChart({
   }, [
     engine,
     visibleIndicators,
+    auxiliaryHistory,
     settings.initialBalance,
     settings.appearance,
     settings.indicatorInputs,
@@ -276,6 +284,7 @@ export function TradovateChart({
           chartIntervalMinutes(interval) ?? 0,
           appearanceSettings.current,
           inputSettings.current,
+          interval.unit !== "minute" ? auxiliaryHistoryRef.current : undefined,
         );
         const latestVolume = sorted.at(-1)?.volume;
         if (latestVolume !== undefined) result.readings.volume = latestVolume;
@@ -375,7 +384,9 @@ export function TradovateChart({
           high: latest.high,
           low: latest.low,
           volume: latest.volume,
-          timestamp: new Date(latest.time * 1000).toISOString(),
+          timestamp: new Date(
+            (latest.actualEndTime ?? latest.actualTime ?? latest.time) * 1000,
+          ).toISOString(),
           source: "bar",
         });
     };
@@ -634,7 +645,7 @@ export function TradovateChart({
           <ChartTechnicals
             symbol={symbol}
             interval={interval}
-            time={last?.time ?? null}
+            time={last ? (last.actualEndTime ?? last.actualTime ?? last.time) : null}
             rows={technicalRows}
           />
         ) : null}
@@ -670,7 +681,9 @@ export function TradovateChart({
             />
           </TooltipTrigger>
           <TooltipPopup>
-            {last ? `${status} · Last bar ${new Date(last.time * 1000).toLocaleString()}` : status}
+            {last
+              ? `${status} · Last bar ${new Date((last.actualEndTime ?? last.actualTime ?? last.time) * 1000).toLocaleString()}`
+              : status}
           </TooltipPopup>
         </Tooltip>
         <button

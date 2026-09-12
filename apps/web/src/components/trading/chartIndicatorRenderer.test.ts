@@ -72,6 +72,65 @@ const disabled = Object.fromEntries(
 ) as ChartIndicators;
 
 describe("native indicator renderer", () => {
+  it("calculates IB from minute history without adding minute timestamps to the seconds chart", () => {
+    const start = Date.parse("2026-09-14T13:30:00Z") / 1000;
+    const minuteBars = Array.from({ length: 66 }, (_, index) => ({
+      time: start + index * 60,
+      open: 100,
+      close: 105,
+      high: index < 60 ? 110 : 999,
+      low: index < 60 ? 90 : 1,
+      volume: 2,
+    }));
+    const chartBars = Array.from({ length: 30 }, (_, index) => ({
+      time: start + 3701 + index * 5,
+      open: 105,
+      close: 115,
+      high: 116,
+      low: 104,
+      volume: 1,
+    }));
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.1);
+    const result = renderer.update(
+      chartBars,
+      { ...disabled, ib: true },
+      DEFAULT_INITIAL_BALANCE,
+      5 / 60,
+      {},
+      {},
+      { bars: minuteBars, status: "" },
+    );
+    expect(result.initialBalanceStats).toMatchObject({
+      high: 110,
+      low: 90,
+      volume: 120,
+      status: "Locked",
+      position: "Above IBH",
+      distance: 5,
+    });
+    expect(result.initialBalanceStats?.atr).toBeCloseTo(12);
+    expect(result.readings.ib).toBe(100);
+    const chartTimes = new Set(chartBars.map((bar) => bar.time));
+    expect(
+      harness.series.every((series) =>
+        series.data.every((point) => chartTimes.has(Number(point.time))),
+      ),
+    ).toBe(true);
+    expect(harness.series.flatMap((series) => series.primitives)).toHaveLength(1);
+    const loading = renderer.update(
+      chartBars,
+      { ...disabled, ib: true },
+      DEFAULT_INITIAL_BALANCE,
+      5 / 60,
+      {},
+      {},
+      { bars: [], status: "Loading minute history" },
+    );
+    expect(loading.initialBalanceStats).toBeNull();
+    expect(loading.initialBalanceStatus).toBe("Loading minute history");
+    expect(harness.series).toHaveLength(0);
+  });
   it("recalculates configured inputs in place and restores original warmups on reset", () => {
     const harness = chartHarness();
     const renderer = createIndicatorRenderer(harness.chart, 0.1);

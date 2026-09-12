@@ -89,33 +89,43 @@ export function projectInitialBalanceTime(
   time: number,
 ): number | null {
   const scale = chart.timeScale();
-  const direct = scale.timeToCoordinate(time as UTCTimestamp);
+  const direct =
+    bars[0]?.actualTime === undefined ? scale.timeToCoordinate(time as UTCTimestamp) : null;
   if (direct !== null) return direct;
   if (!bars.length) return null;
   let left = 0;
   let right = bars.length;
   while (left < right) {
     const middle = Math.floor((left + right) / 2);
-    if (bars[middle]!.time < time) left = middle + 1;
+    if ((bars[middle]!.actualTime ?? bars[middle]!.time) < time) left = middle + 1;
     else right = middle;
   }
   const before = bars[left - 1];
   const after = bars[left];
+  if (after && (after.actualTime ?? after.time) === time)
+    return scale.timeToCoordinate(after.time as UTCTimestamp);
   if (before && after) {
     const bx = scale.timeToCoordinate(before.time as UTCTimestamp);
     const ax = scale.timeToCoordinate(after.time as UTCTimestamp);
+    const beforeTime = before.actualTime ?? before.time;
+    const afterTime = after.actualTime ?? after.time;
     return bx === null || ax === null
       ? null
-      : bx + ((ax - bx) * (time - before.time)) / (after.time - before.time);
+      : beforeTime === afterTime
+        ? ax
+        : bx + ((ax - bx) * (time - beforeTime)) / (afterTime - beforeTime);
   }
   const nearest = before ?? after!;
   const x = scale.timeToCoordinate(nearest.time as UTCTimestamp);
-  if (x === null || intervalMinutes <= 0) return null;
+  if (x === null) return null;
+  // Irregular bars have no duration outside the loaded timeline. Keep boundaries offscreen.
+  if (intervalMinutes <= 0) return before ? Math.max(scale.width() + 1, x) : Math.min(-1, x);
   const logical = scale.coordinateToLogical(x);
   return logical === null
     ? null
     : scale.logicalToCoordinate(
-        (logical + (time - nearest.time) / (intervalMinutes * 60)) as Logical,
+        (logical +
+          (time - (nearest.actualTime ?? nearest.time)) / (intervalMinutes * 60)) as Logical,
       );
 }
 
