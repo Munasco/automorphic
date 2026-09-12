@@ -512,43 +512,43 @@ export function TradovateChart({
           </ChartAction>
         </div>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="shrink-0 px-2.5 pt-2 pb-1 text-xs">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <button
-                type="button"
-                onClick={onSelectSymbol}
-                className="trading-heading truncate font-medium text-zinc-200 hover:text-white"
-              >
-                {INSTRUMENTS[root].name} · {interval === 60 ? "1h" : `${interval}m`} ·{" "}
-                {INSTRUMENTS[root].exchange}
-              </button>
-            </div>
-            {shown ? (
-              <div
-                className={cn(
-                  "mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs tabular-nums",
-                  shown.close >= shown.open ? "text-emerald-400" : "text-red-400",
-                )}
-                aria-label="Candle values"
-              >
-                <span>O {shown.open.toFixed(2)}</span>
-                <span>H {shown.high.toFixed(2)}</span>
-                <span>L {shown.low.toFixed(2)}</span>
-                <span>C {shown.close.toFixed(2)}</span>
-                <span className="text-zinc-500">
-                  {hovered ? new Date(shown.time * 1000).toLocaleString() : ""}
-                </span>
-              </div>
-            ) : null}
-            <IndicatorLegend
-              settings={settings}
-              readings={hoverReadings ?? readings}
-              initialBalanceStatus={initialBalanceStatus}
-            />
-          </div>
           <div className="relative min-h-0 min-w-0 flex-1 overflow-y-auto">
             <div className="relative h-full" style={{ minHeight: 240 + paneCount * 110 }}>
               <div ref={host} className="absolute inset-0" />
+              <div
+                aria-label="Chart legend"
+                className="pointer-events-none absolute left-2.5 right-20 top-2 z-10 text-xs"
+              >
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <button
+                    type="button"
+                    onClick={onSelectSymbol}
+                    className="pointer-events-auto trading-heading truncate font-medium text-zinc-200 hover:text-white"
+                  >
+                    {INSTRUMENTS[root].name} · {interval === 60 ? "1h" : `${interval}m`} ·{" "}
+                    {INSTRUMENTS[root].exchange}
+                  </button>
+                </div>
+                {shown ? (
+                  <div
+                    className={cn(
+                      "mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs tabular-nums",
+                      shown.close >= shown.open ? "text-emerald-400" : "text-red-400",
+                    )}
+                    aria-label="Candle values"
+                  >
+                    <span>O {shown.open.toFixed(2)}</span>
+                    <span>H {shown.high.toFixed(2)}</span>
+                    <span>L {shown.low.toFixed(2)}</span>
+                    <span>C {shown.close.toFixed(2)}</span>
+                  </div>
+                ) : null}
+                <IndicatorLegend
+                  settings={settings}
+                  readings={hoverReadings ?? readings}
+                  initialBalanceStatus={initialBalanceStatus}
+                />
+              </div>
               {!last ? (
                 <div className="pointer-events-none absolute inset-x-0 top-12 flex items-center justify-center p-6 text-center text-xs text-zinc-400">
                   {symbol ? status : "Select a contract to load its chart."}

@@ -52,7 +52,7 @@ export function IndicatorLegend({
           return (
             <div
               key={key}
-              className="group/indicator relative flex min-h-6 max-w-full items-center gap-2 rounded hover:bg-white/[0.025] focus-within:bg-white/[0.025]"
+              className="pointer-events-auto group/indicator relative flex min-h-6 max-w-full items-center gap-2 rounded hover:bg-white/[0.025] focus-within:bg-white/[0.025]"
               data-indicator={key}
             >
               <Tooltip>
@@ -275,7 +275,7 @@ export function IndicatorLegend({
           render={
             <button
               type="button"
-              className="mt-0.5 inline-flex h-4 min-w-6 items-center justify-center rounded border border-white/15 text-zinc-500 hover:text-zinc-200"
+              className="pointer-events-auto mt-2 inline-flex h-7 min-w-9 items-center justify-center gap-1 px-2 rounded border border-white/15 text-zinc-500 hover:text-zinc-200"
               aria-label={collapsed ? "Expand indicator legend" : "Collapse indicator legend"}
               aria-expanded={!collapsed}
               onClick={() => setCollapsed(!collapsed)}

@@ -50,4 +50,4 @@ SOFTWARE.
 
 ## Solar icons
 
-Market status icons (`pause-circle-linear`, `pulse-2-linear`) by [480 Design](https://www.figma.com/community/file/1166831539721848736), retrieved through Iconify. Licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Icon geometry is unchanged; rendered size and color follow the application theme.
+Market status icon (`pulse-2-linear`) by [480 Design](https://www.figma.com/community/file/1166831539721848736), retrieved through Iconify. Licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Icon geometry is unchanged; rendered size and color follow the application theme.
