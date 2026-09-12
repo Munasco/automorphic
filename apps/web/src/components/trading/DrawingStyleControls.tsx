@@ -5,7 +5,8 @@ import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popov
 import type { ChartDrawing } from "./drawingGeometry";
 import type { DrawingPatch } from "./useChartDrawings";
 import { cn } from "../../lib/utils";
-import type { ComponentProps } from "react";
+import { useState, type ComponentProps } from "react";
+import { DrawingCustomColorEditor } from "./DrawingCustomColorEditor";
 import { TradingSelect } from "./TradingSelect";
 const colors = [
   "#ffffff",
@@ -143,59 +144,184 @@ export function ColorPicker({
       </PopoverTrigger>
       <PopoverPopup
         instant
-        style={{ background: "#1f1f1f", backdropFilter: "none" }}
-        className="w-[250px]"
-        viewportClassName="p-3"
+        style={{ background: "#1f1f1f", backdropFilter: "none", border: 0 }}
+        align="start"
+        sideOffset={0}
+        className="w-[250px] rounded border-0"
+        viewportClassName="p-0"
       >
         <PopoverTitle className="sr-only">{label}</PopoverTitle>
-        <div className="grid grid-cols-10 gap-[6px]">
+        <ColorSettingsPanel
+          value={value}
+          onChange={onChange}
+          label={label}
+          opacity={opacity}
+          onOpacityChange={onOpacityChange}
+        />
+      </PopoverPopup>
+    </Popover>
+  );
+}
+function ColorSettingsPanel({
+  value,
+  onChange,
+  label,
+  opacity,
+  onOpacityChange,
+  drawing,
+  onDrawingChange,
+}: {
+  value: string;
+  onChange: (color: string) => void;
+  label: string;
+  opacity?: number | undefined;
+  onOpacityChange?: ((opacity: number) => void) | undefined;
+  drawing?: ChartDrawing;
+  onDrawingChange?: (patch: DrawingPatch) => void;
+}) {
+  const [custom, setCustom] = useState(false);
+  const [customColors, setCustomColors] = useState<string[]>([]);
+  if (custom) {
+    return (
+      <DrawingCustomColorEditor
+        initialColor={value}
+        onAdd={(color) => {
+          setCustomColors((previous) =>
+            previous.includes(color) ? previous : [...previous, color],
+          );
+          onChange(color);
+          setCustom(false);
+        }}
+      />
+    );
+  }
+  return (
+    <div className="py-1.5 text-zinc-200">
+      <div className="w-[248px] px-3 py-1.5">
+        <div className="-mx-[3px] grid grid-cols-10">
           {colors.map((color, index) => (
             <button
               type="button"
               key={color}
               aria-label={`${label} ${color}`}
-              aria-pressed={value === color}
+              aria-pressed={value.toLowerCase() === color}
               onClick={() => onChange(color)}
               className={cn(
-                "size-[17px] rounded-[1px] border border-white/10",
-                index >= 20 && index < 30 && "mt-[6px]",
-                color === value && "ring-2 ring-white ring-offset-2 ring-offset-[#1e222d]",
+                "m-[3px] size-[17px] rounded-[1px] border border-white/10",
+                index >= 20 && index < 30 && "mt-[9px]",
+                color === value.toLowerCase() &&
+                  "ring-2 ring-white ring-offset-2 ring-offset-[#202020]",
               )}
               style={{ background: color }}
             />
           ))}
         </div>
-        <label className="mt-4 flex items-center justify-between text-xs text-zinc-400">
-          Custom color
-          <input
-            type="color"
-            aria-label={`Custom ${label.toLowerCase()}`}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="h-7 w-10 bg-transparent"
-          />
-        </label>
+        <div className="my-3 h-px bg-[#4a4a4a]" />
+        <div className="-mx-[3px] flex flex-wrap items-center">
+          {customColors.map((color) => (
+            <button
+              type="button"
+              key={color}
+              aria-label={`${label} custom ${color}`}
+              aria-pressed={value === color}
+              onClick={() => onChange(color)}
+              className="m-[3px] size-[17px] rounded-[1px] border border-white/20 aria-pressed:ring-2 aria-pressed:ring-white"
+              style={{ background: color }}
+            />
+          ))}
+          <button
+            type="button"
+            aria-label="Add custom color"
+            onClick={() => setCustom(true)}
+            className="m-[3px] flex size-[17px] items-center justify-center rounded hover:bg-white/10"
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+              <path d="M9 3v12M3 9h12" fill="none" stroke="currentColor" strokeWidth="1.5" />
+            </svg>
+          </button>
+        </div>
         {opacity !== undefined && onOpacityChange ? (
-          <OpacityControl label={`${label} opacity`} value={opacity} onChange={onOpacityChange} />
+          <OpacityControl
+            label={`${label} opacity`}
+            value={opacity}
+            onChange={onOpacityChange}
+            compact
+          />
         ) : null}
-      </PopoverPopup>
-    </Popover>
+      </div>
+      {drawing && onDrawingChange ? (
+        <div className="space-y-3 px-3 pt-1.5">
+          <div>
+            <div className="mb-1 text-xs leading-[14px]">Thickness</div>
+            <div className="flex h-8 overflow-hidden rounded border border-white/15">
+              {[1, 2, 3, 4].map((width) => (
+                <button
+                  key={width}
+                  type="button"
+                  aria-label={`${width}px thickness`}
+                  aria-pressed={drawing.width === width}
+                  onClick={() => onDrawingChange({ width })}
+                  className="flex min-w-0 flex-1 items-center justify-center border-r border-white/15 last:border-r-0 hover:bg-white/10 aria-pressed:bg-white/20"
+                >
+                  <svg width="26" height="16" aria-hidden="true">
+                    <path d="M0 8h26" stroke="currentColor" strokeWidth={width} />
+                  </svg>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="mb-1 text-xs leading-[14px]">Line style</div>
+            <div className="flex h-8 overflow-hidden rounded border border-white/15">
+              {(["solid", "dashed", "dotted"] as const).map((lineStyle) => (
+                <button
+                  key={lineStyle}
+                  type="button"
+                  aria-label={`${lineStyle} line`}
+                  aria-pressed={drawing.lineStyle === lineStyle}
+                  onClick={() => onDrawingChange({ lineStyle })}
+                  className="flex min-w-0 flex-1 items-center justify-center border-r border-white/15 last:border-r-0 hover:bg-white/10 aria-pressed:bg-white/20"
+                >
+                  <svg width="40" height="16" aria-hidden="true">
+                    <path
+                      d="M0 8h40"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeDasharray={
+                        lineStyle === "dashed" ? "6 3" : lineStyle === "dotted" ? "2 3" : undefined
+                      }
+                    />
+                  </svg>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 export function OpacityControl({
   label,
   value,
   onChange,
+  compact = false,
 }: {
   label: string;
   value: number;
   onChange: (value: number) => void;
+  compact?: boolean;
 }) {
   const percent = Math.round(value * 100);
   return (
-    <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
-      <div className="text-xs text-zinc-300">Opacity</div>
-      <div className="flex items-center gap-3">
+    <div
+      className={cn(
+        "mt-3 space-y-2 border-t border-white/10 pt-3",
+        compact && "space-y-1 border-0 pt-0",
+      )}
+    >
+      <div className="text-xs leading-[14px] text-zinc-300">Opacity</div>
+      <div className={cn("flex items-center gap-3", compact && "gap-2")}>
         <Slider.Root
           min={0}
           max={100}
@@ -204,11 +330,19 @@ export function OpacityControl({
           className="flex-1"
         >
           <Slider.Control className="relative flex h-6 w-full touch-none items-center">
-            <Slider.Track className="relative h-1 w-full rounded bg-zinc-600">
-              <Slider.Indicator className="rounded bg-[#2962ff]" />
+            <Slider.Track
+              className={cn(
+                "relative h-1 w-full rounded bg-zinc-600",
+                compact && "h-[10px] border border-white bg-transparent",
+              )}
+            >
+              <Slider.Indicator className={cn("rounded bg-[#2962ff]", compact && "bg-zinc-200")} />
               <Slider.Thumb
                 getAriaLabel={() => `${label} slider`}
-                className="size-3 rounded-full border-2 border-[#2962ff] bg-[#202020] outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className={cn(
+                  "size-3 rounded-full border-2 border-[#2962ff] bg-[#202020] outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
+                  compact && "border-white",
+                )}
               />
             </Slider.Track>
           </Slider.Control>
@@ -222,11 +356,17 @@ export function OpacityControl({
             if (next !== null && Number.isFinite(next) && next !== percent)
               onChange(Math.min(100, Math.max(0, next)) / 100);
           }}
-          className="flex h-8 items-center gap-1 rounded border border-white/15 px-2 text-xs text-zinc-300"
+          className={cn(
+            "flex h-8 items-center gap-1 rounded border border-white/15 px-2 text-xs text-zinc-300",
+            compact && "h-[26px] w-[47px] shrink-0 gap-0 px-[5px] text-sm leading-6",
+          )}
         >
           <NumberField.Input
             aria-label={label}
-            className="w-8 bg-transparent text-right outline-none"
+            className={cn(
+              "w-8 bg-transparent text-right outline-none",
+              compact && "min-w-0 flex-1",
+            )}
           />
           %
         </NumberField.Root>
@@ -440,28 +580,26 @@ export function LineAppearancePicker({
       </PopoverTrigger>
       <PopoverPopup
         instant
-        style={{ background: "#202020", backdropFilter: "none" }}
-        className="w-48"
-        viewportClassName="p-2"
+        style={{ background: "#202020", backdropFilter: "none", border: 0 }}
+        align="start"
+        sideOffset={0}
+        className="w-[250px] rounded border-0"
+        viewportClassName="p-0"
       >
         <PopoverTitle className="sr-only">{label}</PopoverTitle>
-        <div className="flex items-center justify-between">
-          <ColorPicker
-            value={drawing.color}
-            onChange={(color) => onChange({ color })}
-            opacity={fillOpacity === undefined ? (drawing.lineOpacity ?? 1) : undefined}
-            onOpacityChange={(lineOpacity) => onChange({ lineOpacity })}
-          />
-          <WidthPicker drawing={drawing} onChange={onChange} />
-          <LineStylePicker drawing={drawing} onChange={onChange} />
-        </div>
-        {fillOpacity !== undefined && onFillOpacityChange ? (
-          <OpacityControl
-            label={`${label} opacity`}
-            value={fillOpacity}
-            onChange={onFillOpacityChange}
-          />
-        ) : null}
+        <ColorSettingsPanel
+          label={label}
+          value={drawing.color}
+          onChange={(color) => onChange({ color })}
+          opacity={fillOpacity ?? drawing.lineOpacity ?? 1}
+          onOpacityChange={
+            fillOpacity !== undefined
+              ? onFillOpacityChange
+              : (lineOpacity) => onChange({ lineOpacity })
+          }
+          drawing={drawing}
+          onDrawingChange={onChange}
+        />
       </PopoverPopup>
     </Popover>
   );
