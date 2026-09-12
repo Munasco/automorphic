@@ -13,6 +13,8 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { SettingsSection } from "./settingsLayout";
+import { useOptionalSettingsScope } from "./SettingsScopeContext";
+import { usePrimaryEnvironmentId } from "../../state/environments";
 
 const decodeDocument = Schema.decodeUnknownSync(McpIntegrationDocument);
 const key = ["trading", "mcp-plugins"] as const;
@@ -120,14 +122,23 @@ export function parsePluginImport(text: string, name: string): McpPlugin {
 
 export function McpPluginsSettings() {
   const client = useQueryClient();
+  const scope = useOptionalSettingsScope();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const supportedScope =
+    !scope ||
+    (scope.targets.length === 1 &&
+      scope.target?.environmentId === primaryEnvironmentId &&
+      scope.target.projectId === null);
+  const queryKey = [...key, primaryEnvironmentId];
   const query = useQuery({
-    queryKey: key,
+    queryKey,
+    enabled: supportedScope,
     queryFn: ({ signal }) => request(undefined, signal),
     staleTime: 10_000,
   });
   const mutation = useMutation({
     mutationFn: (document: McpIntegrationDocument) => request(document),
-    onSuccess: (data) => client.setQueryData(key, data),
+    onSuccess: (data) => client.setQueryData(queryKey, data),
   });
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
@@ -136,7 +147,7 @@ export function McpPluginsSettings() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const save = async (plugins: readonly McpPlugin[]) => {
-    if (!query.data) return;
+    if (!query.data || !supportedScope) return;
     validateMcpPlugins(plugins);
     await mutation.mutateAsync({ ...query.data, plugins });
   };
@@ -170,9 +181,18 @@ export function McpPluginsSettings() {
   const plugins = (query.data?.plugins ?? []).filter((plugin) =>
     `${plugin.name} ${plugin.description}`.toLowerCase().includes(search.toLowerCase()),
   );
+  if (!supportedScope)
+    return (
+      <SettingsSection id="plugins" title="Plugins">
+        <p className="p-4 text-sm text-muted-foreground">
+          Plugins are shared across workspaces. Select the primary environment and All workspaces to
+          manage these connections.
+        </p>
+      </SettingsSection>
+    );
   return (
     <SettingsSection id="plugins" title="Plugins">
-      <div className="space-y-4 py-2">
+      <div className="space-y-4 p-4">
         <p className="text-sm text-muted-foreground">
           Connect your research tools. Trading data and workspace tools are included automatically.
         </p>
