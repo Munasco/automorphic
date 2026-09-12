@@ -8,6 +8,7 @@ const SETTINGS_KEYS = new Set([
   "automorphic:chart-alerts:v1",
   "automorphic:drawing-controls:v1",
   "automorphic:drawing-templates:v1",
+  "automorphic:drawing-favorites:v1",
 ]);
 export function parseWorkspaceValue(input: unknown): { key: string; value: string } | null {
   if (!input || typeof input !== "object") return null;

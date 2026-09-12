@@ -31,8 +31,9 @@ import { useChartDrawings } from "./useChartDrawings";
 import { IndicatorLegend } from "./IndicatorLegend";
 import { InitialBalanceDashboard } from "./InitialBalanceDashboard";
 import type { InitialBalanceStats } from "./initialBalance";
-import { DrawingTools } from "./DrawingTools";
+import { DrawingTools, FavoriteDrawingToolbar } from "./DrawingTools";
 import { DrawingSelectionOverlay } from "./DrawingSelectionOverlay";
+import { DrawingInlineTextEditor } from "./DrawingInlineTextEditor";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 
@@ -532,6 +533,12 @@ export function TradovateChart({
             <div className="relative h-full" style={{ minHeight: 240 + paneCount * 110 }}>
               <div ref={host} className="absolute inset-0" />
               <DrawingSelectionOverlay drawings={drawings} />
+              <DrawingInlineTextEditor
+                chart={activeEngine?.chart ?? null}
+                series={activeEngine?.prices[settings.style] ?? null}
+                drawings={drawings}
+              />
+              <FavoriteDrawingToolbar drawings={drawings} />
               <div
                 aria-label="Chart legend"
                 className="pointer-events-none absolute left-2.5 right-20 top-2 z-10 text-xs"

@@ -18,6 +18,7 @@ import {
   supportsDrawingPriceLabels,
   type ChartDrawing,
   type DrawingAnchor,
+  type DrawingKind,
   type DrawingPoint,
 } from "./drawingGeometry";
 import { calculateDrawingStats, formatDrawingStats } from "./drawingStats";
@@ -78,6 +79,20 @@ export function drawingProjection(chart: IChartApi, series: ISeriesApi<SeriesTyp
   };
   return { width, height, priceY, project, unproject };
 }
+
+export const supportsInlineDrawingText = (kind: DrawingKind) =>
+  [
+    "trend",
+    "info-line",
+    "extended-line",
+    "trend-angle",
+    "ray",
+    "arrow",
+    "horizontal",
+    "horizontal-ray",
+    "vertical",
+    "crossline",
+  ].includes(kind);
 
 /** The same placement used by canvas text, suitable for positioning an inline text editor. */
 export function drawingTextPlacement(

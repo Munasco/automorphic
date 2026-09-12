@@ -1,10 +1,11 @@
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useRef, useState, type ReactNode } from "react";
 import { ChartIcon } from "./ChartIcon";
 import { ChartDrawingGlyph } from "./ChartDrawingGlyph";
 import { DrawingToolIcon } from "./DrawingToolIcon";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ChartDrawingsController, ChartDrawingTool } from "./useChartDrawings";
+import { useDrawingFavorites } from "./drawingFavorites";
 import { cn } from "../../lib/utils";
 
 function Action({
@@ -141,6 +142,8 @@ function DrawingToolGroup({
   currentTool: ChartDrawingTool;
   onSelect: (tool: ChartDrawingTool) => void;
 }) {
+  const favorites = useDrawingFavorites((state) => state.kinds);
+  const toggleFavorite = useDrawingFavorites((state) => state.toggle);
   const [open, setOpen] = useState(false);
   const [lastTool, setLastTool] = useState(entries[0]!);
   const activeTool = entries.find((entry) => entry.kind === currentTool);
@@ -206,25 +209,43 @@ function DrawingToolGroup({
                   {entry.section}
                 </div>
               ) : null}
-              <button
-                type="button"
-                aria-pressed={currentTool === entry.kind}
-                onClick={() => {
-                  setLastTool(entry);
-                  onSelect(entry.kind);
-                  setOpen(false);
-                }}
-                className={cn(
-                  "flex h-10 w-full items-center gap-3 rounded px-2 text-left text-[14px] text-zinc-300 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/70",
-                  currentTool === entry.kind && "bg-zinc-100 text-zinc-950 hover:bg-white",
-                )}
-              >
-                <ChartDrawingGlyph tool={entry.kind} />
-                <span className="flex-1">{entry.label}</span>
-                {currentTool === entry.kind ? (
-                  <span aria-hidden="true" className="size-1.5 rounded-full bg-zinc-700" />
+              <div className="group/favorite flex items-center rounded hover:bg-white/10">
+                <button
+                  type="button"
+                  aria-pressed={currentTool === entry.kind}
+                  onClick={() => {
+                    setLastTool(entry);
+                    onSelect(entry.kind);
+                    setOpen(false);
+                  }}
+                  className={cn(
+                    "flex h-10 min-w-0 flex-1 items-center gap-3 rounded px-2 text-left text-[14px] text-zinc-300 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/70",
+                    currentTool === entry.kind && "bg-zinc-100 text-zinc-950 hover:bg-white",
+                  )}
+                >
+                  <ChartDrawingGlyph tool={entry.kind} />
+                  <span className="flex-1">{entry.label}</span>
+                  {currentTool === entry.kind ? (
+                    <span aria-hidden="true" className="size-1.5 rounded-full bg-zinc-700" />
+                  ) : null}
+                </button>
+                {entry.kind !== "cursor" ? (
+                  <button
+                    type="button"
+                    aria-label={`${favorites.includes(entry.kind) ? "Remove" : "Add"} ${entry.label} ${favorites.includes(entry.kind) ? "from" : "to"} favorites`}
+                    aria-pressed={favorites.includes(entry.kind)}
+                    onClick={() => {
+                      if (entry.kind !== "cursor") toggleFavorite(entry.kind);
+                    }}
+                    className={cn(
+                      "flex size-8 shrink-0 items-center justify-center rounded text-zinc-500 opacity-0 hover:text-zinc-100 group-hover/favorite:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100",
+                      favorites.includes(entry.kind) && "text-amber-400 opacity-100",
+                    )}
+                  >
+                    <FavoriteStar filled={favorites.includes(entry.kind)} />
+                  </button>
                 ) : null}
-              </button>
+              </div>
             </Fragment>
           ))}
         </div>
@@ -245,6 +266,9 @@ export function DrawingTools({
     remove: () => void;
   };
 }) {
+  const favorites = useDrawingFavorites((state) => state.kinds);
+  const favoritesVisible = useDrawingFavorites((state) => state.visible);
+  const toggleFavorites = useDrawingFavorites((state) => state.toggleVisible);
   const selected = drawings.selected;
   const [removeOpen, setRemoveOpen] = useState(false);
   const [magnetOpen, setMagnetOpen] = useState(false);
@@ -581,6 +605,112 @@ export function DrawingTools({
           </label>
         </PopoverPopup>
       </Popover>
+      {favorites.length ? (
+        <Action
+          label={favoritesVisible ? "Hide favorite drawing tools" : "Show favorite drawing tools"}
+          active={favoritesVisible}
+          onClick={toggleFavorites}
+        >
+          <FavoriteStar filled={favoritesVisible} />
+        </Action>
+      ) : null}
     </>
+  );
+}
+
+function FavoriteStar({ filled = false }: { filled?: boolean }) {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m12 3 2.8 5.8 6.4.9-4.6 4.5 1.1 6.3-5.7-3-5.7 3 1.1-6.3L2.8 9.7l6.4-.9Z" />
+    </svg>
+  );
+}
+
+export function FavoriteDrawingToolbar({ drawings }: { drawings: ChartDrawingsController }) {
+  const favorites = useDrawingFavorites((state) => state.kinds);
+  const visible = useDrawingFavorites((state) => state.visible);
+  const [position, setPosition] = useState({ x: 16, y: 180 });
+  const drag = useRef<{ x: number; y: number; originX: number; originY: number } | null>(null);
+  if (!visible || !favorites.length) return null;
+  return (
+    <div
+      role="toolbar"
+      aria-label="Favorite drawing tools"
+      className="absolute z-20 flex max-w-[calc(100%-24px)] items-center rounded-md border border-white/15 bg-[#1f1f1f] p-1 shadow-lg"
+      style={{
+        left: `min(${position.x}px, max(0px, calc(100% - ${favorites.length * 32 + 30}px)))`,
+        top: `min(${position.y}px, max(0px, calc(100% - 44px)))`,
+      }}
+    >
+      <button
+        type="button"
+        aria-label="Move favorite drawing tools"
+        className="flex h-8 w-5 shrink-0 touch-none cursor-grab items-center justify-center text-zinc-500 active:cursor-grabbing"
+        onPointerDown={(event) => {
+          const toolbar = event.currentTarget.parentElement!;
+          drag.current = {
+            x: event.clientX,
+            y: event.clientY,
+            originX: toolbar.offsetLeft,
+            originY: toolbar.offsetTop,
+          };
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          if (!drag.current) return;
+          const toolbar = event.currentTarget.parentElement!;
+          const chart = toolbar.parentElement!;
+          setPosition({
+            x: Math.max(
+              0,
+              Math.min(
+                chart.clientWidth - toolbar.offsetWidth,
+                drag.current.originX + event.clientX - drag.current.x,
+              ),
+            ),
+            y: Math.max(
+              0,
+              Math.min(
+                chart.clientHeight - toolbar.offsetHeight,
+                drag.current.originY + event.clientY - drag.current.y,
+              ),
+            ),
+          });
+        }}
+        onPointerUp={() => {
+          drag.current = null;
+        }}
+        onPointerCancel={() => {
+          drag.current = null;
+        }}
+      >
+        <svg width="8" height="18" fill="currentColor" aria-hidden="true">
+          {[4, 9, 14].flatMap((y) =>
+            [2, 6].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1" />),
+          )}
+        </svg>
+      </button>
+      <div className="flex min-w-0 overflow-x-auto">
+        {favorites.map((kind) => (
+          <Action
+            key={kind}
+            label={`Favorite: ${tools.find((tool) => tool.kind === kind)?.label ?? kind}`}
+            active={drawings.tool === kind}
+            onClick={() => drawings.setTool(kind)}
+          >
+            <ChartDrawingGlyph tool={kind} />
+          </Action>
+        ))}
+      </div>
+    </div>
   );
 }

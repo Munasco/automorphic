@@ -1385,3 +1385,115 @@ describe("drawing hover state", () => {
     session.dispose();
   });
 });
+
+describe("inline drawing text transactions", () => {
+  it("previews multiline text without opening settings, commits once and restores it atomically with undo", () => {
+    const f = fixture("inline-text-commit"),
+      session = f.open();
+    session.setTool("horizontal");
+    f.click(100, 100);
+    const before = f.saved(),
+      writes = f.writes();
+    expect(session.beginTextEdit()).toBe(true);
+    expect(session.previewText("Watch")).toBe(true);
+    expect(session.previewText("Watch\nretest")).toBe(true);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        textEditing: true,
+        settingsOpen: false,
+        selected: expect.objectContaining({ text: "Watch\nretest" }),
+      }),
+    );
+    expect(f.saved()).toBe(before);
+    expect(f.writes()).toBe(writes);
+    expect(session.previewSettings({ color: "#ff0000" })).toBe(false);
+    expect(session.commitText()).toBe(true);
+    expect(f.writes()).toBe(writes + 1);
+    const after = f.saved();
+    expect(JSON.parse(after!)[0].text).toBe("Watch\nretest");
+    expect(session.commitText("duplicate blur")).toBe(false);
+    session.undo();
+    expect(f.saved()).toBe(before);
+    session.redo();
+    expect(f.saved()).toBe(after);
+    session.dispose();
+  });
+
+  it.each(["escape", "cancel", "tool", "settings", "context", "dispose"])(
+    "discards inline text on %s without saving the draft",
+    (action) => {
+      const f = fixture(`inline-text-${action}`),
+        session = f.open();
+      session.setTool("horizontal");
+      f.click(100, 100);
+      const before = f.saved(),
+        writes = f.writes();
+      session.beginTextEdit();
+      session.previewText("Unfinished");
+      if (action === "escape") session.cancel();
+      else if (action === "cancel") session.cancelTextEdit();
+      else if (action === "tool") session.setTool("trend");
+      else if (action === "settings") session.openSettings();
+      else if (action === "context")
+        session.openContextMenu({ x: 400, y: 100 }, { x: 400, y: 100 });
+      else session.dispose();
+      expect(f.saved()).toBe(before);
+      expect(f.writes()).toBe(writes);
+      if (action !== "dispose")
+        expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ textEditing: false }));
+      session.dispose();
+    },
+  );
+
+  it("does not create an empty-text history entry and rejects commits from another drawing", () => {
+    const f = fixture("inline-text-empty"),
+      session = f.open();
+    session.setTool("horizontal");
+    f.click(100, 100);
+    const before = f.saved(),
+      writes = f.writes();
+    session.beginTextEdit();
+    session.previewText("");
+    expect(session.commitText("")).toBe(true);
+    expect(f.saved()).toBe(before);
+    expect(f.writes()).toBe(writes);
+    session.beginTextEdit();
+    session.previewText("x".repeat(200));
+    expect(session.commitText("wrong", "other-id")).toBe(false);
+    expect(session.commitText()).toBe(true);
+    expect(JSON.parse(f.saved()!)[0].text).toHaveLength(140);
+    session.undo();
+    expect(f.saved()).toBe(before);
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toEqual([]);
+    session.dispose();
+  });
+
+  it("requires a visible unlocked line and keeps inline and settings editors mutually exclusive", () => {
+    const f = fixture("inline-text-eligibility"),
+      session = f.open();
+    expect(session.beginTextEdit()).toBe(false);
+    session.setTool("rectangle");
+    f.click(100, 100);
+    f.click(200, 200);
+    expect(session.beginTextEdit()).toBe(false);
+    session.setTool("horizontal");
+    f.click(300, 100);
+    session.updateSelected({ locked: true });
+    expect(session.beginTextEdit()).toBe(false);
+    session.updateSelected({ locked: false, hidden: true });
+    expect(session.beginTextEdit()).toBe(false);
+    session.updateSelected({ hidden: false });
+    session.openSettings();
+    expect(session.beginTextEdit()).toBe(false);
+    session.closeSettings();
+    expect(session.beginTextEdit()).toBe(true);
+    session.previewText("Draft");
+    session.undo();
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ textEditing: false, count: 2 }),
+    );
+    expect(JSON.parse(f.saved()!).at(-1).text).toBeUndefined();
+    session.dispose();
+  });
+});

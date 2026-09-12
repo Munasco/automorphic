@@ -24,7 +24,11 @@ import {
   type DrawingKind,
   type DrawingPoint,
 } from "./drawingGeometry";
-import { createDrawingPrimitive, drawingProjection } from "./drawingPrimitive";
+import {
+  createDrawingPrimitive,
+  drawingProjection,
+  supportsInlineDrawingText,
+} from "./drawingPrimitive";
 import { isDrawingVisibleAtInterval } from "./drawingVisibility";
 import { applyDrawingTemplate } from "./drawingTemplates";
 export type ChartDrawingTool = "cursor" | DrawingKind;
@@ -46,6 +50,7 @@ export type DrawingState = {
   hovered: ChartDrawing | null;
   instruction: string;
   settingsOpen: boolean;
+  textEditing: boolean;
   contextPoint: DrawingPoint | null;
 };
 export type DrawingPatch = Partial<Omit<ChartDrawing, "id" | "kind">>;
@@ -68,6 +73,7 @@ const EMPTY: DrawingState = {
   hovered: null,
   instruction: "",
   settingsOpen: false,
+  textEditing: false,
   contextPoint: null,
 };
 
@@ -92,6 +98,7 @@ export function createChartDrawingSession(
   let selectedId: string | null = null;
   let hoveredId: string | null = null;
   let settingsOpen = false;
+  let textEditing = false;
   let settingsDraft: { original: ChartDrawing; drawing: ChartDrawing } | null = null;
   let contextPoint: DrawingPoint | null = null;
   let replacingId: string | null = null;
@@ -153,17 +160,21 @@ export function createChartDrawingSession(
   const isVisible = (drawing: ChartDrawing) =>
     !hidden && !drawing.hidden && isDrawingVisibleAtInterval(drawing.visibility, intervalMinutes);
   const primitive = createDrawingPrimitive(chart, series, () => ({
-    drawings: displayedDrawings().filter(isVisible),
+    drawings: displayedDrawings()
+      .filter(isVisible)
+      .map((drawing) =>
+        textEditing && drawing.id === selectedId ? { ...drawing, text: "" } : drawing,
+      ),
     selected: selectedId,
     hovered: hoveredId,
-    interactive: tool === "cursor" && !settingsOpen,
+    interactive: tool === "cursor" && !settingsOpen && !textEditing,
     preview,
     hidden,
   }));
   series.attachPrimitive(primitive.primitive);
   const emit = () => {
     const hovered =
-      tool === "cursor" && !hidden && !settingsOpen && !drag
+      tool === "cursor" && !hidden && !settingsOpen && !textEditing && !drag
         ? (displayedDrawings().find((drawing) => drawing.id === hoveredId && isVisible(drawing)) ??
           null)
         : null;
@@ -205,6 +216,7 @@ export function createChartDrawingSession(
       hovered,
       instruction,
       settingsOpen: settingsOpen && !!selected,
+      textEditing: textEditing && !!selected,
       contextPoint: selected ? contextPoint : null,
     });
     primitive.redraw();
@@ -261,6 +273,7 @@ export function createChartDrawingSession(
     const hadDraft = settingsDraft !== null;
     settingsDraft = null;
     settingsOpen = false;
+    textEditing = false;
     if (hadDraft) render();
     return hadDraft;
   };
@@ -636,9 +649,14 @@ export function createChartDrawingSession(
       return false;
     const next = settingsResult(patch, options);
     if (!next) return false;
+    return finishSettingsDraft(next);
+  };
+  const finishSettingsDraft = (next: ChartDrawing) => {
+    if (!settingsDraft) return false;
     const { original } = settingsDraft;
     settingsDraft = null;
     settingsOpen = false;
+    textEditing = false;
     if (JSON.stringify(original) !== JSON.stringify(next)) {
       remember();
       drawings = drawings.map((drawing) => (drawing.id === original.id ? next : drawing));
@@ -648,6 +666,51 @@ export function createChartDrawingSession(
       emit();
     }
     return true;
+  };
+  const beginTextEdit = () => {
+    if (disposed || tool !== "cursor" || settingsOpen || contextPoint || drag) return false;
+    if (textEditing) return true;
+    const original = drawings.find((drawing) => drawing.id === selectedId);
+    if (
+      !original ||
+      original.locked ||
+      !isVisible(original) ||
+      !supportsInlineDrawingText(original.kind)
+    )
+      return false;
+    discardSettings();
+    settingsDraft = { original, drawing: original };
+    textEditing = true;
+    emit();
+    return true;
+  };
+  const previewText = (text: string) => {
+    if (disposed || !textEditing || !settingsDraft || typeof text !== "string") return false;
+    settingsDraft.drawing = { ...settingsDraft.drawing, text: text.slice(0, 140) };
+    render();
+    emit();
+    return true;
+  };
+  const commitText = (text?: string, id?: string) => {
+    if (
+      disposed ||
+      !textEditing ||
+      !settingsDraft ||
+      (id !== undefined && settingsDraft.original.id !== id) ||
+      (text !== undefined && typeof text !== "string")
+    )
+      return false;
+    const next = {
+      ...settingsDraft.drawing,
+      text: (text ?? settingsDraft.drawing.text ?? "").slice(0, 140),
+    };
+    if (!next.text && settingsDraft.original.text === undefined) delete (next as ChartDrawing).text;
+    return finishSettingsDraft(next);
+  };
+  const cancelTextEdit = (id?: string) => {
+    if (disposed || !textEditing || (id !== undefined && settingsDraft?.original.id !== id)) return;
+    discardSettings();
+    emit();
   };
   const deleteDrawing = (id: string) => {
     if (disposed || !drawings.some((drawing) => drawing.id === id)) return;
@@ -672,6 +735,10 @@ export function createChartDrawingSession(
     isVisible,
     previewSettings,
     applySettings,
+    beginTextEdit,
+    previewText,
+    commitText,
+    cancelTextEdit,
     coordinatePrice: (price: number) => {
       const format = series.options().priceFormat;
       const precision = format && "precision" in format ? format.precision : 2;
@@ -869,6 +936,7 @@ export function createChartDrawingSession(
       if (disposed) return;
       settingsDraft = null;
       settingsOpen = false;
+      textEditing = false;
       disposed = true;
       try {
         chart.unsubscribeClick(click);
@@ -1080,6 +1148,16 @@ export function useChartDrawings(
       session.current?.applySettings(patch, options) ?? false,
     [],
   );
+  const beginTextEdit = useCallback(() => session.current?.beginTextEdit() ?? false, []);
+  const previewText = useCallback(
+    (text: string) => session.current?.previewText(text) ?? false,
+    [],
+  );
+  const commitText = useCallback(
+    (text?: string, id?: string) => session.current?.commitText(text, id) ?? false,
+    [],
+  );
+  const cancelTextEdit = useCallback((id?: string) => session.current?.cancelTextEdit(id), []);
   const isVisible = useCallback(
     (drawing: ChartDrawing) => session.current?.isVisible(drawing) ?? false,
     [],
@@ -1098,6 +1176,10 @@ export function useChartDrawings(
     closeSettings,
     previewSettings,
     applySettings,
+    beginTextEdit,
+    previewText,
+    commitText,
+    cancelTextEdit,
     isVisible,
     closeContextMenu,
     selectDrawing,
