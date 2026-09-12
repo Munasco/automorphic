@@ -349,10 +349,6 @@ function ReadyTradingPanel({
               </>
             )}
           </aside>
-        ) : settings.showLiveWires ? (
-          <aside className="hidden h-full w-[300px] shrink-0 overflow-hidden border-l border-border @min-[800px]:block">
-            <LiveWires root={settings.root} projectId={projectId} />
-          </aside>
         ) : null}
       </div>
       {view === "news" ? (
