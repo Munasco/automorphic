@@ -59,7 +59,7 @@ export function DrawingTextSettings({
         onChange={(event) => onChange({ text: event.target.value })}
         className={cn(
           inputClass,
-          "h-[100px] w-full resize-none px-[5px] py-[2px] text-sm leading-[18px]",
+          "h-[100px] w-full resize-none rounded-[8px] px-[7px] py-1 text-sm leading-[18px] focus:border-[#2962ff] focus:outline-2 focus:outline-offset-[-2px] focus:outline-[#2962ff] focus:[outline-style:solid]",
         )}
       />
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">

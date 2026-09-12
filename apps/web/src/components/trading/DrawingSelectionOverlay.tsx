@@ -121,6 +121,13 @@ function titleFor(drawing: ChartDrawing) {
     drawing.kind.replaceAll("-", " ").replace(/\b\w/g, (c) => c.toUpperCase())
   );
 }
+function settingsEntryField(panel: HTMLDivElement | null) {
+  if (panel?.id === "drawing-panel-Coordinates")
+    return panel.querySelector<HTMLInputElement>("input:not(:disabled)");
+  if (panel?.id === "drawing-panel-Text")
+    return panel.querySelector<HTMLTextAreaElement>("textarea");
+  return null;
+}
 function IconButton({
   label,
   children,
@@ -289,6 +296,18 @@ function DrawingSettings({
     height: window.innerHeight,
   }));
   const tabList = useRef<HTMLDivElement>(null);
+  const dialogElement = useRef<HTMLDivElement>(null);
+  const settingsPanel = useRef<HTMLDivElement>(null);
+  const focusSettingsInput = useCallback(() => {
+    // Select on entry only; preview rerenders must preserve the user's caret.
+    const input = settingsEntryField(settingsPanel.current);
+    input?.focus({ preventScroll: true });
+    input?.select();
+    return input;
+  }, []);
+  useEffect(() => {
+    if (tab === "Text" || tab === "Coordinates") focusSettingsInput();
+  }, [tab, focusSettingsInput]);
   useEffect(() => {
     tabList.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({
       block: "nearest",
@@ -303,6 +322,7 @@ function DrawingSettings({
     return () => window.removeEventListener("resize", resize);
   }, []);
   const measureDialog = useCallback((node: HTMLDivElement | null) => {
+    dialogElement.current = node;
     if (!node) return;
     const rect = node.getBoundingClientRect();
     setDialogPosition(
@@ -349,6 +369,7 @@ function DrawingSettings({
         bottomStickOnMobile={false}
         backdropStyle={{ background: "transparent", backdropFilter: "none", transition: "none" }}
         ref={measureDialog}
+        initialFocus={() => focusSettingsInput() ?? dialogElement.current}
         className="max-w-[calc(100vw-24px)] overflow-hidden rounded-md border-0 p-0 text-zinc-100 transition-none data-starting-style:scale-100 data-ending-style:scale-100 data-starting-style:opacity-100 data-ending-style:opacity-100"
         style={{
           background: "#202020",
@@ -437,15 +458,14 @@ function DrawingSettings({
           ))}
         </div>
         <div
+          ref={settingsPanel}
           role="tabpanel"
           id={`drawing-panel-${tab}`}
           aria-labelledby={`drawing-tab-${tab}`}
           className={cn(
             "max-h-[calc(100dvh-220px)] min-h-0 overflow-y-auto px-5 py-4",
             tab === "Text"
-              ? draft.kind === "vertical"
-                ? "space-y-4 pt-6 pb-6"
-                : "space-y-4 pb-8"
+              ? "space-y-4 pt-6 pb-6"
               : tab === "Coordinates" || tab === "Visibility"
                 ? "space-y-0"
                 : tab === "Style" && supportsLineStatistics(draft.kind)
