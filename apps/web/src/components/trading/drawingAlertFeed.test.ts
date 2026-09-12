@@ -182,8 +182,89 @@ describe("drawing alert live feed adapter", () => {
     expect(sink.observe.mock.lastCall![0]).toMatchObject({
       timestamp: START + 1,
       barId: tick.barId,
+      barTime: tick.time,
+      actualBarTime: tick.actualTime,
     });
   });
+  it.each(["live", "reconnect", "overflow"] as const)(
+    "evaluates vertical boundaries only from an intact live bar journal (%s)",
+    (mode) => {
+      for (const unit of ["minute", "tick"] as const) {
+        const values = new Map<string, string>();
+        let now = START;
+        const onTrigger = vi.fn();
+        const selectedInterval =
+          unit === "minute"
+            ? ({ unit: "minute", value: 5 } as const)
+            : ({ unit: "tick", value: 10 } as const);
+        const bars =
+          unit === "minute"
+            ? [candle(), candle(START / 1000 + 300)]
+            : [
+                { ...candle(100), actualTime: START / 1000 },
+                { ...candle(101), actualTime: START / 1000 + 300 },
+              ];
+        const project = { logicalAt: (time: Time) => bars.findIndex((bar) => bar.time === time) };
+        const engine = createDrawingAlertSession(
+          { symbol: "GCZ6", intervalKey: `${unit}:${selectedInterval.value}` },
+          {
+            getItem: (key) => values.get(key) ?? null,
+            setItem: (key, value) => {
+              values.set(key, value);
+            },
+          },
+          {
+            now: () => now,
+            onTrigger,
+            projection: {
+              ...project,
+              priceToCoordinate: () => null,
+              coordinateToPrice: () => null,
+            },
+          },
+        );
+        engine.syncDrawings([
+          {
+            id: "vertical",
+            kind: "vertical",
+            anchors: [{ time: bars[1]!.time as Time, price: 9000 }],
+            color: "#2962ff",
+            width: 2,
+          },
+        ]);
+        expect(
+          engine.add({
+            drawingId: "vertical",
+            condition: "crossing",
+            trigger: "once",
+            expiresAt: null,
+          }),
+        ).not.toBeNull();
+        const feed = createDrawingAlertFeed({ symbol: "GCZ6", interval: selectedInterval }, engine);
+        feed.consume(snapshot([], { bars }), project);
+        now = START + 299_999;
+        const first = { ...event(1, 88, now), barTime: bars[0]!.time };
+        feed.consume(snapshot([first], { bars }), project);
+        now++;
+        const next = { ...event(mode === "overflow" ? 3 : 2, 89, now), barTime: bars[1]!.time };
+        const update = snapshot([first, next], { bars });
+        if (mode === "reconnect")
+          update.alertFeed = { ...update.alertFeed!, streamId: "new-connection" };
+        feed.consume(update, project);
+        expect(onTrigger).toHaveBeenCalledTimes(mode === "live" ? 1 : 0);
+        if (mode === "live")
+          expect(onTrigger.mock.lastCall![0]).toMatchObject({
+            targetKind: "time",
+            targetTime: bars[1]!.time,
+            barTime: bars[1]!.time,
+            price: 89,
+            sampleAt: now,
+          });
+        engine.dispose();
+        feed.dispose();
+      }
+    },
+  );
   it("feeds distinct same-ms quote crossings through the real engine without inventing timestamps", () => {
     const values = new Map<string, string>();
     const onTrigger = vi.fn();

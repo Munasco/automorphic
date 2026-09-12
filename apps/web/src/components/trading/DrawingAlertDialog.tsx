@@ -3,6 +3,7 @@ import { ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { DrawingAlertExpiration } from "./DrawingAlertExpiration";
+import { AlertIcon } from "./AlertIcon";
 import { DrawingSelect, inputClass } from "./DrawingStyleControls";
 import type { ChartDrawing } from "./drawingGeometry";
 import type { DrawingAlert, DrawingAlertCondition, DrawingAlertTrigger } from "./drawingAlerts";
@@ -45,6 +46,7 @@ const drawingLabels: Partial<Record<ChartDrawing["kind"], string>> = {
   arrow: "Arrow",
   horizontal: "Horizontal line",
   "horizontal-ray": "Horizontal ray",
+  vertical: "Vertical line",
 };
 
 function monthAhead(now = Date.now()) {
@@ -86,6 +88,8 @@ export function DrawingAlertDialog({
   onClose: () => void;
   onSubmit: (input: DrawingAlertDialogInput) => string | null | Promise<string | null>;
 }) {
+  const vertical = drawing.kind === "vertical";
+  const messageInterval = /^\d+m$/.test(intervalLabel) ? intervalLabel.slice(0, -1) : intervalLabel;
   const [page, setPage] = useState<Page>("main");
   const [condition, setCondition] = useState<DrawingAlertCondition>(alert?.condition ?? "crossing");
   const [trigger, setTrigger] = useState<DrawingAlertTrigger>(alert?.trigger ?? "once");
@@ -97,7 +101,7 @@ export function DrawingAlertDialog({
     name: alert?.name ?? "",
     message: alert
       ? (alert.message ?? "")
-      : `${symbol}, ${intervalLabel} Crossing ${label.toLowerCase()}`,
+      : `${symbol}, ${messageInterval} Crossing ${label.toLowerCase()}`,
   }));
   const [messageDraft, setMessageDraft] = useState(message);
   const [notifications, setNotifications] = useState(() =>
@@ -128,10 +132,13 @@ export function DrawingAlertDialog({
   function changeCondition(next: DrawingAlertCondition) {
     const previousLabel = conditions.find(([key]) => key === condition)![1];
     const nextLabel = conditions.find(([key]) => key === next)![1];
-    const previousDefault = `${symbol}, ${intervalLabel} ${previousLabel} ${label.toLowerCase()}`;
+    const previousDefault = `${symbol}, ${messageInterval} ${previousLabel} ${label.toLowerCase()}`;
     setMessage((current) =>
       current.message === previousDefault
-        ? { ...current, message: `${symbol}, ${intervalLabel} ${nextLabel} ${label.toLowerCase()}` }
+        ? {
+            ...current,
+            message: `${symbol}, ${messageInterval} ${nextLabel} ${label.toLowerCase()}`,
+          }
         : current,
     );
     setCondition(next);
@@ -155,8 +162,8 @@ export function DrawingAlertDialog({
     try {
       const failure = await onSubmit({
         drawingId: drawing.id,
-        condition,
-        trigger,
+        condition: vertical ? "crossing" : condition,
+        trigger: vertical ? "once" : trigger,
         expiresAt,
         ...message,
         notifications,
@@ -171,7 +178,8 @@ export function DrawingAlertDialog({
     }
   }
 
-  const height = page === "main" ? 475 : page === "message" ? 508 : 406;
+  const mainHeight = vertical ? 445 : 475;
+  const height = page === "main" ? mainHeight : page === "message" ? 508 : 406;
   return (
     <Dialog
       open
@@ -185,7 +193,7 @@ export function DrawingAlertDialog({
         backdropStyle={{ background: "transparent", backdropFilter: "none" }}
         className="fixed left-1/2 w-[480px] max-w-[calc(100vw-32px)] -translate-x-1/2 translate-y-0 scale-100 overflow-hidden rounded-md border-0 bg-[#1f1f1f] p-0 text-[#dbdbdb] shadow-xl transition-none data-starting-style:scale-100 data-ending-style:scale-100 data-starting-style:opacity-100 data-ending-style:opacity-100"
         style={{
-          top: `max(20px, min(calc(50dvh - 237.5px), calc(100dvh - ${height}px - 20px)))`,
+          top: `max(20px, min(calc(50dvh - ${mainHeight / 2}px), calc(100dvh - ${height}px - 20px)))`,
           maxHeight: "calc(100dvh - 40px)",
           fontFamily: '-apple-system, "system-ui", "Trebuchet MS", Roboto, Ubuntu, sans-serif',
         }}
@@ -228,21 +236,36 @@ export function DrawingAlertDialog({
 
         <div className="min-h-0 overflow-y-auto text-sm">
           {page === "main" ? (
-            <div className="min-h-[337px] px-5 py-4">
+            <div className={`${vertical ? "min-h-[307px]" : "min-h-[337px]"} px-5 py-4`}>
               <div className="grid grid-cols-[minmax(90px,30%)_minmax(0,1fr)] gap-x-0 gap-y-2 pr-[5px]">
                 <span className="self-center text-[#8c8c8c]">Condition</span>
                 <div className={`${inputClass} flex items-center`}>Price</div>
                 <span />
-                <DrawingSelect
-                  label="Alert condition"
-                  value={condition}
-                  options={conditions}
-                  className="h-[34px] w-full"
-                  onChange={(value) => {
-                    const next = conditions.find(([key]) => key === value);
-                    if (next) changeCondition(next[0]);
-                  }}
-                />
+                {vertical ? (
+                  <button
+                    type="button"
+                    aria-label="Alert condition"
+                    disabled
+                    aria-disabled="true"
+                    className={`${inputClass} flex w-full items-center gap-2 text-left`}
+                    style={{ backgroundColor: "#2e2e2e", color: "#dbdbdb" }}
+                  >
+                    <AlertIcon name="crossing" size={22} />
+                    <span className="flex-1">Crossing</span>
+                    <ChevronDown className="size-3 text-[#8c8c8c]" />
+                  </button>
+                ) : (
+                  <DrawingSelect
+                    label="Alert condition"
+                    value={condition}
+                    options={conditions}
+                    className="h-[34px] w-full"
+                    onChange={(value) => {
+                      const next = conditions.find(([key]) => key === value);
+                      if (next) changeCondition(next[0]);
+                    }}
+                  />
+                )}
                 <span />
                 <input
                   aria-label="Drawing"
@@ -253,18 +276,22 @@ export function DrawingAlertDialog({
               </div>
               <div className="mb-4 mt-[50px] border-t border-white/10" />
               <div className="grid grid-cols-[minmax(90px,30%)_minmax(0,1fr)] items-center pr-[5px] leading-[18px]">
-                <span className="text-[#8c8c8c]">Trigger</span>
-                <DrawingSelect
-                  label="Alert trigger"
-                  value={trigger}
-                  options={triggers}
-                  variant="ghost"
-                  className="h-[30px] min-h-0 w-fit max-w-full border-0 bg-transparent p-0 text-sm shadow-none sm:min-h-0"
-                  onChange={(value) => {
-                    const next = triggers.find(([key]) => key === value);
-                    if (next) setTrigger(next[0]);
-                  }}
-                />
+                {!vertical ? (
+                  <>
+                    <span className="text-[#8c8c8c]">Trigger</span>
+                    <DrawingSelect
+                      label="Alert trigger"
+                      value={trigger}
+                      options={triggers}
+                      variant="ghost"
+                      className="h-[30px] min-h-0 w-fit max-w-full border-0 bg-transparent p-0 text-sm shadow-none sm:min-h-0"
+                      onChange={(value) => {
+                        const next = triggers.find(([key]) => key === value);
+                        if (next) setTrigger(next[0]);
+                      }}
+                    />
+                  </>
+                ) : null}
                 <span className="text-[#8c8c8c]">Expiration</span>
                 <Popover
                   open={expirationOpen}

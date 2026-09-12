@@ -1,0 +1,48 @@
+import { describe, expect, it } from "vite-plus/test";
+import type { Time } from "lightweight-charts";
+import type { DrawingAlertEvent } from "./drawingAlerts";
+import { drawingAlertTargetLabel } from "./drawingAlertPresentation";
+
+const common = {
+  id: "event",
+  alertId: "alert",
+  drawingId: "line",
+  symbol: "NQU6",
+  intervalKey: "minute:5",
+  condition: "crossing" as const,
+  price: 24300.5,
+  barId: "bar",
+  triggeredAt: 1,
+  sampleAt: 1,
+};
+const timeEvent = (targetTime: Time): DrawingAlertEvent => ({
+  ...common,
+  targetKind: "time",
+  targetTime,
+  barTime: targetTime,
+});
+
+describe("drawing alert target labels", () => {
+  it("keeps price targets as prices", () => {
+    expect(drawingAlertTargetLabel({ ...common, targetKind: "price", target: 24301.25 })).toBe(
+      "Line 24,301.25",
+    );
+  });
+  it("shows a vertical boundary as a UTC date and time, never as a price", () => {
+    expect(drawingAlertTargetLabel(timeEvent((Date.UTC(2026, 8, 12, 14, 30) / 1000) as Time))).toBe(
+      "Vertical line · Sep 12, 2026, 02:30 PM UTC",
+    );
+  });
+  it("preserves calendar dates without shifting them into the previous local day", () => {
+    expect(drawingAlertTargetLabel(timeEvent("2026-09-12"))).toBe("Vertical line · 2026-09-12");
+    expect(drawingAlertTargetLabel(timeEvent({ year: 2026, month: 9, day: 12 }))).toBe(
+      "Vertical line · 2026-09-12",
+    );
+  });
+  it("does not misrepresent synthetic tick positions as wall-clock dates", () => {
+    expect(drawingAlertTargetLabel({ ...timeEvent(1 as Time), intervalKey: "tick:100" })).toBe(
+      "Vertical line",
+    );
+    expect(drawingAlertTargetLabel(timeEvent(Number.MAX_VALUE as Time))).toBe("Vertical line");
+  });
+});

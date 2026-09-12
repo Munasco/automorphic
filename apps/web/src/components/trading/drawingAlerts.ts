@@ -39,6 +39,7 @@ const KINDS = new Set([
   "arrow",
   "horizontal",
   "horizontal-ray",
+  "vertical",
 ]);
 export const supportsDrawingAlert = (drawing: ChartDrawing) =>
   KINDS.has(drawing.kind) && validDrawingAnchors(drawing.kind, drawing.anchors);
@@ -54,6 +55,19 @@ const isCondition = (value: unknown): value is DrawingAlertCondition =>
   DRAWING_ALERT_CONDITIONS.some((item) => item === value);
 const isTrigger = (value: unknown): value is DrawingAlertTrigger =>
   DRAWING_ALERT_TRIGGERS.some((item) => item === value);
+const isChartTime = (value: unknown): value is Time => drawingTimeValue(value) !== null;
+const copyTime = (time: Time): Time =>
+  typeof time === "object" ? { year: time.year, month: time.month, day: time.day } : time;
+const targetKindFor = (drawing: ChartDrawing) =>
+  drawing.kind === "vertical" ? ("time" as const) : ("price" as const);
+const supportedRule = (
+  targetKind: DrawingAlert["targetKind"],
+  condition: unknown,
+  trigger: unknown,
+) =>
+  isCondition(condition) &&
+  isTrigger(trigger) &&
+  (targetKind !== "time" || (condition === "crossing" && trigger === "once"));
 
 /** Same affine interpolation as the rendered line, in logical X and transformed price Y.
  * Extent is an explicit product policy, not an assumption about the reference platform’s alert extrapolation.
@@ -64,7 +78,8 @@ export function drawingAlertTarget(
   projection: DrawingAlertProjection,
   extent: DrawingAlertExtent = "visible",
 ): number | null {
-  if (!supportsDrawingAlert(drawing) || !finite(logical)) return null;
+  if (!supportsDrawingAlert(drawing) || drawing.kind === "vertical" || !finite(logical))
+    return null;
   try {
     const a = drawing.anchors[0]!;
     if (drawing.kind === "horizontal") return a.price;
@@ -92,6 +107,8 @@ export function drawingAlertTarget(
   }
 }
 function fingerprint(drawing: ChartDrawing) {
+  if (drawing.kind === "vertical")
+    return JSON.stringify([drawing.kind, drawingTimeValue(drawing.anchors[0]!.time)]);
   return JSON.stringify([
     drawing.kind,
     drawing.anchors.map((anchor) => [drawingTimeValue(anchor.time), anchor.price]),
@@ -130,6 +147,7 @@ export type DrawingAlert = DrawingAlertPresentation & {
   intervalKey: string;
   drawingId: string;
   geometry: string;
+  targetKind: "price" | "time";
   condition: DrawingAlertCondition;
   trigger: DrawingAlertTrigger;
   expiresAt: number | null;
@@ -150,11 +168,13 @@ export type DrawingAlertEvent = DrawingAlertPresentation & {
   intervalKey: string;
   condition: DrawingAlertCondition;
   price: number;
-  target: number;
   barId: string;
   triggeredAt: number;
   sampleAt: number;
-};
+} & (
+    | { targetKind: "price"; target: number }
+    | { targetKind: "time"; targetTime: Time; barTime: Time; actualBarTime?: number }
+  );
 export type DrawingAlertState = { alerts: DrawingAlert[]; history: DrawingAlertEvent[] };
 export type NewDrawingAlert = Pick<
   DrawingAlert,
@@ -175,6 +195,10 @@ export type DrawingAlertSample = {
   barId: string;
   logical: number;
   price: number;
+  /** Authoritative chart bar key, never a quote receipt time or an inferred clock bucket. */
+  barTime?: Time;
+  /** Real opening time in epoch seconds when the chart uses a synthetic bar key. */
+  actualBarTime?: number;
 };
 export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
   const empty: DrawingAlertState = { alerts: [], history: [] };
@@ -193,8 +217,8 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
         !identifier(a.drawingId) ||
         typeof a.geometry !== "string" ||
         a.geometry.length > 2000 ||
-        !isCondition(a.condition) ||
-        !isTrigger(a.trigger) ||
+        ![undefined, "price", "time"].includes(a.targetKind as undefined) ||
+        !supportedRule(a.targetKind === "time" ? "time" : "price", a.condition, a.trigger) ||
         !(a.expiresAt === null || stamp(a.expiresAt)) ||
         typeof a.enabled !== "boolean" ||
         ![null, "user", "deleted", "expired", "triggered"].includes(a.disabledReason as null) ||
@@ -212,8 +236,9 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
         intervalKey: a.intervalKey,
         drawingId: a.drawingId,
         geometry: a.geometry,
-        condition: a.condition,
-        trigger: a.trigger,
+        targetKind: a.targetKind === "time" ? "time" : "price",
+        condition: a.condition as DrawingAlertCondition,
+        trigger: a.trigger as DrawingAlertTrigger,
         expiresAt: a.expiresAt,
         enabled: a.enabled,
         disabledReason: a.disabledReason as DrawingAlert["disabledReason"],
@@ -241,7 +266,12 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
         !identifier(e.barId) ||
         !isCondition(e.condition) ||
         !finite(e.price) ||
-        !finite(e.target) ||
+        !(e.targetKind === "time"
+          ? e.condition === "crossing" &&
+            isChartTime(e.targetTime) &&
+            isChartTime(e.barTime) &&
+            (e.actualBarTime === undefined || finite(e.actualBarTime))
+          : (e.targetKind === undefined || e.targetKind === "price") && finite(e.target)) ||
         !stamp(e.triggeredAt) ||
         !stamp(e.sampleAt)
       )
@@ -257,7 +287,16 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
         barId: e.barId,
         condition: e.condition,
         price: e.price,
-        target: e.target,
+        ...(e.targetKind === "time"
+          ? {
+              targetKind: "time" as const,
+              targetTime: copyTime(e.targetTime as Time),
+              barTime: copyTime(e.barTime as Time),
+              ...(e.actualBarTime !== undefined
+                ? { actualBarTime: e.actualBarTime as number }
+                : {}),
+            }
+          : { targetKind: "price" as const, target: e.target as number }),
         triggeredAt: e.triggeredAt,
         sampleAt: e.sampleAt,
       });
@@ -267,7 +306,13 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
     return empty;
   }
 }
-type Previous = { difference: number; timestamp: number; observedAt: number; barId: string };
+type Previous = {
+  difference: number;
+  timestamp: number;
+  observedAt: number;
+  barId: string;
+  barTime: number | null;
+};
 /** One evaluator per symbol/interval. Pass only committed drawing snapshots and fresh live feed events.
  * Geometry edits re-arm; deletion disables, including after undo until explicitly re-enabled.
  * Close events must be confirmed by the feed, once for each actual completed bar. Their timestamp
@@ -357,7 +402,7 @@ export function createDrawingAlertSession(
         state.alerts.map((a) => {
           if (!relevant(a)) return a;
           const drawing = drawings.get(a.drawingId);
-          if (!drawing) {
+          if (!drawing || targetKindFor(drawing) !== a.targetKind) {
             previous.delete(a.id);
             return a.enabled ? { ...a, enabled: false, disabledReason: "deleted" as const } : a;
           }
@@ -377,8 +422,7 @@ export function createDrawingAlertSession(
         !drawing ||
         !identifier(context.symbol) ||
         !identifier(context.intervalKey) ||
-        !isCondition(input.condition) ||
-        !isTrigger(input.trigger) ||
+        !supportedRule(targetKindFor(drawing), input.condition, input.trigger) ||
         !(input.expiresAt === null || (stamp(input.expiresAt) && input.expiresAt > now())) ||
         parseDrawingAlerts(storage.getItem(DRAWING_ALERTS_KEY)).alerts.filter((a) => !relevant(a))
           .length +
@@ -395,6 +439,7 @@ export function createDrawingAlertSession(
         trigger: input.trigger,
         expiresAt: input.expiresAt,
         geometry: fingerprint(drawing),
+        targetKind: targetKindFor(drawing),
         enabled: true,
         disabledReason: null,
         armedAt: armTime(),
@@ -414,8 +459,8 @@ export function createDrawingAlertSession(
         !alert ||
         input.drawingId !== alert.drawingId ||
         !drawings.has(alert.drawingId) ||
-        !isCondition(input.condition) ||
-        !isTrigger(input.trigger) ||
+        targetKindFor(drawings.get(alert.drawingId)!) !== alert.targetKind ||
+        !supportedRule(alert.targetKind, input.condition, input.trigger) ||
         !(input.expiresAt === null || (stamp(input.expiresAt) && input.expiresAt > now()))
       )
         return false;
@@ -451,7 +496,10 @@ export function createDrawingAlertSession(
       if (
         !a ||
         a.enabled === enabled ||
-        (enabled && (!drawings.has(a.drawingId) || (a.expiresAt !== null && a.expiresAt <= now())))
+        (enabled &&
+          (!drawings.has(a.drawingId) ||
+            targetKindFor(drawings.get(a.drawingId)!) !== a.targetKind ||
+            (a.expiresAt !== null && a.expiresAt <= now())))
       )
         return false;
       previous.delete(alertId);
@@ -538,15 +586,45 @@ export function createDrawingAlertSession(
           )
             return a;
           const drawing = drawings.get(a.drawingId);
-          const target = drawing
-            ? drawingAlertTarget(drawing, sample.logical, options.projection, options.extent)
-            : null;
-          if (target === null) {
+          const timeRule = a.targetKind === "time";
+          const barTime = drawingTimeValue(sample.barTime);
+          let target: number | null = null;
+          if (drawing && targetKindFor(drawing) === a.targetKind) {
+            if (timeRule) {
+              try {
+                target = options.projection.logicalAt(drawing.anchors[0]!.time);
+              } catch {
+                /* A detached chart cannot supply a time-boundary projection. */
+              }
+            } else
+              target = drawingAlertTarget(
+                drawing,
+                sample.logical,
+                options.projection,
+                options.extent,
+              );
+          }
+          if (
+            !finite(target) ||
+            (timeRule &&
+              (barTime === null ||
+                (sample.actualBarTime !== undefined && !finite(sample.actualBarTime))))
+          ) {
             previous.delete(a.id);
             return a;
           }
           const before = previous.get(a.id);
-          const difference = sample.price - target;
+          if (
+            timeRule &&
+            before?.barTime !== undefined &&
+            before.barTime !== null &&
+            barTime! < before.barTime
+          ) {
+            previous.delete(a.id);
+            return a;
+          }
+          // Time rules compare rendered bar positions, not market price or wall-clock time.
+          const difference = (timeRule ? sample.logical : sample.price) - target;
           if (!finite(difference)) {
             previous.delete(a.id);
             return a;
@@ -556,6 +634,7 @@ export function createDrawingAlertSession(
             timestamp: sample.timestamp,
             observedAt,
             barId: sample.barId,
+            barTime,
           });
           const continuous =
             before &&
@@ -565,8 +644,13 @@ export function createDrawingAlertSession(
               : sample.timestamp - before.timestamp <= 15_000);
           const up = continuous && before.difference < 0 && difference >= 0;
           const down = continuous && before.difference > 0 && difference <= 0;
-          const matches =
-            a.condition === "above"
+          const matches = timeRule
+            ? up &&
+              before.barId !== sample.barId &&
+              before.barTime !== null &&
+              barTime !== null &&
+              barTime > before.barTime
+            : a.condition === "above"
               ? difference > 0
               : a.condition === "below"
                 ? difference < 0
@@ -592,7 +676,16 @@ export function createDrawingAlertSession(
             ...context,
             condition: a.condition,
             price: sample.price,
-            target,
+            ...(timeRule
+              ? {
+                  targetKind: "time" as const,
+                  targetTime: copyTime(drawing!.anchors[0]!.time),
+                  barTime: copyTime(sample.barTime!),
+                  ...(sample.actualBarTime !== undefined
+                    ? { actualBarTime: sample.actualBarTime }
+                    : {}),
+                }
+              : { targetKind: "price" as const, target }),
             barId: sample.barId,
             triggeredAt: time,
             sampleAt: sample.timestamp,

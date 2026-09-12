@@ -7,6 +7,7 @@ import {
   type DrawingAlertState,
 } from "./drawingAlerts";
 import { createDrawingAlertFeed } from "./drawingAlertFeed";
+import { drawingAlertTargetLabel } from "./drawingAlertPresentation";
 import { drawingTimeCoordinate } from "./drawingPrimitive";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
 import { chartIntervalKey, formatChartInterval, type ChartInterval } from "./tradingIntervals";
@@ -71,7 +72,7 @@ export function useDrawingAlerts({
   const deliver = useCallback((event: DrawingAlertEvent) => {
     const title = event.name || `${event.symbol} drawing alert`;
     const description =
-      event.message || `Price ${priceText(event.price)} · Line ${priceText(event.target)}`;
+      event.message || `Price ${priceText(event.price)} · ${drawingAlertTargetLabel(event)}`;
     if (event.notifications?.toast !== false)
       toastManager.add({ type: "info", title, description });
     if (

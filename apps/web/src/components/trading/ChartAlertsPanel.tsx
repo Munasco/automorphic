@@ -12,6 +12,7 @@ import { tradingWorkspaceStorage } from "./workspaceStorage";
 import { createChartAlertSession, type AlertCondition, type ChartAlertState } from "./chartAlerts";
 import type { DrawingAlertsController } from "./useDrawingAlerts";
 import type { DrawingAlertCondition, DrawingAlertTrigger } from "./drawingAlerts";
+import { drawingAlertTargetLabel } from "./drawingAlertPresentation";
 
 const EMPTY: ChartAlertState = { alerts: [], history: [] };
 const priceLabel = (price: number) => price.toLocaleString("en-US", { maximumFractionDigits: 6 });
@@ -225,8 +226,8 @@ export function ChartAlerts({
       ...event,
       key: `drawing:${event.id}`,
       title: `${event.symbol} · ${event.name || `${drawingConditionLabel[event.condition]} drawing`}`,
-      description: `${event.message ? `${event.message} · ` : ""}Last ${priceLabel(event.price)} · Line ${priceLabel(event.target)}`,
-      searchText: `${event.symbol} drawing ${event.name ?? ""} ${event.message ?? ""} ${drawingConditionLabel[event.condition]} ${event.target}`,
+      description: `${event.message ? `${event.message} · ` : ""}Last ${priceLabel(event.price)} · ${drawingAlertTargetLabel(event)}`,
+      searchText: `${event.symbol} drawing ${event.name ?? ""} ${event.message ?? ""} ${drawingConditionLabel[event.condition]} ${drawingAlertTargetLabel(event)}`,
     })),
   ];
   const history = allHistory

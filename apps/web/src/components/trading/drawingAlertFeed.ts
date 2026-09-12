@@ -114,6 +114,8 @@ export function createDrawingAlertFeed(
           source: event.type,
           timestamp: event.timestamp,
           barId: bar.barId ?? `${intervalKey}:${bar.time}`,
+          barTime: bar.time as Time,
+          ...(bar.actualTime !== undefined ? { actualBarTime: bar.actualTime } : {}),
           logical,
           price: event.type === "quote" ? event.price : event.bar.close,
           ...(event.type === "bar-close" ? { observedAt: event.observedAt } : {}),

@@ -5,6 +5,7 @@ import {
   createDrawingAlertSession,
   drawingAlertTarget,
   parseDrawingAlerts,
+  supportsDrawingAlert,
   DRAWING_ALERTS_KEY,
   type DrawingAlertCondition,
   type DrawingAlertProjection,
@@ -24,6 +25,224 @@ const line = (patch: Partial<ChartDrawing> = {}): ChartDrawing => ({
     { time: 10 as Time, price: 100 },
   ],
   ...patch,
+});
+
+describe("vertical time-boundary alerts", () => {
+  const vertical = (time = 5, patch: Partial<ChartDrawing> = {}) =>
+    line({
+      kind: "vertical",
+      anchors: [{ time: time as Time, price: 9000 }],
+      ...patch,
+    });
+  const setup = () => {
+    const h = harness();
+    h.session.syncDrawings([vertical()]);
+    return h;
+  };
+  const position = (bar: number) => ({ logical: bar, barTime: bar as Time, barId: `bar-${bar}` });
+
+  it("crosses only as an authoritative bar reaches the line, keeping quote price and clock time separate", () => {
+    const h = setup();
+    expect(supportsDrawingAlert(vertical())).toBe(true);
+    expect(drawingAlertTarget(vertical(), 5, projection)).toBeNull();
+    const alert = h.add();
+    expect(alert.targetKind).toBe("time");
+    h.session.observe(h.sample(70, position(4)));
+    h.session.observe(h.sample(9500, position(4), 1000));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    h.session.observe(h.sample(70, { ...position(5), actualBarTime: EPOCH / 1000 }));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    const event = h.onTrigger.mock.lastCall![0];
+    expect(event).toMatchObject({
+      targetKind: "time",
+      targetTime: 5,
+      barTime: 5,
+      actualBarTime: EPOCH / 1000,
+      price: 70,
+      condition: "crossing",
+    });
+    expect(event).not.toHaveProperty("target");
+    expect(event.sampleAt).toBeGreaterThan(EPOCH);
+    expect(h.session.getSnapshot().alerts[0]).toMatchObject({
+      enabled: false,
+      disabledReason: "triggered",
+    });
+    h.session.observe(h.sample(80, position(6)));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects price-direction conditions, repeating triggers and incompatible persisted time rules", () => {
+    const h = setup();
+    const alert = h.add();
+    h.storage.setItem.mockClear();
+    for (const condition of ["above", "below", "crossing-up", "crossing-down"] as const) {
+      expect(h.add(condition)).toBeNull();
+      expect(h.session.update(alert.id, { ...alert, condition })).toBe(false);
+    }
+    for (const trigger of ["once-per-bar", "once-per-bar-close", "once-per-minute"] as const) {
+      expect(h.add("crossing", trigger)).toBeNull();
+      expect(h.session.update(alert.id, { ...alert, trigger })).toBe(false);
+    }
+    expect(h.storage.setItem).not.toHaveBeenCalled();
+    const invalid = parseDrawingAlerts(
+      JSON.stringify({ version: 1, alerts: [{ ...alert, trigger: "once-per-bar" }], history: [] }),
+    );
+    expect(invalid.alerts).toEqual([]);
+  });
+
+  it.each(["initial", "reload", "reconnect", "stale"] as const)(
+    "does not replay a passed boundary after %s baseline loss",
+    (reason) => {
+      const h = setup();
+      h.add();
+      if (reason !== "initial") h.session.observe(h.sample(100, position(4)));
+      let session = h.session;
+      if (reason === "reload") {
+        session.dispose();
+        session = h.open();
+        session.syncDrawings([vertical()]);
+      }
+      if (reason === "reconnect") session.resetConnection();
+      if (reason === "stale") h.advance(15_001);
+      session.observe(h.sample(100, position(5)));
+      session.observe(h.sample(100, position(6)));
+      expect(h.onTrigger).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not reconstruct a crossing from an old bar delivered after a newer bar", () => {
+    const h = setup();
+    h.add();
+    h.session.observe(h.sample(100, position(6)));
+    h.session.observe(h.sample(100, position(4)));
+    h.session.observe(h.sample(100, position(6)));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+  });
+
+  it("rejects unassociated and stale events, and never evaluates time alerts on confirmed-close receipts", () => {
+    const h = setup();
+    h.add();
+    h.session.observe(h.sample(100, position(4)));
+    h.session.observe(
+      h.sample(100, {
+        ...position(5),
+        source: "bar-close",
+        timestamp: EPOCH - 300_000,
+        observedAt: h.time() + 1,
+      }),
+    );
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    h.session.observe(h.sample(100, { ...position(5), timestamp: EPOCH - 30_000 }));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    h.session.observe(h.sample(100, { logical: 5, barId: "bar-5" }));
+    h.session.observe(h.sample(100, position(5)));
+    expect(h.onTrigger).not.toHaveBeenCalled(); // missing association clears the crossing baseline
+  });
+
+  it("ignores stored price and appearance edits but rearms a moved time boundary", () => {
+    const h = setup();
+    h.add();
+    h.session.observe(h.sample(100, position(4)));
+    h.session.syncDrawings([
+      vertical(5, {
+        anchors: [{ time: 5 as Time, price: -200 }],
+        extendAcrossPanes: false,
+        showTimeLabel: false,
+        color: "#ff0000",
+      }),
+    ]);
+    h.session.observe(h.sample(100, position(5)));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+
+    const moved = setup();
+    const alert = moved.add();
+    moved.session.observe(moved.sample(100, position(4)));
+    moved.session.syncDrawings([vertical(6)]);
+    expect(moved.session.getSnapshot().alerts[0]!.armedAt).toBeGreaterThan(alert.armedAt);
+    moved.session.observe(moved.sample(100, position(7)));
+    expect(moved.onTrigger).not.toHaveBeenCalled();
+  });
+
+  it("retains a crossing across presentation edits and persists typed history and notification fields", () => {
+    const h = setup();
+    const alert = h.add();
+    h.session.observe(h.sample(100, position(4)));
+    expect(
+      h.session.update(alert.id, {
+        ...alert,
+        name: "Opening window",
+        message: "Check the chart",
+        notifications: { toast: false, sound: true, desktop: false },
+      }),
+    ).toBe(true);
+    h.session.observe(h.sample(101, position(5)));
+    const expected = h.session.getSnapshot();
+    expect(expected.history[0]).toMatchObject({
+      name: "Opening window",
+      message: "Check the chart",
+      notifications: { toast: false, sound: true, desktop: false },
+      price: 101,
+      targetKind: "time",
+      targetTime: 5,
+    });
+    h.session.dispose();
+    const reopened = h.open();
+    reopened.syncDrawings([vertical()]);
+    expect(reopened.getSnapshot()).toEqual(expected);
+    reopened.observe(h.sample(102, position(6)));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps expiration, deletion, kind changes and explicit resume subject to the same live baseline guards", () => {
+    const h = setup();
+    const alert = h.add("crossing", "once", h.time() + 10);
+    h.session.observe(h.sample(100, position(4)));
+    h.advance(10);
+    h.session.observe(h.sample(100, position(5)));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    expect(h.session.getSnapshot().alerts[0]!.disabledReason).toBe("expired");
+    h.session.update(alert.id, { ...alert, expiresAt: null });
+    expect(h.session.setEnabled(alert.id, true)).toBe(true);
+    h.session.observe(h.sample(100, position(5)));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    h.session.syncDrawings([]);
+    expect(h.session.getSnapshot().alerts[0]!.disabledReason).toBe("deleted");
+    h.session.syncDrawings([line()]);
+    expect(h.session.setEnabled(alert.id, true)).toBe(false);
+    expect(h.session.update(alert.id, { ...alert, expiresAt: null })).toBe(false);
+    h.session.syncDrawings([vertical()]);
+    expect(h.session.setEnabled(alert.id, true)).toBe(true);
+    h.session.observe(h.sample(100, position(6)));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+  });
+
+  it("normalizes legacy price targets and rejects malformed or ambiguous time history", () => {
+    const h = setup();
+    h.add();
+    h.session.observe(h.sample(100, position(4)));
+    h.session.observe(h.sample(101, position(5)));
+    const history = h.session.getSnapshot().history[0]!;
+    for (const patch of [
+      { targetTime: "bad" },
+      { barTime: null },
+      { targetKind: "other" },
+      { condition: "above" },
+      { actualBarTime: "yesterday" },
+    ]) {
+      expect(
+        parseDrawingAlerts(
+          JSON.stringify({ version: 1, alerts: [], history: [{ ...history, ...patch }] }),
+        ).history,
+      ).toEqual([]);
+    }
+    const price = harness();
+    price.add("above");
+    price.session.observe(price.sample(101));
+    const legacy = JSON.parse(price.values.get(DRAWING_ALERTS_KEY)!);
+    delete legacy.alerts[0].targetKind;
+    delete legacy.history[0].targetKind;
+    expect(parseDrawingAlerts(JSON.stringify(legacy))).toEqual(price.session.getSnapshot());
+  });
 });
 
 describe("editing drawing alerts", () => {

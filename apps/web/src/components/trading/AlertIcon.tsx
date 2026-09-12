@@ -1,6 +1,7 @@
 import type { SVGProps } from "react";
 
 const paths = {
+  crossing: "M3 3 21 21M14 21h7v-7M3 21 21 3M14 3h7v7",
   alarm: "M4.5 3 1.5 6M19.5 3l3 3M12 7v6H8M21 13a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
   "alarm-add": "M5 3 1.5 6.5M18.5 3 22 6.5M11 8v5H7.5M13 21a8.5 8.5 0 1 1 7-9M19 15v8M15 19h8",
   plus: "M12 3v18M3 12h18",
