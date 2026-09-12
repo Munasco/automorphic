@@ -10,6 +10,7 @@ import {
   type DrawingAlertProjection,
   type DrawingAlertSample,
   type DrawingAlertTrigger,
+  type NewDrawingAlert,
 } from "./drawingAlerts";
 
 const EPOCH = Date.parse("2026-09-11T12:00:00Z");
@@ -23,6 +24,235 @@ const line = (patch: Partial<ChartDrawing> = {}): ChartDrawing => ({
     { time: 10 as Time, price: 100 },
   ],
   ...patch,
+});
+
+describe("editing drawing alerts", () => {
+  it("replaces presentation without losing identity, trigger history, throttles or persisted state", () => {
+    const h = harness();
+    const alert = h.session.add({
+      drawingId: "line",
+      condition: "above",
+      trigger: "once-per-bar",
+      expiresAt: null,
+      name: "Original",
+      message: "Original message",
+    })!;
+    h.session.observe(h.sample(101, { sequence: 2, streamId: "quotes" }));
+    const before = h.session.getSnapshot();
+    const listener = vi.fn();
+    h.session.subscribe(listener);
+    h.storage.setItem.mockClear();
+    expect(
+      h.session.update(alert.id, {
+        ...alert,
+        name: " ",
+        message: "",
+        notifications: { toast: false, sound: true, desktop: false },
+      }),
+    ).toBe(true);
+    const after = h.session.getSnapshot();
+    expect(after.history).toEqual(before.history);
+    const expected = {
+      ...before.alerts[0]!,
+      notifications: { toast: false, sound: true, desktop: false },
+    };
+    delete expected.name;
+    delete expected.message;
+    expect(after.alerts).toEqual([expected]);
+    expect(h.storage.setItem).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+    h.session.observe(h.sample(102));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    h.session.dispose();
+    const reopened = h.open();
+    reopened.syncDrawings([line()]);
+    expect(reopened.getSnapshot()).toEqual(after);
+    reopened.observe(h.sample(103));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    reopened.observe(h.sample(103, { barId: "bar-2" }));
+    expect(h.onTrigger).toHaveBeenCalledTimes(2);
+    expect(h.onTrigger.mock.lastCall![0]).not.toHaveProperty("name");
+    expect(h.onTrigger.mock.lastCall![0]).not.toHaveProperty("message");
+  });
+
+  it("preserves the live crossing baseline across metadata and future-expiry edits", () => {
+    const h = harness();
+    const alert = h.add("crossing-up", "once-per-bar", h.time() + 10_000);
+    h.session.observe(h.sample(99));
+    expect(
+      h.session.update(alert.id, { ...alert, name: "Renamed", expiresAt: h.time() + 20_000 }),
+    ).toBe(true);
+    expect(h.session.getSnapshot().alerts[0]?.armedAt).toBe(alert.armedAt);
+    h.session.observe(h.sample(100));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    expect(h.onTrigger.mock.lastCall![0].name).toBe("Renamed");
+  });
+
+  it("does not invent a crossing from the old rule baseline after a condition edit", () => {
+    const h = harness();
+    const alert = h.add("crossing-down", "once-per-bar");
+    h.session.observe(h.sample(99));
+    expect(h.session.update(alert.id, { ...alert, condition: "crossing-up" })).toBe(true);
+    expect(h.session.getSnapshot().alerts[0]?.armedAt).toBeGreaterThan(alert.armedAt);
+    h.session.observe(h.sample(101));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    h.session.observe(h.sample(99));
+    h.session.observe(h.sample(100));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+  });
+
+  it("rearms a changed trigger, clears bar suppression, and retains monotonic replay guards", () => {
+    const h = harness();
+    const alert = h.add("above", "once-per-bar");
+    const first = h.sample(101, { sequence: 7, streamId: "quotes" });
+    h.session.observe(first);
+    const previous = h.session.getSnapshot().alerts[0]!;
+    expect(h.session.update(alert.id, { ...alert, trigger: "once-per-bar-close" })).toBe(true);
+    const updated = h.session.getSnapshot().alerts[0]!;
+    expect(updated).toMatchObject({
+      lastBarId: null,
+      lastTriggeredAt: previous.lastTriggeredAt,
+      lastSampleAt: previous.lastSampleAt,
+      lastSampleSequence: 7,
+      lastSampleStreamId: "quotes",
+    });
+    // A fresh receipt cannot replay the already evaluated economic sample.
+    h.session.observe({ ...first, source: "bar-close", observedAt: h.time() + 1 });
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    h.session.observe(
+      h.sample(101, { source: "bar-close", barId: "bar-2", sequence: 8, streamId: "quotes" }),
+    );
+    expect(h.onTrigger).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps minute throttling through presentation edits and rule changes", () => {
+    const h = harness();
+    const alert = h.add("above", "once-per-minute");
+    h.session.observe(h.sample(101));
+    expect(h.session.update(alert.id, { ...alert, name: "New name" })).toBe(true);
+    h.session.observe(h.sample(102));
+    expect(h.session.update(alert.id, { ...alert, condition: "below" })).toBe(true);
+    h.session.observe(h.sample(99));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    h.session.observe(h.sample(99, {}, 60_000));
+    expect(h.onTrigger).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps paused and already-triggered alerts disabled after editing", () => {
+    for (const reason of ["user", "triggered"] as const) {
+      const h = harness();
+      const alert = h.add("above", "once");
+      if (reason === "user") h.session.setEnabled(alert.id, false);
+      else h.session.observe(h.sample(101));
+      const triggers = h.onTrigger.mock.calls.length;
+      expect(
+        h.session.update(alert.id, { ...alert, trigger: "once-per-bar", name: "Edited" }),
+      ).toBe(true);
+      expect(h.session.getSnapshot().alerts[0]).toMatchObject({
+        enabled: false,
+        disabledReason: reason,
+      });
+      h.session.observe(h.sample(101));
+      expect(h.onTrigger).toHaveBeenCalledTimes(triggers);
+      expect(h.session.setEnabled(alert.id, true)).toBe(true);
+      h.session.observe(h.sample(101));
+      expect(h.onTrigger).toHaveBeenCalledTimes(triggers + 1);
+    }
+  });
+
+  it("allows repaired expiry or restored drawing alerts to resume only after explicit enable", () => {
+    for (const reason of ["expired", "deleted"] as const) {
+      const h = harness();
+      const alert = h.add("above", "once", h.time() + 10);
+      if (reason === "expired") {
+        h.advance(10);
+        h.session.checkExpiration();
+      } else {
+        h.session.syncDrawings([]);
+        h.session.syncDrawings([line()]);
+      }
+      expect(h.session.getSnapshot().alerts[0]?.disabledReason).toBe(reason);
+      expect(h.session.update(alert.id, { ...alert, expiresAt: null })).toBe(true);
+      expect(h.session.getSnapshot().alerts[0]).toMatchObject({
+        enabled: false,
+        disabledReason: "user",
+      });
+      h.session.observe(h.sample(101));
+      expect(h.onTrigger).not.toHaveBeenCalled();
+      expect(h.session.setEnabled(alert.id, true)).toBe(true);
+      h.session.observe(h.sample(101));
+      expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("rejects missing, foreign, retargeted and invalid edits without storage or listener changes", () => {
+    const h = harness();
+    const alert = h.add();
+    h.session.syncDrawings([line(), line({ id: "another" })]);
+    const other = h.open("NQZ6");
+    other.syncDrawings([line()]);
+    const foreign = other.add({ ...alert, drawingId: "line" })!;
+    const listener = vi.fn();
+    h.session.subscribe(listener);
+    h.storage.setItem.mockClear();
+    expect(h.session.update("missing", alert)).toBe(false);
+    expect(h.session.update(foreign.id, alert)).toBe(false);
+    expect(other.update(alert.id, alert)).toBe(false);
+    for (const patch of [
+      { drawingId: "another" },
+      { condition: "invalid" },
+      { trigger: "invalid" },
+      { expiresAt: h.time() },
+      { expiresAt: h.time() - 1 },
+      { expiresAt: NaN },
+      { expiresAt: Infinity },
+    ])
+      expect(h.session.update(alert.id, { ...alert, ...patch } as NewDrawingAlert)).toBe(false);
+    expect(h.storage.setItem).not.toHaveBeenCalled();
+    expect(listener).not.toHaveBeenCalled();
+    h.session.syncDrawings([]);
+    h.storage.setItem.mockClear();
+    listener.mockClear();
+    expect(h.session.update(alert.id, alert)).toBe(false);
+    h.session.dispose();
+    expect(h.session.update(alert.id, alert)).toBe(false);
+    expect(h.storage.setItem).not.toHaveBeenCalled();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("merges newer foreign-context writes while preserving both histories", () => {
+    const h = harness();
+    const alert = h.add("above", "once-per-bar");
+    const other = h.open("NQZ6");
+    other.syncDrawings([line()]);
+    const foreign = other.add({ ...alert, name: "Other" })!;
+    h.session.observe(h.sample(101));
+    other.observe(h.sample(102, { symbol: "NQZ6" }));
+    expect(other.update(foreign.id, { ...foreign, name: "Latest other" })).toBe(true);
+    expect(h.session.update(alert.id, { ...alert, name: "Updated own" })).toBe(true);
+    const saved = parseDrawingAlerts(h.values.get(DRAWING_ALERTS_KEY)!);
+    expect(saved.alerts.map((item) => item.name).sort()).toEqual(["Latest other", "Updated own"]);
+    expect(saved.history.map((item) => item.symbol).sort()).toEqual(["GCZ6", "NQZ6"]);
+  });
+
+  it("leaves state and the crossing baseline unchanged when an edit cannot be saved", () => {
+    const h = harness();
+    const alert = h.add("crossing-up", "once-per-bar");
+    h.session.observe(h.sample(99));
+    const before = h.session.getSnapshot();
+    const listener = vi.fn();
+    h.session.subscribe(listener);
+    h.storage.setItem.mockImplementationOnce(() => {
+      throw Error("Storage unavailable");
+    });
+    expect(() => h.session.update(alert.id, { ...alert, condition: "crossing-down" })).toThrow(
+      "Storage unavailable",
+    );
+    expect(h.session.getSnapshot()).toBe(before);
+    expect(listener).not.toHaveBeenCalled();
+    h.session.observe(h.sample(101));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+  });
 });
 const projection: DrawingAlertProjection = {
   logicalAt: (time) => Number(time),

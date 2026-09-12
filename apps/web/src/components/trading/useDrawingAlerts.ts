@@ -9,7 +9,7 @@ import {
 import { createDrawingAlertFeed } from "./drawingAlertFeed";
 import { drawingTimeCoordinate } from "./drawingPrimitive";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
-import { chartIntervalKey, type ChartInterval } from "./tradingIntervals";
+import { chartIntervalKey, formatChartInterval, type ChartInterval } from "./tradingIntervals";
 import type { ChartDrawingsController } from "./useChartDrawings";
 import type { ChartMarketSnapshot } from "./chartMarketQuery";
 import { toastManager } from "../ui/toast";
@@ -225,10 +225,46 @@ export function useDrawingAlerts({
     schedule();
     return () => clearTimeout(timer);
   }, [active, state.alerts, symbol, intervalKey]);
+  const saveAlert = useCallback(
+    async (input: NewDrawingAlert, alertId?: string): Promise<string | null> => {
+      if (!active) return "The chart is still loading. Try again in a moment.";
+      if (input.notifications?.desktop) {
+        if (typeof Notification === "undefined")
+          return "Desktop notifications aren't supported here. Choose a toast or sound instead.";
+        const permission =
+          Notification.permission === "default"
+            ? await Notification.requestPermission()
+            : Notification.permission;
+        if (permission !== "granted")
+          return "Allow desktop notifications, or turn that option off.";
+      }
+      if (input.notifications?.sound) {
+        try {
+          if (!(await prepareSound())) return "Sound couldn't start. Turn sound off or try again.";
+        } catch {
+          return "Sound isn't available here. Turn sound off to save the alert.";
+        }
+      }
+      const committed = getCommittedDrawings();
+      if (!committed) return "The drawing is no longer available.";
+      active.session.syncDrawings(committed);
+      try {
+        return (alertId ? active.session.update(alertId, input) : active.session.add(input))
+          ? null
+          : alertId
+            ? "Couldn't update the alert. Check the drawing and expiration."
+            : "Couldn't create the alert. Check the drawing, expiration, and workspace alert limit.";
+      } catch {
+        return "Couldn't save the alert. Check your workspace connection and try again.";
+      }
+    },
+    [active, getCommittedDrawings, prepareSound],
+  );
   return useMemo(
     () => ({
       symbol,
       intervalKey,
+      intervalLabel: formatChartInterval(interval),
       ready: active !== null,
       alerts: state.alerts.filter(
         (alert) => alert.symbol === symbol && alert.intervalKey === intervalKey,
@@ -236,36 +272,19 @@ export function useDrawingAlerts({
       history: state.history.filter(
         (event) => event.symbol === symbol && event.intervalKey === intervalKey,
       ),
-      async create(input: NewDrawingAlert): Promise<string | null> {
-        if (!active) return "The chart is still loading. Try again in a moment.";
-        if (input.notifications?.desktop) {
-          if (typeof Notification === "undefined")
-            return "Desktop notifications aren't supported here. Choose a toast or sound instead.";
-          const permission =
-            Notification.permission === "default"
-              ? await Notification.requestPermission()
-              : Notification.permission;
-          if (permission !== "granted")
-            return "Allow desktop notifications, or turn that option off.";
-        }
-        if (input.notifications?.sound) {
-          try {
-            if (!(await prepareSound()))
-              return "Sound couldn't start. Turn sound off or try again.";
-          } catch {
-            return "Sound isn't available here. Turn sound off to create the alert.";
-          }
-        }
-        const committed = getCommittedDrawings();
-        if (!committed) return "The drawing is no longer available.";
-        active.session.syncDrawings(committed);
-        try {
-          return active.session.add(input)
-            ? null
-            : "Couldn't create the alert. Check the drawing, expiration, and workspace alert limit.";
-        } catch {
-          return "Couldn't save the alert. Check your workspace connection and try again.";
-        }
+      create: (input: NewDrawingAlert) => saveAlert(input),
+      update: (alertId: string, input: NewDrawingAlert) => saveAlert(input, alertId),
+      drawingForAlert(alertId: string) {
+        if (!active) return null;
+        const alert = active.session
+          .getSnapshot()
+          .alerts.find(
+            (item) =>
+              item.id === alertId && item.symbol === symbol && item.intervalKey === intervalKey,
+          );
+        return alert
+          ? (getCommittedDrawings()?.find((drawing) => drawing.id === alert.drawingId) ?? null)
+          : null;
       },
       setEnabled: (id: string, enabled: boolean) =>
         active?.session.setEnabled(id, enabled) ?? false,
@@ -279,7 +298,7 @@ export function useDrawingAlerts({
       },
       reset: () => active?.feed.reset(),
     }),
-    [active, state, symbol, intervalKey, getCommittedDrawings, prepareSound],
+    [active, state, symbol, interval, intervalKey, getCommittedDrawings, saveAlert],
   );
 }
 export type DrawingAlertsController = ReturnType<typeof useDrawingAlerts>;

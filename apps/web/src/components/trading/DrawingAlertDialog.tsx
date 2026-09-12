@@ -5,7 +5,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { DrawingAlertExpiration } from "./DrawingAlertExpiration";
 import { DrawingSelect, inputClass } from "./DrawingStyleControls";
 import type { ChartDrawing } from "./drawingGeometry";
-import type { DrawingAlertCondition, DrawingAlertTrigger } from "./drawingAlerts";
+import type { DrawingAlert, DrawingAlertCondition, DrawingAlertTrigger } from "./drawingAlerts";
 
 export type DrawingAlertDialogInput = {
   drawingId: string;
@@ -70,31 +70,45 @@ function expirationLabel(timestamp: number | null) {
       }).format(timestamp);
 }
 
-/** Each subpage edits a separate draft; only Create calls the persistence boundary. */
+/** Each subpage edits a separate draft; only the final save calls the persistence boundary. */
 export function DrawingAlertDialog({
   drawing,
+  alert,
   symbol,
   intervalLabel,
   onClose,
-  onCreate,
+  onSubmit,
 }: {
   drawing: ChartDrawing;
+  alert?: DrawingAlert;
   symbol: string;
   intervalLabel: string;
   onClose: () => void;
-  onCreate: (input: DrawingAlertDialogInput) => string | null | Promise<string | null>;
+  onSubmit: (input: DrawingAlertDialogInput) => string | null | Promise<string | null>;
 }) {
   const [page, setPage] = useState<Page>("main");
-  const [condition, setCondition] = useState<DrawingAlertCondition>("crossing");
-  const [trigger, setTrigger] = useState<DrawingAlertTrigger>("once");
-  const [expiresAt, setExpiresAt] = useState<number | null>(monthAhead);
+  const [condition, setCondition] = useState<DrawingAlertCondition>(alert?.condition ?? "crossing");
+  const [trigger, setTrigger] = useState<DrawingAlertTrigger>(alert?.trigger ?? "once");
+  const [expiresAt, setExpiresAt] = useState<number | null>(() =>
+    alert ? alert.expiresAt : monthAhead(),
+  );
   const label = drawing.name || drawingLabels[drawing.kind] || "Drawing";
   const [message, setMessage] = useState<MessageDraft>(() => ({
-    name: "",
-    message: `${symbol}, ${intervalLabel} Crossing ${label.toLowerCase()}`,
+    name: alert?.name ?? "",
+    message: alert
+      ? (alert.message ?? "")
+      : `${symbol}, ${intervalLabel} Crossing ${label.toLowerCase()}`,
   }));
   const [messageDraft, setMessageDraft] = useState(message);
-  const [notifications, setNotifications] = useState({ toast: true, sound: true, desktop: true });
+  const [notifications, setNotifications] = useState(() =>
+    alert
+      ? {
+          toast: alert.notifications?.toast !== false,
+          sound: alert.notifications?.sound ?? false,
+          desktop: alert.notifications?.desktop ?? false,
+        }
+      : { toast: true, sound: true, desktop: true },
+  );
   const [notificationDraft, setNotificationDraft] = useState(notifications);
   const [expirationOpen, setExpirationOpen] = useState(false);
   const [expirationNow, setExpirationNow] = useState(Date.now);
@@ -139,7 +153,7 @@ export function DrawingAlertDialog({
     setPending(true);
     setError(null);
     try {
-      const failure = await onCreate({
+      const failure = await onSubmit({
         drawingId: drawing.id,
         condition,
         trigger,
@@ -150,7 +164,7 @@ export function DrawingAlertDialog({
       if (failure) setError(failure);
       else onClose();
     } catch {
-      setError("Could not create the alert. Please try again.");
+      setError("Could not save the alert. Please try again.");
     } finally {
       submitting.current = false;
       setPending(false);
@@ -190,7 +204,7 @@ export function DrawingAlertDialog({
           <DialogTitle className="min-w-0 flex-1 truncate text-xl font-semibold leading-7">
             {page === "main" ? (
               <>
-                Create alert on{" "}
+                {alert ? "Edit alert on" : "Create alert on"}{" "}
                 <span className="text-base font-medium">
                   {symbol}, {intervalLabel}
                 </span>
@@ -443,7 +457,7 @@ export function DrawingAlertDialog({
               }
             }}
           >
-            {pending ? "Creating…" : page === "main" ? "Create" : "Apply"}
+            {pending ? "Saving…" : page === "main" ? (alert ? "Save" : "Create") : "Apply"}
           </button>
         </div>
       </DialogPopup>

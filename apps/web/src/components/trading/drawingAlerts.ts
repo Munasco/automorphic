@@ -407,6 +407,44 @@ export function createDrawingAlertSession(
       publish({ ...state, alerts: [...state.alerts, alert] });
       return alert;
     },
+    update(alertId: string, input: NewDrawingAlert): boolean {
+      if (disposed) return false;
+      const alert = state.alerts.find((item) => item.id === alertId && relevant(item));
+      if (
+        !alert ||
+        input.drawingId !== alert.drawingId ||
+        !drawings.has(alert.drawingId) ||
+        !isCondition(input.condition) ||
+        !isTrigger(input.trigger) ||
+        !(input.expiresAt === null || (stamp(input.expiresAt) && input.expiresAt > now()))
+      )
+        return false;
+      const rearm = alert.condition !== input.condition || alert.trigger !== input.trigger;
+      const retained = { ...alert };
+      // Editable presentation fields are replacements, so clearing a field removes its old value.
+      delete retained.name;
+      delete retained.message;
+      const updated: DrawingAlert = {
+        ...retained,
+        ...presentation(input),
+        condition: input.condition,
+        trigger: input.trigger,
+        expiresAt: input.expiresAt,
+        disabledReason:
+          !alert.enabled &&
+          (alert.disabledReason === "expired" || alert.disabledReason === "deleted")
+            ? "user"
+            : alert.disabledReason,
+        ...(rearm ? { armedAt: armTime(), lastBarId: null } : {}),
+      };
+      publish({
+        ...state,
+        alerts: state.alerts.map((item) => (item === alert ? updated : item)),
+      });
+      // Leave the evaluator intact if persistence fails; a saved rule change starts fresh.
+      if (rearm) previous.delete(alertId);
+      return true;
+    },
     setEnabled(alertId: string, enabled: boolean) {
       if (disposed) return false;
       const a = state.alerts.find((a) => a.id === alertId && relevant(a));

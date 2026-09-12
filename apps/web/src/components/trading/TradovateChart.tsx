@@ -666,7 +666,7 @@ export function TradovateChart({
             symbol={symbol}
             intervalLabel={formatChartInterval(interval)}
             onClose={() => setAlertDrawing(null)}
-            onCreate={drawingAlerts.create}
+            onSubmit={drawingAlerts.create}
           />
         ) : null}
         <div

@@ -4,6 +4,7 @@ import { Tabs } from "@base-ui/react/tabs";
 import { Dialog, DialogPopup, DialogTitle, DialogDescription } from "../ui/dialog";
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from "../ui/menu";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
+import { DrawingAlertDialog } from "./DrawingAlertDialog";
 import { ChartIcon } from "./ChartIcon";
 import { AlertIcon } from "./AlertIcon";
 import { toastManager } from "../ui/toast";
@@ -113,6 +114,7 @@ export function ChartAlerts({
   const formId = useId();
   const [tab, setTab] = useState("alerts");
   const [creating, setCreating] = useState(false);
+  const [editingDrawingId, setEditingDrawingId] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<"newest" | "oldest" | "symbol">("newest");
@@ -125,6 +127,8 @@ export function ChartAlerts({
   const query = search.trim().toLowerCase();
   const drawingLoading = drawingController !== undefined && !drawingController?.ready;
   const drawings = drawingController?.symbol === symbol ? drawingController : null;
+  const editingAlert = drawings?.alerts.find((alert) => alert.id === editingDrawingId);
+  const editingDrawing = editingAlert ? drawings?.drawingForAlert(editingAlert.id) : null;
   function act(action: () => unknown, message: string) {
     try {
       if (action() === false) {
@@ -155,6 +159,7 @@ export function ChartAlerts({
           ? "Triggered"
           : "Paused",
       frequency: alert.repeat ? "Repeating" : "Once",
+      edit: null,
       canEnable: true,
       actionLabel: `${alert.symbol} alert at ${alert.price}`,
       toggle: () => {
@@ -186,6 +191,10 @@ export function ChartAlerts({
               ? "Triggered"
               : "Paused",
       frequency: drawingTriggerLabel[alert.trigger],
+      edit:
+        drawings?.ready && drawings.drawingForAlert(alert.id)
+          ? () => setEditingDrawingId(alert.id)
+          : null,
       canEnable:
         !!drawings?.ready &&
         alert.disabledReason !== "deleted" &&
@@ -468,6 +477,11 @@ export function ChartAlerts({
                     </p>
                   </div>
                   <div className="flex flex-col opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
+                    {alert.edit ? (
+                      <AlertAction label={`Edit ${alert.actionLabel}`} onClick={alert.edit}>
+                        <ChartIcon name="adjustments-horizontal" size={18} />
+                      </AlertAction>
+                    ) : null}
                     <AlertAction
                       label={`${alert.enabled ? "Pause" : "Enable"} ${alert.actionLabel}`}
                       disabled={!alert.enabled && !alert.canEnable}
@@ -512,6 +526,17 @@ export function ChartAlerts({
           </ol>
         </Tabs.Panel>
       </Tabs.Root>
+      {drawings?.ready && editingAlert && editingDrawing ? (
+        <DrawingAlertDialog
+          key={`${drawings.symbol}:${drawings.intervalKey}:${editingAlert.id}`}
+          alert={editingAlert}
+          drawing={editingDrawing}
+          symbol={drawings.symbol}
+          intervalLabel={drawings.intervalLabel}
+          onSubmit={(input) => drawings.update(editingAlert.id, input)}
+          onClose={() => setEditingDrawingId(null)}
+        />
+      ) : null}
       <Dialog open={creating} onOpenChange={setCreating}>
         <DialogPopup className="w-[min(420px,calc(100vw-32px))] bg-[#161616] p-6">
           <DialogTitle className="text-lg font-semibold">Create alert</DialogTitle>
