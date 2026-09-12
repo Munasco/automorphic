@@ -1,9 +1,8 @@
 import { useEffect, useId, useState } from "react";
 import type { TradingAccountRow, TradingAccountSnapshot } from "@t3tools/contracts";
-import { RefreshCw, XIcon } from "lucide-react";
+import { PanelBottomIcon, RefreshCw, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { TradingIcon } from "./TradingIcon";
 import { ACCOUNT_POLL_MS, tradingAccountCache } from "./tradingAccountCache";
 import { cn } from "../../lib/utils";
 
@@ -36,7 +35,7 @@ export function TradingDockToggle({ open, onToggle }: { open: boolean; onToggle:
             type="button"
             variant="ghost"
             size="icon-sm"
-            aria-label={open ? "Hide trading dock" : "Open trading dock"}
+            aria-label={open ? "Hide bottom dock" : "Open bottom dock"}
             aria-pressed={open}
             onPointerDown={(event) => event.preventDefault()}
             onClick={onToggle}
@@ -44,14 +43,14 @@ export function TradingDockToggle({ open, onToggle }: { open: boolean; onToggle:
           />
         }
       >
-        <TradingIcon className="size-4" />
+        <PanelBottomIcon className="size-4" />
       </TooltipTrigger>
-      <TooltipPopup>Positions, orders and history</TooltipPopup>
+      <TooltipPopup>Terminal and trading</TooltipPopup>
     </Tooltip>
   );
 }
 
-export function TradingDock({ onClose }: { onClose: () => void }) {
+export function TradingDock({ onClose, height }: { onClose?: () => void; height?: number }) {
   const id = useId();
   const [tab, setTab] = useState<Tab>("Positions");
   const [accountId, setAccountId] = useState<number | null>(null);
@@ -123,7 +122,8 @@ export function TradingDock({ onClose }: { onClose: () => void }) {
   return (
     <section
       aria-label="Trading account dock"
-      className="trading-surface flex h-64 max-h-[38vh] min-h-40 shrink-0 flex-col overflow-hidden border-t border-border bg-background"
+      className="trading-surface flex min-h-40 shrink-0 flex-col overflow-hidden border-t border-border bg-background"
+      style={{ height: height ?? 256, maxHeight: "75vh" }}
     >
       <header className="flex min-h-10 shrink-0 flex-wrap items-center gap-1 border-b border-border px-2 py-1">
         <div role="tablist" aria-label="Trading account views" className="flex items-center gap-1">
@@ -220,22 +220,24 @@ export function TradingDock({ onClose }: { onClose: () => void }) {
               {data ? `Updated ${timestamp(data.fetchedAt)} · refresh` : "Refresh account"}
             </TooltipPopup>
           </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  aria-label="Close trading dock"
-                  onClick={onClose}
-                />
-              }
-            >
-              <XIcon className="size-3.5" />
-            </TooltipTrigger>
-            <TooltipPopup>Close trading dock</TooltipPopup>
-          </Tooltip>
+          {onClose ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Close trading dock"
+                    onClick={onClose}
+                  />
+                }
+              >
+                <XIcon className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipPopup>Close trading dock</TooltipPopup>
+            </Tooltip>
+          ) : null}
         </div>
       </header>
       {currentError ? (

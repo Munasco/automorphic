@@ -2114,10 +2114,12 @@ code {
 }
 
 .trading-surface {
-  font-family: "Geist", var(--font-sans);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  letter-spacing: normal;
   font-variant-numeric: tabular-nums;
 }
 
 .trading-surface :is(h1, h2, [role="tab"], nav button, .trading-heading) {
-  font-family: "Aeonik", "Geist", var(--font-sans);
+  font-family: var(--font-sans);
 }

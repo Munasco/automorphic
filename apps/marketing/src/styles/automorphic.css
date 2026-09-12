@@ -1,3 +1,10 @@
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/Geist-Variable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
 * {
   box-sizing: border-box;
 }
@@ -9,7 +16,7 @@ html {
 }
 body {
   margin: 0;
-  font-family: "DM Sans", system-ui, sans-serif;
+  font-family: "Geist", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 a {
@@ -464,7 +471,7 @@ nav a:hover {
   vertical-align: middle;
   border: 1px solid #a4baff24;
   padding: 3px 6px;
-  font-family: "DM Sans", system-ui, sans-serif;
+  font-family: "Geist", system-ui, sans-serif;
   font-size: 8px;
   line-height: 1.2;
   text-transform: uppercase;

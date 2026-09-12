@@ -59,14 +59,14 @@ export function InstrumentHeader({
             {instrument.badge}
           </span>
           <span className="min-w-0">
-            <span className="trading-heading flex items-center gap-2 text-lg font-semibold tracking-tight">
+            <span className="trading-heading flex items-center gap-2 text-lg font-semibold">
               <span className="truncate">{symbol || root}</span>
               <ChartIcon
                 name="chevron-down"
                 className="size-4 text-muted-foreground group-hover:text-foreground"
               />
             </span>
-            <span className="block truncate text-xs text-muted-foreground">
+            <span className="mt-1 block truncate text-xs leading-5 text-muted-foreground">
               {instrument.name} <span className="mx-1.5 text-border">·</span> {instrument.exchange}
             </span>
           </span>
@@ -74,9 +74,7 @@ export function InstrumentHeader({
       </div>
       <div className="min-w-0">
         <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 tabular-nums">
-          <span className="text-xl font-medium tracking-tight">
-            {current ? price(current.last) : "—"}
-          </span>
+          <span className="text-xl font-medium">{current ? price(current.last) : "—"}</span>
           <span className="text-xs font-medium text-muted-foreground">USD</span>
           {change !== null && current?.previousClose ? (
             <span className={cn("text-xs", change >= 0 ? "text-emerald-400" : "text-red-400")}>
@@ -88,7 +86,7 @@ export function InstrumentHeader({
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
           {current?.timestamp && Number.isFinite(Date.parse(current.timestamp)) ? (
-            <time dateTime={current.timestamp} className="text-[11px] text-muted-foreground">
+            <time dateTime={current.timestamp} className="text-xs leading-5 text-muted-foreground">
               {new Date(current.timestamp).toLocaleString(undefined, {
                 month: "short",
                 day: "numeric",
@@ -101,7 +99,7 @@ export function InstrumentHeader({
         </div>
       </div>
       {dayQuote && current ? (
-        <dl className="flex flex-wrap gap-x-5 gap-y-2 tabular-nums @min-[850px]:ml-auto">
+        <dl className="flex flex-wrap gap-x-6 gap-y-2 tabular-nums @min-[850px]:ml-auto">
           {(
             [
               ["Previous", current.previousClose],
@@ -111,21 +109,21 @@ export function InstrumentHeader({
           ).map(([label, value]) =>
             value !== undefined ? (
               <div key={label}>
-                <dd className="text-xs">
+                <dd className="text-[13px] leading-5">
                   {label === "Volume"
                     ? value.toLocaleString("en-US", { notation: "compact" })
                     : price(value)}
                 </dd>
-                <dt className="mt-0.5 text-[11px] text-muted-foreground">{label}</dt>
+                <dt className="mt-1 text-xs text-muted-foreground">{label}</dt>
               </div>
             ) : null,
           )}
           {current.low !== undefined && current.high !== undefined ? (
             <div>
-              <dd className="text-xs">
+              <dd className="text-[13px] leading-5">
                 {price(current.low)} – {price(current.high)}
               </dd>
-              <dt className="mt-0.5 text-[11px] text-muted-foreground">Day range</dt>
+              <dt className="mt-1 text-xs text-muted-foreground">Day range</dt>
             </div>
           ) : null}
         </dl>

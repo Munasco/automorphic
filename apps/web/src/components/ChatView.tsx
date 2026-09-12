@@ -324,6 +324,7 @@ import {
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { TradingDock, TradingDockToggle } from "./trading/TradingDock";
+import { BottomDock, type BottomDockTab } from "./BottomDock";
 import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
@@ -827,6 +828,7 @@ interface PersistentThreadTerminalDrawerProps {
   threadRef: { environmentId: EnvironmentId; threadId: ThreadId };
   threadId: ThreadId;
   active: boolean;
+  suppressed?: boolean;
   launchContext: PersistentTerminalLaunchContext | null;
   focusRequestId: number;
   splitShortcutLabel: string | undefined;
@@ -841,6 +843,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   threadRef,
   threadId,
   active,
+  suppressed = false,
   launchContext,
   focusRequestId,
   splitShortcutLabel,
@@ -864,7 +867,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   const terminalUiState = useTerminalUiStateStore((state) =>
     selectThreadTerminalUiState(state.terminalUiStateByThreadKey, threadRef),
   );
-  const visible = active && terminalUiState.terminalOpen;
+  const visible = active && terminalUiState.terminalOpen && !suppressed;
   const knownTerminalSessions = useKnownTerminalSessions({
     environmentId: threadRef.environmentId,
     threadId,
@@ -1155,6 +1158,8 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
 
   return (
     <div
+      aria-hidden={!visible}
+      inert={!visible}
       className={cn(
         "grid shrink-0 overflow-clip",
         active ? (visible ? "grid-rows-[1fr]" : "grid-rows-[0fr]") : "hidden",
@@ -1586,6 +1591,7 @@ export default function ChatView(props: ChatViewProps) {
   const composerElementContextsRef = useRef<ElementContextDraft[]>([]);
   const localComposerRef = useRef<ChatComposerHandle | null>(null);
   const [tradingDockOpen, setTradingDockOpen] = useState(false);
+  const lastBottomDockTab = useRef<BottomDockTab>("trading");
   const composerRef = useComposerHandleContext() ?? localComposerRef;
   const [restingComposerControlsHost, setRestingComposerControlsHost] =
     useState<HTMLDivElement | null>(null);
@@ -3556,13 +3562,19 @@ export default function ChatView(props: ChatViewProps) {
   const setTerminalOpen = useCallback(
     (open: boolean) => {
       if (!activeThreadRef) return;
+      if (open) {
+        setTradingDockOpen(false);
+        lastBottomDockTab.current = "terminal";
+      }
       storeSetTerminalOpen(activeThreadRef, open);
     },
     [activeThreadRef, storeSetTerminalOpen],
   );
   const toggleTerminalVisibility = useCallback(() => {
     if (!activeThreadRef) return;
-    const nextOpen = !terminalUiState.terminalOpen;
+    const nextOpen = tradingDockOpen || !terminalUiState.terminalOpen;
+    setTradingDockOpen(false);
+    lastBottomDockTab.current = "terminal";
     if (nextOpen && terminalUiState.terminalIds.length === 0) {
       if (!activeThreadId || !activeProject) {
         return;
@@ -3602,7 +3614,29 @@ export default function ChatView(props: ChatViewProps) {
     storeEnsureTerminal,
     terminalUiState.terminalIds.length,
     terminalUiState.terminalOpen,
+    tradingDockOpen,
   ]);
+  const closeBottomDock = useCallback(() => {
+    setTradingDockOpen(false);
+    setTerminalOpen(false);
+  }, [setTerminalOpen]);
+  const selectBottomDockTab = useCallback(
+    (tab: BottomDockTab) => {
+      lastBottomDockTab.current = tab;
+      if (tab === "trading") {
+        setTradingDockOpen(true);
+      } else {
+        setTradingDockOpen(false);
+        if (!terminalUiState.terminalOpen) toggleTerminalVisibility();
+        else setTerminalFocusRequestId((value) => value + 1);
+      }
+    },
+    [terminalUiState.terminalOpen, toggleTerminalVisibility],
+  );
+  const toggleBottomDock = useCallback(() => {
+    if (tradingDockOpen || terminalUiState.terminalOpen) closeBottomDock();
+    else selectBottomDockTab(lastBottomDockTab.current);
+  }, [closeBottomDock, selectBottomDockTab, terminalUiState.terminalOpen, tradingDockOpen]);
   const splitTerminal = useCallback(
     (direction: "horizontal" | "vertical" = "horizontal") => {
       if (!activeThreadRef || hasReachedSplitLimit || !activeThreadId || !activeProject) {
@@ -6051,7 +6085,7 @@ export default function ChatView(props: ChatViewProps) {
       }
       const shortcutContext = {
         terminalFocus: terminalFocusOwner !== null,
-        terminalOpen: Boolean(terminalUiState.terminalOpen),
+        terminalOpen: Boolean(terminalUiState.terminalOpen && !tradingDockOpen),
         previewFocus: isPreviewFocused(),
         previewOpen: previewPanelOpen,
         modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
@@ -6163,9 +6197,7 @@ export default function ChatView(props: ChatViewProps) {
           splitPanelTerminal();
           return;
         }
-        if (!terminalUiState.terminalOpen) {
-          setTerminalOpen(true);
-        }
+        setTerminalOpen(true);
         splitTerminal();
         return;
       }
@@ -6177,9 +6209,7 @@ export default function ChatView(props: ChatViewProps) {
           splitPanelTerminal("vertical");
           return;
         }
-        if (!terminalUiState.terminalOpen) {
-          setTerminalOpen(true);
-        }
+        setTerminalOpen(true);
         splitTerminal("vertical");
         return;
       }
@@ -6203,9 +6233,7 @@ export default function ChatView(props: ChatViewProps) {
           addTerminalSurface();
           return;
         }
-        if (!terminalUiState.terminalOpen) {
-          setTerminalOpen(true);
-        }
+        setTerminalOpen(true);
         createNewTerminal();
         return;
       }
@@ -6254,6 +6282,7 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadSettled,
     canInterruptRunningThread,
     terminalUiState.terminalOpen,
+    tradingDockOpen,
     terminalUiState.activeTerminalId,
     activeThreadId,
     closeRightPanelSurface,
@@ -8493,8 +8522,8 @@ export default function ChatView(props: ChatViewProps) {
                             terminalOpen={Boolean(terminalUiState.terminalOpen)}
                             tradingDockControl={
                               <TradingDockToggle
-                                open={tradingDockOpen}
-                                onToggle={() => setTradingDockOpen((open) => !open)}
+                                open={tradingDockOpen || terminalUiState.terminalOpen}
+                                onToggle={toggleBottomDock}
                               />
                             }
                             gitCwd={gitCwd}
@@ -8644,26 +8673,43 @@ export default function ChatView(props: ChatViewProps) {
         </div>
         {/* end horizontal flex container */}
 
-        {tradingDockOpen ? <TradingDock onClose={() => setTradingDockOpen(false)} /> : null}
-
-        {mountedTerminalThreadRefs.map(({ key: mountedThreadKey, threadRef: mountedThreadRef }) => (
-          <PersistentThreadTerminalDrawer
-            key={mountedThreadKey}
-            threadRef={mountedThreadRef}
-            threadId={mountedThreadRef.threadId}
-            active={mountedThreadKey === activeThreadKey}
-            launchContext={
-              mountedThreadKey === activeThreadKey ? (activeTerminalLaunchContext ?? null) : null
-            }
-            focusRequestId={mountedThreadKey === activeThreadKey ? terminalFocusRequestId : 0}
-            splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
-            splitVerticalShortcutLabel={splitTerminalVerticalShortcutLabel ?? undefined}
-            newShortcutLabel={newTerminalShortcutLabel ?? undefined}
-            closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
-            keybindings={keybindings}
-            onAddTerminalContext={addTerminalContextToDraft}
-          />
-        ))}
+        <BottomDock
+          open={tradingDockOpen || terminalUiState.terminalOpen}
+          tab={tradingDockOpen ? "trading" : "terminal"}
+          onSelectTab={selectBottomDockTab}
+          onClose={closeBottomDock}
+          height={terminalUiState.terminalHeight}
+          terminalAvailable={activeProject !== null}
+          onHeightChange={(height) => {
+            if (activeThreadRef)
+              useTerminalUiStateStore.getState().setTerminalHeight(activeThreadRef, height);
+          }}
+        >
+          {tradingDockOpen ? <TradingDock height={terminalUiState.terminalHeight} /> : null}
+          {mountedTerminalThreadRefs.map(
+            ({ key: mountedThreadKey, threadRef: mountedThreadRef }) => (
+              <PersistentThreadTerminalDrawer
+                key={mountedThreadKey}
+                threadRef={mountedThreadRef}
+                threadId={mountedThreadRef.threadId}
+                active={mountedThreadKey === activeThreadKey}
+                suppressed={tradingDockOpen}
+                launchContext={
+                  mountedThreadKey === activeThreadKey
+                    ? (activeTerminalLaunchContext ?? null)
+                    : null
+                }
+                focusRequestId={mountedThreadKey === activeThreadKey ? terminalFocusRequestId : 0}
+                splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
+                splitVerticalShortcutLabel={splitTerminalVerticalShortcutLabel ?? undefined}
+                newShortcutLabel={newTerminalShortcutLabel ?? undefined}
+                closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
+                keybindings={keybindings}
+                onAddTerminalContext={addTerminalContextToDraft}
+              />
+            ),
+          )}
+        </BottomDock>
       </div>
 
       {rightPanelPresent && !shouldUseRightPanelSheet && activeThreadRef ? (
