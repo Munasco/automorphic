@@ -391,3 +391,51 @@ describe("MACD source and moving-average inputs", () => {
     ).toEqual({ fast: 7, slow: 21, signalPeriod: 4, source: 0, oscillatorMA: 0, signalMA: 0 });
   });
 });
+
+describe("ATR smoothing inputs", () => {
+  const bars = [2, 6, 3, 9, 4].map((range, index) => ({
+    time: index + 1,
+    open: 0,
+    high: range,
+    low: 0,
+    close: 0,
+    volume: 1,
+  }));
+  const definition = INDICATOR_CATALOG.find((item) => item.key === "atr")!;
+  const calculate = (smoothing?: number) =>
+    definition.calculate({
+      bars,
+      inputs: getIndicatorInputs("atr", {
+        atr: { period: 3, ...(smoothing === undefined ? {} : { smoothing }) },
+      }),
+      interval: 1,
+      session: DEFAULT_INITIAL_BALANCE,
+    }).plots[0]!.points;
+
+  it.each([
+    { smoothing: 0, name: "RMA", expected: [11 / 3, 49 / 9, 134 / 27] },
+    { smoothing: 1, name: "SMA", expected: [11 / 3, 6, 16 / 3] },
+    { smoothing: 2, name: "EMA", expected: [11 / 3, 19 / 3, 31 / 6] },
+    { smoothing: 3, name: "WMA", expected: [23 / 6, 13 / 2, 11 / 2] },
+  ])("plots $name true-range smoothing with the selected length", ({ smoothing, expected }) => {
+    const points = calculate(smoothing);
+    expect(points.map((point) => point.time)).toEqual([3, 4, 5]);
+    points.forEach((point, index) => expect(point.value).toBeCloseTo(expected[index]!, 10));
+  });
+
+  it("defaults legacy ATR inputs to RMA and repairs invalid saved smoothing without losing length", () => {
+    expect(getIndicatorInputs("atr")).toEqual({ period: 14, smoothing: 0 });
+    expect(getIndicatorInputs("atr", { atr: { period: 3 } })).toEqual({
+      period: 3,
+      smoothing: 0,
+    });
+    expect(calculate()).toEqual(calculate(0));
+    for (const smoothing of [-1, 4, 0.5, NaN, Infinity]) {
+      expect(
+        normalizeChartPreferences({ indicatorInputs: { atr: { period: 7, smoothing } } })
+          .indicatorInputs.atr,
+      ).toEqual({ period: 7, smoothing: 0 });
+      expect(calculate(smoothing)).toEqual(calculate(0));
+    }
+  });
+});

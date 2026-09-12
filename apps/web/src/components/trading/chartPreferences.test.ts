@@ -625,3 +625,79 @@ it("keeps duplicate MACD source and MA selectors independent through validation,
   await reload();
   expect(inputs()).toEqual([baseInputs, defaults]);
 });
+
+it("keeps ATR smoothing independent through duplication, invalid edits, reload and reset", async () => {
+  const store = useChartPreferences.getState();
+  const base = store.addIndicator("atr")!;
+  expect(store.setIndicatorInstanceInputs(base, { period: 7, smoothing: 1 })).toBe(true);
+  const copy = store.duplicateIndicatorInstance(base)!;
+  const inputs = () =>
+    getChartIndicatorInstances(useChartPreferences.getState())
+      .filter((instance) => instance.key === "atr")
+      .map((instance) => instance.inputs);
+  expect(inputs()).toEqual([
+    { period: 7, smoothing: 1 },
+    { period: 7, smoothing: 1 },
+  ]);
+  expect(store.setIndicatorInstanceInputs(copy, { period: 5, smoothing: 3 })).toBe(true);
+  const configured = [
+    { period: 7, smoothing: 1 },
+    { period: 5, smoothing: 3 },
+  ];
+  expect(inputs()).toEqual(configured);
+  const reload = async () => {
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    await useChartPreferences.persist.rehydrate();
+  };
+  await reload();
+  expect(inputs()).toEqual(configured);
+  const before = useChartPreferences.getState();
+  vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+  for (const id of [base, copy])
+    for (const smoothing of [-1, 4, 0.5, NaN, Infinity])
+      expect(
+        useChartPreferences.getState().setIndicatorInstanceInputs(id, { period: 9, smoothing }),
+      ).toBe(false);
+  expect(useChartPreferences.getState()).toBe(before);
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  expect(inputs()).toEqual(configured);
+  useChartPreferences.getState().resetIndicatorInstanceInputs(copy);
+  const reset = [{ period: 7, smoothing: 1 }, getIndicatorInputs("atr")];
+  expect(inputs()).toEqual(reset);
+  await reload();
+  expect(inputs()).toEqual(reset);
+});
+
+it("hydrates legacy and malformed ATR smoothing without losing each instance's length", async () => {
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+    JSON.stringify({
+      version: 0,
+      state: {
+        indicators: { atr: true },
+        indicatorInputs: { atr: { period: 7 } },
+        extraIndicators: [
+          { id: "legacy-atr", key: "atr", hidden: false, inputs: { period: 5 }, appearance: {} },
+          {
+            id: "invalid-atr",
+            key: "atr",
+            hidden: true,
+            inputs: { period: 9, smoothing: 99 },
+            appearance: {},
+          },
+        ],
+      },
+    }),
+  );
+  await useChartPreferences.persist.rehydrate();
+  expect(
+    getChartIndicatorInstances(useChartPreferences.getState())
+      .filter((instance) => instance.key === "atr")
+      .map(({ id, inputs, hidden }) => ({ id, inputs, hidden })),
+  ).toEqual([
+    { id: "base:atr", inputs: { period: 7, smoothing: 0 }, hidden: false },
+    { id: "legacy-atr", inputs: { period: 5, smoothing: 0 }, hidden: false },
+    { id: "invalid-atr", inputs: { period: 9, smoothing: 0 }, hidden: true },
+  ]);
+});

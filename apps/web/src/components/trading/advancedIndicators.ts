@@ -72,6 +72,18 @@ function sma(points: readonly IndicatorPoint[], period: number) {
   return result;
 }
 
+function wma(points: readonly IndicatorPoint[], period: number) {
+  const result: IndicatorPoint[] = [];
+  const totalWeight = (period * (period + 1)) / 2;
+  for (let i = period - 1; i < points.length; i += 1) {
+    const start = i - period + 1;
+    let value = 0;
+    for (let j = start; j <= i; j += 1) value += points[j]!.value * ((j - start + 1) / totalWeight);
+    add(result, points[i]!.time, value);
+  }
+  return result;
+}
+
 function ranges(bars: readonly Candle[], period: number) {
   const result: { time: number; close: number; high: number; low: number }[] = [];
   for (let i = period - 1; i < bars.length; i += 1) {
@@ -177,23 +189,30 @@ function trueRange(bar: Candle, previous?: Candle) {
     : bar.high - bar.low;
 }
 
-/** Wilder/RMA ATR14. The first loaded bar uses high-low when no previous close exists.
+export type ATRSmoothing = "rma" | "sma" | "ema" | "wma";
+
+/** ATR14 defaults to Wilder/RMA smoothing. The first loaded bar uses high-low without a previous close.
  * https://www.tradingview.com/support/solutions/43000501823-average-true-range-atr/
  */
-export function calculateATR(bars: readonly Candle[], period = 14): IndicatorPoint[] {
+export function calculateATR(
+  bars: readonly Candle[],
+  period = 14,
+  smoothing: ATRSmoothing = "rma",
+): IndicatorPoint[] {
   if (!validPeriod(period)) return [];
   const result: IndicatorPoint[] = [];
   for (const segment of segments(bars, validRange)) {
-    result.push(
-      ...smooth(
-        segment.map((bar, index) => ({
-          time: bar.time,
-          value: trueRange(bar, segment[index - 1]),
-        })),
-        period,
-        1 / period,
-      ),
-    );
+    const ranges = segment.map((bar, index) => ({
+      time: bar.time,
+      value: trueRange(bar, segment[index - 1]),
+    }));
+    const points =
+      smoothing === "sma"
+        ? sma(ranges, period)
+        : smoothing === "wma"
+          ? wma(ranges, period)
+          : smooth(ranges, period, smoothing === "ema" ? 2 / (period + 1) : 1 / period);
+    result.push(...points);
   }
   return result;
 }

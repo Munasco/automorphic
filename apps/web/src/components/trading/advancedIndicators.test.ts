@@ -355,6 +355,63 @@ describe("common chart indicators", () => {
     near(calculateATR(bars([10, 14, 13]), 1), [2, 5, 2]);
   });
 
+  it.each([
+    { smoothing: "rma", expected: [3, 4, 16 / 3, 50 / 9] },
+    { smoothing: "sma", expected: [3, 13 / 3, 16 / 3, 20 / 3] },
+    { smoothing: "ema", expected: [3, 4.5, 6.25, 49 / 8] },
+    { smoothing: "wma", expected: [3, 4.5, 19 / 3, 20 / 3] },
+  ] as const)("smooths gapped true ranges with ATR $smoothing", ({ smoothing, expected }) => {
+    // Intrabar ranges are all 2; previous closes expand true range to [2, 5, 2, 6, 8, 6].
+    const input = bars([10, 14, 13, 18, 11, 16]);
+    const original = structuredClone(input);
+    const result = calculateATR(input, 3, smoothing);
+    near(result, [...expected]);
+    expect(result.map((point) => point.time)).toEqual(input.slice(2).map((bar) => bar.time));
+    near(calculateATR(input, 1, smoothing), [2, 5, 2, 6, 8, 6]);
+    expect(calculateATR(input.slice(0, 2), 3, smoothing)).toEqual([]);
+    if (smoothing === "rma") expect(calculateATR(input, 3)).toEqual(result);
+    expect(input).toEqual(original);
+  });
+
+  it.each(["rma", "sma", "ema", "wma"] as const)(
+    "restarts ATR %s range history and warmup after invalid bars",
+    (smoothing) => {
+      for (const patch of [
+        { high: NaN },
+        { low: Infinity },
+        { time: NaN },
+        { close: 2000 },
+        { high: 0 },
+      ]) {
+        const input = bars([10, 14, 13, 18, 999, 11, 16, 14, 18, 13]);
+        Object.assign(input[4]!, patch);
+        const result = calculateATR(input, 3, smoothing);
+        expect(result.map((point) => point.time)).toEqual([
+          input[2]!.time,
+          input[3]!.time,
+          input[7]!.time,
+          input[8]!.time,
+          input[9]!.time,
+        ]);
+        expect(result).toEqual([
+          ...calculateATR(input.slice(0, 4), 3, smoothing),
+          ...calculateATR(input.slice(5), 3, smoothing),
+        ]);
+        expect(calculateATR(input.slice(5), 1, smoothing)[0]).toEqual({
+          time: input[5]!.time,
+          value: 2,
+        });
+        expect(result.every((point) => Number.isFinite(point.value))).toBe(true);
+      }
+      const input = bars([10, 14, 13, 18]).map((bar) => ({ ...bar, open: NaN, volume: NaN }));
+      expect(calculateATR(input, 3, smoothing)).toEqual(
+        calculateATR(bars([10, 14, 13, 18]), 3, smoothing),
+      );
+      for (const period of [0, -1, 1.5, NaN, Infinity])
+        expect(calculateATR(input, period, smoothing)).toEqual([]);
+    },
+  );
+
   it("smooths stochastic K before its separate D average", () => {
     const input = bars([1, 2, 3, 2, 1, 2, 4]);
     const result = calculateStochastic(input, 3, 2, 2);

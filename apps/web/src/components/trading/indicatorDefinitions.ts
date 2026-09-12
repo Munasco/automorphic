@@ -321,9 +321,35 @@ export const INDICATOR_DEFINITIONS = [
     detail: "Average true range",
     category: "Oscillators",
     placement: "pane",
-    inputs: [length(14)],
+    inputs: [
+      length(14),
+      {
+        key: "smoothing",
+        label: "Smoothing",
+        kind: "select",
+        legend: false,
+        defaultValue: 0,
+        min: 0,
+        max: 3,
+        step: 1,
+        options: [
+          { value: 0, label: "RMA" },
+          { value: 1, label: "SMA" },
+          { value: 2, label: "EMA" },
+          { value: 3, label: "WMA" },
+        ],
+      },
+    ],
     styles: [style("main", "Line", "#fbbf24", true)],
-    calculate: ({ bars, inputs }) => single(calculateATR(bars, inputs.period), { title: "ATR" }),
+    calculate: ({ bars, inputs }) =>
+      single(
+        calculateATR(
+          bars,
+          inputs.period,
+          (["rma", "sma", "ema", "wma"] as const)[inputs.smoothing ?? 0] ?? "rma",
+        ),
+        { title: "ATR" },
+      ),
   }),
   defineIndicator({
     key: "stochastic",
