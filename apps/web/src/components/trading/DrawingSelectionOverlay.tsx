@@ -140,14 +140,16 @@ function DrawingSettings({
   }));
   const [replaceAppearance, setReplaceAppearance] = useState(false);
   const availableTabs =
-    draft.kind === "regression-trend"
-      ? ["Inputs", "Style", "Coordinates", "Visibility"]
-      : supportsDrawingLevels(draft.kind)
-        ? ["Style", "Coordinates", "Visibility"]
-        : isSpecialChannelDrawing(draft.kind)
-          ? ["Style", "Text", "Visibility"]
-          : ["Style", "Text", "Coordinates", "Visibility"];
-  const tab = availableTabs.includes(requestedTab) ? requestedTab : "Style";
+    draft.kind === "text"
+      ? ["Text", "Coordinates", "Visibility"]
+      : draft.kind === "regression-trend"
+        ? ["Inputs", "Style", "Coordinates", "Visibility"]
+        : supportsDrawingLevels(draft.kind)
+          ? ["Style", "Coordinates", "Visibility"]
+          : isSpecialChannelDrawing(draft.kind)
+            ? ["Style", "Text", "Visibility"]
+            : ["Style", "Text", "Coordinates", "Visibility"];
+  const tab = availableTabs.includes(requestedTab) ? requestedTab : availableTabs[0]!;
   const [anchorKeys] = useState(() =>
     drawing.anchors.map((_, index) => `${drawing.id}-anchor-${index}`),
   );
@@ -464,7 +466,7 @@ function DrawingSettings({
                 />
                 <DrawingSelect
                   label="Text horizontal alignment"
-                  value={draft.textAlignment ?? "center"}
+                  value={draft.textAlignment ?? (draft.kind === "text" ? "left" : "center")}
                   onChange={(value) =>
                     update({ textAlignment: value as NonNullable<ChartDrawing["textAlignment"]> })
                   }
@@ -749,6 +751,40 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
               });
             }}
           />
+        ) : selected.kind === "text" ? (
+          <>
+            <ColorPicker
+              label="Text color"
+              icon="letter-t"
+              value={selected.textColor ?? selected.color}
+              onChange={(textColor) => drawings.updateSelected({ textColor })}
+              opacity={selected.textOpacity ?? 1}
+              onOpacityChange={(textOpacity) => drawings.updateSelected({ textOpacity })}
+            />
+            <DrawingSelect
+              label="Text size"
+              value={String(selected.textFontSize ?? 14)}
+              onChange={(value) => drawings.updateSelected({ textFontSize: Number(value) })}
+              options={[8, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 40, 48].map(
+                (size) => [String(size), String(size)] as const,
+              )}
+              className="w-16"
+            />
+            <IconButton
+              label="Bold text"
+              active={selected.textBold ?? false}
+              onClick={() => drawings.updateSelected({ textBold: !selected.textBold })}
+            >
+              <span className="font-bold">B</span>
+            </IconButton>
+            <IconButton
+              label="Italic text"
+              active={selected.textItalic ?? false}
+              onClick={() => drawings.updateSelected({ textItalic: !selected.textItalic })}
+            >
+              <span className="italic">I</span>
+            </IconButton>
+          </>
         ) : isFibTimeDrawing(selected.kind) ? (
           <FibTimeToolbar drawing={selected} onChange={drawings.updateSelected} />
         ) : (
