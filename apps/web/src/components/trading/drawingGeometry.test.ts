@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { calculateChartRegression } from "./chartRegression";
+import { defaultDrawingTemplateSettings } from "./drawingTemplates";
 import type { Time } from "lightweight-charts";
 import {
   buildDrawingGeometry,
@@ -37,6 +38,95 @@ const geometry = (shape: ChartDrawing) =>
   );
 
 describe("native drawing geometry", () => {
+  it("renders factory retracements with the documented palette and keeps level edits independent", () => {
+    const shape: ChartDrawing = {
+      ...drawing("fib", [
+        [100, 100],
+        [200, 200],
+      ]),
+      ...defaultDrawingTemplateSettings("fib"),
+    };
+    const colors = ["#808080", "#f23645", "#ff9800", "#4caf50", "#089981", "#00bcd4", "#808080"];
+    expect(geometry(shape).lines.map((line) => line.color)).toEqual(colors);
+    const edited: ChartDrawing = {
+      ...shape,
+      levels: shape.levels!.map((level) =>
+        level.value === 0.382 ? { ...level, color: "#123456" } : level,
+      ),
+    };
+    const [restored] = parseChartDrawings(JSON.stringify([edited]));
+    expect(restored?.levels).toEqual(edited.levels);
+    expect(geometry(restored!).lines.map((line) => line.color)).toEqual([
+      ...colors.slice(0, 2),
+      "#123456",
+      ...colors.slice(3),
+    ]);
+    expect(
+      geometry({ ...edited, useOneColor: true }).lines.every((line) => line.color === edited.color),
+    ).toBe(true);
+    expect(geometry({ ...edited, useOneColor: false }).lines[2]?.color).toBe("#123456");
+    expect(defaultDrawingLevels("fib").map((level) => level.color)).toEqual(colors);
+  });
+
+  it.each(["#2962ff", "#729bff"])(
+    "repairs saved default-blue %s retracements while honoring explicit single-color mode",
+    (color) => {
+      const legacy = {
+        ...drawing("fib", [
+          [100, 100],
+          [200, 200],
+        ]),
+        color,
+      };
+      const [restored] = parseChartDrawings(JSON.stringify([legacy]));
+      const colors = defaultDrawingLevels("fib").map((level) => level.color);
+      expect(restored?.levels).toBeUndefined();
+      expect(geometry(restored!).lines.map((line) => line.color)).toEqual(colors);
+      expect(
+        geometry({ ...restored!, useOneColor: true }).lines.every((line) => line.color === color),
+      ).toBe(true);
+    },
+  );
+
+  it("fills absent level colors from the palette without overriding explicit per-level choices", () => {
+    const saved = {
+      ...drawing("fib", [
+        [100, 100],
+        [200, 200],
+      ]),
+      levels: [
+        { value: 0, visible: true },
+        { value: 0.236, visible: true, color: "#123456" },
+        { value: 0.618, visible: true },
+        { value: 0.75, visible: true },
+      ],
+    };
+    const [restored] = parseChartDrawings(JSON.stringify([saved]));
+    expect(geometry(restored!).lines.map((line) => line.color)).toEqual([
+      "#808080",
+      "#123456",
+      "#089981",
+      saved.color,
+    ]);
+    expect(restored?.levels).toEqual(saved.levels);
+  });
+
+  it("preserves legacy custom retracement colors on reload until factory appearance is explicitly restored", () => {
+    const legacy = {
+      ...drawing("fib", [
+        [100, 100],
+        [200, 200],
+      ]),
+      color: "#aa44cc",
+    };
+    const [restored] = parseChartDrawings(JSON.stringify([legacy]));
+    expect(restored?.levels).toBeUndefined();
+    expect(geometry(restored!).lines.every((line) => line.color === "#aa44cc")).toBe(true);
+    const reset = { ...restored!, ...defaultDrawingTemplateSettings("fib") };
+    expect(new Set(geometry(reset).lines.map((line) => line.color)).size).toBe(6);
+    expect(reset.anchors).toEqual(legacy.anchors);
+  });
+
   it.each(["rectangle", "circle", "ellipse", "triangle", "rotated-rectangle"] as const)(
     "%s retains its border and handles when independent background settings change",
     (kind) => {

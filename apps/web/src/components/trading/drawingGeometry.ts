@@ -326,11 +326,17 @@ export function defaultDrawingLevels(kind: DrawingKind): DrawingLevel[] {
       visible: value === 0.5 || value === 1,
       color: value === 0.5 ? "#4caf50" : "#2962ff",
     }));
-  const ratios = kind === "fib" ? FIB_LEVELS : [];
-  return ratios.map((value) => ({ value, visible: true }));
+  if (kind === "fib") {
+    // TradingView's documented FibretracementLineToolOverrides level1–level7 defaults.
+    // https://www.tradingview.com/charting-library-docs/latest/api/interfaces/Charting_Library.FibretracementLineToolOverrides/
+    const colors = ["#808080", "#f23645", "#ff9800", "#4caf50", "#089981", "#00bcd4", "#808080"];
+    return FIB_LEVELS.map((value, index) => ({ value, visible: true, color: colors[index]! }));
+  }
+  return [];
 }
 /** Defaults for the new level tools; saved retracements retain their original appearance. */
 export function defaultDrawingLevelSettings(kind: DrawingKind): DrawingSettings {
+  if (kind === "fib") return { levels: defaultDrawingLevels(kind), useOneColor: false };
   if (isFibTimeDrawing(kind)) return defaultFibTimeDrawingSettings(kind);
   if (isPitchforkDrawingTool(kind))
     return { background: true, backgroundOpacity: 0.12, showLevels: false, showPrices: false };
@@ -1042,6 +1048,14 @@ function buildLevelDrawingGeometry(
 ): DrawingGeometry {
   const result: DrawingGeometry = { lines: [], handles: [] };
   if (drawing.hidden) return result;
+  // Preserve a legacy custom overall color, but repair default-blue retracements
+  // that predate per-level colors instead of retaining the old single-color bug.
+  const legacyRetracementLevels =
+    drawing.kind === "fib" &&
+    drawing.levels === undefined &&
+    !["#2962ff", "#729bff"].includes(drawing.color.toLowerCase())
+      ? FIB_LEVELS.map((value) => ({ value, visible: true, color: drawing.color }))
+      : undefined;
   drawing = { ...defaultDrawingLevelSettings(drawing.kind), ...drawing };
   const projected = drawing.anchors.map(project);
   if (projected.some((point) => point === null)) return result;
@@ -1058,7 +1072,8 @@ function buildLevelDrawingGeometry(
     x: (a.x + b.x) / 2,
     y: (a.y + b.y) / 2,
   });
-  const levels = drawing.levels ?? defaultDrawingLevels(drawing.kind);
+  const defaultLevels = defaultDrawingLevels(drawing.kind);
+  const levels = legacyRetracementLevels ?? drawing.levels ?? defaultLevels;
   const boundaries: Array<{ value: number; line: DrawingLine; color: string }> = [];
   const addLevel = (
     source: DrawingLine,
@@ -1075,7 +1090,13 @@ function buildLevelDrawingGeometry(
     const right = forkExtensions
       ? drawing.extendLines || defaults.right
       : (drawing.extendRight ?? defaults.right);
-    const color = drawing.useOneColor ? drawing.color : (level.color ?? drawing.color);
+    const color = drawing.useOneColor
+      ? drawing.color
+      : (level.color ??
+        (drawing.kind === "fib"
+          ? defaultLevels.find((entry) => entry.value === level.value)?.color
+          : undefined) ??
+        drawing.color);
     const clipped = extendDrawingLine(source, width, height, left, right);
     // Use unclipped, finite boundaries for background fills even when one level is outside the pane.
     const dx = source.to.x - source.from.x,
