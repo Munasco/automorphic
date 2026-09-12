@@ -35,6 +35,7 @@ import {
 import { isDrawingVisibleAtInterval } from "./drawingVisibility";
 import { applyDrawingTemplate } from "./drawingTemplates";
 export type ChartDrawingTool = "cursor" | DrawingKind;
+export type DrawingOrderDirection = "front" | "forward" | "backward" | "back";
 export type DrawingMagnetMode = "off" | "weak" | "strong";
 export type DrawingState = {
   tool: ChartDrawingTool;
@@ -273,6 +274,7 @@ export function createChartDrawingSession(
               ? drawing.color
               : `rgba(${Number.parseInt(drawing.color.slice(1, 3), 16)}, ${Number.parseInt(drawing.color.slice(3, 5), 16)}, ${Number.parseInt(drawing.color.slice(5, 7), 16)}, ${drawing.lineOpacity})`,
           axisLabelColor: drawing.color,
+          lineVisible: false,
           lineWidth: drawing.width as 1 | 2 | 3 | 4,
           lineStyle:
             drawing.lineStyle === "dashed"
@@ -688,6 +690,34 @@ export function createChartDrawingSession(
     drawings = drawings.map((drawing) => (drawing.id === id ? next : drawing));
     changed();
   };
+  const reorderSelected = (direction: DrawingOrderDirection): boolean => {
+    if (
+      disposed ||
+      !["front", "forward", "backward", "back"].includes(direction) ||
+      !drawings.some((drawing) => drawing.id === selectedId)
+    )
+      return false;
+    // Reordering commits only object order, never provisional coordinates or settings.
+    setTool("cursor");
+    const from = drawings.findIndex((drawing) => drawing.id === selectedId);
+    if (from < 0) return false;
+    const to =
+      direction === "front"
+        ? drawings.length - 1
+        : direction === "back"
+          ? 0
+          : direction === "forward"
+            ? Math.min(drawings.length - 1, from + 1)
+            : Math.max(0, from - 1);
+    if (from === to) return false;
+    remember();
+    const reordered = drawings.slice();
+    const [drawing] = reordered.splice(from, 1);
+    reordered.splice(to, 0, drawing!);
+    drawings = reordered;
+    changed();
+    return true;
+  };
   const applySelectedTemplate = (patch: DrawingPatch) => {
     if (disposed) return false;
     const target = drawings.find((drawing) => drawing.id === selectedId);
@@ -823,6 +853,7 @@ export function createChartDrawingSession(
     previewSettings,
     applySettings,
     applySelectedTemplate,
+    reorderSelected,
     beginTextEdit,
     previewText,
     commitText,
@@ -1233,6 +1264,10 @@ export function useChartDrawings(
       session.current?.previewSettings(patch, options) ?? false,
     [],
   );
+  const reorderSelected = useCallback(
+    (direction: DrawingOrderDirection) => session.current?.reorderSelected(direction) ?? false,
+    [],
+  );
   const applySelectedTemplate = useCallback(
     (patch: DrawingPatch) => session.current?.applySelectedTemplate(patch) ?? false,
     [],
@@ -1271,6 +1306,7 @@ export function useChartDrawings(
     previewSettings,
     applySettings,
     applySelectedTemplate,
+    reorderSelected,
     beginTextEdit,
     previewText,
     commitText,

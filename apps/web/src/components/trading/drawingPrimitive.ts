@@ -309,117 +309,113 @@ export function createDrawingPrimitive(
           ctx.setLineDash(
             drawing.lineStyle === "dashed" ? [8, 5] : drawing.lineStyle === "dotted" ? [2, 4] : [],
           );
-          const nativeLine = drawing.kind === "horizontal" && drawing !== state.preview;
-          if (!nativeLine || geometry.polygons?.length || geometry.text) {
-            if (geometry.rectangle) {
-              const rect = geometry.rectangle;
-              ctx.globalAlpha = 0.12;
-              ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
-              ctx.globalAlpha = 1;
-            }
-            for (const polygon of geometry.polygons ?? []) {
-              if (!polygon.points.length) continue;
-              ctx.globalAlpha = polygon.opacity * (polygon.lineFill ? genericLineOpacity : 1);
-              ctx.fillStyle = polygon.color ?? drawing.color;
-              ctx.beginPath();
-              ctx.moveTo(polygon.points[0]!.x, polygon.points[0]!.y);
-              for (const point of polygon.points.slice(1)) ctx.lineTo(point.x, point.y);
-              ctx.closePath();
-              ctx.fill();
-            }
-            ctx.globalAlpha = lineAlpha;
-            ctx.fillStyle = drawing.color;
-            ctx.font = `${drawing.textFontSize ?? 12}px ${chart.options().layout.fontFamily}`;
+          if (geometry.rectangle) {
+            const rect = geometry.rectangle;
+            ctx.globalAlpha = 0.12;
+            ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+            ctx.globalAlpha = 1;
+          }
+          for (const polygon of geometry.polygons ?? []) {
+            if (!polygon.points.length) continue;
+            ctx.globalAlpha = polygon.opacity * (polygon.lineFill ? genericLineOpacity : 1);
+            ctx.fillStyle = polygon.color ?? drawing.color;
             ctx.beginPath();
-            let previous: DrawingPoint | undefined;
-            let activeColor = drawing.color;
-            let activeStyle = drawing.lineStyle ?? "solid";
-            let activeWidth = geometry.strokeWidth ?? drawing.width;
-            let activeOpacity = lineAlpha;
-            const visibleLines = nativeLine ? geometry.lines.slice(1) : geometry.lines;
-            for (const line of visibleLines) {
-              const color = line.color ?? drawing.color;
-              const style = line.lineStyle ?? drawing.lineStyle ?? "solid";
-              const lineWidth = line.width ?? geometry.strokeWidth ?? drawing.width;
-              const opacity = (line.opacity ?? 1) * lineAlpha;
-              if (
-                color !== activeColor ||
-                style !== activeStyle ||
-                lineWidth !== activeWidth ||
-                opacity !== activeOpacity
-              ) {
-                if (previous) ctx.stroke();
-                ctx.beginPath();
-                ctx.strokeStyle = color;
-                activeColor = color;
-                activeStyle = style;
-                activeWidth = lineWidth;
-                activeOpacity = opacity;
-                ctx.globalAlpha = opacity;
-                ctx.lineWidth = lineWidth;
-                ctx.setLineDash(style === "dashed" ? [8, 5] : style === "dotted" ? [2, 4] : []);
-                previous = undefined;
-              }
-              if (!previous || previous.x !== line.from.x || previous.y !== line.from.y)
-                ctx.moveTo(line.from.x, line.from.y);
-              ctx.lineTo(line.to.x, line.to.y);
-              previous = line.to;
+            ctx.moveTo(polygon.points[0]!.x, polygon.points[0]!.y);
+            for (const point of polygon.points.slice(1)) ctx.lineTo(point.x, point.y);
+            ctx.closePath();
+            ctx.fill();
+          }
+          ctx.globalAlpha = lineAlpha;
+          ctx.fillStyle = drawing.color;
+          ctx.font = `${drawing.textFontSize ?? 12}px ${chart.options().layout.fontFamily}`;
+          ctx.beginPath();
+          let previous: DrawingPoint | undefined;
+          let activeColor = drawing.color;
+          let activeStyle = drawing.lineStyle ?? "solid";
+          let activeWidth = geometry.strokeWidth ?? drawing.width;
+          let activeOpacity = lineAlpha;
+          const visibleLines = geometry.lines;
+          for (const line of visibleLines) {
+            const color = line.color ?? drawing.color;
+            const style = line.lineStyle ?? drawing.lineStyle ?? "solid";
+            const lineWidth = line.width ?? geometry.strokeWidth ?? drawing.width;
+            const opacity = (line.opacity ?? 1) * lineAlpha;
+            if (
+              color !== activeColor ||
+              style !== activeStyle ||
+              lineWidth !== activeWidth ||
+              opacity !== activeOpacity
+            ) {
+              if (previous) ctx.stroke();
+              ctx.beginPath();
+              ctx.strokeStyle = color;
+              activeColor = color;
+              activeStyle = style;
+              activeWidth = lineWidth;
+              activeOpacity = opacity;
+              ctx.globalAlpha = opacity;
+              ctx.lineWidth = lineWidth;
+              ctx.setLineDash(style === "dashed" ? [8, 5] : style === "dotted" ? [2, 4] : []);
+              previous = undefined;
             }
-            if (visibleLines.length) ctx.stroke();
-            for (const line of visibleLines) {
-              if (!line.label) continue;
-              ctx.globalAlpha = (line.opacity ?? 1) * lineAlpha;
-              ctx.fillStyle = line.color ?? drawing.color;
-              ctx.textAlign = line.labelAlign ?? "left";
-              ctx.textBaseline = line.labelBaseline ?? "alphabetic";
-              const point = line.labelPoint ?? { x: line.to.x + 4, y: line.to.y - 3 };
-              ctx.fillText(line.label, point.x, point.y);
+            if (!previous || previous.x !== line.from.x || previous.y !== line.from.y)
+              ctx.moveTo(line.from.x, line.from.y);
+            ctx.lineTo(line.to.x, line.to.y);
+            previous = line.to;
+          }
+          if (visibleLines.length) ctx.stroke();
+          for (const line of visibleLines) {
+            if (!line.label) continue;
+            ctx.globalAlpha = (line.opacity ?? 1) * lineAlpha;
+            ctx.fillStyle = line.color ?? drawing.color;
+            ctx.textAlign = line.labelAlign ?? "left";
+            ctx.textBaseline = line.labelBaseline ?? "alphabetic";
+            const point = line.labelPoint ?? { x: line.to.x + 4, y: line.to.y - 3 };
+            ctx.fillText(line.label, point.x, point.y);
+          }
+          ctx.globalAlpha = geometry.opacity ?? 1;
+          if (geometry.priceLabels?.length) {
+            ctx.font = `${drawing.priceLabelItalic ? "italic " : ""}${drawing.priceLabelBold ? "bold " : ""}${drawing.priceLabelFontSize ?? 12}px ${chart.options().layout.fontFamily}`;
+            ctx.fillStyle = drawing.priceLabelColor ?? drawing.color;
+            ctx.textBaseline = "middle";
+            for (const label of geometry.priceLabels) {
+              ctx.textAlign = label.align;
+              ctx.fillText(label.value, label.point.x, label.point.y);
             }
-            ctx.globalAlpha = geometry.opacity ?? 1;
-            if (geometry.priceLabels?.length) {
-              ctx.font = `${drawing.priceLabelItalic ? "italic " : ""}${drawing.priceLabelBold ? "bold " : ""}${drawing.priceLabelFontSize ?? 12}px ${chart.options().layout.fontFamily}`;
-              ctx.fillStyle = drawing.priceLabelColor ?? drawing.color;
-              ctx.textBaseline = "middle";
-              for (const label of geometry.priceLabels) {
-                ctx.textAlign = label.align;
-                ctx.fillText(label.value, label.point.x, label.point.y);
-              }
+          }
+          if (geometry.text) {
+            const text = geometry.text;
+            ctx.globalAlpha = drawing.kind === "regression-trend" ? 1 : (drawing.textOpacity ?? 1);
+            const size = text.fontSize ?? 14;
+            const rows = text.value.split(/\r?\n/);
+            const rowHeight = size * 1.2;
+            ctx.font = `${drawing.textItalic ? "italic " : ""}${drawing.textBold ? "bold " : ""}${size}px ${chart.options().layout.fontFamily}`;
+            ctx.fillStyle =
+              drawing.kind === "regression-trend"
+                ? (
+                    drawing.regressionLowerLine ??
+                    defaultRegressionDrawingSettings().regressionLowerLine
+                  ).color
+                : (drawing.textColor ?? drawing.color);
+            ctx.textAlign = text.align ?? "left";
+            ctx.textBaseline = "top";
+            const rotated = text.angle !== undefined && text.angle !== 0;
+            if (rotated) {
+              ctx.save();
+              ctx.translate(text.point.x, text.point.y);
+              ctx.rotate(text.angle!);
             }
-            if (geometry.text) {
-              const text = geometry.text;
-              ctx.globalAlpha =
-                drawing.kind === "regression-trend" ? 1 : (drawing.textOpacity ?? 1);
-              const size = text.fontSize ?? 14;
-              const rows = text.value.split(/\r?\n/);
-              const rowHeight = size * 1.2;
-              ctx.font = `${drawing.textItalic ? "italic " : ""}${drawing.textBold ? "bold " : ""}${size}px ${chart.options().layout.fontFamily}`;
-              ctx.fillStyle =
-                drawing.kind === "regression-trend"
-                  ? (
-                      drawing.regressionLowerLine ??
-                      defaultRegressionDrawingSettings().regressionLowerLine
-                    ).color
-                  : (drawing.textColor ?? drawing.color);
-              ctx.textAlign = text.align ?? "left";
-              ctx.textBaseline = "top";
-              const rotated = text.angle !== undefined && text.angle !== 0;
-              if (rotated) {
-                ctx.save();
-                ctx.translate(text.point.x, text.point.y);
-                ctx.rotate(text.angle!);
-              }
-              const top =
-                (rotated ? 0 : text.point.y) -
-                (text.baseline === "top"
-                  ? 0
-                  : text.baseline === "middle"
-                    ? (rows.length * rowHeight) / 2
-                    : rows.length * rowHeight);
-              rows.forEach((row, index) =>
-                ctx.fillText(row, rotated ? 0 : text.point.x, top + index * rowHeight),
-              );
-              if (rotated) ctx.restore();
-            }
+            const top =
+              (rotated ? 0 : text.point.y) -
+              (text.baseline === "top"
+                ? 0
+                : text.baseline === "middle"
+                  ? (rows.length * rowHeight) / 2
+                  : rows.length * rowHeight);
+            rows.forEach((row, index) =>
+              ctx.fillText(row, rotated ? 0 : text.point.x, top + index * rowHeight),
+            );
+            if (rotated) ctx.restore();
           }
           if (supportsLineStatistics(drawing.kind) && drawing.anchors.length >= 2) {
             const a = project(drawing.anchors[0]!);

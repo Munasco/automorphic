@@ -244,7 +244,9 @@ describe("native chart drawing lifecycle", () => {
     const first = f.open();
     first.setTool("horizontal");
     f.click(undefined, 125);
-    expect(f.priceLines).toMatchObject([{ price: 4875 }]);
+    expect(f.priceLines).toMatchObject([
+      { price: 4875, lineVisible: false, axisLabelVisible: true },
+    ]);
     expect(f.change).toHaveBeenLastCalledWith(
       expect.objectContaining({ tool: "cursor", count: 1, pending: false }),
     );
@@ -252,7 +254,9 @@ describe("native chart drawing lifecycle", () => {
     expect(f.priceLines).toEqual([]);
     expect(f.listener()).toBeUndefined();
     const second = f.open();
-    expect(f.priceLines).toMatchObject([{ price: 4875 }]);
+    expect(f.priceLines).toMatchObject([
+      { price: 4875, lineVisible: false, axisLabelVisible: true },
+    ]);
     second.clear();
     expect(JSON.parse(f.saved()!)).toEqual([]);
     second.dispose();
@@ -1816,7 +1820,7 @@ describe("selected drawing template application", () => {
 });
 
 describe("native horizontal opacity", () => {
-  it("updates native line RGBA while retaining an opaque axis label and persists template opacity", () => {
+  it("keeps the native body hidden while retaining an opaque axis label and persists template opacity", () => {
     const f = fixture("horizontal-opacity"),
       session = f.open();
     session.setTool("horizontal");
@@ -1825,12 +1829,14 @@ describe("native horizontal opacity", () => {
     expect(f.priceLines[0]).toMatchObject({
       color: "rgba(255, 128, 0, 0.5)",
       axisLabelColor: "#ff8000",
+      lineVisible: false,
       axisLabelVisible: true,
     });
     session.updateSelected({ lineOpacity: 0 });
     expect(f.priceLines[0]).toMatchObject({
       color: "rgba(255, 128, 0, 0)",
       axisLabelColor: "#ff8000",
+      lineVisible: false,
     });
     expect(
       session.applySelectedTemplate({
@@ -1846,6 +1852,7 @@ describe("native horizontal opacity", () => {
     expect(f.priceLines[0]).toMatchObject({
       color: "rgba(18, 52, 86, 0.5)",
       axisLabelColor: "#123456",
+      lineVisible: false,
     });
     restored.dispose();
   });
@@ -1959,6 +1966,146 @@ describe("drawing tool appearance inheritance", () => {
       width: 2,
       lineStyle: "solid",
     });
+    session.dispose();
+  });
+});
+
+describe("drawing visual order", () => {
+  const objects = ["a", "b", "c", "d"].map((id) => ({
+    id,
+    kind: "trend",
+    anchors: [
+      { time: 100, price: 4900 },
+      { time: 200, price: 4800 },
+    ],
+    color: "#2962ff",
+    width: 2,
+    lineStyle: "solid",
+    name: `Drawing ${id}`,
+    ...(id === "c" ? { locked: true } : {}),
+  }));
+  it.each([
+    ["front", ["a", "b", "d", "c"]],
+    ["forward", ["a", "b", "d", "c"]],
+    ["backward", ["a", "c", "b", "d"]],
+    ["back", ["c", "a", "b", "d"]],
+  ] as const)(
+    "persists %s in one undo step while preserving object identity and selection",
+    (direction, expected) => {
+      const f = fixture(`order-${direction}`, JSON.stringify(objects)),
+        session = f.open();
+      session.selectDrawing("c");
+      expect(session.reorderSelected(direction)).toBe(true);
+      expect(f.writes()).toBe(1);
+      const reordered = JSON.parse(f.saved()!);
+      expect(reordered.map((item: { id: string }) => item.id)).toEqual(expected);
+      for (const original of objects)
+        expect(reordered.find((item: { id: string }) => item.id === original.id)).toEqual(original);
+      expect(f.change).toHaveBeenLastCalledWith(
+        expect.objectContaining({ selected: expect.objectContaining({ id: "c", locked: true }) }),
+      );
+      session.undo();
+      expect(JSON.parse(f.saved()!)).toEqual(objects);
+      session.redo();
+      expect(JSON.parse(f.saved()!)).toEqual(reordered);
+      session.dispose();
+      const restored = f.open();
+      expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ objects: reordered }));
+      restored.dispose();
+    },
+  );
+  it("moves exactly one position and preserves hidden and locked flags", () => {
+    const f = fixture("order-single", JSON.stringify(objects)),
+      session = f.open();
+    session.selectDrawing("a");
+    session.reorderSelected("forward");
+    expect(JSON.parse(f.saved()!).map((item: { id: string }) => item.id)).toEqual([
+      "b",
+      "a",
+      "c",
+      "d",
+    ]);
+    session.selectDrawing("d");
+    session.reorderSelected("backward");
+    expect(JSON.parse(f.saved()!).map((item: { id: string }) => item.id)).toEqual([
+      "b",
+      "a",
+      "d",
+      "c",
+    ]);
+    session.selectDrawing("c");
+    session.updateSelected({ hidden: true });
+    session.reorderSelected("back");
+    expect(JSON.parse(f.saved()!)[0]).toMatchObject({ id: "c", hidden: true, locked: true });
+    session.dispose();
+  });
+  it("does not write, clear redo, or create undo entries at either boundary", () => {
+    const f = fixture("order-boundaries", JSON.stringify(objects)),
+      session = f.open();
+    expect(session.reorderSelected("front")).toBe(false);
+    session.selectDrawing("d");
+    expect(session.reorderSelected("front")).toBe(false);
+    expect(session.reorderSelected("forward")).toBe(false);
+    session.selectDrawing("a");
+    expect(session.reorderSelected("back")).toBe(false);
+    expect(session.reorderSelected("backward")).toBe(false);
+    expect(f.writes()).toBe(0);
+    session.reorderSelected("front");
+    session.undo();
+    session.selectDrawing("a");
+    session.reorderSelected("back");
+    session.redo();
+    expect(JSON.parse(f.saved()!).map((item: { id: string }) => item.id)).toEqual([
+      "b",
+      "c",
+      "d",
+      "a",
+    ]);
+    session.dispose();
+    expect(session.reorderSelected("back")).toBe(false);
+  });
+  it("hit-selects the topmost overlapping object after reordering", () => {
+    const f = fixture("order-hit", JSON.stringify(objects)),
+      session = f.open();
+    f.click(150, 150, 0, 150);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: expect.objectContaining({ id: "d" }) }),
+    );
+    session.reorderSelected("back");
+    f.click(150, 150, 0, 150);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: expect.objectContaining({ id: "c" }) }),
+    );
+    session.selectDrawing("a");
+    session.reorderSelected("front");
+    f.click(150, 150, 0, 150);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: expect.objectContaining({ id: "a" }) }),
+    );
+    session.dispose();
+  });
+  it("cancels drafts and a live drag before recording only the order change", () => {
+    const f = fixture("order-cancel", JSON.stringify(objects)),
+      session = f.open();
+    session.selectDrawing("b");
+    session.openSettings();
+    session.previewSettings({ color: "#ff0000", text: "Draft" });
+    session.reorderSelected("front");
+    expect(JSON.parse(f.saved()!).at(-1)).toEqual(objects[1]);
+    expect(f.controls.get(DRAWING_DEFAULTS_KEY)).toBeUndefined();
+    expect(session.beginDrag({ x: 150, y: 150 })).toBe(true);
+    session.dragTo({ x: 180, y: 180 });
+    session.reorderSelected("back");
+    expect(JSON.parse(f.saved()!)[0]).toEqual(objects[1]);
+    expect(f.writes()).toBe(2);
+    session.undo();
+    expect(JSON.parse(f.saved()!).map((item: { id: string }) => item.id)).toEqual([
+      "a",
+      "c",
+      "d",
+      "b",
+    ]);
+    expect(JSON.parse(f.saved()!).at(-1)).toEqual(objects[1]);
     session.dispose();
   });
 });

@@ -11,10 +11,19 @@ import {
 } from "./DrawingStyleControls";
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { Slider } from "@base-ui/react/slider";
-import { createPortal } from "react-dom";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import {
+  Menu,
+  MenuTrigger,
+  MenuPopup,
+  MenuItem,
+  MenuSub,
+  MenuSubTrigger,
+  MenuSubPopup,
+  MenuSeparator,
+} from "../ui/menu";
 import { ChartIcon } from "./ChartIcon";
 import { DrawingToolIcon } from "./DrawingToolIcon";
 import { SolarSettingsIcon } from "./SolarSettingsIcon";
@@ -778,8 +787,8 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
         <IconButton label="Delete drawing" onClick={drawings.deleteSelected}>
           <ChartIcon name="trash" className="size-5" />
         </IconButton>
-        <Popover>
-          <PopoverTrigger
+        <Menu>
+          <MenuTrigger
             aria-label="More drawing options"
             className="flex size-8 shrink-0 items-center justify-center rounded hover:bg-white/10"
           >
@@ -788,30 +797,24 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
                 <circle key={x} cx={x} cy="10" r="1.6" />
               ))}
             </svg>
-          </PopoverTrigger>
-          <PopoverPopup
-            instant
-            style={{ background: "#1f1f1f", backdropFilter: "none" }}
-            className="w-48"
-            viewportClassName="p-1"
-          >
-            <PopoverTitle className="sr-only">Drawing options</PopoverTitle>
-            <button
-              type="button"
+          </MenuTrigger>
+          <MenuPopup aria-label="Drawing options" className="w-56" style={drawingMenuStyle}>
+            <DrawingOrderSubmenu drawings={drawings} />
+            <MenuSeparator />
+            <MenuItem
+              className={drawingMenuItemClass}
               onClick={() => drawings.duplicateDrawing(selected.id)}
-              className="w-full rounded px-3 py-2 text-left text-sm hover:bg-white/10"
             >
               Clone
-            </button>
-            <button
-              type="button"
+            </MenuItem>
+            <MenuItem
+              className={drawingMenuItemClass}
               onClick={() => drawings.updateSelected({ hidden: true })}
-              className="w-full rounded px-3 py-2 text-left text-sm hover:bg-white/10"
             >
               Hide
-            </button>
-          </PopoverPopup>
-        </Popover>
+            </MenuItem>
+          </MenuPopup>
+        </Menu>
       </div>
       {drawings.settingsOpen ? (
         <DrawingSettings
@@ -822,52 +825,89 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
           setTab={setSettingsTab}
         />
       ) : null}
-      {drawings.contextPoint
-        ? createPortal(
-            <div
-              className="fixed inset-0 z-40"
-              onPointerDown={drawings.closeContextMenu}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                drawings.closeContextMenu();
-              }}
+      {drawings.contextPoint ? (
+        <Menu
+          open
+          onOpenChange={(open) => {
+            if (!open) drawings.closeContextMenu();
+          }}
+        >
+          <MenuPopup
+            aria-label="Drawing context menu"
+            className="w-56"
+            style={drawingMenuStyle}
+            align="start"
+            sideOffset={0}
+            anchor={{
+              getBoundingClientRect: () =>
+                new DOMRect(drawings.contextPoint!.x, drawings.contextPoint!.y, 0, 0),
+            }}
+          >
+            <MenuItem
+              className={drawingMenuItemClass}
+              onClick={() => closeThen(drawings.openSettings)}
             >
-              <div
-                role="menu"
-                aria-label="Drawing context menu"
-                className="fixed w-56 rounded-lg border border-white/15 bg-[#1f1f1f] p-1 text-sm text-zinc-200 shadow-xl"
-                style={{
-                  left: Math.min(drawings.contextPoint.x, window.innerWidth - 232),
-                  top: Math.min(drawings.contextPoint.y, window.innerHeight - 250),
-                }}
-                onPointerDown={(event) => event.stopPropagation()}
+              Settings…
+            </MenuItem>
+            <DrawingOrderSubmenu drawings={drawings} />
+            <MenuSeparator />
+            {[
+              { label: "Clone", action: () => drawings.duplicateDrawing(selected.id) },
+              {
+                label: selected.locked ? "Unlock" : "Lock",
+                action: () => drawings.updateSelected({ locked: !selected.locked }),
+              },
+              { label: "Hide", action: () => drawings.updateSelected({ hidden: true }) },
+              { label: "Remove", action: drawings.deleteSelected },
+            ].map((item) => (
+              <MenuItem
+                key={item.label}
+                className={drawingMenuItemClass}
+                onClick={() => closeThen(item.action)}
               >
-                {[
-                  { label: "Settings…", action: drawings.openSettings },
-                  { label: "Clone", action: () => drawings.duplicateDrawing(selected.id) },
-                  {
-                    label: selected.locked ? "Unlock" : "Lock",
-                    action: () => drawings.updateSelected({ locked: !selected.locked }),
-                  },
-                  { label: "Hide", action: () => drawings.updateSelected({ hidden: true }) },
-                  { label: "Remove", action: drawings.deleteSelected },
-                ].map((item) => (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    key={item.label}
-                    onClick={() => closeThen(item.action)}
-                    className="block w-full rounded px-3 py-2.5 text-left hover:bg-white/10"
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
+                {item.label}
+              </MenuItem>
+            ))}
+          </MenuPopup>
+        </Menu>
+      ) : null}
     </>
+  );
+}
+
+const drawingMenuStyle = {
+  background: "#1f1f1f",
+  backdropFilter: "none",
+  transition: "none",
+  animation: "none",
+};
+const drawingMenuItemClass = "min-h-9 px-3 py-2 text-sm";
+function DrawingOrderSubmenu({ drawings }: { drawings: ChartDrawingsController }) {
+  const index = drawings.objects.findIndex((drawing) => drawing.id === drawings.selected?.id);
+  const last = drawings.objects.length - 1;
+  return (
+    <MenuSub>
+      <MenuSubTrigger className={drawingMenuItemClass}>Visual order</MenuSubTrigger>
+      <MenuSubPopup aria-label="Visual order" className="w-52" style={drawingMenuStyle}>
+        {(
+          [
+            ["front", "Bring to front", index === last],
+            ["back", "Send to back", index === 0],
+            ["forward", "Bring forward", index === last],
+            ["backward", "Send backward", index === 0],
+          ] as const
+        ).map(([direction, label, boundary]) => (
+          <MenuItem
+            key={direction}
+            className={drawingMenuItemClass}
+            disabled={index < 0 || boundary}
+            onClick={() => drawings.reorderSelected(direction)}
+          >
+            {label}
+          </MenuItem>
+        ))}
+      </MenuSubPopup>
+    </MenuSub>
   );
 }
 

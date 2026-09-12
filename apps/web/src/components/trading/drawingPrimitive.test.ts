@@ -194,7 +194,7 @@ describe("native drawing primitive", () => {
     expect(ctx.arc).not.toHaveBeenCalled();
   });
 
-  it("renders styled line text and native horizontal-line annotations without repainting the native body", () => {
+  it("renders horizontal bodies and styled annotations together in the primitive", () => {
     const { chart, series } = fixture();
     const textCalls: Array<{
       value: string;
@@ -267,7 +267,9 @@ describe("native drawing primitive", () => {
         align: "center",
       },
     ]);
-    expect(ctx.stroke).not.toHaveBeenCalled();
+    expect(ctx.stroke).toHaveBeenCalledTimes(1);
+    expect(ctx.moveTo).toHaveBeenCalledWith(0, 100);
+    expect(ctx.lineTo).toHaveBeenCalledWith(1000, 100);
   });
 
   it("paints a continuous translucent highlighter and opaque arrow fill without leaking stroke style", () => {
@@ -472,6 +474,29 @@ describe("additional line primitive behavior", () => {
     ],
   });
 
+  it("paints mixed horizontal and trend bodies in their shared persisted order", () => {
+    const horizontal: ChartDrawing = {
+      ...line("horizontal"),
+      id: "horizontal",
+      color: "#ff0000",
+      lineOpacity: 0.4,
+      anchors: [{ time: 100 as Time, price: 400 }],
+    };
+    const trend: ChartDrawing = { ...line("trend"), id: "trend", color: "#00ff00" };
+    for (const drawings of [
+      [horizontal, trend],
+      [trend, horizontal],
+    ]) {
+      const f = renderFixture(drawings[0]!, undefined, [drawings[1]!]);
+      const strokes: Array<[string, number]> = [];
+      f.ctx.stroke.mockImplementation(() => {
+        const ctx = f.ctx as unknown as CanvasRenderingContext2D;
+        strokes.push([String(ctx.strokeStyle), ctx.globalAlpha]);
+      });
+      f.draw();
+      expect(strokes).toEqual(drawings.map((drawing) => [drawing.color, drawing.lineOpacity ?? 1]));
+    }
+  });
   it("shows actual Info line price, percentage, chart bars and elapsed time by default", () => {
     const drawing = line("info-line");
     const f = renderFixture(drawing);
