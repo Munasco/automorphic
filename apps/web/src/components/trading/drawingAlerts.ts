@@ -98,7 +98,33 @@ function fingerprint(drawing: ChartDrawing) {
     drawingLineExtensions(drawing),
   ]);
 }
-export type DrawingAlert = {
+export type DrawingAlertNotifications = { toast: boolean; sound: boolean; desktop: boolean };
+export type DrawingAlertPresentation = {
+  name?: string;
+  message?: string;
+  notifications?: DrawingAlertNotifications;
+};
+function presentation(input: {
+  name?: unknown;
+  message?: unknown;
+  notifications?: unknown;
+}): DrawingAlertPresentation {
+  const notifications = record(input.notifications) ? input.notifications : {};
+  return {
+    ...(typeof input.name === "string" && input.name.trim()
+      ? { name: input.name.trim().slice(0, 100) }
+      : {}),
+    ...(typeof input.message === "string" && input.message.trim()
+      ? { message: input.message.trim().slice(0, 2000) }
+      : {}),
+    notifications: {
+      toast: typeof notifications.toast === "boolean" ? notifications.toast : true,
+      sound: notifications.sound === true,
+      desktop: notifications.desktop === true,
+    },
+  };
+}
+export type DrawingAlert = DrawingAlertPresentation & {
   id: string;
   symbol: string;
   intervalKey: string;
@@ -112,9 +138,11 @@ export type DrawingAlert = {
   armedAt: number;
   lastTriggeredAt: number | null;
   lastSampleAt: number | null;
+  lastSampleSequence: number | null;
+  lastSampleStreamId: string | null;
   lastBarId: string | null;
 };
-export type DrawingAlertEvent = {
+export type DrawingAlertEvent = DrawingAlertPresentation & {
   id: string;
   alertId: string;
   drawingId: string;
@@ -131,20 +159,26 @@ export type DrawingAlertState = { alerts: DrawingAlert[]; history: DrawingAlertE
 export type NewDrawingAlert = Pick<
   DrawingAlert,
   "drawingId" | "condition" | "trigger" | "expiresAt"
->;
+> &
+  DrawingAlertPresentation;
 export type DrawingAlertSample = {
   symbol: string;
   intervalKey: string;
   source: "quote" | "bar-close";
   /** Actual event time in milliseconds, not a chart's synthetic tick display key. */
   timestamp: number;
+  /** Ordered transport journal identity; both fields are required to distinguish same-ms events. */
+  /** Receipt time is permitted only for explicit live finality, never historical/cached closes. */
+  observedAt?: number;
+  sequence?: number;
+  streamId?: string;
   barId: string;
   logical: number;
   price: number;
 };
 export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
   const empty: DrawingAlertState = { alerts: [], history: [] };
-  if (!raw || raw.length > 500_000) return empty;
+  if (!raw || raw.length > 1_000_000) return empty;
   try {
     const value: unknown = JSON.parse(raw);
     if (!record(value) || value.version !== 1) return empty;
@@ -172,6 +206,7 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
         continue;
       ids.add(a.id);
       empty.alerts.push({
+        ...presentation(a),
         id: a.id,
         symbol: a.symbol,
         intervalKey: a.intervalKey,
@@ -185,6 +220,11 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
         armedAt: a.armedAt,
         lastTriggeredAt: a.lastTriggeredAt,
         lastSampleAt: a.lastSampleAt,
+        lastSampleSequence:
+          Number.isSafeInteger(a.lastSampleSequence) && (a.lastSampleSequence as number) >= 0
+            ? (a.lastSampleSequence as number)
+            : null,
+        lastSampleStreamId: identifier(a.lastSampleStreamId) ? a.lastSampleStreamId : null,
         lastBarId: a.lastBarId,
       });
     }
@@ -208,6 +248,7 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
         continue;
       ids.add(e.id);
       empty.history.push({
+        ...presentation(e),
         id: e.id,
         alertId: e.alertId,
         drawingId: e.drawingId,
@@ -226,13 +267,13 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
     return empty;
   }
 }
-type Previous = { difference: number; timestamp: number; barId: string };
+type Previous = { difference: number; timestamp: number; observedAt: number; barId: string };
 /** One evaluator per symbol/interval. Pass only committed drawing snapshots and fresh live feed events.
  * Geometry edits re-arm; deletion disables, including after undo until explicitly re-enabled.
  * Close events must be confirmed by the feed, once for each actual completed bar. Their timestamp
  * is the close event time, not the candle start. Reload/reconnect never reconstruct crossings from history.
  * Call resetConnection on feed replacement or price-scale mode changes. Same-ms samples are
- * conservatively rejected: supporting distinct same-ms trades requires authoritative feed sequence IDs. */
+ * accepted only with an ordered transport sequence in the same stream epoch; event timestamps remain unchanged. */
 export function createDrawingAlertSession(
   context: { symbol: string; intervalKey: string },
   storage: Pick<Storage, "getItem" | "setItem">,
@@ -253,15 +294,35 @@ export function createDrawingAlertSession(
   const previous = new Map<string, Previous>();
   const highWater = { quote: -1, "bar-close": -1 };
   let lastClosedBar: string | null = null;
+  const orders = new Map<
+    string,
+    { timestamp: number; sequence: number | null; streamId: string | null }
+  >();
+  const after = (
+    sample: DrawingAlertSample,
+    previous: { timestamp: number; sequence: number | null; streamId: string | null },
+  ) =>
+    sample.timestamp > previous.timestamp ||
+    (sample.timestamp === previous.timestamp &&
+      sample.streamId !== undefined &&
+      sample.streamId === previous.streamId &&
+      sample.sequence !== undefined &&
+      previous.sequence !== null &&
+      sample.sequence > previous.sequence);
   const listeners = new Set<() => void>();
-  const relevant = (a: DrawingAlert) =>
+  const relevant = (a: Pick<DrawingAlert, "symbol" | "intervalKey">) =>
     a.symbol === context.symbol && a.intervalKey === context.intervalKey;
   const armTime = () => Math.max(now(), highWater.quote + 1, highWater["bar-close"] + 1);
   const publish = (next: DrawingAlertState) => {
     // Other chart contexts share workspace persistence; preserve their most recent writes.
     const saved = parseDrawingAlerts(storage.getItem(DRAWING_ALERTS_KEY));
     const history = [
-      ...new Map([...saved.history, ...next.history].map((event) => [event.id, event])).values(),
+      ...new Map(
+        [
+          ...saved.history.filter((event) => !relevant(event)),
+          ...next.history.filter(relevant),
+        ].map((event) => [event.id, event]),
+      ).values(),
     ]
       .sort((a, b) => b.triggeredAt - a.triggeredAt)
       .slice(0, 100);
@@ -326,6 +387,7 @@ export function createDrawingAlertSession(
       )
         return null;
       const alert: DrawingAlert = {
+        ...presentation(input),
         id: id(),
         ...context,
         drawingId: input.drawingId,
@@ -338,6 +400,8 @@ export function createDrawingAlertSession(
         armedAt: armTime(),
         lastTriggeredAt: null,
         lastSampleAt: null,
+        lastSampleSequence: null,
+        lastSampleStreamId: null,
         lastBarId: null,
       };
       publish({ ...state, alerts: [...state.alerts, alert] });
@@ -369,6 +433,12 @@ export function createDrawingAlertSession(
       publish({ ...state, alerts: state.alerts.filter((a) => a.id !== alertId || !relevant(a)) });
       return true;
     },
+    clearHistory() {
+      if (disposed) return false;
+      if (!state.history.some(relevant)) return true;
+      publish({ ...state, history: state.history.filter((event) => !relevant(event)) });
+      return true;
+    },
     resetConnection() {
       startedAt = now();
       previous.clear();
@@ -381,6 +451,8 @@ export function createDrawingAlertSession(
     observe(sample: DrawingAlertSample) {
       if (disposed) return;
       const time = now();
+      const observedAt =
+        sample.source === "bar-close" ? (sample.observedAt ?? sample.timestamp) : sample.timestamp;
       let alerts = expire(state.alerts, time);
       const events: DrawingAlertEvent[] = [];
       if (
@@ -388,24 +460,43 @@ export function createDrawingAlertSession(
         sample.intervalKey === context.intervalKey &&
         (sample.source === "quote" || sample.source === "bar-close") &&
         stamp(sample.timestamp) &&
-        sample.timestamp >= startedAt &&
-        sample.timestamp > highWater[sample.source] &&
+        stamp(observedAt) &&
+        observedAt >= startedAt &&
+        ((sample.sequence === undefined && sample.streamId === undefined) ||
+          (Number.isSafeInteger(sample.sequence) &&
+            sample.sequence! >= 0 &&
+            identifier(sample.streamId))) &&
+        after(
+          sample,
+          orders.get(sample.source) ?? { timestamp: -1, sequence: null, streamId: null },
+        ) &&
         (sample.source !== "bar-close" || sample.barId !== lastClosedBar) &&
-        time - sample.timestamp <= 15_000 &&
+        time - observedAt <= 15_000 &&
+        observedAt - time <= 5000 &&
         sample.timestamp - time <= 5000 &&
         finite(sample.price) &&
         finite(sample.logical) &&
         identifier(sample.barId)
       ) {
         highWater[sample.source] = sample.timestamp;
+        orders.set(sample.source, {
+          timestamp: sample.timestamp,
+          sequence: sample.sequence ?? null,
+          streamId: sample.streamId ?? null,
+        });
         if (sample.source === "bar-close") lastClosedBar = sample.barId;
         alerts = alerts.map((a) => {
           if (
             !relevant(a) ||
             !a.enabled ||
             (a.trigger === "once-per-bar-close") !== (sample.source === "bar-close") ||
-            sample.timestamp < a.armedAt ||
-            (a.lastSampleAt !== null && sample.timestamp <= a.lastSampleAt)
+            observedAt < a.armedAt ||
+            (a.lastSampleAt !== null &&
+              !after(sample, {
+                timestamp: a.lastSampleAt,
+                sequence: a.lastSampleSequence,
+                streamId: a.lastSampleStreamId,
+              }))
           )
             return a;
           const drawing = drawings.get(a.drawingId);
@@ -422,10 +513,15 @@ export function createDrawingAlertSession(
             previous.delete(a.id);
             return a;
           }
-          previous.set(a.id, { difference, timestamp: sample.timestamp, barId: sample.barId });
+          previous.set(a.id, {
+            difference,
+            timestamp: sample.timestamp,
+            observedAt,
+            barId: sample.barId,
+          });
           const continuous =
             before &&
-            before.timestamp >= a.armedAt &&
+            before.observedAt >= a.armedAt &&
             (sample.source === "bar-close"
               ? before.barId !== sample.barId
               : sample.timestamp - before.timestamp <= 15_000);
@@ -451,6 +547,7 @@ export function createDrawingAlertSession(
           )
             return a;
           events.push({
+            ...presentation(a),
             id: id(),
             alertId: a.id,
             drawingId: a.drawingId,
@@ -468,6 +565,8 @@ export function createDrawingAlertSession(
             disabledReason: a.trigger === "once" ? "triggered" : null,
             lastTriggeredAt: time,
             lastSampleAt: sample.timestamp,
+            lastSampleSequence: sample.sequence ?? null,
+            lastSampleStreamId: sample.streamId ?? null,
             lastBarId: sample.barId,
           };
         });

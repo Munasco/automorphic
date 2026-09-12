@@ -31,6 +31,38 @@ import { calculateChartRegression } from "./chartRegression";
 
 const SELECTION_COLOR = "#2962ff";
 
+export function drawingTimeCoordinate(
+  chart: IChartApi,
+  series: ISeriesApi<SeriesType>,
+  time: Time,
+): number | null {
+  const scale = chart.timeScale();
+  let x: number | null = scale.timeToCoordinate(time);
+  if (x === null) {
+    // Keep absolute timestamps when changing intervals; interpolate between the new candle anchors.
+    const target = drawingTimeValue(time);
+    const data = series.data();
+    if (target !== null && data.length) {
+      let left = 0,
+        right = data.length - 1;
+      while (left < right) {
+        const mid = Math.floor((left + right) / 2);
+        if (drawingTimeValue(data[mid]!.time)! < target) left = mid + 1;
+        else right = mid;
+      }
+      const upper = data[Math.min(data.length - 1, Math.max(1, left))]!,
+        lower = data[Math.max(0, left - 1)]!;
+      const ux = scale.timeToCoordinate(upper.time),
+        lx = scale.timeToCoordinate(lower.time);
+      const ut = drawingTimeValue(upper.time)!,
+        lt = drawingTimeValue(lower.time)!;
+      if (ux !== null && lx !== null)
+        x = ut === lt ? ux : lx + ((ux - lx) * (target - lt)) / (ut - lt);
+    }
+  }
+  return x;
+}
+
 export function drawingProjection(chart: IChartApi, series: ISeriesApi<SeriesType>) {
   const scale = chart.timeScale();
   const width = scale.width();
@@ -38,29 +70,7 @@ export function drawingProjection(chart: IChartApi, series: ISeriesApi<SeriesTyp
   const priceY = (price: number) => series.priceToCoordinate(price);
   const project = (anchor: DrawingAnchor) => {
     const y = priceY(anchor.price);
-    let x: number | null = scale.timeToCoordinate(anchor.time);
-    if (x === null) {
-      // Keep absolute timestamps when changing intervals; interpolate between the new candle anchors.
-      const target = drawingTimeValue(anchor.time);
-      const data = series.data();
-      if (target !== null && data.length) {
-        let left = 0,
-          right = data.length - 1;
-        while (left < right) {
-          const mid = Math.floor((left + right) / 2);
-          if (drawingTimeValue(data[mid]!.time)! < target) left = mid + 1;
-          else right = mid;
-        }
-        const upper = data[Math.min(data.length - 1, Math.max(1, left))]!,
-          lower = data[Math.max(0, left - 1)]!;
-        const ux = scale.timeToCoordinate(upper.time),
-          lx = scale.timeToCoordinate(lower.time);
-        const ut = drawingTimeValue(upper.time)!,
-          lt = drawingTimeValue(lower.time)!;
-        if (ux !== null && lx !== null)
-          x = ut === lt ? ux : lx + ((ux - lx) * (target - lt)) / (ut - lt);
-      }
-    }
+    const x = drawingTimeCoordinate(chart, series, anchor.time);
     return x === null || y === null ? null : { x, y };
   };
   const unproject = (point: DrawingPoint): DrawingAnchor | null => {

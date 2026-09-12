@@ -992,6 +992,7 @@ export function createChartDrawingSession(
   render();
   emit();
   return {
+    getCommittedDrawings: () => (disposed ? null : drawings),
     setTool,
     placeAt: (point: DrawingPoint) => {
       if (disposed || tool === "cursor" || isFreehandDrawingTool(tool)) return false;
@@ -1451,6 +1452,10 @@ export function useChartDrawings(
       if (session.current === current) session.current = null;
     };
   }, [chart, series, symbol, intervalMinutes, regressionSeries]);
+  const getCommittedDrawings = useCallback(
+    () => session.current?.getCommittedDrawings() ?? null,
+    [],
+  );
   const setTool = useCallback((tool: ChartDrawingTool) => session.current?.setTool(tool), []);
   const undo = useCallback(() => session.current?.undo(), []);
   const redo = useCallback(() => session.current?.redo(), []);
@@ -1558,6 +1563,7 @@ export function useChartDrawings(
   );
   return {
     ...state,
+    getCommittedDrawings,
     interval: intervalMinutes,
     channelPriceOffset,
     channelAnchorsAtOffset,

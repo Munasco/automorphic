@@ -53,6 +53,9 @@ import { InitialBalanceDashboard } from "./InitialBalanceDashboard";
 import type { InitialBalanceStats } from "./initialBalance";
 import { DrawingTools, FavoriteDrawingToolbar } from "./DrawingTools";
 import { DrawingSelectionOverlay } from "./DrawingSelectionOverlay";
+import { DrawingAlertDialog } from "./DrawingAlertDialog";
+import { useDrawingAlerts, type DrawingAlertsController } from "./useDrawingAlerts";
+import type { ChartDrawing } from "./drawingGeometry";
 import { DrawingInlineTextEditor } from "./DrawingInlineTextEditor";
 import { ChartContextMenu } from "./ChartContextMenu";
 import { DrawingObjectTree } from "./DrawingObjectTree";
@@ -182,6 +185,7 @@ export function TradovateChart({
   technicalInterval,
   onTechnicalIntervalChange,
   onBackFromTechnicals,
+  onDrawingAlertsChange,
 }: {
   symbol: string;
   interval: ChartInterval;
@@ -196,6 +200,7 @@ export function TradovateChart({
   technicalInterval: ChartInterval;
   onTechnicalIntervalChange: (interval: ChartInterval) => void;
   onBackFromTechnicals: () => void;
+  onDrawingAlertsChange?: ((controller: DrawingAlertsController | null) => void) | undefined;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const settings = useChartPreferences();
@@ -255,6 +260,7 @@ export function TradovateChart({
   const [hovered, setHovered] = useState<Candle | null>(null);
   const [notice, setNotice] = useState("");
   const [objectTreeOpen, setObjectTreeOpen] = useState(false);
+  const [alertDrawing, setAlertDrawing] = useState<ChartDrawing | null>(null);
   const [readings, setReadings] = useState<Partial<Record<IndicatorKey, number>>>({});
   const [hoverReadings, setHoverReadings] = useState<Partial<Record<IndicatorKey, number>> | null>(
     null,
@@ -272,6 +278,22 @@ export function TradovateChart({
     interval,
     activeEngine?.prices.candles,
   );
+  const drawingAlerts = useDrawingAlerts({
+    chart: activeEngine?.chart ?? null,
+    series: activeEngine?.prices[settings.style] ?? null,
+    symbol,
+    interval,
+    drawings,
+    logScale: settings.logScale,
+  });
+  const drawingAlertsRef = useRef(drawingAlerts);
+  useEffect(() => {
+    drawingAlertsRef.current = drawingAlerts;
+  }, [drawingAlerts]);
+  useEffect(() => {
+    onDrawingAlertsChange?.(drawingAlerts);
+  }, [drawingAlerts, onDrawingAlertsChange]);
+  useEffect(() => () => onDrawingAlertsChange?.(null), [onDrawingAlertsChange]);
   const shown = hovered ?? last;
 
   useEffect(() => {
@@ -439,6 +461,7 @@ export function TradovateChart({
       value: b.volume,
       color: `${b.close >= b.open ? volumeColors.current.up : volumeColors.current.down}45`,
     });
+    let alertSnapshot: ChartMarketSnapshot | null = null;
     const renderBars = () => {
       render = undefined;
       if (state.disposed) return;
@@ -485,6 +508,7 @@ export function TradovateChart({
       }
       const latest = bars.get(renderedTime) ?? null;
       setLast(latest);
+      if (alertSnapshot) drawingAlertsRef.current.consume(alertSnapshot);
       if (latest && !receivedQuote)
         onQuote?.({
           symbol,
@@ -504,6 +528,7 @@ export function TradovateChart({
     const syncCache = () => {
       const snapshot = queryClient.getQueryData<ChartMarketSnapshot>(marketOptions.queryKey);
       if (!snapshot || state.disposed) return;
+      alertSnapshot = snapshot;
       setStatus(snapshot.status);
       setTickHistory(snapshot.tickHistory);
       receivedQuote = snapshot.quote !== null;
@@ -511,11 +536,16 @@ export function TradovateChart({
         previousQuote = snapshot.quote;
         onQuote?.(snapshot.quote);
       }
-      if (snapshot.revision === revision) return;
+      if (snapshot.revision === revision) {
+        if (render === undefined) drawingAlertsRef.current.consume(snapshot);
+        return;
+      }
       const replace = revision === null || snapshot.replace || snapshot.revision !== revision + 1;
       revision = snapshot.revision;
       if (replace) {
         replaceHistory = true;
+        // Canvas replacement also happens for live calendar snapshots and history
+        // trimming. The alert feed tracks actual stream epochs independently.
         renderedTime = -Infinity;
         setHovered(null);
         setHoverReadings(null);
@@ -627,7 +657,18 @@ export function TradovateChart({
         <DrawingSelectionOverlay
           drawings={drawings}
           onOpenObjectTree={() => setObjectTreeOpen(true)}
+          onCreateAlert={setAlertDrawing}
         />
+        {alertDrawing ? (
+          <DrawingAlertDialog
+            key={`${symbol}:${chartIntervalKey(interval)}:${alertDrawing.id}`}
+            drawing={alertDrawing}
+            symbol={symbol}
+            intervalLabel={formatChartInterval(interval)}
+            onClose={() => setAlertDrawing(null)}
+            onCreate={drawingAlerts.create}
+          />
+        ) : null}
         <div
           role="toolbar"
           aria-label="Drawing tools"

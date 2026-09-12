@@ -1,7 +1,7 @@
 // @effect-diagnostics globalDate:off - Calendar buckets use UTC dates from native daily bars.
 import type { Candle } from "./marketData.ts";
 
-function periodStart(time: number, unit: "week" | "month", size: number): number {
+export function calendarPeriodStart(time: number, unit: "week" | "month", size: number): number {
   const date = new Date(time * 1000);
   if (unit === "month") {
     return Date.UTC(date.getUTCFullYear(), Math.floor(date.getUTCMonth() / size) * size, 1) / 1000;
@@ -24,7 +24,7 @@ export function createCalendarSeries(unit: "week" | "month", size: number) {
       const ordered = [...daily.values()].sort((a, b) => a.time - b.time);
       const result = new Map<number, Candle>();
       for (const bar of ordered) {
-        const time = periodStart(bar.time, unit, size);
+        const time = calendarPeriodStart(bar.time, unit, size);
         const previous = result.get(time);
         if (previous) {
           previous.high = Math.max(previous.high, bar.high);

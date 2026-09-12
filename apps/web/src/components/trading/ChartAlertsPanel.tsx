@@ -9,6 +9,8 @@ import { AlertIcon } from "./AlertIcon";
 import { toastManager } from "../ui/toast";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
 import { createChartAlertSession, type AlertCondition, type ChartAlertState } from "./chartAlerts";
+import type { DrawingAlertsController } from "./useDrawingAlerts";
+import type { DrawingAlertCondition, DrawingAlertTrigger } from "./drawingAlerts";
 
 const EMPTY: ChartAlertState = { alerts: [], history: [] };
 const priceLabel = (price: number) => price.toLocaleString("en-US", { maximumFractionDigits: 6 });
@@ -16,6 +18,19 @@ const conditionLabel: Record<AlertCondition, string> = {
   crossing: "Crossing",
   above: "Above",
   below: "Below",
+};
+const drawingConditionLabel: Record<DrawingAlertCondition, string> = {
+  crossing: "Crossing",
+  "crossing-up": "Crossing up",
+  "crossing-down": "Crossing down",
+  above: "Greater than",
+  below: "Less than",
+};
+const drawingTriggerLabel: Record<DrawingAlertTrigger, string> = {
+  once: "Once",
+  "once-per-bar": "Once per bar",
+  "once-per-bar-close": "Once per bar close",
+  "once-per-minute": "Once per minute",
 };
 
 /** Keep this hook mounted with the chart; the alert editor can open and close independently. */
@@ -58,11 +73,13 @@ function AlertAction({
   children,
   onClick,
   pressed,
+  disabled,
 }: {
   label: string;
   children: ReactNode;
   onClick: () => void;
   pressed?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <Tooltip>
@@ -70,6 +87,7 @@ function AlertAction({
         className={iconButtonClass}
         aria-label={label}
         aria-pressed={pressed}
+        disabled={disabled}
         onClick={onClick}
       >
         {children}
@@ -81,11 +99,13 @@ function AlertAction({
 
 export function ChartAlerts({
   controller,
+  drawingController,
   symbol,
   lastPrice,
   onClose,
 }: {
   controller: ChartAlertsController;
+  drawingController?: DrawingAlertsController | null;
   symbol: string;
   lastPrice?: number | undefined;
   onClose?: (() => void) | undefined;
@@ -101,13 +121,82 @@ export function ChartAlerts({
   const [repeat, setRepeat] = useState(false);
   const [cooldownMs, setCooldownMs] = useState(60_000);
   const [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
   const query = search.trim().toLowerCase();
-  const alerts = controller.alerts
-    .filter((alert) =>
-      `${alert.symbol} ${conditionLabel[alert.condition]} ${alert.price}`
-        .toLowerCase()
-        .includes(query),
-    )
+  const drawingLoading = drawingController !== undefined && !drawingController?.ready;
+  const drawings = drawingController?.symbol === symbol ? drawingController : null;
+  function act(action: () => unknown, message: string) {
+    try {
+      if (action() === false) {
+        setActionError(message);
+        return false;
+      }
+      setActionError("");
+      return true;
+    } catch {
+      setActionError(message);
+      return false;
+    }
+  }
+  const allAlerts = [
+    ...controller.alerts.map((alert) => ({
+      key: `price:${alert.id}`,
+      symbol: alert.symbol,
+      title: alert.symbol,
+      description: `${conditionLabel[alert.condition]} ${priceLabel(alert.price)}`,
+      searchText: `${alert.symbol} price ${conditionLabel[alert.condition]} ${alert.price}`,
+      enabled: alert.enabled,
+      armedAt: alert.armedAt,
+      status: alert.enabled
+        ? alert.symbol === symbol
+          ? "Active"
+          : "Waiting for chart"
+        : alert.lastTriggeredAt !== null && !alert.repeat
+          ? "Triggered"
+          : "Paused",
+      frequency: alert.repeat ? "Repeating" : "Once",
+      canEnable: true,
+      actionLabel: `${alert.symbol} alert at ${alert.price}`,
+      toggle: () => {
+        controller.setEnabled(alert.id, !alert.enabled);
+        return true;
+      },
+      remove: () => {
+        controller.remove(alert.id);
+        return true;
+      },
+    })),
+    ...(drawings?.alerts ?? []).map((alert) => ({
+      key: `drawing:${alert.id}`,
+      symbol: alert.symbol,
+      title: alert.name || alert.symbol,
+      description: alert.message || `${drawingConditionLabel[alert.condition]} drawing`,
+      searchText: `${alert.symbol} drawing ${alert.name ?? ""} ${alert.message ?? ""} ${drawingConditionLabel[alert.condition]} ${alert.disabledReason ?? ""}`,
+      enabled: alert.enabled,
+      armedAt: alert.armedAt,
+      status: alert.enabled
+        ? drawings?.ready
+          ? "Active"
+          : "Waiting for chart"
+        : alert.disabledReason === "expired"
+          ? "Expired"
+          : alert.disabledReason === "deleted"
+            ? "Drawing removed"
+            : alert.disabledReason === "triggered"
+              ? "Triggered"
+              : "Paused",
+      frequency: drawingTriggerLabel[alert.trigger],
+      canEnable:
+        !!drawings?.ready &&
+        alert.disabledReason !== "deleted" &&
+        alert.disabledReason !== "expired",
+      actionLabel: `${alert.name || alert.symbol} drawing alert`,
+      toggle: () => drawings?.setEnabled(alert.id, !alert.enabled) ?? false,
+      remove: () => drawings?.remove(alert.id) ?? false,
+    })),
+  ];
+  const alerts = allAlerts
+    .filter((alert) => alert.searchText.toLowerCase().includes(query))
     .toSorted((a, b) =>
       sort === "symbol"
         ? a.symbol.localeCompare(b.symbol)
@@ -115,12 +204,24 @@ export function ChartAlerts({
           ? a.armedAt - b.armedAt
           : b.armedAt - a.armedAt,
     );
-  const history = controller.history
-    .filter((event) =>
-      `${event.symbol} ${conditionLabel[event.condition]} ${event.target}`
-        .toLowerCase()
-        .includes(query),
-    )
+  const allHistory = [
+    ...controller.history.map((event) => ({
+      ...event,
+      key: `price:${event.id}`,
+      title: `${event.symbol} · ${conditionLabel[event.condition]} ${priceLabel(event.target)}`,
+      description: `Last ${priceLabel(event.price)}`,
+      searchText: `${event.symbol} price ${conditionLabel[event.condition]} ${event.target}`,
+    })),
+    ...(drawings?.history ?? []).map((event) => ({
+      ...event,
+      key: `drawing:${event.id}`,
+      title: `${event.symbol} · ${event.name || `${drawingConditionLabel[event.condition]} drawing`}`,
+      description: `${event.message ? `${event.message} · ` : ""}Last ${priceLabel(event.price)} · Line ${priceLabel(event.target)}`,
+      searchText: `${event.symbol} drawing ${event.name ?? ""} ${event.message ?? ""} ${drawingConditionLabel[event.condition]} ${event.target}`,
+    })),
+  ];
+  const history = allHistory
+    .filter((event) => event.searchText.toLowerCase().includes(query))
     .toSorted((a, b) =>
       sort === "symbol"
         ? a.symbol.localeCompare(b.symbol)
@@ -137,7 +238,7 @@ export function ChartAlerts({
   return (
     <section
       className="flex h-full min-h-0 flex-col bg-[#101010] text-zinc-300"
-      aria-label="Price alerts"
+      aria-label="Chart alerts"
     >
       <Tabs.Root
         value={tab}
@@ -222,28 +323,66 @@ export function ChartAlerts({
                 {tab === "alerts" ? (
                   <>
                     <MenuItem
-                      disabled={!controller.alerts.some((alert) => alert.enabled)}
+                      disabled={!allAlerts.some((alert) => alert.enabled)}
                       onClick={() =>
-                        controller.alerts
-                          .filter((alert) => alert.enabled)
-                          .forEach((alert) => controller.setEnabled(alert.id, false))
+                        act(() => {
+                          let failed = false;
+                          for (const alert of allAlerts.filter((item) => item.enabled)) {
+                            try {
+                              if (alert.toggle() === false) failed = true;
+                            } catch {
+                              failed = true;
+                            }
+                          }
+                          return !failed;
+                        }, "Some alerts could not be paused. Try again.")
                       }
                     >
                       Pause all alerts
                     </MenuItem>
                     <MenuItem
-                      disabled={!controller.alerts.some((alert) => !alert.enabled)}
+                      disabled={!allAlerts.some((alert) => !alert.enabled && alert.canEnable)}
                       onClick={() =>
-                        controller.alerts
-                          .filter((alert) => !alert.enabled)
-                          .forEach((alert) => controller.setEnabled(alert.id, true))
+                        act(() => {
+                          let failed = false;
+                          for (const alert of allAlerts.filter(
+                            (item) => !item.enabled && item.canEnable,
+                          )) {
+                            try {
+                              if (alert.toggle() === false) failed = true;
+                            } catch {
+                              failed = true;
+                            }
+                          }
+                          return !failed;
+                        }, "Some alerts could not be enabled. Check their status and try again.")
                       }
                     >
                       Enable all alerts
                     </MenuItem>
                   </>
                 ) : (
-                  <MenuItem disabled={!controller.history.length} onClick={controller.clearHistory}>
+                  <MenuItem
+                    disabled={!allHistory.length}
+                    onClick={() =>
+                      act(() => {
+                        let failed = false;
+                        try {
+                          controller.clearHistory();
+                        } catch {
+                          failed = true;
+                        }
+                        if (drawings?.history.length) {
+                          try {
+                            if (!drawings.clearHistory()) failed = true;
+                          } catch {
+                            failed = true;
+                          }
+                        }
+                        return !failed;
+                      }, "Some alert history could not be cleared. Try again.")
+                    }
+                  >
                     Clear log
                   </MenuItem>
                 )}
@@ -257,7 +396,7 @@ export function ChartAlerts({
                 autoFocus
                 type="search"
                 aria-label="Search alerts and log"
-                placeholder="Search by symbol or price"
+                placeholder="Search alerts"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 className={fieldClass}
@@ -265,6 +404,16 @@ export function ChartAlerts({
             </div>
           ) : null}
         </div>
+        {actionError ? (
+          <p role="alert" className="shrink-0 px-4 py-2 text-xs text-red-400">
+            {actionError}
+          </p>
+        ) : null}
+        {drawingLoading ? (
+          <p role="status" className="shrink-0 px-4 py-2 text-xs text-zinc-400">
+            Drawing alerts are loading…
+          </p>
+        ) : null}
         {empty ? (
           <div
             className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-6 py-8 text-center"
@@ -276,11 +425,13 @@ export function ChartAlerts({
               className="shrink-0 text-zinc-400"
             />
             <p className="max-w-64 text-[15px] leading-6 text-zinc-300">
-              {query
-                ? "No matching alerts."
-                : tab === "alerts"
-                  ? "Get notified when your conditions are met. Create an alert to get started."
-                  : "Triggered alerts appear here."}
+              {drawingLoading && !query
+                ? "Waiting for chart alerts…"
+                : query
+                  ? "No matching alerts."
+                  : tab === "alerts"
+                    ? "Get notified when your conditions are met. Create an alert to get started."
+                    : "Triggered alerts appear here."}
             </p>
             {!query && tab === "alerts" ? (
               <button type="button" className={primaryClass} onClick={openCreate}>
@@ -295,7 +446,7 @@ export function ChartAlerts({
         >
           <ul className="divide-y divide-zinc-800">
             {alerts.map((alert) => (
-              <li key={alert.id} className="group px-4 py-3 hover:bg-white/[0.025]">
+              <li key={alert.key} className="group px-4 py-3 hover:bg-white/[0.025]">
                 <div className="flex items-start gap-3">
                   <AlertIcon
                     name="alarm"
@@ -307,31 +458,31 @@ export function ChartAlerts({
                     }
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-zinc-200">{alert.symbol}</p>
-                    <p className="mt-1 text-[13px]">
-                      {conditionLabel[alert.condition]} {priceLabel(alert.price)}
-                    </p>
+                    <p className="truncate text-sm font-medium text-zinc-200">{alert.title}</p>
+                    <p className="mt-1 break-words text-[13px]">{alert.description}</p>
+                    {alert.title !== alert.symbol ? (
+                      <p className="mt-1 text-xs text-zinc-500">{alert.symbol}</p>
+                    ) : null}
                     <p className="mt-1 text-xs text-zinc-500">
-                      {alert.enabled
-                        ? alert.symbol === symbol
-                          ? "Active"
-                          : "Waiting for chart"
-                        : alert.lastTriggeredAt !== null && !alert.repeat
-                          ? "Triggered"
-                          : "Paused"}{" "}
-                      · {alert.repeat ? "Repeating" : "Once"}
+                      {alert.status} · {alert.frequency}
                     </p>
                   </div>
                   <div className="flex flex-col opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
                     <AlertAction
-                      label={`${alert.enabled ? "Pause" : "Enable"} ${alert.symbol} alert at ${alert.price}`}
-                      onClick={() => controller.setEnabled(alert.id, !alert.enabled)}
+                      label={`${alert.enabled ? "Pause" : "Enable"} ${alert.actionLabel}`}
+                      disabled={!alert.enabled && !alert.canEnable}
+                      onClick={() =>
+                        act(
+                          alert.toggle,
+                          "Could not update the alert. Check its status and try again.",
+                        )
+                      }
                     >
                       <AlertIcon name={alert.enabled ? "pause" : "play"} size={18} />
                     </AlertAction>
                     <AlertAction
-                      label={`Delete ${alert.symbol} alert at ${alert.price}`}
-                      onClick={() => controller.remove(alert.id)}
+                      label={`Delete ${alert.actionLabel}`}
+                      onClick={() => act(alert.remove, "Could not delete the alert. Try again.")}
                     >
                       <ChartIcon name="trash" size={18} />
                     </AlertAction>
@@ -347,11 +498,9 @@ export function ChartAlerts({
         >
           <ol className="divide-y divide-zinc-800" aria-live="polite" aria-relevant="additions">
             {history.map((event) => (
-              <li key={event.id} className="px-4 py-3 text-[13px]">
-                <p className="font-medium text-zinc-200">
-                  {event.symbol} · {conditionLabel[event.condition]} {priceLabel(event.target)}
-                </p>
-                <p className="mt-1 text-zinc-400">Last {priceLabel(event.price)}</p>
+              <li key={event.key} className="px-4 py-3 text-[13px]">
+                <p className="break-words font-medium text-zinc-200">{event.title}</p>
+                <p className="mt-1 break-words text-zinc-400">{event.description}</p>
                 <time
                   className="mt-1 block text-xs text-zinc-500"
                   dateTime={new Date(event.triggeredAt).toISOString()}

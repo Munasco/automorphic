@@ -70,3 +70,34 @@ it.effect("saved settings survive reopening storage and remain isolated by proje
     assert.deepEqual(yield* store.read("second"), { "automorphic:chart:v1": '{"style":"area"}' });
   }).pipe(Effect.provide(SqlitePersistenceMemory)),
 );
+
+it.effect(
+  "drawing alerts pass request validation and preserve each workspace's history on reopen",
+  () =>
+    Effect.gen(function* () {
+      const key = "automorphic:drawing-alerts:v1";
+      const first =
+        '{"version":1,"alerts":[{"id":"nq-breakout","drawingId":"opening-high","enabled":true}],"history":[{"id":"crossing-1","alertId":"nq-breakout","price":29300,"target":29299}]}';
+      const second =
+        '{"version":1,"alerts":[{"id":"silver-breakdown","drawingId":"opening-low","enabled":false}],"history":[]}';
+      const store = yield* makeWorkspaceState;
+      for (const [projectId, value] of [
+        ["first", first],
+        ["second", second],
+      ] as const) {
+        const accepted = parseWorkspaceValue({ key, value });
+        assert.deepEqual(accepted, { key, value });
+        yield* store.write(projectId, accepted!.key, accepted!.value, 1);
+      }
+      const reopened = yield* makeWorkspaceState;
+      assert.deepEqual(yield* reopened.read("first"), { [key]: first });
+      assert.deepEqual(yield* reopened.read("second"), { [key]: second });
+      assert.deepEqual(yield* reopened.read("new-workspace"), {});
+
+      const cleared = '{"version":1,"alerts":[],"history":[]}';
+      yield* reopened.write("first", key, cleared, 2);
+      const reopenedAgain = yield* makeWorkspaceState;
+      assert.deepEqual(yield* reopenedAgain.read("first"), { [key]: cleared });
+      assert.deepEqual(yield* reopenedAgain.read("second"), { [key]: second });
+    }).pipe(Effect.provide(SqlitePersistenceMemory)),
+);

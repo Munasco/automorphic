@@ -6,6 +6,7 @@ const SETTINGS_KEYS = new Set([
   "automorphic:chart:v1",
   "automorphic:trading:v1",
   "automorphic:chart-alerts:v1",
+  "automorphic:drawing-alerts:v1",
   "automorphic:drawing-controls:v1",
   "automorphic:drawing-templates:v1",
   "automorphic:drawing-custom-colors:v1",

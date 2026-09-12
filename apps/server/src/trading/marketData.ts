@@ -4,8 +4,14 @@ import * as NodeFSP from "node:fs/promises";
 import { resolveTradingEnvironmentFile, synchronizeTradingSession } from "./runtimeEnv.ts";
 import * as NodeUtil from "node:util";
 import * as NodeStreamWeb from "node:stream/web";
-import { createCalendarSeries } from "./calendarSeries.ts";
-import { resolveChartInterval } from "./chartInterval.ts";
+import {
+  createBarFinalizer,
+  chartProvenance,
+  quoteBarTime,
+  type BarProvenance,
+} from "./barFinalization.ts";
+import { createCalendarSeries, calendarPeriodStart } from "./calendarSeries.ts";
+import { resolveChartInterval, type ChartIntervalUnit } from "./chartInterval.ts";
 import { createTickSeries, tickHistoryRequestLimit, type TickBarSize } from "./tickSeries.ts";
 import { createNativeTickSeries, type NativeTickSize } from "./nativeTickSeries.ts";
 
@@ -212,11 +218,43 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
       let realtimeId: number | undefined;
       let finishedHistory = false;
       let receivedBars = false;
+      const finalizer = createBarFinalizer();
+      let latestLiveBar: Candle | undefined;
       // Never aggregate the vendor's sampled raw history into larger count bars.
       const rawTicks = tickSize === 1 ? createTickSeries(1) : null;
       let nativeTicks: ReturnType<typeof createNativeTickSeries> | undefined;
       const send = (data: object) => {
         if (!ended) controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      };
+      const sendBars = (
+        bars: Candle[],
+        provenance: BarProvenance,
+        extra: object = {},
+        liveBars = bars,
+        sourceTimes?: ReadonlyMap<number, number>,
+      ) => {
+        if (provenance === "live")
+          for (const bar of liveBars)
+            if (!latestLiveBar || bar.time >= latestLiveBar.time) latestLiveBar = bar;
+        send({
+          type: "bars",
+          bars,
+          historical: provenance !== "live",
+          provenance,
+          historyComplete: finishedHistory,
+          symbol,
+          ...intervalMetadata,
+          ...extra,
+        });
+        for (const close of finalizer.accept(liveBars, provenance, sourceTimes))
+          send({
+            type: "bar-close",
+            symbol,
+            provenance: "live",
+            historyComplete: true,
+            ...intervalMetadata,
+            ...close,
+          });
       };
       const finish = (message?: string) => {
         if (ended) return;
@@ -284,11 +322,11 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
             }
             historicalId = message.d?.historicalId;
             realtimeId = message.d?.realtimeId;
+            if (!Number.isSafeInteger(historicalId) || !Number.isSafeInteger(realtimeId)) {
+              finish("Market data did not provide valid chart subscription IDs.");
+              return;
+            }
             if (tickSize && tickSize > 1) {
-              if (!Number.isSafeInteger(historicalId) || !Number.isSafeInteger(realtimeId)) {
-                finish("Tradovate did not provide valid tick chart subscription IDs.");
-                return;
-              }
               nativeTicks = createNativeTickSeries(tickSize as NativeTickSize, {
                 historicalId: historicalId!,
                 realtimeId: realtimeId!,
@@ -305,40 +343,75 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
           } else if (message.e === "md" && Array.isArray(message.d?.quotes)) {
             for (const rawQuote of message.d.quotes) {
               const quote = normalizeQuote(rawQuote, symbol, contractId);
-              if (quote) send({ type: "quote", quote });
+              if (quote) {
+                const barTime = quoteBarTime(
+                  quote.timestamp,
+                  latestLiveBar,
+                  intervalMetadata.intervalUnit as ChartIntervalUnit,
+                  interval,
+                );
+                send({
+                  type: "quote",
+                  quote: { ...quote, ...(barTime === undefined ? {} : { barTime }) },
+                });
+              }
             }
           } else if (message.e === "chart" && Array.isArray(message.d?.charts)) {
             if (calendar) {
-              const history: Candle[] = [];
-              const live: Candle[] = [];
+              const livePeriods = new Map<number, number>();
+              let changed = false;
+              let provenance: BarProvenance = "historical";
+              let bars: Candle[] = calendar.accept([], true);
               for (const chart of message.d.charts) {
                 if (!chart || !Number.isSafeInteger(chart.id)) continue;
-                if (chart.id === historicalId) {
-                  history.push(...normalizeBars(chart.bars));
-                  if (chart.eoh) finishedHistory = true;
-                } else if (chart.id === realtimeId) {
-                  live.push(...normalizeBars(chart.bars));
+                if (chart.id !== historicalId && chart.id !== realtimeId) continue;
+                const source = chartProvenance(chart.id, historicalId, realtimeId, finishedHistory);
+                const incoming = normalizeBars(chart.bars);
+                if (incoming.length) {
+                  bars = calendar.accept(incoming, source === "historical");
+                  changed = true;
+                  if (source !== "historical") provenance = source;
+                  if (source === "live") {
+                    for (const bar of incoming) {
+                      const period = calendarPeriodStart(
+                        bar.time,
+                        intervalUnit as "week" | "month",
+                        interval,
+                      );
+                      livePeriods.set(
+                        period,
+                        Math.max(livePeriods.get(period) ?? -Infinity, bar.time),
+                      );
+                    }
+                  }
+                }
+                if (chart.id === historicalId && chart.eoh === true) {
+                  finishedHistory = true;
+                  changed = true;
                 }
               }
-              if (history.length || live.length) {
-                const historicalBars = calendar.accept(history, true);
-                const bars = live.length ? calendar.accept(live, false) : historicalBars;
-                receivedBars = true;
-                clearTimeout(timeout);
-                send({
-                  type: "bars",
+              if (changed) {
+                receivedBars ||= bars.length > 0;
+                if (receivedBars) clearTimeout(timeout);
+                sendBars(
                   bars,
-                  historical: !live.length,
-                  snapshot: true,
-                  symbol,
-                  ...intervalMetadata,
-                });
+                  provenance,
+                  { snapshot: true },
+                  bars.filter((bar) => livePeriods.has(bar.time)),
+                  livePeriods,
+                );
               }
               continue;
             }
             for (const chart of message.d.charts) {
               if (!chart || !Number.isSafeInteger(chart.id)) continue;
               if (chart.id !== historicalId && chart.id !== realtimeId) continue;
+              const provenance = chartProvenance(
+                chart.id,
+                historicalId,
+                realtimeId,
+                finishedHistory,
+              );
               if (rawTicks || nativeTicks) {
                 const result = nativeTicks
                   ? nativeTicks.accept(chart)
@@ -358,32 +431,23 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
                 if (result.bars.length || result.snapshot) {
                   receivedBars ||= result.bars.length > 0;
                   if (receivedBars) clearTimeout(timeout);
-                  send({
-                    type: "bars",
-                    bars: result.bars,
-                    historical: result.historical,
+                  if (chart.id === historicalId && chart.eoh === true) finishedHistory = true;
+                  sendBars(result.bars, result.historical ? "historical" : provenance, {
                     snapshot: result.snapshot,
                     tickHistory: result.metadata,
-                    symbol,
-                    ...intervalMetadata,
                   });
                 }
-                if (chart.id === historicalId && chart.eoh) finishedHistory = true;
+                if (chart.id === historicalId && chart.eoh === true) finishedHistory = true;
                 continue;
               }
               const bars = normalizeBars(chart.bars);
-              if (bars.length) {
-                receivedBars = true;
-                clearTimeout(timeout);
-                send({
-                  type: "bars",
-                  bars,
-                  historical: !finishedHistory,
-                  symbol,
-                  ...intervalMetadata,
-                });
+              const historyEnded = chart.id === historicalId && chart.eoh === true;
+              if (historyEnded) finishedHistory = true;
+              if (bars.length || historyEnded) {
+                receivedBars ||= bars.length > 0;
+                if (receivedBars) clearTimeout(timeout);
+                sendBars(bars, provenance);
               }
-              if (chart.eoh) finishedHistory = true;
             }
           }
         }

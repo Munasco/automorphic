@@ -42,6 +42,8 @@ import { toastManager } from "../ui/toast";
 import { ChartIcon } from "./ChartIcon";
 import { DrawingToolIcon } from "./DrawingToolIcon";
 import { SolarSettingsIcon } from "./SolarSettingsIcon";
+import { AlertIcon } from "./AlertIcon";
+import { supportsDrawingAlert } from "./drawingAlerts";
 import { type ChartDrawing, validDrawingAnchors } from "./drawingGeometry";
 import type { ChartDrawingsController, DrawingPatch } from "./useChartDrawings";
 import { sanitizeDrawingVisibility } from "./drawingVisibility";
@@ -711,9 +713,11 @@ function DrawingSettings({
 export function DrawingSelectionOverlay({
   drawings,
   onOpenObjectTree,
+  onCreateAlert,
 }: {
   drawings: ChartDrawingsController;
   onOpenObjectTree?: (() => void) | undefined;
+  onCreateAlert?: ((drawing: ChartDrawing) => void) | undefined;
 }) {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [compactToolbar, setCompactToolbar] = useState(false);
@@ -966,6 +970,11 @@ export function DrawingSelectionOverlay({
             <IconButton label="Drawing settings" onClick={drawings.openSettings}>
               <SolarSettingsIcon className="size-7" />
             </IconButton>
+            {onCreateAlert && supportsDrawingAlert(selected) ? (
+              <IconButton label="Add drawing alert" onClick={() => onCreateAlert(selected)}>
+                <AlertIcon name="alarm-add" size={28} />
+              </IconButton>
+            ) : null}
             <IconButton
               label={selected.locked ? "Unlock drawing" : "Lock drawing"}
               active={selected.locked ?? false}
@@ -999,6 +1008,7 @@ export function DrawingSelectionOverlay({
               drawings={drawings}
               onSaveTemplate={() => setTemplateDrawing(selected)}
               onOpenObjectTree={onOpenObjectTree}
+              onCreateAlert={onCreateAlert}
             />
           </MenuPopup>
         </Menu>
@@ -1050,6 +1060,7 @@ export function DrawingSelectionOverlay({
               onAction={closeThen}
               onSaveTemplate={() => setTemplateDrawing(selected)}
               onOpenObjectTree={onOpenObjectTree}
+              onCreateAlert={onCreateAlert}
             />
           </MenuPopup>
         </ContextMenu.Root>
@@ -1077,11 +1088,13 @@ function DrawingMenuCommands({
   onAction = executeDrawingAction,
   onSaveTemplate,
   onOpenObjectTree,
+  onCreateAlert,
 }: {
   drawings: ChartDrawingsController;
   onAction?: (action: () => void) => void;
   onSaveTemplate: () => void;
   onOpenObjectTree?: (() => void) | undefined;
+  onCreateAlert?: ((drawing: ChartDrawing) => void) | undefined;
 }) {
   const selected = drawings.selected;
   if (!selected) return null;
@@ -1100,6 +1113,17 @@ function DrawingMenuCommands({
   };
   return (
     <>
+      {onCreateAlert && supportsDrawingAlert(selected) ? (
+        <MenuItem
+          className={drawingMenuItemClass}
+          onClick={() => onAction(() => onCreateAlert(selected))}
+        >
+          <DrawingMenuIcon>
+            <AlertIcon name="alarm-add" size={18} />
+          </DrawingMenuIcon>
+          Add alert…
+        </MenuItem>
+      ) : null}
       <DrawingTemplateSubmenu
         drawing={selected}
         onApply={(patch) => onAction(() => drawings.applySelectedTemplate(patch))}

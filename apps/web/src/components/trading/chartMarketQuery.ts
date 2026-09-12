@@ -1,4 +1,10 @@
 import { experimental_streamedQuery, queryOptions } from "@tanstack/react-query";
+import { randomUUID } from "../../lib/utils";
+import {
+  MAX_DRAWING_ALERT_FEED_EVENTS,
+  type DrawingAlertFeedEvent,
+  type DrawingAlertFeedJournal,
+} from "./drawingAlertFeed";
 import type { Candle } from "./chartIndicators";
 import type { MarketQuote } from "./InstrumentHeader";
 import { chartIntervalKey, chartIntervalQuery, type ChartInterval } from "./tradingIntervals";
@@ -7,6 +13,7 @@ import { readChartCandle, readTickHistoryQuality, type TickHistoryQuality } from
 import { tradingStreamIterable } from "./tradingStreamIterable";
 
 export type ChartMarketSnapshot = {
+  alertFeed?: DrawingAlertFeedJournal | undefined;
   bars: readonly Candle[];
   updates: readonly Candle[];
   revision: number;
@@ -43,6 +50,7 @@ export function subscribeChartMarket(
   let notification: ReturnType<typeof setTimeout> | undefined;
   let current: ChartMarketSnapshot = {
     ...seed,
+    alertFeed: undefined,
     quote: null,
     status: "Connecting to Tradovate…",
     awaitingHistory: true,
@@ -50,6 +58,26 @@ export function subscribeChartMarket(
   const bars = new Map(seed.bars.map((bar) => [bar.time, bar]));
   const pending = new Map<number, Candle>();
   let replace = false;
+  let feedId = randomUUID(),
+    feedSequence = 0,
+    feedReady = false;
+  let feedEvents: DrawingAlertFeedEvent[] = [];
+  const resetFeed = () => {
+    feedId = randomUUID();
+    feedSequence = 0;
+    feedReady = false;
+    feedEvents = [];
+  };
+  const enqueue = (
+    event:
+      | Omit<Extract<DrawingAlertFeedEvent, { type: "quote" }>, "sequence">
+      | Omit<Extract<DrawingAlertFeedEvent, { type: "bar-close" }>, "sequence">,
+  ) => {
+    if (!feedReady) return;
+    feedEvents.push({ ...event, sequence: ++feedSequence });
+    if (feedEvents.length > MAX_DRAWING_ALERT_FEED_EVENTS)
+      feedEvents.splice(0, feedEvents.length - MAX_DRAWING_ALERT_FEED_EVENTS);
+  };
   const publish = () => {
     if (disposed || notification !== undefined) return;
     notification = setTimeout(() => {
@@ -73,11 +101,21 @@ export function subscribeChartMarket(
         pending.clear();
         replace = false;
       }
+      current = {
+        ...current,
+        alertFeed: {
+          streamId: feedId,
+          sequence: feedSequence,
+          ready: feedReady,
+          events: [...feedEvents],
+        },
+      };
       emit(current);
     }, 16);
   };
   const connect = () => {
     if (disposed) return;
+    resetFeed();
     source = open(
       `/api/trading/stream?${new URLSearchParams({ symbol, ...chartIntervalQuery(interval) })}`,
       {
@@ -99,17 +137,44 @@ export function subscribeChartMarket(
                 quote[key] = input[key];
             if (typeof input.timestamp === "string" && Number.isFinite(Date.parse(input.timestamp)))
               quote.timestamp = input.timestamp;
+            if (quote.timestamp)
+              enqueue({
+                type: "quote",
+                timestamp: Date.parse(quote.timestamp),
+                price: quote.last,
+                ...(typeof input.barTime === "number" && Number.isFinite(input.barTime)
+                  ? { barTime: input.barTime }
+                  : {}),
+              });
             current = { ...current, quote };
             publish();
             return;
           }
           if (message.intervalKey !== chartIntervalKey(interval)) return;
+          if (message.symbol && message.symbol !== symbol) return;
+          if (message.type === "bar-close") {
+            if (message.provenance !== "live" || message.historyComplete !== true) return;
+            const bar = readChartCandle(message.bar);
+            if (!bar || typeof message.closedAt !== "number" || !Number.isFinite(message.closedAt))
+              return;
+            enqueue({
+              type: "bar-close",
+              timestamp: message.closedAt,
+              observedAt: Date.now(),
+              bar,
+            });
+            bars.set(bar.time, bar);
+            pending.set(bar.time, bar);
+            publish();
+            return;
+          }
           if (interval.unit === "tick") {
             const quality = readTickHistoryQuality(message.tickHistory);
             if (quality || message.snapshot === true)
               current = { ...current, tickHistory: quality };
           }
           if (message.type === "status") {
+            if (message.state === "disconnected" || message.state === "connecting") resetFeed();
             current = {
               ...current,
               status: typeof message.message === "string" ? message.message : current.status,
@@ -138,12 +203,29 @@ export function subscribeChartMarket(
           // Invalid nonempty replacements are not authoritative empty history. Preserve both
           // the cached bars and any valid updates waiting for the next notification.
           if (message.bars.length > 0 && received.length === 0) return;
+          if (message.historyComplete === true) feedReady = true;
+          if (message.historical === true && feedSequence > 0) {
+            resetFeed();
+            feedReady = message.historyComplete === true;
+          }
           if (message.snapshot === true) {
             bars.clear();
             pending.clear();
             replace = true;
           }
           for (const bar of received) {
+            if (
+              interval.unit === "tick" &&
+              message.provenance === "live" &&
+              message.historyComplete === true &&
+              bar.actualEndTime !== undefined
+            )
+              enqueue({
+                type: "quote",
+                price: bar.close,
+                timestamp: bar.actualEndTime * 1000,
+                barTime: bar.time,
+              });
             bars.set(bar.time, bar);
             pending.set(bar.time, bar);
           }
@@ -159,6 +241,7 @@ export function subscribeChartMarket(
         onError(failure) {
           if (disposed) return;
           source?.close();
+          resetFeed();
           const serverReason = ![
             "Connecting to Tradovate…",
             "Tradovate connected",
@@ -214,6 +297,7 @@ export function chartMarketQueryOptions(
         const seed = client.getQueryData<ChartMarketSnapshot>(queryKey) ?? emptyChartMarket();
         const initial = {
           ...seed,
+          alertFeed: undefined,
           quote: null,
           status: "Connecting to Tradovate…",
           awaitingHistory: true,

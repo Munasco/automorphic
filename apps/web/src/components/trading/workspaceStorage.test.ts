@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { createTradingWorkspaceStorage, createTradingWorkspaceRouter } from "./workspaceStorage";
+import { createDrawingAlertSession, DRAWING_ALERTS_KEY } from "./drawingAlerts";
+import type { ChartDrawing } from "./drawingGeometry";
 
 const chartKey = "automorphic:chart:v1";
 const settingsKey = "automorphic:trading-settings:v1";
@@ -222,6 +224,85 @@ describe("trading workspace persistence", () => {
 });
 
 describe("project-scoped trading storage", () => {
+  it("restores drawing alerts and trigger history after a reload without leaking a captured session into another workspace", async () => {
+    const values: Record<string, Record<string, string>> = { first: {}, second: {} };
+    const request = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+      const projectId = new URL(String(input), "http://localhost").searchParams.get("projectId")!;
+      if (init?.method === "PUT") {
+        const body = JSON.parse(init.body as string) as { key: string; value: string };
+        values[projectId]![body.key] = body.value;
+        return json({});
+      }
+      return json({ ...payload(values[projectId]), projectId });
+    });
+    const router = createTradingWorkspaceRouter(request);
+    await router.selectProject("first");
+    const captured = router.capture();
+    const drawing: ChartDrawing = {
+      id: "line",
+      kind: "horizontal",
+      anchors: [{ time: 1 as ChartDrawing["anchors"][number]["time"], price: 100 }],
+      color: "#2962ff",
+      width: 2,
+    };
+    let time = Date.parse("2026-09-11T12:00:00Z");
+    let nextId = 0;
+    const options = {
+      now: () => time,
+      id: () => `alert-${++nextId}`,
+      projection: {
+        logicalAt: () => 0,
+        priceToCoordinate: (price: number) => -price,
+        coordinateToPrice: (coordinate: number) => -coordinate,
+      },
+    };
+    const context = { symbol: "NQU6", intervalKey: "minute:5" };
+    const session = createDrawingAlertSession(context, captured, options);
+    session.syncDrawings([drawing]);
+    const alert = session.add({
+      drawingId: drawing.id,
+      condition: "crossing-up",
+      trigger: "once",
+      expiresAt: null,
+      name: "NQ breakout",
+      message: "Price crossed the opening level",
+      notifications: { toast: true, sound: false, desktop: false },
+    });
+    expect(alert).not.toBeNull();
+    await captured.flush();
+    await router.selectProject("second");
+    for (const price of [99, 101]) {
+      session.observe({
+        ...context,
+        source: "quote",
+        timestamp: ++time,
+        barId: "bar-1",
+        logical: 0,
+        price,
+      });
+    }
+    await captured.flush();
+    const triggered = session.getSnapshot();
+    expect(triggered.alerts[0]).toMatchObject({ enabled: false, disabledReason: "triggered" });
+    expect(triggered.history).toHaveLength(1);
+    expect(router.getItem(DRAWING_ALERTS_KEY)).toBeNull();
+    expect(values.second).toEqual({});
+    session.dispose();
+
+    // A new router forces a server read instead of using the old in-memory workspace cache.
+    const reopened = createTradingWorkspaceRouter(request);
+    await reopened.selectProject("first");
+    const restored = createDrawingAlertSession(context, reopened.capture(), options);
+    restored.syncDrawings([drawing]);
+    expect(restored.getSnapshot()).toEqual(triggered);
+    expect(restored.setEnabled(alert!.id, true)).toBe(true);
+    await reopened.flush();
+    await reopened.selectProject("second");
+    expect(reopened.getItem(DRAWING_ALERTS_KEY)).toBeNull();
+    expect(values.second).toEqual({});
+    restored.dispose();
+  });
+
   it.each([true, false])(
     "imports legacy preferences into an explicitly selected default workspace only (default=%s)",
     async (isDefault) => {

@@ -6,6 +6,7 @@ import { WatchlistPanel } from "./WatchlistPanel";
 import { useQueryClient } from "@tanstack/react-query";
 import { contractQueryOptions, useTradingContracts } from "./tradingQueries";
 import { ChartAlerts, useChartAlerts } from "./ChartAlertsPanel";
+import type { DrawingAlertsController } from "./useDrawingAlerts";
 import { ChartIcon } from "./ChartIcon";
 import { useCallback, useState } from "react";
 import { Link } from "@tanstack/react-router";
@@ -56,6 +57,15 @@ function ReadyTradingPanel({
   const technicalsAvailable = !settings.useTradingView;
   const activeView = view === "technicals" && !technicalsAvailable ? "chart" : view;
   const alerts = useChartAlerts(symbol);
+  const [drawingAlerts, setDrawingAlerts] = useState<DrawingAlertsController | null>(null);
+  const handleDrawingAlerts = useCallback((next: DrawingAlertsController | null) => {
+    setDrawingAlerts(next);
+  }, []);
+  const currentDrawingAlerts =
+    drawingAlerts?.symbol === symbol &&
+    drawingAlerts.intervalKey === chartIntervalKey(settings.interval)
+      ? drawingAlerts
+      : null;
   const { observeQuote } = alerts;
   const handleQuote = useCallback(
     (next: MarketQuote | null) => {
@@ -122,7 +132,9 @@ function ReadyTradingPanel({
                 ) : (
                   <ChartIcon name={item.name} className="size-5" />
                 )}
-                {item.view === "alerts" && alerts.activeCount > 0 ? (
+                {item.view === "alerts" &&
+                (alerts.activeCount > 0 ||
+                  currentDrawingAlerts?.alerts.some((alert) => alert.enabled)) ? (
                   <span className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-blue-400" />
                 ) : null}
               </TooltipTrigger>
@@ -237,6 +249,7 @@ function ReadyTradingPanel({
               symbol={symbol}
               interval={settings.interval}
               onQuote={handleQuote}
+              onDrawingAlertsChange={handleDrawingAlerts}
               root={settings.root}
               onSelectSymbol={() => setPickerOpen(true)}
               onIntervalChange={settings.setInterval}
@@ -259,6 +272,7 @@ function ReadyTradingPanel({
               <ChartAlerts
                 key={symbol}
                 controller={alerts}
+                drawingController={currentDrawingAlerts}
                 symbol={symbol}
                 lastPrice={quote?.last}
                 onClose={() => setSideView(null)}

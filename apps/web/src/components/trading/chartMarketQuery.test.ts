@@ -40,6 +40,146 @@ const batch = (bars: unknown[], snapshot = false) => ({
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 describe("shared chart market history", () => {
+  it("retains server-proven calendar quote membership and captures receipt separately from close source time", async () => {
+    const t = transport(),
+      emit = vi.fn<(snapshot: ChartMarketSnapshot) => void>();
+    const stop = subscribeChartMarket("NQU6", { unit: "month", value: 1 }, emit, undefined, t.open);
+    const metadata = { symbol: "NQU6", intervalKey: "month:1", historyComplete: true };
+    t.send(0, { type: "bars", ...metadata, bars: [bar(100)], provenance: "historical" });
+    t.send(0, {
+      type: "quote",
+      quote: { symbol: "NQU6", last: 101, timestamp: "2026-09-11T12:00:00Z", barTime: 100 },
+    });
+    const observedAt = Date.now();
+    t.send(0, {
+      type: "bar-close",
+      ...metadata,
+      provenance: "live",
+      bar: bar(100),
+      closedAt: 200_000,
+    });
+    await vi.advanceTimersByTimeAsync(16);
+    expect(emit.mock.lastCall![0].alertFeed?.events[0]).toMatchObject({
+      type: "quote",
+      barTime: 100,
+    });
+    expect(emit.mock.lastCall![0].alertFeed?.events[1]).toMatchObject({
+      type: "bar-close",
+      timestamp: 200_000,
+      observedAt,
+    });
+    stop();
+  });
+
+  it("only journals tick close-price updates with explicit real end timestamps and live provenance", async () => {
+    const t = transport(),
+      emit = vi.fn<(snapshot: ChartMarketSnapshot) => void>();
+    const stop = subscribeChartMarket("NQU6", { unit: "tick", value: 10 }, emit, undefined, t.open);
+    const packet = (bars: unknown[], provenance: string) => ({
+      type: "bars",
+      symbol: "NQU6",
+      intervalKey: "tick:10",
+      bars,
+      provenance,
+      historyComplete: true,
+    });
+    t.send(0, packet([{ ...bar(100), actualEndTime: 101 }], "historical"));
+    t.send(0, packet([bar(102)], "live"));
+    t.send(
+      0,
+      packet([{ ...bar(103, 105), actualTime: 103, actualEndTime: 104, barId: "tick-3" }], "live"),
+    );
+    await vi.advanceTimersByTimeAsync(16);
+    expect(emit.mock.lastCall![0].alertFeed?.events).toEqual([
+      { type: "quote", price: 105, timestamp: 104000, barTime: 103, sequence: 1 },
+    ]);
+    stop();
+  });
+
+  it("preserves timestamped quote order through notification coalescing and cumulative snapshots", async () => {
+    const t = transport(),
+      emit = vi.fn<(snapshot: ChartMarketSnapshot) => void>();
+    const stop = subscribeChartMarket("NQU6", interval, emit, undefined, t.open);
+    t.send(0, {
+      ...batch([bar(100)], true),
+      historical: true,
+      provenance: "historical",
+      historyComplete: true,
+    });
+    await vi.advanceTimersByTimeAsync(16);
+    const timestamp = "2026-09-11T12:00:00.001Z";
+    for (const last of [99, 101, 99])
+      t.send(0, { type: "quote", quote: { symbol: "NQU6", last, timestamp } });
+    await vi.advanceTimersByTimeAsync(16);
+    const first = emit.mock.lastCall![0];
+    expect(first.quote?.last).toBe(99);
+    expect(first.alertFeed?.events.map((e) => (e.type === "quote" ? e.price : null))).toEqual([
+      99, 101, 99,
+    ]);
+    expect(first.alertFeed?.events.map((e) => e.timestamp)).toEqual(
+      Array(3).fill(Date.parse(timestamp)),
+    );
+    t.send(0, { type: "quote", quote: { symbol: "NQU6", last: 103, timestamp } });
+    await vi.advanceTimersByTimeAsync(16);
+    expect(emit.mock.lastCall![0].alertFeed?.events.map((e) => e.sequence)).toEqual([1, 2, 3, 4]);
+    expect(first.alertFeed?.events).toHaveLength(3);
+    stop();
+  });
+  it("does not journal history/warmup quotes or unproven closes; accepts explicit live finality and resets on disconnect", async () => {
+    const t = transport(),
+      emit = vi.fn<(snapshot: ChartMarketSnapshot) => void>();
+    const stop = subscribeChartMarket("NQU6", interval, emit, undefined, t.open);
+    const quote = {
+      type: "quote",
+      quote: { symbol: "NQU6", last: 101, timestamp: "2026-09-11T12:00:00Z" },
+    };
+    t.send(0, quote);
+    t.send(0, { ...batch([bar(100)], true), historical: true, historyComplete: false });
+    await vi.advanceTimersByTimeAsync(16);
+    expect(emit.mock.lastCall![0].alertFeed).toMatchObject({ ready: false, events: [] });
+    t.send(0, { ...batch([]), historical: true, historyComplete: true });
+    const close = {
+      type: "bar-close",
+      symbol: "NQU6",
+      intervalKey: "minute:5",
+      bar: bar(100, 102),
+      closedAt: Date.parse("2026-09-11T12:05:00Z"),
+    };
+    t.send(0, close);
+    t.send(0, { ...close, provenance: "historical", historyComplete: true });
+    await vi.advanceTimersByTimeAsync(16);
+    expect(emit.mock.lastCall![0].alertFeed?.events).toHaveLength(0);
+    t.send(0, { ...close, provenance: "live", historyComplete: true });
+    await vi.advanceTimersByTimeAsync(16);
+    const before = emit.mock.lastCall![0];
+    expect(before.alertFeed?.events[0]).toMatchObject({
+      type: "bar-close",
+      bar: bar(100, 102),
+      timestamp: close.closedAt,
+    });
+    expect(before.bars).toEqual([bar(100, 102)]);
+    t.subscriptions[0]!.events.onError();
+    await vi.advanceTimersByTimeAsync(16);
+    expect(emit.mock.lastCall![0].alertFeed).toMatchObject({ ready: false, events: [] });
+    expect(emit.mock.lastCall![0].alertFeed?.streamId).not.toBe(before.alertFeed?.streamId);
+    stop();
+  });
+  it("bounds the journal while retaining sequence gaps so consumers can fail closed", async () => {
+    const t = transport(),
+      emit = vi.fn<(snapshot: ChartMarketSnapshot) => void>();
+    const stop = subscribeChartMarket("NQU6", interval, emit, undefined, t.open);
+    t.send(0, { ...batch([bar(100)], true), historyComplete: true });
+    for (let i = 0; i < 2100; i++)
+      t.send(0, {
+        type: "quote",
+        quote: { symbol: "NQU6", last: 100, timestamp: "2026-09-11T12:00:00Z" },
+      });
+    await vi.advanceTimersByTimeAsync(16);
+    expect(emit.mock.lastCall![0].alertFeed?.events).toHaveLength(2048);
+    expect(emit.mock.lastCall![0].alertFeed?.events[0]?.sequence).toBe(53);
+    stop();
+  });
+
   it("ignores invalid nonempty snapshots without erasing cached or pending bars, but accepts authoritative empty history", async () => {
     const t = transport(),
       emit = vi.fn<(snapshot: ChartMarketSnapshot) => void>();

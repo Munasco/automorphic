@@ -438,3 +438,148 @@ describe("selected Tradovate contract", () => {
     },
   );
 });
+
+describe("chart close SSE provenance", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it.each([
+    [5, "minute", false],
+    [5, "minute", true],
+    [5, "second", false],
+    [1, "week", false],
+    [1, "tick", false],
+    [10, "tick", false],
+  ] as const)(
+    "finalizes only live rollovers for %d %s (shared ID: %s)",
+    async (interval, unit, shared) => {
+      const directory = await NodeFSP.mkdtemp(
+        NodePath.join(NodeOS.tmpdir(), "automorphic-close-test-"),
+      );
+      let response: Response | undefined;
+      try {
+        const path = NodePath.join(directory, ".env");
+        await NodeFSP.writeFile(
+          path,
+          "TRADOVATE_ACCESS_TOKEN=test-session\nTRADOVATE_ENVIRONMENT=demo\nTRADOVATE_TOKEN_EXPIRATION=2099-01-01T00:00:00.000Z\n",
+        );
+        vi.stubEnv("AUTOMORPHIC_ENV_FILE", path);
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async () => Response.json({ id: 123, name: "NQU6" })),
+        );
+        const sockets: FakeSocket[] = [];
+        class FakeSocket extends EventTarget {
+          static OPEN = 1;
+          readyState = 1;
+          constructor() {
+            super();
+            sockets.push(this);
+          }
+          send(_data: string) {}
+          close() {
+            this.readyState = 3;
+          }
+          receive(message: object) {
+            this.dispatchEvent(
+              new MessageEvent("message", { data: `a${JSON.stringify([message])}` }),
+            );
+          }
+        }
+        vi.stubGlobal("WebSocket", FakeSocket);
+        response = await chartStream("NQU6", interval, unit);
+        const liveId = shared ? 31 : 32;
+        sockets[0]!.receive({ i: 2, s: 200, d: { historicalId: 31, realtimeId: liveId } });
+        const packet = (id: number, timestamp: string, close: number, tradeId = 1) =>
+          unit === "tick" && interval === 1
+            ? {
+                id,
+                bt: Date.parse(timestamp),
+                bp: 100,
+                ts: 1,
+                td: 20260101,
+                tks: [{ id: tradeId, t: 0, p: close - 100, s: 1 }],
+              }
+            : {
+                id,
+                bars: [
+                  {
+                    timestamp,
+                    open: 100,
+                    high: 105,
+                    low: 95,
+                    close,
+                    upVolume: close - 99,
+                    downVolume: 1,
+                    upTicks: close === 104 ? 2 : 1,
+                    downTicks: 0,
+                  },
+                ],
+              };
+        const frame = (...charts: object[]) => sockets[0]!.receive({ e: "chart", d: { charts } });
+        // Realtime before EOH remains warmup. Empty EOH must still publish readiness.
+        if (!shared) frame(packet(liveId, "2026-01-01T12:00:00Z", 101));
+        frame({ id: 31, eoh: true });
+        frame(packet(liveId, "2026-01-02T12:00:00Z", 101, 2));
+        frame(packet(liveId, "2026-01-02T12:00:00Z", 104, 2));
+        for (const timestamp of ["2026-01-02T12:00:01Z", "2026-02-01T12:00:00Z"])
+          sockets[0]!.receive({
+            e: "md",
+            d: { quotes: [{ contractId: 123, timestamp, entries: { Trade: { price: 104 } } }] },
+          });
+        frame(packet(999, "2026-02-01T12:00:00Z", 102, 3));
+        if (!shared && unit !== "tick") frame(packet(31, "2026-01-03T12:00:00Z", 99));
+        frame(packet(liveId, "2026-02-01T12:00:00Z", 102, 3));
+        sockets[0]!.receive({ i: 1, s: 401 });
+        const messages = (await response.text())
+          .split("\n\n")
+          .filter(Boolean)
+          .map((frame) => JSON.parse(frame.slice(6)));
+        const readiness = messages.find(
+          (message) => message.type === "bars" && message.historyComplete,
+        );
+        expect(readiness).toMatchObject({ historical: true, provenance: "historical" });
+        if (unit === "week") expect(readiness.bars).toHaveLength(1);
+        const quotes = messages.filter((message) => message.type === "quote");
+        expect(quotes).toHaveLength(2);
+        expect(quotes[0].quote.barTime).toBe(
+          unit === "tick"
+            ? undefined
+            : Date.parse(unit === "week" ? "2025-12-29T00:00:00Z" : "2026-01-02T12:00:00Z") / 1000,
+        );
+        expect(quotes[1].quote.barTime).toBeUndefined();
+        const closes = messages.filter((message) => message.type === "bar-close");
+        expect(closes).toHaveLength(1);
+        expect(closes[0]).toMatchObject({
+          type: "bar-close",
+          symbol: "NQU6",
+          intervalKey: `${unit}:${interval}`,
+          provenance: "live",
+          historyComplete: true,
+          bar: { close: 104, complete: true },
+        });
+        expect(closes[0].closedAt).toBe(Date.parse("2026-02-01T12:00:00Z"));
+        const closeIndex = messages.indexOf(closes[0]);
+        expect(messages[closeIndex - 1]).toMatchObject({
+          type: "bars",
+          provenance: "live",
+          historyComplete: true,
+        });
+        if (!shared && unit !== "tick")
+          expect(messages).toContainEqual(
+            expect.objectContaining({
+              type: "bars",
+              provenance: "historical",
+              historyComplete: true,
+            }),
+          );
+      } finally {
+        await response?.body?.cancel().catch(() => {});
+        await NodeFSP.rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+});

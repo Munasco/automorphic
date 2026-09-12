@@ -364,6 +364,106 @@ describe("drawing alert sessions", () => {
     expect(persisted.alerts.map((a) => a.symbol).sort()).toEqual(["GCZ6", "NQZ6"]);
     expect(persisted.history.map((e) => e.symbol).sort()).toEqual(["GCZ6", "NQZ6"]);
   });
+  it("accepts ordered same-ms events, persists their identity, and rejects replay or reordered events", () => {
+    const h = harness();
+    h.add("above", "once-per-bar");
+    const first = h.sample(101, { sequence: 1, streamId: "stream" });
+    h.session.observe(first);
+    h.session.observe({ ...first, sequence: 2, barId: "bar-2" });
+    expect(h.onTrigger).toHaveBeenCalledTimes(2);
+    const reopened = h.open();
+    reopened.syncDrawings([line()]);
+    reopened.observe({ ...first, sequence: 1, barId: "bar-3" });
+    reopened.observe({ ...first, sequence: 2, barId: "bar-3" });
+    reopened.observe({ ...first, sequence: 3, streamId: "other", barId: "bar-3" });
+    expect(h.onTrigger).toHaveBeenCalledTimes(2);
+    reopened.observe({ ...first, sequence: 3, barId: "bar-3" });
+    expect(h.onTrigger).toHaveBeenCalledTimes(3);
+    expect(reopened.getSnapshot().alerts[0]).toMatchObject({
+      lastSampleAt: first.timestamp,
+      lastSampleSequence: 3,
+      lastSampleStreamId: "stream",
+    });
+  });
+  it("normalizes names, messages and notification preferences through persistence and trigger events", () => {
+    const h = harness();
+    const alert = h.session.add({
+      drawingId: "line",
+      condition: "above",
+      trigger: "once",
+      expiresAt: null,
+      name: "  My line  ",
+      message: "x".repeat(2100),
+      notifications: { toast: false, sound: true, desktop: true },
+    })!;
+    expect(alert).toMatchObject({
+      name: "My line",
+      message: "x".repeat(2000),
+      notifications: { toast: false, sound: true, desktop: true },
+    });
+    h.session.observe(h.sample(101));
+    expect(h.onTrigger.mock.lastCall![0]).toMatchObject({
+      name: alert.name,
+      message: alert.message,
+      notifications: alert.notifications,
+    });
+    const legacy = { ...alert };
+    delete legacy.notifications;
+    delete legacy.name;
+    delete legacy.message;
+    expect(
+      parseDrawingAlerts(JSON.stringify({ version: 1, alerts: [legacy], history: [] })).alerts[0]
+        ?.notifications,
+    ).toEqual({ toast: true, sound: false, desktop: false });
+  });
+  it("uses fresh explicit close receipt for arming while preserving an old source boundary timestamp and replay guards", () => {
+    const h = harness();
+    h.add("above", "once-per-bar-close");
+    const close = h.sample(101, {
+      source: "bar-close",
+      timestamp: EPOCH - 86_400_000,
+      observedAt: EPOCH + 1,
+      sequence: 1,
+      streamId: "close-stream",
+    });
+    h.session.observe(close);
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    expect(h.onTrigger.mock.lastCall![0].sampleAt).toBe(EPOCH - 86_400_000);
+    const reopened = h.open();
+    reopened.syncDrawings([line()]);
+    reopened.observe({ ...close, observedAt: h.time(), sequence: 2, streamId: "new-stream" });
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    h.advance(20_000);
+    reopened.observe({
+      ...close,
+      barId: "bar-2",
+      timestamp: close.timestamp + 300_000,
+      sequence: 3,
+    });
+    expect(h.onTrigger).toHaveBeenCalledTimes(1); // cached receipt cannot become fresh again
+  });
+  it("clears only this context's log and does not resurrect it when another chart writes", () => {
+    const h = harness();
+    h.add("above", "once-per-bar");
+    const other = h.open("NQZ6");
+    other.syncDrawings([line()]);
+    other.add({ drawingId: "line", condition: "above", trigger: "once-per-bar", expiresAt: null });
+    h.session.observe(h.sample(101));
+    other.observe(h.sample(102, { symbol: "NQZ6" }));
+    h.session.clearHistory();
+    expect(
+      parseDrawingAlerts(h.values.get(DRAWING_ALERTS_KEY)!).history.map((e) => e.symbol),
+    ).toEqual(["NQZ6"]);
+    other.observe(h.sample(103, { symbol: "NQZ6", barId: "bar-2" }));
+    expect(
+      parseDrawingAlerts(h.values.get(DRAWING_ALERTS_KEY)!).history.map((e) => e.symbol),
+    ).toEqual(["NQZ6", "NQZ6"]);
+    h.session.observe(h.sample(104, { barId: "bar-2" }));
+    other.clearHistory();
+    expect(
+      parseDrawingAlerts(h.values.get(DRAWING_ALERTS_KEY)!).history.map((e) => e.symbol),
+    ).toEqual(["GCZ6"]);
+  });
   it("strictly normalizes persisted data and does not import methods or unknown fields", () => {
     const h = harness();
     h.add("above");
