@@ -541,7 +541,12 @@ export function createDrawingPrimitive(
     const entries = state.hidden
       ? []
       : state.drawings.flatMap((drawing) => {
-          if (drawing.hidden || (axis === "price" && drawing.kind === "vertical")) return [];
+          if (
+            drawing.hidden ||
+            (axis === "price" && drawing.kind === "vertical") ||
+            (axis === "time" && drawing.kind === "horizontal")
+          )
+            return [];
           const selected = drawing.id === state.selected;
           const persistent =
             axis === "price"

@@ -111,6 +111,26 @@ describe("native drawing primitive", () => {
     expect(plugin.primitive.timeAxisViews!()).toHaveLength(1);
   });
 
+  it("shows no time badge for a selected horizontal line but retains a ray's start time", () => {
+    const { chart, series } = fixture();
+    const drawing: ChartDrawing = {
+      id: "horizontal-axis",
+      kind: "horizontal",
+      anchors: [{ time: 100 as Time, price: 400 }],
+      color: "#2962ff",
+      width: 2,
+    };
+    const plugin = createDrawingPrimitive(chart, series, () => ({
+      drawings: [drawing],
+      selected: drawing.id,
+    }));
+    expect(plugin.primitive.timeAxisViews!()).toEqual([]);
+    expect(plugin.primitive.priceAxisViews!()).toHaveLength(1);
+    drawing.kind = "horizontal-ray";
+    expect(plugin.primitive.timeAxisViews!()).toHaveLength(1);
+    expect(plugin.primitive.priceAxisViews!()).toHaveLength(1);
+  });
+
   it("shows selected endpoint labels on both axes without persisting them after deselection", () => {
     const { chart, series } = fixture();
     const drawing: ChartDrawing = {
