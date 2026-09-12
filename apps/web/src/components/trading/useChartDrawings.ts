@@ -1,4 +1,5 @@
 import { createDrawingDefaults, drawingAppearanceChanged } from "./drawingDefaults";
+import { createDrawingPaneExtensions, drawingPaneTimeAtCoordinate } from "./drawingPaneExtensions";
 import type { ChartInterval } from "./tradingIntervals";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { randomUUID } from "../../lib/utils";
@@ -31,6 +32,7 @@ import {
 import {
   createDrawingPrimitive,
   drawingProjection,
+  drawingTimeCoordinate,
   supportsInlineDrawingText,
 } from "./drawingPrimitive";
 import { isDrawingVisibleAtInterval } from "./drawingVisibility";
@@ -196,6 +198,9 @@ export function createChartDrawingSession(
     regressionSeries,
   );
   series.attachPrimitive(primitive.primitive);
+  const paneExtensions = createDrawingPaneExtensions(chart, series, () =>
+    [...displayedDrawings(), ...(preview ? [preview] : [])].filter(isVisible),
+  );
   const emit = () => {
     const hovered =
       tool === "cursor" && !hidden && !settingsOpen && !textEditing && !drag
@@ -244,6 +249,7 @@ export function createChartDrawingSession(
       contextPoint: selected ? contextPoint : null,
     });
     primitive.redraw();
+    paneExtensions.redraw();
   };
   const persist = () => {
     try {
@@ -270,6 +276,7 @@ export function createChartDrawingSession(
     removeAll();
     if (hidden) {
       primitive.redraw();
+      paneExtensions.redraw();
       return;
     }
     for (const drawing of displayedDrawings()) {
@@ -297,6 +304,7 @@ export function createChartDrawingSession(
       }
     }
     primitive.redraw();
+    paneExtensions.redraw();
   };
   const discardSettings = () => {
     const hadDraft = settingsDraft !== null;
@@ -328,19 +336,27 @@ export function createChartDrawingSession(
     render();
     emit();
   };
-  const hit = (point: DrawingPoint) => primitive.hitTest(point)?.drawing;
-  const hover = (point: DrawingPoint | null) => {
+  const hit = (point: DrawingPoint, paneIndex?: number) =>
+    paneIndex !== undefined && paneIndex !== series.getPane().paneIndex()
+      ? paneExtensions.hitTest(point.x, paneIndex)
+      : primitive.hitTest(point)?.drawing;
+  const hover = (point: DrawingPoint | null, paneIndex?: number) => {
     if (disposed) return;
     const next =
-      point && tool === "cursor" && !settingsOpen && !drag ? (hit(point)?.id ?? null) : null;
+      point && tool === "cursor" && !settingsOpen && !drag
+        ? (hit(point, paneIndex)?.id ?? null)
+        : null;
     if (next === hoveredId) return;
     hoveredId = next;
     emit();
   };
-  const beginDrag = (point: DrawingPoint, options?: { clone?: boolean }) => {
+  const beginDrag = (point: DrawingPoint, options?: { clone?: boolean; paneIndex?: number }) => {
     if (disposed || hidden) return false;
     if (drag) endDrag(false);
     if (discardSettings()) emit();
+    const foreignPane =
+      options?.paneIndex !== undefined && options.paneIndex !== series.getPane().paneIndex();
+    if (tool !== "cursor" && foreignPane) return false;
     if (tool !== "cursor" && isFreehandDrawingTool(tool)) {
       const anchor = drawingProjection(chart, series).unproject(point);
       if (!anchor) return false;
@@ -351,7 +367,12 @@ export function createChartDrawingSession(
       return true;
     }
     if (tool !== "cursor") return false;
-    const target = primitive.hitTest(point);
+    const extension = foreignPane ? paneExtensions.hitTest(point.x, options!.paneIndex!) : null;
+    const target = foreignPane
+      ? extension
+        ? { drawing: extension, handle: -1, handlePoint: undefined }
+        : null
+      : primitive.hitTest(point);
     const drawing = target?.drawing;
     const handle = target?.handle ?? -1;
     if (!drawing) return false;
@@ -361,9 +382,11 @@ export function createChartDrawingSession(
     if (drawing.locked) return false;
     const clone = options?.clone === true && handle < 0;
     if (clone && drawings.length >= 100) return false;
-    const points = drawing.anchors.map((anchor) =>
-      drawingProjection(chart, series).project(anchor),
-    );
+    const points = drawing.anchors.map((anchor) => {
+      if (drawing.kind !== "vertical") return drawingProjection(chart, series).project(anchor);
+      const x = drawingTimeCoordinate(chart, series, anchor.time);
+      return x === null ? null : { x, y: point.y };
+    });
     if (points.some((p) => p === null)) return false;
     drag = {
       drawing,
@@ -419,7 +442,8 @@ export function createChartDrawingSession(
     // Snap one reference point, then translate the entire shape by that same offset.
     const reference = activeDrag.handlePoint ?? activeDrag.points[Math.max(0, activeDrag.handle)]!;
     const regression = activeDrag.drawing.kind === "regression-trend";
-    if (regression) dy = 0;
+    const vertical = activeDrag.drawing.kind === "vertical";
+    if (regression || vertical) dy = 0;
     const disjoint = activeDrag.drawing.kind === "disjoint-channel";
     if (disjoint && activeDrag.handle === 2) dx = 0;
     const candidate = {
@@ -427,7 +451,7 @@ export function createChartDrawingSession(
       y: reference.y + dy,
     };
     const candidateAnchor =
-      magnetMode !== "off" && !regression ? projection.unproject(candidate) : null;
+      magnetMode !== "off" && !regression && !vertical ? projection.unproject(candidate) : null;
     if (candidateAnchor) {
       const snapped = snapAnchor(candidateAnchor, candidate);
       if (snapped !== candidateAnchor) {
@@ -439,6 +463,10 @@ export function createChartDrawingSession(
       }
     }
     const moved = activeDrag.drawing.anchors.map((anchor, index) => {
+      if (vertical) {
+        const time = drawingPaneTimeAtCoordinate(chart, series, activeDrag.points[index]!.x + dx);
+        return time === null ? null : { ...anchor, time: Math.abs(dx) < 1 ? anchor.time : time };
+      }
       if (regression) {
         if (activeDrag.handle >= 0 && index !== activeDrag.handle) return anchor;
         const time = projection.unproject({
@@ -605,12 +633,7 @@ export function createChartDrawingSession(
   const move = (event: MouseEventParams<Time>) => {
     if (disposed) return;
     if (tool === "cursor") {
-      hover(
-        event.point &&
-          (event.paneIndex === undefined || event.paneIndex === series.getPane().paneIndex())
-          ? event.point
-          : null,
-      );
+      hover(event.point ?? null, event.paneIndex);
       return;
     }
     if (hidden || strokeLastPoint) return;
@@ -635,21 +658,18 @@ export function createChartDrawingSession(
       }
     }
     primitive.redraw();
+    paneExtensions.redraw();
   };
   const click = (event: Pick<MouseEventParams<Time>, "point" | "time" | "paneIndex">) => {
-    if (
-      disposed ||
-      !event.point ||
-      (event.paneIndex !== undefined && event.paneIndex !== series.getPane().paneIndex())
-    )
-      return;
+    if (disposed || !event.point) return;
     if (tool === "cursor") {
       discardSettings();
-      selectedId = hit(event.point)?.id ?? null;
+      selectedId = hit(event.point, event.paneIndex)?.id ?? null;
       contextPoint = null;
       emit();
       return;
     }
+    if (event.paneIndex !== undefined && event.paneIndex !== series.getPane().paneIndex()) return;
     if (isFreehandDrawingTool(tool)) return;
     const price = series.coordinateToPrice(event.point.y);
     if (price === null || !Number.isFinite(price)) return;
@@ -1004,7 +1024,8 @@ export function createChartDrawingSession(
     copySelectedSerialized,
     pasteDrawing,
     hover,
-    blocksChartPan: (point: DrawingPoint) => !disposed && tool === "cursor" && !!hit(point),
+    blocksChartPan: (point: DrawingPoint, paneIndex?: number) =>
+      !disposed && tool === "cursor" && !!hit(point, paneIndex),
     dragTo,
     endDrag,
     finishDrawing,
@@ -1033,11 +1054,11 @@ export function createChartDrawingSession(
       const y = series.priceToCoordinate(price);
       return x !== null && y !== null ? drawingProjection(chart, series).unproject({ x, y }) : null;
     },
-    openSettings: (point?: DrawingPoint) => {
+    openSettings: (point?: DrawingPoint, paneIndex?: number) => {
       if (disposed || tool !== "cursor") return false;
       endDrag(false);
       discardSettings();
-      if (point) selectedId = hit(point)?.id ?? null;
+      if (point) selectedId = hit(point, paneIndex)?.id ?? null;
       const original = drawings.find((drawing) => drawing.id === selectedId);
       if (!original) {
         emit();
@@ -1054,10 +1075,10 @@ export function createChartDrawingSession(
       discardSettings();
       emit();
     },
-    openContextMenu: (point: DrawingPoint, screenPoint: DrawingPoint) => {
+    openContextMenu: (point: DrawingPoint, screenPoint: DrawingPoint, paneIndex?: number) => {
       if (disposed || tool !== "cursor") return false;
       if (discardSettings()) emit();
-      const drawing = hit(point);
+      const drawing = hit(point, paneIndex);
       if (!drawing) return false;
       selectedId = drawing.id;
       contextPoint = screenPoint;
@@ -1218,6 +1239,7 @@ export function createChartDrawingSession(
       settingsOpen = false;
       textEditing = false;
       disposed = true;
+      paneExtensions.dispose();
       try {
         chart.unsubscribeClick(chartClick);
         chart.unsubscribeCrosshairMove(move);
@@ -1258,16 +1280,22 @@ export function useChartDrawings(
     let pointerId: number | null = null;
     let clickOrigin: DrawingPoint | null = null;
     let dragged = false;
+    let pointerPane: ReturnType<typeof series.getPane> | null = null;
     const pointFor = (event: MouseEvent) => {
-      const pane = series.getPane().getHTMLElement();
-      if (!pane) return null;
-      const rect = pane.getBoundingClientRect();
+      const pane =
+        pointerId !== null && pointerPane
+          ? pointerPane
+          : chart.panes().find((candidate) => {
+              const rect = candidate.getHTMLElement()?.getBoundingClientRect();
+              return rect && event.clientY >= rect.top && event.clientY <= rect.bottom;
+            });
+      const rect = pane?.getHTMLElement()?.getBoundingClientRect();
+      if (!pane || !rect) return null;
       return {
-        x:
-          event.clientX -
-          rect.left -
-          chart.priceScale("left", series.getPane().paneIndex()).width(),
+        x: event.clientX - rect.left - chart.priceScale("left", pane.paneIndex()).width(),
         y: event.clientY - rect.top,
+        pane,
+        paneIndex: pane.paneIndex(),
       };
     };
     const down = (event: PointerEvent) => {
@@ -1278,18 +1306,22 @@ export function useChartDrawings(
         point.x < 0 ||
         point.x > chart.timeScale().width() ||
         point.y < 0 ||
-        point.y > series.getPane().getHeight()
+        point.y > point.pane.getHeight()
       )
         return;
       clickOrigin = point;
       dragged = false;
       element.focus({ preventScroll: true });
       if (
-        !current.beginDrag(point, { clone: event.metaKey || event.ctrlKey }) &&
-        !current.blocksChartPan(point)
+        !current.beginDrag(point, {
+          clone: event.metaKey || event.ctrlKey,
+          paneIndex: point.paneIndex,
+        }) &&
+        !current.blocksChartPan(point, point.paneIndex)
       )
         return;
       pointerId = event.pointerId;
+      pointerPane = point.pane;
       element.setPointerCapture(pointerId);
       event.preventDefault();
       event.stopPropagation();
@@ -1314,6 +1346,7 @@ export function useChartDrawings(
       if (point && event.type === "pointerup") current.dragTo(point);
       current.endDrag(event.type === "pointerup");
       pointerId = null;
+      pointerPane = null;
       if (element.hasPointerCapture(event.pointerId))
         element.releasePointerCapture(event.pointerId);
       event.preventDefault();
@@ -1327,7 +1360,8 @@ export function useChartDrawings(
         point.x < 0 ||
         point.x > chart.timeScale().width() ||
         point.y < 0 ||
-        point.y > series.getPane().getHeight()
+        point.y > point.pane.getHeight() ||
+        point.pane !== series.getPane()
       )
         return;
       if (current.placeAt(point)) {
@@ -1337,13 +1371,17 @@ export function useChartDrawings(
     };
     const doubleClick = (event: MouseEvent) => {
       const point = pointFor(event);
-      if (!current.finishDrawing() && (!point || !current.openSettings(point))) return;
+      if (!current.finishDrawing() && (!point || !current.openSettings(point, point.paneIndex)))
+        return;
       event.preventDefault();
       event.stopPropagation();
     };
     const contextMenu = (event: MouseEvent) => {
       const point = pointFor(event);
-      if (point && current.openContextMenu(point, { x: event.clientX, y: event.clientY })) {
+      if (
+        point &&
+        current.openContextMenu(point, { x: event.clientX, y: event.clientY }, point.paneIndex)
+      ) {
         element.focus({ preventScroll: true });
         event.preventDefault();
         event.stopPropagation();
@@ -1398,6 +1436,7 @@ export function useChartDrawings(
       // Clear the native gesture before releasing capture: lostpointercapture and
       // a subsequent mouseup must not recommit the cancelled clone or freehand stroke.
       pointerId = null;
+      pointerPane = null;
       clickOrigin = null;
       dragged = true;
       current.cancel();

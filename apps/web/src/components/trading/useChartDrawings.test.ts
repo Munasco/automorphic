@@ -6,6 +6,8 @@ import type {
   CandlestickData,
   Coordinate,
   IChartApi,
+  IPaneApi,
+  IPanePrimitive,
   ISeriesApi,
   MouseEventParams,
   SeriesType,
@@ -118,6 +120,106 @@ function fixture(symbol: string, initial: string | null = null, candles: Candles
     listener: () => listener,
   };
 }
+
+describe("vertical extensions through indicator panes", () => {
+  it("selects, opens settings/context and drags an extended line in time only with undo and cancellation", () => {
+    const drawing: ChartDrawing = {
+      id: "vertical",
+      kind: "vertical",
+      anchors: [{ time: 100 as Time, price: 9000 }],
+      color: "#2962ff",
+      width: 2,
+    };
+    const f = fixture("pane-interactions", JSON.stringify([drawing]));
+    const source = f.series.getPane();
+    vi.spyOn(f.series, "getPane").mockReturnValue(source);
+    const indicator = {
+      attachPrimitive: vi.fn(),
+      detachPrimitive: vi.fn(),
+    } as unknown as IPaneApi<Time>;
+    f.chart.panes = () => [source, indicator];
+    const session = f.open();
+    f.click(100, 70, 1, 100);
+    expect(f.change.mock.lastCall![0].selected?.id).toBe(drawing.id);
+    expect(session.openSettings({ x: 100, y: 70 }, 1)).toBe(true);
+    expect(f.change.mock.lastCall![0].settingsOpen).toBe(true);
+    session.closeSettings();
+    expect(session.openContextMenu({ x: 100, y: 70 }, { x: 200, y: 600 }, 1)).toBe(true);
+    expect(f.change.mock.lastCall![0].contextPoint).toEqual({ x: 200, y: 600 });
+    session.closeContextMenu();
+    expect(session.blocksChartPan({ x: 100, y: 70 }, 1)).toBe(true);
+    expect(session.beginDrag({ x: 100, y: 70 }, { paneIndex: 1 })).toBe(true);
+    session.dragTo({ x: 160, y: 500 });
+    session.endDrag(true);
+    expect(JSON.parse(f.saved()!)[0].anchors).toEqual([{ time: 160, price: 9000 }]);
+    session.undo();
+    expect(session.getCommittedDrawings()![0]!.anchors).toEqual(drawing.anchors);
+    expect(session.beginDrag({ x: 100, y: 70 }, { paneIndex: 1 })).toBe(true);
+    session.dragTo({ x: 200, y: -50 });
+    session.endDrag(false);
+    expect(session.getCommittedDrawings()![0]!.anchors).toEqual(drawing.anchors);
+    session.updateDrawing(drawing.id, { locked: true });
+    expect(session.beginDrag({ x: 100, y: 70 }, { paneIndex: 1 })).toBe(false);
+    expect(session.openSettings({ x: 100, y: 70 }, 1)).toBe(true);
+    session.closeSettings();
+    session.updateDrawing(drawing.id, { extendAcrossPanes: false });
+    expect(session.blocksChartPan({ x: 100, y: 70 }, 1)).toBe(false);
+    expect(session.openSettings({ x: 100, y: 70 }, 1)).toBe(false);
+    session.dispose();
+  });
+  it("applies settings drafts, cancellation, interval visibility, deletion and undo to pane strokes", () => {
+    const drawing: ChartDrawing = {
+      id: "vertical",
+      kind: "vertical",
+      anchors: [{ time: 100 as Time, price: 4900 }],
+      color: "#2962ff",
+      width: 2,
+    };
+    const f = fixture("pane-extensions", JSON.stringify([drawing]));
+    const sourcePane = f.series.getPane();
+    vi.spyOn(f.series, "getPane").mockReturnValue(sourcePane);
+    const primitives = new Set<IPanePrimitive<Time>>();
+    const pane = {
+      attachPrimitive: (primitive: IPanePrimitive<Time>) => {
+        primitives.add(primitive);
+      },
+      detachPrimitive: (primitive: IPanePrimitive<Time>) => {
+        primitives.delete(primitive);
+        primitive.detached?.();
+      },
+    } as unknown as IPaneApi<Time>;
+    f.chart.panes = () => [sourcePane, pane];
+    const session = f.open(5);
+    expect(primitives.size).toBe(1);
+    session.selectDrawing(drawing.id);
+    session.openSettings();
+    session.previewSettings({ extendAcrossPanes: false });
+    expect(primitives.size).toBe(0);
+    session.closeSettings();
+    expect(primitives.size).toBe(1);
+    session.updateDrawing(drawing.id, { extendAcrossPanes: false });
+    expect(primitives.size).toBe(0);
+    expect(JSON.parse(f.saved()!)[0].extendAcrossPanes).toBe(false);
+    session.undo();
+    expect(primitives.size).toBe(1);
+    session.toggleHidden();
+    expect(primitives.size).toBe(0);
+    session.toggleHidden();
+    expect(primitives.size).toBe(1);
+    session.updateDrawing(drawing.id, {
+      visibility: sanitizeDrawingVisibility({ minutes: { enabled: true, min: 15, max: 30 } }),
+    });
+    expect(primitives.size).toBe(0);
+    session.undo();
+    expect(primitives.size).toBe(1);
+    session.deleteDrawing(drawing.id);
+    expect(primitives.size).toBe(0);
+    session.undo();
+    expect(primitives.size).toBe(1);
+    session.dispose();
+    expect(primitives.size).toBe(0);
+  });
+});
 
 describe("drawing copy and paste", () => {
   const original: ChartDrawing = {

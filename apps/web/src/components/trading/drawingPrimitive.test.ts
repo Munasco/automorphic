@@ -94,6 +94,23 @@ describe("native drawing primitive", () => {
     expect(plugin.primitive.priceAxisViews!()).toEqual([]);
   });
 
+  it("shows only the time coordinate when a vertical line is selected", () => {
+    const { chart, series } = fixture();
+    const drawing: ChartDrawing = {
+      id: "vertical-axis",
+      kind: "vertical",
+      anchors: [{ time: 100 as Time, price: 400 }],
+      color: "#2962ff",
+      width: 2,
+    };
+    const plugin = createDrawingPrimitive(chart, series, () => ({
+      drawings: [drawing],
+      selected: drawing.id,
+    }));
+    expect(plugin.primitive.priceAxisViews!()).toEqual([]);
+    expect(plugin.primitive.timeAxisViews!()).toHaveLength(1);
+  });
+
   it("shows selected endpoint labels on both axes without persisting them after deselection", () => {
     const { chart, series } = fixture();
     const drawing: ChartDrawing = {

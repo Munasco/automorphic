@@ -99,6 +99,7 @@ export type DrawingSettings = {
   extendRight?: boolean;
   showPriceLabel?: boolean;
   showTimeLabel?: boolean;
+  extendAcrossPanes?: boolean;
   priceLabelColor?: string;
   priceLabelFontSize?: number;
   priceLabelBold?: boolean;
@@ -112,6 +113,7 @@ export type DrawingSettings = {
   textItalic?: boolean;
   textPosition?: "above" | "center" | "below";
   textAlignment?: "left" | "center" | "right";
+  textOrientation?: "horizontal" | "vertical";
 };
 export type ChartDrawing = DrawingSettings & {
   id: string;
@@ -541,6 +543,17 @@ export const supportsDrawingPriceLabels = (kind: DrawingKind) =>
     "channel",
   ].includes(kind);
 
+export function defaultVerticalLineSettings(kind: DrawingKind): DrawingSettings {
+  return kind === "vertical"
+    ? {
+        extendAcrossPanes: true,
+        textOrientation: "vertical",
+        textPosition: "center",
+        textAlignment: "center",
+      }
+    : {};
+}
+
 export const supportsDrawingTimeLabels = (kind: DrawingKind) =>
   kind === "vertical" || kind === "crossline";
 export const drawingPriceLabelVisible = (drawing: Pick<ChartDrawing, "kind" | "showPriceLabel">) =>
@@ -712,6 +725,7 @@ export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
     "extendRight",
     "showPriceLabel",
     "showTimeLabel",
+    "extendAcrossPanes",
     "priceLabelBold",
     "priceLabelItalic",
     "textBold",
@@ -741,6 +755,8 @@ export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
     source.textFontSize <= 48
   )
     result.textFontSize = source.textFontSize;
+  if (source.textOrientation === "horizontal" || source.textOrientation === "vertical")
+    result.textOrientation = source.textOrientation;
   if (
     source.textPosition === "above" ||
     source.textPosition === "center" ||
@@ -1564,6 +1580,7 @@ export function buildDrawingGeometry(
   coordinatePrice?: (coordinate: number) => number | null,
   regressionFit?: DrawingRegressionFit,
 ): DrawingGeometry {
+  drawing = { ...defaultVerticalLineSettings(drawing.kind), ...drawing };
   if (isFibTimeDrawing(drawing.kind))
     return buildFibTimeDrawingGeometry(drawing, project, width, height);
   if (drawing.kind === "regression-trend")
@@ -1689,6 +1706,43 @@ export function buildDrawingGeometry(
         : drawing.textPosition === "below"
           ? "top"
           : "bottom";
+  }
+  if (result.text && drawing.kind === "vertical") {
+    const vertical = drawing.textOrientation !== "horizontal";
+    const position = drawing.textPosition ?? "center";
+    const alignment = drawing.textAlignment ?? "center";
+    const sideGap = vertical ? 6 : 10;
+    const x =
+      result.handles[0]!.x +
+      (alignment === "left" ? -sideGap : alignment === "right" ? sideGap : 0);
+    const y = position === "above" ? 6 : position === "below" ? height - 6 : height / 2;
+    result.text = {
+      ...result.text,
+      point: { x, y },
+      angle: vertical ? -Math.PI / 2 : 0,
+      align: vertical
+        ? position === "above"
+          ? "right"
+          : position === "below"
+            ? "left"
+            : "center"
+        : alignment === "left"
+          ? "right"
+          : alignment === "right"
+            ? "left"
+            : "center",
+      baseline: vertical
+        ? alignment === "left"
+          ? "bottom"
+          : alignment === "right"
+            ? "top"
+            : "middle"
+        : position === "above"
+          ? "top"
+          : position === "below"
+            ? "bottom"
+            : "middle",
+    };
   }
   if (
     result.text &&

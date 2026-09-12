@@ -58,6 +58,7 @@ import {
   supportsDrawingTimeLabels,
   drawingPriceLabelVisible,
   drawingTimeLabelVisible,
+  defaultVerticalLineSettings,
   supportsLineStatistics,
   defaultDrawingStats,
   supportsDrawingLevels,
@@ -240,6 +241,7 @@ function DrawingSettings({
 }) {
   const [draft, setDraft] = useState(() => ({
     ...defaultDrawingLevelSettings(drawing.kind),
+    ...defaultVerticalLineSettings(drawing.kind),
     ...defaultChannelDrawingSettings(drawing.kind),
     ...(drawing.kind === "regression-trend" ? defaultRegressionDrawingSettings() : {}),
     ...drawing,
@@ -429,7 +431,9 @@ function DrawingSettings({
           className={cn(
             "max-h-[calc(100dvh-220px)] min-h-0 overflow-y-auto px-5 py-4",
             tab === "Text"
-              ? "space-y-4 pb-8"
+              ? draft.kind === "vertical"
+                ? "space-y-4 pt-6 pb-6"
+                : "space-y-4 pb-8"
               : tab === "Coordinates" || tab === "Visibility"
                 ? "space-y-0"
                 : tab === "Style" && supportsLineStatistics(draft.kind)
@@ -538,6 +542,13 @@ function DrawingSettings({
                   label={axisLine ? "Price label" : "Price labels"}
                   checked={drawingPriceLabelVisible(draft)}
                   onChange={(showPriceLabel) => update({ showPriceLabel })}
+                />
+              ) : null}
+              {draft.kind === "vertical" ? (
+                <Check
+                  label="Extend"
+                  checked={draft.extendAcrossPanes !== false}
+                  onChange={(extendAcrossPanes) => update({ extendAcrossPanes })}
                 />
               ) : null}
               {supportsDrawingTimeLabels(draft.kind) ? (

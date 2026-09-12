@@ -63,11 +63,18 @@ export function DrawingTextSettings({
         )}
       />
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <span className="shrink-0 text-sm">Text alignment</span>
+        <span
+          className={cn(
+            "shrink-0 whitespace-nowrap text-sm",
+            drawing.kind === "vertical" && "w-[100px]",
+          )}
+        >
+          Text alignment
+        </span>
         <div className="flex items-center gap-2">
           <DrawingSelect
             label="Text vertical alignment"
-            value={drawing.textPosition ?? "above"}
+            value={drawing.textPosition ?? (drawing.kind === "vertical" ? "center" : "above")}
             onChange={(value) =>
               onChange({ textPosition: value as NonNullable<ChartDrawing["textPosition"]> })
             }
@@ -93,6 +100,21 @@ export function DrawingTextSettings({
           />
         </div>
       </div>
+      {drawing.kind === "vertical" ? (
+        <div className="flex items-center gap-5">
+          <span className="w-[100px] shrink-0 whitespace-nowrap text-sm">Text orientation</span>
+          <DrawingSelect
+            label="Text orientation"
+            value={drawing.textOrientation ?? "vertical"}
+            onChange={(value) => onChange({ textOrientation: value as "horizontal" | "vertical" })}
+            options={[
+              ["horizontal", "Horizontal"],
+              ["vertical", "Vertical"],
+            ]}
+            className="h-[34px] w-[100px] shrink-0"
+          />
+        </div>
+      ) : null}
     </>
   );
 }

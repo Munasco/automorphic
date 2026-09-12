@@ -426,6 +426,19 @@ export function createDrawingPrimitive(
                 : text.baseline === "middle"
                   ? (rows.length * rowHeight) / 2
                   : rows.length * rowHeight);
+            if (drawing.kind === "vertical" && (drawing.textOpacity ?? 1) > 0) {
+              const background = chart.options().layout.background;
+              if (background?.type === "solid") {
+                const width = Math.max(...rows.map((row) => ctx.measureText(row).width));
+                const x =
+                  (rotated ? 0 : text.point.x) -
+                  (text.align === "right" ? width : text.align === "center" ? width / 2 : 0);
+                ctx.save();
+                ctx.fillStyle = background.color;
+                ctx.fillRect(x - 4, top - 3, width + 8, rows.length * rowHeight + 6);
+                ctx.restore();
+              }
+            }
             rows.forEach((row, index) =>
               ctx.fillText(row, rotated ? 0 : text.point.x, top + index * rowHeight),
             );
@@ -528,7 +541,7 @@ export function createDrawingPrimitive(
     const entries = state.hidden
       ? []
       : state.drawings.flatMap((drawing) => {
-          if (drawing.hidden) return [];
+          if (drawing.hidden || (axis === "price" && drawing.kind === "vertical")) return [];
           const selected = drawing.id === state.selected;
           const persistent =
             axis === "price"
