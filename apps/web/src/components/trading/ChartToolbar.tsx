@@ -147,11 +147,20 @@ export function ChartToolbar({
           <SelectTrigger
             aria-label="Chart interval"
             size="sm"
-            className="w-auto min-w-0 shrink-0 px-2"
+            variant="ghost"
+            className="h-9 w-auto min-w-0 shrink-0 rounded-none border-transparent bg-transparent px-2 shadow-none hover:bg-white/5 dark:bg-transparent"
           >
             <SelectValue>{formatChartInterval(interval)}</SelectValue>
           </SelectTrigger>
-          <SelectPopup align="end" alignItemWithTrigger={false} sideOffset={8}>
+          <SelectPopup
+            align="end"
+            alignOffset={-8}
+            alignItemWithTrigger={false}
+            sideOffset={0}
+            scrollArrows={false}
+            popupClassName="rounded-none"
+            className="max-h-[min(var(--available-height),32rem)] rounded-none overflow-x-hidden [scrollbar-width:thin] [scrollbar-color:var(--color-zinc-600)_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-600 [&_[data-slot=select-item]]:rounded-none"
+          >
             {intervalGroups
               .filter((group) => group.items.length > 0)
               .map(({ group, items }) => (
@@ -166,10 +175,13 @@ export function ChartToolbar({
               ))}
           </SelectPopup>
         </Select>
+        <span className="mx-1 h-4 w-px shrink-0 bg-white/10" aria-hidden="true" />
         <TradingSelect
           label="Chart style"
+          variant="ghost"
           value={style}
-          className="w-auto shrink-0"
+          className="h-9 w-auto shrink-0 rounded-none border-transparent bg-transparent shadow-none hover:bg-white/5 dark:bg-transparent"
+          popupClassName="rounded-none [&_[data-slot=select-item]]:rounded-none"
           options={[
             ["candles", "Candles"],
             ["bars", "Bars"],

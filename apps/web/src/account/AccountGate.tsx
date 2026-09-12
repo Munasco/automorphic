@@ -1,6 +1,6 @@
 import { useVerifiedAccount } from "./AccountProvider";
 import { useState, type FormEvent, type ReactNode } from "react";
-import { MailIcon, ArrowLeftIcon, Loader2Icon } from "lucide-react";
+import { MailIcon, ArrowLeftIcon, Loader2Icon, LoaderPinwheelIcon } from "lucide-react";
 import { useDesktopAccount } from "./desktop";
 import { accountClient } from "./client";
 
@@ -322,12 +322,15 @@ function GoogleIcon() {
 export function AccountLoading() {
   return (
     <main className="flex min-h-dvh items-center justify-center bg-[#080b12] px-6 py-12 text-slate-200">
-      <div className="w-full max-w-xl bg-[#0c111b] p-6 md:p-12">
+      <div className="w-full max-w-xl p-6 md:p-12">
         <div className="mb-8 flex items-center gap-2 text-xl text-slate-100">
           <img src="/automorphic-mark.svg" width="24" height="24" alt="" /> Automorphic
         </div>
         <div role="status" className="flex flex-col items-center gap-6 py-8">
-          <Loader2Icon aria-hidden="true" className="size-6 animate-spin text-blue-400" />
+          <LoaderPinwheelIcon
+            aria-hidden="true"
+            className="size-6 animate-spin text-blue-400 motion-reduce:animate-none"
+          />
           <p>Verifying session…</p>
         </div>
       </div>

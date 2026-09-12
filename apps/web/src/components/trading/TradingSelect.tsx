@@ -10,6 +10,8 @@ export function TradingSelect({
   onChange,
   disabled,
   className,
+  popupClassName,
+  variant,
 }: {
   id?: string;
   label: string;
@@ -18,6 +20,8 @@ export function TradingSelect({
   onChange: (value: string) => void;
   disabled?: boolean;
   className?: string;
+  popupClassName?: string;
+  variant?: "default" | "ghost";
 }) {
   return (
     <Select
@@ -27,10 +31,22 @@ export function TradingSelect({
         if (next !== null) onChange(next);
       }}
     >
-      <SelectTrigger id={id} size="sm" aria-label={label} className={cn("min-w-0", className)}>
+      <SelectTrigger
+        id={id}
+        size="sm"
+        variant={variant}
+        aria-label={label}
+        className={cn("min-w-0", className)}
+      >
         <SelectValue>{options.find(([key]) => key === value)?.[1] ?? value}</SelectValue>
       </SelectTrigger>
-      <SelectPopup align="end" alignItemWithTrigger={false} sideOffset={8}>
+      <SelectPopup
+        align="end"
+        alignItemWithTrigger={false}
+        sideOffset={8}
+        className={popupClassName}
+        popupClassName={popupClassName ?? ""}
+      >
         {options.map(([key, text]) => (
           <SelectItem hideIndicator key={key} value={key}>
             {text}
