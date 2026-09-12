@@ -694,6 +694,8 @@ function DrawingSettings({
                   <span className="w-[113px] shrink-0 pr-5 text-zinc-400">Angle</span>
                   <DrawingNumberField
                     label="Angle"
+                    min={-360}
+                    max={360}
                     step="any"
                     value={angle === null ? null : Number(angle.toFixed(2))}
                     onValueChange={(angle) => {
