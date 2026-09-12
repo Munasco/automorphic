@@ -35,6 +35,7 @@ import {
 } from "./drawingPrimitive";
 import { isDrawingVisibleAtInterval } from "./drawingVisibility";
 import { applyDrawingTemplate } from "./drawingTemplates";
+import { parseDrawingClipboard, serializeDrawingClipboard } from "./drawingClipboard";
 export type ChartDrawingTool = "cursor" | DrawingKind;
 export type DrawingOrderDirection = "front" | "forward" | "backward" | "back";
 export type DrawingMagnetMode = "off" | "weak" | "strong";
@@ -892,6 +893,43 @@ export function createChartDrawingSession(
     if (selectedId === id) selectedId = null;
     changed();
   };
+  const serializedDrawing = (id: string | null) => {
+    if (disposed || drag || id === null) return null;
+    const drawing = drawings.find((item) => item.id === id);
+    return drawing ? serializeDrawingClipboard(drawing) : null;
+  };
+  const copySelectedSerialized = () => serializedDrawing(selectedId);
+  const copyDrawing = async (id: string): Promise<boolean> => {
+    const text = serializedDrawing(id);
+    if (!text) return false;
+    try {
+      if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) return false;
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const pasteDrawing = (text: string): boolean => {
+    if (disposed) return false;
+    const original = parseDrawingClipboard(text);
+    if (!original) return false;
+    // A drag preview does not consume a committed-object slot.
+    if (drawings.length - (drag?.cloneId ? 1 : 0) >= 100) return false;
+    setTool("cursor");
+    const copy: ChartDrawing = {
+      ...original,
+      id: randomUUID(),
+      name: `${original.name || original.text || original.kind} copy`.slice(0, 80),
+      locked: false,
+      hidden: false,
+    };
+    remember();
+    drawings = [...drawings, copy];
+    selectedId = copy.id;
+    changed();
+    return true;
+  };
   const channelBaselinePrice = (drawing: ChartDrawing): number | null => {
     if (disposed || drawing.kind !== "channel" || drawing.anchors.length !== 3) return null;
     const { project } = drawingProjection(chart, series);
@@ -945,6 +983,9 @@ export function createChartDrawingSession(
       return true;
     },
     beginDrag,
+    copyDrawing,
+    copySelectedSerialized,
+    pasteDrawing,
     hover,
     blocksChartPan: (point: DrawingPoint) => !disposed && tool === "cursor" && !!hit(point),
     dragTo,
@@ -1309,6 +1350,30 @@ export function useChartDrawings(
     element.addEventListener("lostpointercapture", finish, true);
     element.addEventListener("touchstart", stopTouchPan, { capture: true, passive: false });
     element.addEventListener("touchmove", stopTouchPan, { capture: true, passive: false });
+    const clipboardAllowed = (event: ClipboardEvent) => {
+      const target = event.target;
+      return (
+        !event.defaultPrevented &&
+        element.contains(document.activeElement) &&
+        !(
+          target instanceof HTMLElement &&
+          (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
+        )
+      );
+    };
+    const copy = (event: ClipboardEvent) => {
+      if (!clipboardAllowed(event) || !event.clipboardData) return;
+      const text = current.copySelectedSerialized();
+      if (!text) return;
+      event.clipboardData.setData("text/plain", text);
+      event.preventDefault();
+    };
+    const paste = (event: ClipboardEvent) => {
+      if (!clipboardAllowed(event) || !event.clipboardData) return;
+      if (current.pasteDrawing(event.clipboardData.getData("text/plain"))) event.preventDefault();
+    };
+    element.addEventListener("copy", copy);
+    element.addEventListener("paste", paste);
     const cancelPointerGesture = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || pointerId === null) return;
       const capturedPointer = pointerId;
@@ -1361,6 +1426,8 @@ export function useChartDrawings(
       element.removeEventListener("lostpointercapture", finish, true);
       element.removeEventListener("touchstart", stopTouchPan, true);
       element.removeEventListener("touchmove", stopTouchPan, true);
+      element.removeEventListener("copy", copy);
+      element.removeEventListener("paste", paste);
       if (originalTabIndex === null) element.removeAttribute("tabindex");
       else element.setAttribute("tabindex", originalTabIndex);
       current.dispose();
@@ -1400,6 +1467,18 @@ export function useChartDrawings(
   );
   const deleteDrawing = useCallback((id: string) => session.current?.deleteDrawing(id), []);
   const duplicateDrawing = useCallback((id: string) => session.current?.duplicateDrawing(id), []);
+  const copyDrawing = useCallback(
+    (id: string) => session.current?.copyDrawing(id) ?? Promise.resolve(false),
+    [],
+  );
+  const copySelectedSerialized = useCallback(
+    () => session.current?.copySelectedSerialized() ?? null,
+    [],
+  );
+  const pasteDrawing = useCallback(
+    (text: string) => session.current?.pasteDrawing(text) ?? false,
+    [],
+  );
   const channelPriceOffset = useCallback(
     (drawing: ChartDrawing) => session.current?.channelPriceOffset(drawing) ?? null,
     [],
@@ -1483,6 +1562,9 @@ export function useChartDrawings(
     updateDrawing,
     deleteDrawing,
     duplicateDrawing,
+    copyDrawing,
+    copySelectedSerialized,
+    pasteDrawing,
     setTool,
     finishDrawing,
     setMagnetMode,

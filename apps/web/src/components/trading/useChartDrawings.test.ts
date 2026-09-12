@@ -15,6 +15,7 @@ import type {
 import { createChartDrawingSession } from "./useChartDrawings";
 import { sanitizeDrawingVisibility } from "./drawingVisibility";
 import type { ChartDrawing } from "./drawingGeometry";
+import { parseDrawingClipboard, serializeDrawingClipboard } from "./drawingClipboard";
 
 function fixture(symbol: string, initial: string | null = null, candles: CandlestickData[] = []) {
   let listener: ((event: MouseEventParams<Time>) => void) | undefined;
@@ -117,6 +118,178 @@ function fixture(symbol: string, initial: string | null = null, candles: Candles
     listener: () => listener,
   };
 }
+
+describe("drawing copy and paste", () => {
+  const original: ChartDrawing = {
+    id: "clipboard-source",
+    kind: "fib",
+    anchors: [
+      { time: 100 as Time, price: 4900 },
+      { time: 300 as Time, price: 4800 },
+    ],
+    color: "#123456",
+    width: 3,
+    lineStyle: "dashed",
+    name: "Research",
+    locked: true,
+    hidden: true,
+    text: "Measured range",
+    textBold: true,
+    textOpacity: 0.4,
+    levels: [{ value: 0.618, visible: true, color: "#ff9800" }],
+  };
+
+  it("copies a locked drawing read-only and pastes independent styled copies with atomic undo and reload", () => {
+    const f = fixture("clipboard", JSON.stringify([original])),
+      session = f.open();
+    expect(session.copySelectedSerialized()).toBeNull();
+    session.selectDrawing(original.id);
+    const text = session.copySelectedSerialized()!;
+    expect(parseDrawingClipboard(text)).toEqual(original);
+    expect(f.writes()).toBe(0);
+    expect(session.pasteDrawing(text)).toBe(true);
+    expect(f.writes()).toBe(1);
+    const after = f.saved()!,
+      objects = JSON.parse(after);
+    expect(objects[0]).toEqual(original);
+    expect(objects[1]).toEqual({
+      ...original,
+      id: expect.any(String),
+      name: "Research copy",
+      locked: false,
+      hidden: false,
+    });
+    expect(objects[1].id).not.toBe(original.id);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        selected: expect.objectContaining({ id: objects[1].id }),
+        tool: "cursor",
+      }),
+    );
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toEqual([original]);
+    session.redo();
+    expect(f.saved()).toBe(after);
+    expect(session.pasteDrawing(text)).toBe(true);
+    const state = f.change.mock.calls.at(-1)![0];
+    expect(new Set(state.objects.map((drawing: ChartDrawing) => drawing.id)).size).toBe(3);
+    expect(state.objects[1].anchors).not.toBe(state.objects[2].anchors);
+    expect(state.objects[1].levels[0]).not.toBe(state.objects[2].levels[0]);
+    session.dispose();
+    const reopened = f.open();
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ count: 3 }));
+    reopened.dispose();
+  });
+
+  it("uses the clicked drawing for system clipboard writes and reports denied or unavailable access", async () => {
+    const f = fixture("clipboard-system", JSON.stringify([original])),
+      session = f.open();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    try {
+      expect(await session.copyDrawing(original.id)).toBe(true);
+      expect(parseDrawingClipboard(writeText.mock.calls[0]![0])).toEqual(original);
+      expect(await session.copyDrawing("missing")).toBe(false);
+      expect(writeText).toHaveBeenCalledTimes(1);
+      writeText.mockRejectedValueOnce(new Error("Denied"));
+      expect(await session.copyDrawing(original.id)).toBe(false);
+      vi.stubGlobal("navigator", {});
+      expect(await session.copyDrawing(original.id)).toBe(false);
+      expect(f.writes()).toBe(0);
+      session.dispose();
+      expect(await session.copyDrawing(original.id)).toBe(false);
+    } finally {
+      session.dispose();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("ignores invalid text without cancelling active placement or changing history", () => {
+    const f = fixture("clipboard-invalid"),
+      session = f.open();
+    session.setTool("rectangle");
+    f.click(100, 100);
+    const before = f.change.mock.calls.length;
+    expect(session.pasteDrawing("hello world")).toBe(false);
+    expect(
+      session.pasteDrawing('{"type":"automorphic.chart-drawing","version":1,"drawing":{}}'),
+    ).toBe(false);
+    expect(f.change.mock.calls.length).toBe(before);
+    expect(f.writes()).toBe(0);
+    f.click(200, 200);
+    expect(JSON.parse(f.saved()!)).toHaveLength(1);
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toEqual([]);
+    session.dispose();
+    expect(session.pasteDrawing(serializeDrawingClipboard(original)!)).toBe(false);
+    expect(session.copySelectedSerialized()).toBeNull();
+  });
+
+  it("discards preview settings before paste and cannot later restore those uncommitted edits", () => {
+    const f = fixture("clipboard-settings", JSON.stringify([original])),
+      session = f.open();
+    session.selectDrawing(original.id);
+    session.openSettings();
+    session.previewSettings({ color: "#00ff00", text: "Not saved" });
+    const text = session.copySelectedSerialized()!;
+    expect(parseDrawingClipboard(text)).toEqual(original);
+    expect(session.pasteDrawing(text)).toBe(true);
+    expect(f.writes()).toBe(1);
+    session.closeSettings();
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toEqual([original]);
+    session.dispose();
+  });
+
+  it("cancels a transient clone before one paste and does not save pending standalone text", () => {
+    const f = fixture("clipboard-draft"),
+      session = f.open();
+    session.setTool("rectangle");
+    f.click(100, 100);
+    f.click(200, 200);
+    const before = f.saved()!,
+      text = session.copySelectedSerialized()!,
+      writes = f.writes();
+    session.beginDrag({ x: 150, y: 100 }, { clone: true });
+    session.dragTo({ x: 250, y: 150 });
+    expect(session.copySelectedSerialized()).toBeNull();
+    expect(session.pasteDrawing(text)).toBe(true);
+    session.endDrag();
+    expect(JSON.parse(f.saved()!)).toHaveLength(2);
+    expect(f.writes()).toBe(writes + 1);
+    session.undo();
+    expect(f.saved()).toBe(before);
+    session.setTool("text");
+    f.click(400, 300);
+    session.previewText("Pending draft");
+    expect(session.copySelectedSerialized()).toBeNull();
+    expect(session.pasteDrawing(text)).toBe(true);
+    expect(JSON.parse(f.saved()!).map((drawing: ChartDrawing) => drawing.kind)).toEqual([
+      "rectangle",
+      "rectangle",
+    ]);
+    session.undo();
+    expect(f.saved()).toBe(before);
+    session.dispose();
+  });
+
+  it("refuses a paste at the 100-object limit without evicting or mutating drawings", () => {
+    const originals = Array.from({ length: 100 }, (_, index) => ({
+      ...original,
+      id: `source-${index}`,
+    }));
+    const f = fixture("clipboard-cap", JSON.stringify(originals)),
+      session = f.open();
+    session.selectDrawing("source-50");
+    const text = session.copySelectedSerialized()!,
+      before = f.change.mock.calls.length;
+    expect(session.pasteDrawing(text)).toBe(false);
+    expect(f.writes()).toBe(0);
+    expect(f.change.mock.calls.length).toBe(before);
+    expect(JSON.parse(f.saved()!)).toEqual(originals);
+    session.dispose();
+  });
+});
 
 describe("direct drawing placement", () => {
   it("ignores chart placement clicks and commits two consecutive rectangle points exactly once", () => {

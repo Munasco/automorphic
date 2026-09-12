@@ -24,7 +24,9 @@ import {
   MenuSubTrigger,
   MenuSubPopup,
   MenuSeparator,
+  MenuShortcut,
 } from "../ui/menu";
+import { toastManager } from "../ui/toast";
 import { ChartIcon } from "./ChartIcon";
 import { DrawingToolIcon } from "./DrawingToolIcon";
 import { SolarSettingsIcon } from "./SolarSettingsIcon";
@@ -60,7 +62,7 @@ import { DrawingLevelSettings } from "./DrawingLevelSettings";
 import { DrawingParallelChannelSettings } from "./DrawingParallelChannelSettings";
 import { DrawingTemplateMenu } from "./DrawingTemplateMenu";
 import { applyDrawingTemplate } from "./drawingTemplates";
-import { cn } from "../../lib/utils";
+import { cn, isMacPlatform } from "../../lib/utils";
 
 const lineKinds = new Set([
   "trend",
@@ -990,20 +992,7 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
             </svg>
           </MenuTrigger>
           <MenuPopup aria-label="Drawing options" className="w-56" style={drawingMenuStyle}>
-            <DrawingOrderSubmenu drawings={drawings} />
-            <MenuSeparator />
-            <MenuItem
-              className={drawingMenuItemClass}
-              onClick={() => drawings.duplicateDrawing(selected.id)}
-            >
-              Clone
-            </MenuItem>
-            <MenuItem
-              className={drawingMenuItemClass}
-              onClick={() => drawings.updateSelected({ hidden: true })}
-            >
-              Hide
-            </MenuItem>
+            <DrawingMenuCommands drawings={drawings} />
           </MenuPopup>
         </Menu>
       </div>
@@ -1048,31 +1037,7 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
                 new DOMRect(drawings.contextPoint!.x, drawings.contextPoint!.y, 0, 0),
             }}
           >
-            <MenuItem
-              className={drawingMenuItemClass}
-              onClick={() => closeThen(drawings.openSettings)}
-            >
-              Settings…
-            </MenuItem>
-            <DrawingOrderSubmenu drawings={drawings} />
-            <MenuSeparator />
-            {[
-              { label: "Clone", action: () => drawings.duplicateDrawing(selected.id) },
-              {
-                label: selected.locked ? "Unlock" : "Lock",
-                action: () => drawings.updateSelected({ locked: !selected.locked }),
-              },
-              { label: "Hide", action: () => drawings.updateSelected({ hidden: true }) },
-              { label: "Remove", action: drawings.deleteSelected },
-            ].map((item) => (
-              <MenuItem
-                key={item.label}
-                className={drawingMenuItemClass}
-                onClick={() => closeThen(item.action)}
-              >
-                {item.label}
-              </MenuItem>
-            ))}
+            <DrawingMenuCommands drawings={drawings} onAction={closeThen} />
           </MenuPopup>
         </ContextMenu.Root>
       ) : null}
@@ -1087,6 +1052,66 @@ const drawingMenuStyle = {
   animation: "none",
 };
 const drawingMenuItemClass = "min-h-9 px-3 py-2 text-sm";
+const executeDrawingAction = (action: () => void) => action();
+function DrawingMenuCommands({
+  drawings,
+  onAction = executeDrawingAction,
+}: {
+  drawings: ChartDrawingsController;
+  onAction?: (action: () => void) => void;
+}) {
+  const selected = drawings.selected;
+  if (!selected) return null;
+  const modifier =
+    typeof navigator !== "undefined" && isMacPlatform(navigator.platform) ? "⌘" : "Ctrl";
+  const copy = () => {
+    void drawings.copyDrawing(selected.id).then((copied) => {
+      if (!copied) {
+        toastManager.add({
+          type: "error",
+          title: "Couldn't copy drawing",
+          description: "Clipboard access is unavailable. Try copying again from the chart.",
+        });
+      }
+    });
+  };
+  return (
+    <>
+      <DrawingOrderSubmenu drawings={drawings} />
+      <MenuSeparator />
+      <MenuItem
+        className={drawingMenuItemClass}
+        onClick={() => onAction(() => drawings.duplicateDrawing(selected.id))}
+      >
+        Clone <MenuShortcut>{modifier} Drag</MenuShortcut>
+      </MenuItem>
+      <MenuItem className={drawingMenuItemClass} onClick={() => onAction(copy)}>
+        Copy <MenuShortcut>{modifier} C</MenuShortcut>
+      </MenuItem>
+      <MenuSeparator />
+      {[
+        {
+          label: selected.locked ? "Unlock" : "Lock",
+          action: () => drawings.updateSelected({ locked: !selected.locked }),
+        },
+        { label: "Hide", action: () => drawings.updateSelected({ hidden: true }) },
+        { label: "Remove", action: drawings.deleteSelected },
+      ].map((item) => (
+        <MenuItem
+          key={item.label}
+          className={drawingMenuItemClass}
+          onClick={() => onAction(item.action)}
+        >
+          {item.label}
+        </MenuItem>
+      ))}
+      <MenuSeparator />
+      <MenuItem className={drawingMenuItemClass} onClick={() => onAction(drawings.openSettings)}>
+        Settings…
+      </MenuItem>
+    </>
+  );
+}
 function DrawingOrderSubmenu({ drawings }: { drawings: ChartDrawingsController }) {
   const index = drawings.objects.findIndex((drawing) => drawing.id === drawings.selected?.id);
   const last = drawings.objects.length - 1;
