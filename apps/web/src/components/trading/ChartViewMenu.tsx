@@ -47,8 +47,9 @@ export function ChartViewMenu({
       onClick={() => onChange(value)}
       aria-current={view === value ? "page" : undefined}
       className={cn(
-        "min-h-10 gap-3 rounded-lg px-3 text-sm [&>svg]:text-current data-highlighted:bg-zinc-100 data-highlighted:text-zinc-950",
-        view === value && "bg-zinc-100 text-zinc-950",
+        "min-h-10 gap-3 rounded-lg px-3 text-sm [&>svg]:text-current data-highlighted:bg-white/10 data-highlighted:text-zinc-100",
+        view === value &&
+          "bg-zinc-100 text-zinc-950 data-highlighted:bg-zinc-100 data-highlighted:text-zinc-950",
       )}
     >
       <ViewIcon view={value} />
@@ -76,7 +77,7 @@ export function ChartViewMenu({
       >
         {item("chart", "Chart")}
         <MenuSeparator />
-        <MenuGroup>
+        <MenuGroup className="space-y-1">
           <MenuGroupLabel className="px-3 py-2 text-[10px] font-medium uppercase tracking-widest text-zinc-500">
             Analysis
           </MenuGroupLabel>
