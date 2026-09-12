@@ -1,4 +1,5 @@
 import { supportsInlineDrawingText } from "./drawingPrimitive";
+import { getDrawingDialogBounds } from "./drawingDialogBounds";
 import {
   ColorPicker,
   DrawingSelect,
@@ -9,7 +10,15 @@ import {
   Check,
   inputClass,
 } from "./DrawingStyleControls";
-import { useCallback, useRef, useState, type ClipboardEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type ReactNode,
+  type PointerEventHandler,
+} from "react";
 import { Slider } from "@base-ui/react/slider";
 import { ContextMenu } from "@base-ui/react/context-menu";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
@@ -88,7 +97,7 @@ const lineKinds = new Set([
 ]);
 function titleFor(drawing: ChartDrawing) {
   const labels: Record<string, string> = {
-    trend: "Trend Line",
+    trend: "Trendline",
     horizontal: "Horizontal Line",
     "horizontal-ray": "Horizontal Ray",
     fib: "Fib Retracement",
@@ -141,15 +150,28 @@ function IconButton({
 function DrawingSettingsTitle({
   drawing,
   onChange,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
 }: {
   drawing: ChartDrawing;
   onChange: (patch: DrawingPatch) => void;
+  onPointerDown: PointerEventHandler<HTMLElement>;
+  onPointerMove: PointerEventHandler<HTMLElement>;
+  onPointerUp: PointerEventHandler<HTMLElement>;
 }) {
   const [editing, setEditing] = useState(false);
   const nameBeforeEdit = useRef(drawing.name ?? "");
   const restoreFocus = useRef(false);
   return (
-    <DialogTitle className="flex min-h-16 items-center gap-2 px-5 pb-4 pr-12 pt-5 text-xl font-medium">
+    <DialogTitle
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onLostPointerCapture={onPointerUp}
+      className="flex min-h-16 shrink-0 touch-none items-center gap-2 px-5 pb-4 pr-12 pt-5 text-xl font-medium"
+    >
       {editing ? (
         <input
           ref={(node) => {
@@ -242,6 +264,29 @@ function DrawingSettings({
   const selectedStats = draft.stats ?? defaultDrawingStats(draft.kind);
   const extendable = supportsLineExtensions(draft.kind);
   const [dialogPosition, setDialogPosition] = useState<{ left: number; top: number } | null>(null);
+  const dialogDrag = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+    left: number;
+    top: number;
+  } | null>(null);
+  const [viewport, setViewport] = useState(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }));
+  const tabList = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    tabList.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+    });
+  }, [tab, viewport.width]);
+  useEffect(() => {
+    const resize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
   const measureDialog = useCallback((node: HTMLDivElement | null) => {
     if (!node) return;
     const rect = node.getBoundingClientRect();
@@ -262,11 +307,24 @@ function DrawingSettings({
     tab === "Visibility" || (supportsDrawingLevels(draft.kind) && !isFibTimeDrawing(draft.kind))
       ? 460
       : 380;
+  const dialogBounds = dialogPosition
+    ? getDrawingDialogBounds(dialogPosition, dialogWidth, viewport)
+    : null;
+  const save = () => {
+    if (!canSave) return;
+    const { id: _id, kind: _kind, ...patch } = draft;
+    drawings.applySettings(patch, { replace: replaceAppearance });
+  };
   return (
     <Dialog
       open
-      onOpenChange={(open) => {
-        if (!open) drawings.closeSettings();
+      onOpenChange={(open, details) => {
+        if (open) return;
+        if (!canSave) {
+          details.cancel();
+          return;
+        }
+        save();
       }}
     >
       <DialogPopup
@@ -278,21 +336,45 @@ function DrawingSettings({
           background: "#202020",
           backdropFilter: "none",
           width: dialogWidth,
-          ...(dialogPosition
-            ? {
-                position: "fixed",
-                left: Math.min(dialogPosition.left, window.innerWidth - dialogWidth - 12),
-                top: dialogPosition.top,
-                maxHeight: `calc(100dvh - ${dialogPosition.top + 12}px)`,
-              }
-            : {}),
+          ...(dialogBounds ? { position: "fixed", ...dialogBounds } : {}),
         }}
       >
-        <DrawingSettingsTitle drawing={draft} onChange={update} />
+        <DrawingSettingsTitle
+          drawing={draft}
+          onChange={update}
+          onPointerDown={(event) => {
+            if (event.button !== 0 || !event.isPrimary || !dialogBounds) return;
+            if (event.target instanceof Element && event.target.closest("button,input")) return;
+            dialogDrag.current = {
+              pointerId: event.pointerId,
+              x: event.clientX,
+              y: event.clientY,
+              left: dialogBounds.left,
+              top: dialogBounds.top,
+            };
+            event.currentTarget.setPointerCapture(event.pointerId);
+            event.preventDefault();
+          }}
+          onPointerMove={(event) => {
+            const drag = dialogDrag.current;
+            if (!drag || drag.pointerId !== event.pointerId) return;
+            setDialogPosition({
+              left: drag.left + event.clientX - drag.x,
+              top: drag.top + event.clientY - drag.y,
+            });
+          }}
+          onPointerUp={(event) => {
+            if (dialogDrag.current?.pointerId !== event.pointerId) return;
+            dialogDrag.current = null;
+            if (event.currentTarget.hasPointerCapture(event.pointerId))
+              event.currentTarget.releasePointerCapture(event.pointerId);
+          }}
+        />
         <div
+          ref={tabList}
           role="tablist"
           aria-label="Drawing settings"
-          className="flex border-b border-white/10 px-5"
+          className="flex shrink-0 overflow-x-auto border-b border-white/10 px-5"
         >
           {availableTabs.map((name) => (
             <button
@@ -319,7 +401,7 @@ function DrawingSettings({
               }}
               onClick={() => setTab(name)}
               className={cn(
-                "mr-6 border-b-2 border-transparent pb-3 text-base font-medium text-zinc-400 hover:text-white",
+                "mr-6 shrink-0 border-b-2 border-transparent pb-3 text-base font-medium text-zinc-400 hover:text-white",
                 tab === name && "border-white text-white",
               )}
             >
@@ -331,7 +413,7 @@ function DrawingSettings({
           role="tabpanel"
           id={`drawing-panel-${tab}`}
           aria-labelledby={`drawing-tab-${tab}`}
-          className="max-h-[calc(100dvh-220px)] min-h-40 space-y-6 overflow-y-auto p-5"
+          className="max-h-[calc(100dvh-220px)] min-h-0 space-y-6 overflow-y-auto p-5"
         >
           {draft.kind === "regression-trend" && (tab === "Style" || tab === "Inputs") ? (
             <DrawingRegressionSettings drawing={draft} tab={tab} onChange={update} />
@@ -749,7 +831,7 @@ function DrawingSettings({
             </>
           ) : null}
         </div>
-        <div className="flex justify-end gap-3 border-t border-white/10 px-5 py-4">
+        <div className="flex shrink-0 justify-end gap-3 border-t border-white/10 px-5 py-4 max-sm:gap-2 max-sm:px-3">
           <div className="mr-auto">
             <DrawingTemplateMenu
               drawing={draft}
@@ -769,18 +851,15 @@ function DrawingSettings({
           <button
             type="button"
             onClick={drawings.closeSettings}
-            className="rounded border border-white/20 px-5 py-2 text-sm hover:bg-white/5"
+            className="rounded border border-white/20 px-5 py-2 text-sm hover:bg-white/5 max-sm:px-3"
           >
             Cancel
           </button>
           <button
             type="button"
             disabled={!canSave}
-            onClick={() => {
-              const { id: _id, kind: _kind, ...patch } = draft;
-              drawings.applySettings(patch, { replace: replaceAppearance });
-            }}
-            className="rounded bg-zinc-100 px-5 py-2 text-sm font-medium text-zinc-900 hover:bg-white disabled:opacity-40"
+            onClick={save}
+            className="rounded bg-zinc-100 px-5 py-2 text-sm font-medium text-zinc-900 hover:bg-white disabled:opacity-40 max-sm:px-3"
           >
             OK
           </button>
