@@ -116,7 +116,7 @@ export function ChartToolbar({
       {navigationControl ? (
         <div className="shrink-0 border-r border-white/10 px-1.5 py-1">{navigationControl}</div>
       ) : null}
-      <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto px-1.5 py-1 [scrollbar-width:thin]">
+      <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto px-1.5 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <Tooltip>
           <TooltipTrigger
             type="button"
@@ -149,7 +149,7 @@ export function ChartToolbar({
           >
             <SelectValue>{formatChartInterval(interval)}</SelectValue>
           </SelectTrigger>
-          <SelectPopup align="end" alignItemWithTrigger={false}>
+          <SelectPopup align="end" alignItemWithTrigger={false} sideOffset={8}>
             {intervalGroups
               .filter((group) => group.items.length > 0)
               .map(({ group, items }) => (

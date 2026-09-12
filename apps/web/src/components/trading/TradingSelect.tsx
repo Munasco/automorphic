@@ -30,7 +30,7 @@ export function TradingSelect({
       <SelectTrigger id={id} size="sm" aria-label={label} className={cn("min-w-0", className)}>
         <SelectValue>{options.find(([key]) => key === value)?.[1] ?? value}</SelectValue>
       </SelectTrigger>
-      <SelectPopup align="end" alignItemWithTrigger={false}>
+      <SelectPopup align="end" alignItemWithTrigger={false} sideOffset={8}>
         {options.map(([key, text]) => (
           <SelectItem hideIndicator key={key} value={key}>
             {text}
