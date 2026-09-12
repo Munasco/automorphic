@@ -247,7 +247,7 @@ function DrawingSettings({
       ? ["Text", "Coordinates", "Visibility"]
       : draft.kind === "regression-trend"
         ? ["Inputs", "Style", "Coordinates", "Visibility"]
-        : supportsDrawingLevels(draft.kind)
+        : supportsDrawingLevels(draft.kind) || draft.kind === "crossline"
           ? ["Style", "Coordinates", "Visibility"]
           : isSpecialChannelDrawing(draft.kind)
             ? ["Style", "Text", "Visibility"]
@@ -262,6 +262,9 @@ function DrawingSettings({
   };
   const line =
     lineKinds.has(draft.kind) || supportsLineStatistics(draft.kind) || draft.kind === "crossline";
+  const coordinateHasPrice = draft.kind !== "vertical" && draft.kind !== "regression-trend";
+  const coordinateHasBar = draft.kind !== "horizontal";
+  const coordinateLabel = coordinateHasPrice ? (coordinateHasBar ? "price, bar" : "price") : "bar";
   const selectedStats = draft.stats ?? defaultDrawingStats(draft.kind);
   const extendable = supportsLineExtensions(draft.kind);
   const [dialogPosition, setDialogPosition] = useState<{ left: number; top: number } | null>(null);
@@ -618,10 +621,10 @@ function DrawingSettings({
                 .map((anchor, index) => (
                   <div key={anchorKeys[index]} className="flex h-[50px] items-center">
                     <span className="w-[113px] shrink-0 pr-5 text-sm leading-[18px] text-zinc-400">
-                      #{index + 1} ({draft.kind === "regression-trend" ? "bar" : "price, bar"})
+                      #{index + 1} ({coordinateLabel})
                     </span>
                     <div className="flex gap-2">
-                      {draft.kind !== "regression-trend" ? (
+                      {coordinateHasPrice ? (
                         <DrawingNumberField
                           label={`Point ${index + 1} price`}
                           step="any"
@@ -635,20 +638,22 @@ function DrawingSettings({
                           }}
                         />
                       ) : null}
-                      <DrawingNumberField
-                        label={`Point ${index + 1} bar`}
-                        step={1}
-                        value={Math.round(drawings.anchorBar(anchor) ?? 0)}
-                        onValueChange={(bar) => {
-                          const next = drawings.anchorAtBar(bar, anchor.price);
-                          if (next)
-                            update({
-                              anchors: draft.anchors.map((point, i) =>
-                                i === index ? next : point,
-                              ),
-                            });
-                        }}
-                      />
+                      {coordinateHasBar ? (
+                        <DrawingNumberField
+                          label={`Point ${index + 1} bar`}
+                          step={1}
+                          value={Math.round(drawings.anchorBar(anchor) ?? 0)}
+                          onValueChange={(bar) => {
+                            const next = drawings.anchorAtBar(bar, anchor.price);
+                            if (next)
+                              update({
+                                anchors: draft.anchors.map((point, i) =>
+                                  i === index ? next : point,
+                                ),
+                              });
+                          }}
+                        />
+                      ) : null}
                     </div>
                   </div>
                 ))}
