@@ -1,8 +1,9 @@
 import { useVerifiedAccount } from "./AccountProvider";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { MailIcon, ArrowLeftIcon, Loader2Icon, LoaderPinwheelIcon } from "lucide-react";
 import { useDesktopAccount } from "./desktop";
 import { accountClient } from "./client";
+import { accountGateState } from "./accountGateState";
 
 const inputClass =
   "h-11 w-full rounded-md border border-slate-700/70 bg-[#0d121c] px-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-blue-400 focus:ring-2 focus:ring-blue-400/15";
@@ -21,16 +22,16 @@ export function AccountGate({ children }: { children: ReactNode }) {
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const user = desktop.user ?? verified.user;
-  if (
-    !verified.pending &&
-    !desktop.pending &&
-    !session.isPending &&
-    (!session.error || !!desktop.user) &&
-    user?.emailVerified &&
-    user.name.trim()
-  )
-    return children;
+  const { user, pending } = accountGateState({
+    sessionPending: session.isPending,
+    hasSession: !!session.data?.session,
+    sessionFailed: !!session.error,
+    verifiedPending: verified.pending,
+    verifiedUser: verified.user,
+    desktopPending: desktop.pending,
+    desktopUser: desktop.user,
+  });
+  if (!pending && user?.emailVerified && user.name.trim()) return children;
   const profile = !!user?.emailVerified;
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -99,7 +100,6 @@ export function AccountGate({ children }: { children: ReactNode }) {
       setBusy(false);
     }
   };
-  const pending = session.isPending || verified.pending || desktop.pending;
   if (pending) return <AccountLoading />;
   return (
     <main className="flex min-h-dvh items-center justify-center bg-[#080b12] px-6 py-10 font-sans text-slate-100">
@@ -304,6 +304,11 @@ function GoogleIcon() {
 }
 
 export function AccountLoading() {
+  const [stalled, setStalled] = useState(false);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setStalled(true), 15_000);
+    return () => window.clearTimeout(timeout);
+  }, []);
   return (
     <main className="flex min-h-dvh items-center justify-center bg-[#080b12] px-6 py-12 text-slate-200">
       <div className="w-full max-w-xl p-6 md:p-12">
@@ -315,7 +320,20 @@ export function AccountLoading() {
             aria-hidden="true"
             className="size-6 animate-spin text-blue-400 motion-reduce:animate-none"
           />
-          <p>Verifying session…</p>
+          <p>
+            {stalled
+              ? "Session verification is taking longer than expected."
+              : "Verifying session…"}
+          </p>
+          {stalled && (
+            <button
+              type="button"
+              className="rounded-md border border-slate-600 px-4 py-2 hover:bg-slate-800"
+              onClick={() => window.location.reload()}
+            >
+              Try again
+            </button>
+          )}
         </div>
       </div>
     </main>

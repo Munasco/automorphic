@@ -6,6 +6,7 @@ export const accountAuthUrl =
   import.meta.env.VITE_AUTOMORPHIC_AUTH_URL || "https://ideal-mastiff-363.convex.site";
 export const accountClient = createAuthClient({
   baseURL: accountAuthUrl,
+  fetchOptions: { timeout: 10_000 },
   plugins: [
     convexClient(),
     crossDomainClient({ storagePrefix: "automorphic-account", disableCache: true }),
