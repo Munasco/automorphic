@@ -489,7 +489,7 @@ export function TradovateChart({
         <div
           role="toolbar"
           aria-label="Drawing tools"
-          className="flex w-10 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-white/10 py-1"
+          className="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-white/10 py-1"
         >
           <DrawingTools drawings={drawings} />
           <div className="my-1 w-5 border-t border-white/10" />

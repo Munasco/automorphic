@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { ChartIcon } from "./ChartIcon";
+import { ChartDrawingGlyph } from "./ChartDrawingGlyph";
 import { DrawingToolIcon } from "./DrawingToolIcon";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -46,54 +47,18 @@ function Action({
     </Tooltip>
   );
 }
-type DrawingTool = { kind: ChartDrawingTool; label: string; icon: ReactNode };
+type DrawingTool = { kind: ChartDrawingTool; label: string };
 const tools: DrawingTool[] = [
-  {
-    kind: "cursor",
-    label: "Select drawing / crosshair",
-    icon: <ChartIcon name="crosshair" className="size-[18px]" />,
-  },
-  {
-    kind: "horizontal",
-    label: "Horizontal line",
-    icon: <ChartIcon name="minus" className="size-[18px]" />,
-  },
-  { kind: "trend", label: "Trend line", icon: <ChartIcon name="line" className="size-[18px]" /> },
-  {
-    kind: "ray",
-    label: "Ray",
-    icon: <DrawingToolIcon name="arrow-up-right" className="size-[18px]" />,
-  },
-  {
-    kind: "horizontal-ray",
-    label: "Horizontal ray",
-    icon: <DrawingToolIcon name="arrow-right" className="size-[18px]" />,
-  },
-  {
-    kind: "vertical",
-    label: "Vertical line",
-    icon: <DrawingToolIcon name="separator-vertical" className="size-[18px]" />,
-  },
-  {
-    kind: "rectangle",
-    label: "Rectangle",
-    icon: <DrawingToolIcon name="rectangle" className="size-[18px]" />,
-  },
-  {
-    kind: "fib",
-    label: "Fibonacci retracement",
-    icon: <DrawingToolIcon name="list-numbers" className="size-[18px]" />,
-  },
-  {
-    kind: "channel",
-    label: "Parallel channel · three points",
-    icon: <DrawingToolIcon name="copy" className="size-[18px]" />,
-  },
-  {
-    kind: "text",
-    label: "Text annotation",
-    icon: <DrawingToolIcon name="letter-t" className="size-[18px]" />,
-  },
+  { kind: "cursor", label: "Select drawing / crosshair" },
+  { kind: "trend", label: "Trend line" },
+  { kind: "horizontal", label: "Horizontal line" },
+  { kind: "ray", label: "Ray" },
+  { kind: "horizontal-ray", label: "Horizontal ray" },
+  { kind: "vertical", label: "Vertical line" },
+  { kind: "fib", label: "Fibonacci retracement" },
+  { kind: "rectangle", label: "Rectangle" },
+  { kind: "channel", label: "Parallel channel · three points" },
+  { kind: "text", label: "Text annotation" },
 ];
 const toolGroups: Array<{ label: string; kinds: ChartDrawingTool[] }> = [
   { label: "Cursors", kinds: ["cursor"] },
@@ -125,28 +90,36 @@ function DrawingToolGroup({
   const shown = activeTool ?? lastTool;
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <PopoverTrigger
-              aria-label={`${label}, ${shown.label}${activeTool ? ", selected" : ""}`}
-              className={cn(
-                "relative flex size-8 shrink-0 items-center justify-center rounded text-zinc-400 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/70 data-popup-open:bg-white/10",
-                activeTool && "bg-white/15 text-blue-300",
-              )}
-            />
-          }
+      <div className="group/tool relative flex h-9 w-10 shrink-0 items-center rounded hover:bg-white/5 focus-within:bg-white/5">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                aria-label={shown.label}
+                aria-pressed={!!activeTool}
+                onClick={() => onSelect(shown.kind)}
+                className={cn(
+                  "flex size-8 items-center justify-center rounded text-zinc-400 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400",
+                  activeTool && "bg-blue-400/10 text-blue-400",
+                )}
+              />
+            }
+          >
+            <ChartDrawingGlyph tool={shown.kind} />
+          </TooltipTrigger>
+          <TooltipPopup side="right">{shown.label}</TooltipPopup>
+        </Tooltip>
+        <PopoverTrigger
+          aria-label={`${label} options`}
+          className={cn(
+            "absolute right-0 top-1/2 flex h-7 w-2.5 -translate-y-1/2 items-center justify-center rounded-sm text-zinc-400 opacity-0 hover:bg-white/10 hover:text-white group-hover/tool:opacity-100 group-focus-within/tool:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400 [@media(hover:none)]:opacity-100",
+            (activeTool || open) && "opacity-100",
+          )}
         >
-          {shown.icon}
-          <ChartIcon
-            name="chevron-down"
-            className="absolute bottom-0.5 right-0 size-2 -rotate-90"
-          />
-        </TooltipTrigger>
-        <TooltipPopup side="right">
-          {label} · {shown.label}
-        </TooltipPopup>
-      </Tooltip>
+          <ChartIcon name="chevron-down" className="size-2.5 -rotate-90" />
+        </PopoverTrigger>
+      </div>
       <PopoverPopup
         side="right"
         align="start"
@@ -170,7 +143,7 @@ function DrawingToolGroup({
                 currentTool === entry.kind && "bg-blue-400/10 text-blue-300",
               )}
             >
-              {entry.icon}
+              <ChartDrawingGlyph tool={entry.kind} />
               <span className="flex-1">{entry.label}</span>
               {currentTool === entry.kind ? (
                 <span aria-hidden="true" className="size-1.5 rounded-full bg-blue-300" />
@@ -186,6 +159,7 @@ function DrawingToolGroup({
 export function DrawingTools({ drawings }: { drawings: ChartDrawingsController }) {
   const selected = drawings.selected;
   const [editorOpen, setEditorOpen] = useState(false);
+  const [removeOpen, setRemoveOpen] = useState(false);
   return (
     <>
       {toolGroups.map((group) => (
@@ -435,20 +409,46 @@ export function DrawingTools({ drawings }: { drawings: ChartDrawingsController }
       >
         <DrawingToolIcon name={drawings.hidden ? "eye-off" : "eye"} className="size-[18px]" />
       </Action>
-      <Action
-        label="Delete selected drawing"
-        disabled={!selected}
-        onClick={drawings.deleteSelected}
-      >
-        <ChartIcon name="trash" className="size-[18px]" />
-      </Action>
-      <Action
-        label="Clear all drawings"
-        disabled={!drawings.count && !drawings.pending}
-        onClick={drawings.clear}
-      >
-        <ChartIcon name="trash" className="size-[18px] opacity-50" />
-      </Action>
+      <Popover open={removeOpen} onOpenChange={setRemoveOpen}>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <PopoverTrigger
+                aria-label="Remove drawings"
+                className="flex size-8 shrink-0 items-center justify-center rounded text-zinc-400 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400"
+              />
+            }
+          >
+            <ChartIcon name="trash" className="size-[22px]" />
+          </TooltipTrigger>
+          <TooltipPopup side="right">Remove drawings</TooltipPopup>
+        </Tooltip>
+        <PopoverPopup side="right" align="start" className="w-56" viewportClassName="p-1.5">
+          <PopoverTitle className="px-2 py-2 text-xs text-zinc-400">Remove drawings</PopoverTitle>
+          <button
+            type="button"
+            disabled={!selected}
+            onClick={() => {
+              drawings.deleteSelected();
+              setRemoveOpen(false);
+            }}
+            className="w-full rounded px-2 py-2 text-left text-xs text-zinc-300 hover:bg-white/10 disabled:opacity-30"
+          >
+            Delete selected drawing
+          </button>
+          <button
+            type="button"
+            disabled={!drawings.count && !drawings.pending}
+            onClick={() => {
+              drawings.clear();
+              setRemoveOpen(false);
+            }}
+            className="w-full rounded px-2 py-2 text-left text-xs text-red-400 hover:bg-white/10 disabled:opacity-30"
+          >
+            Clear all drawings
+          </button>
+        </PopoverPopup>
+      </Popover>
     </>
   );
 }
