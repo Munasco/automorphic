@@ -15,7 +15,11 @@ import {
 } from "./indicatorCatalog";
 import { INDICATOR_COLORS, type IndicatorReadings } from "./chartIndicatorRenderer";
 import { DEFAULT_VOLUME_COLORS, type useChartPreferences } from "./chartPreferences";
-import { getChartIndicatorInstances, indicatorReadingKey } from "./chartIndicatorInstances";
+import {
+  getChartIndicatorInstances,
+  indicatorReadingKey,
+  MAX_CHART_INDICATORS,
+} from "./chartIndicatorInstances";
 import type { IndicatorStyle } from "./indicatorDefinition";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -442,6 +446,14 @@ export function IndicatorLegend({
                             className="rounded px-2 py-1.5 hover:bg-white/10"
                           >
                             Reset appearance
+                          </button>
+                          <button
+                            type="button"
+                            disabled={added.length >= MAX_CHART_INDICATORS}
+                            onClick={() => settings.duplicateIndicatorInstance(id)}
+                            className="rounded px-2 py-1.5 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Duplicate
                           </button>
                           <button
                             type="button"

@@ -134,6 +134,7 @@ export const useChartPreferences = create<{
   resetIndicatorInputs: (key: IndicatorKey) => void;
   setVolumeColors: (colors: typeof DEFAULT_VOLUME_COLORS) => void;
   addIndicator: (key: IndicatorKey) => string | null;
+  duplicateIndicatorInstance: (id: string) => string | null;
   removeIndicatorInstance: (id: string) => void;
   toggleIndicatorInstanceVisibility: (id: string) => void;
   setIndicatorInstanceInputs: (id: string, patch: IndicatorInputValues) => boolean;
@@ -236,6 +237,16 @@ export const useChartPreferences = create<{
         const id = randomUUID();
         set({ extraIndicators: [...state.extraIndicators, createIndicatorInstance(key, id)] });
         return id;
+      },
+      duplicateIndicatorInstance: (id) => {
+        const state = get();
+        const instances = getChartIndicatorInstances(state);
+        if (instances.length >= MAX_CHART_INDICATORS) return null;
+        const source = instances.find((instance) => instance.id === id);
+        if (!source) return null;
+        const copy = { ...structuredClone(source), id: randomUUID() };
+        set({ extraIndicators: [...state.extraIndicators, copy] });
+        return copy.id;
       },
       removeIndicatorInstance: (id) => {
         const state = get();

@@ -340,3 +340,109 @@ describe("independent indicator instances", () => {
     expect(new Set(ids).size).toBe(MAX_CHART_INDICATORS);
   });
 });
+
+describe("duplicating configured indicators", () => {
+  it("clones configured base and extra indicators independently and restores both copies", async () => {
+    const store = useChartPreferences.getState();
+    store.addIndicator("macd");
+    store.setIndicatorInstanceInputs("base:macd", { fast: 4, slow: 10 });
+    store.setIndicatorInstanceAppearance("base:macd", {
+      plots: { main: { color: "#123456", lineWidth: 3 } },
+    });
+    store.toggleIndicatorInstanceVisibility("base:macd");
+    const source = getChartIndicatorInstances(useChartPreferences.getState()).find(
+      (instance) => instance.id === "base:macd",
+    )!;
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    const firstId = store.duplicateIndicatorInstance(source.id)!;
+    let first = useChartPreferences.getState().extraIndicators[0]!;
+    expect(first).toEqual({ ...source, id: firstId });
+    expect(first.id).not.toBe(source.id);
+    expect(first.inputs).not.toBe(source.inputs);
+    expect(first.appearance.plots?.main).not.toBe(source.appearance.plots?.main);
+    expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(1);
+    store.setIndicatorInstanceInputs(firstId, { fast: 5 });
+    store.setIndicatorInstanceAppearance(firstId, { plots: { main: { color: "#abcdef" } } });
+    store.toggleIndicatorInstanceVisibility(firstId);
+    first = useChartPreferences.getState().extraIndicators[0]!;
+    expect(first).toMatchObject({
+      hidden: false,
+      inputs: { fast: 5, slow: 10 },
+      appearance: { plots: { main: { color: "#abcdef", lineWidth: 3 } } },
+    });
+    expect(
+      getChartIndicatorInstances(useChartPreferences.getState()).find(
+        (instance) => instance.id === source.id,
+      ),
+    ).toEqual(source);
+    const secondId = store.duplicateIndicatorInstance(firstId)!;
+    const second = useChartPreferences.getState().extraIndicators[1]!;
+    expect(second).toEqual({ ...first, id: secondId });
+    expect(secondId).not.toBe(firstId);
+    expect(second.inputs).not.toBe(first.inputs);
+    expect(second.appearance.plots?.main).not.toBe(first.appearance.plots?.main);
+    store.setIndicatorInstanceInputs(secondId, { fast: 6 });
+    store.setIndicatorInstanceAppearance(secondId, { plots: { main: { lineWidth: 4 } } });
+    expect(useChartPreferences.getState().extraIndicators[0]).toEqual(first);
+    const expected = getChartIndicatorInstances(useChartPreferences.getState());
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    await useChartPreferences.persist.rehydrate();
+    expect(getChartIndicatorInstances(useChartPreferences.getState())).toEqual(expected);
+  });
+
+  it("copies session schedules and volume colors without sharing their mutable settings", () => {
+    const store = useChartPreferences.getState();
+    store.addIndicator("ib");
+    const session = {
+      ...DEFAULT_INITIAL_BALANCE,
+      startTime: "08:30",
+      backgroundColor: "#123456",
+      backgroundOpacity: 0.4,
+    };
+    const colors = { up: "#123456", down: "#abcdef" };
+    store.setIndicatorInstanceInitialBalance("base:ib", session);
+    store.setIndicatorInstanceVolumeColors("base:volume", colors);
+    const ibId = store.duplicateIndicatorInstance("base:ib")!;
+    const volumeId = store.duplicateIndicatorInstance("base:volume")!;
+    const state = useChartPreferences.getState();
+    expect(state.extraIndicators.find((instance) => instance.id === ibId)?.initialBalance).toEqual(
+      session,
+    );
+    expect(state.extraIndicators.find((instance) => instance.id === ibId)?.initialBalance).not.toBe(
+      state.initialBalance,
+    );
+    expect(
+      state.extraIndicators.find((instance) => instance.id === volumeId)?.volumeColors,
+    ).toEqual(colors);
+    expect(
+      state.extraIndicators.find((instance) => instance.id === volumeId)?.volumeColors,
+    ).not.toBe(state.volumeColors);
+    store.setIndicatorInstanceInitialBalance(ibId, { ...session, startTime: "09:00" });
+    store.setIndicatorInstanceVolumeColors(volumeId, { up: "#112233", down: "#445566" });
+    expect(useChartPreferences.getState().initialBalance).toEqual(session);
+    expect(useChartPreferences.getState().volumeColors).toEqual(colors);
+  });
+
+  it("does nothing for stale IDs, disabled bases, and a full chart", () => {
+    const store = useChartPreferences.getState();
+    const removed = store.addIndicator("volume")!;
+    store.removeIndicatorInstance(removed);
+    const original = useChartPreferences.getState();
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    expect(store.duplicateIndicatorInstance(removed)).toBeNull();
+    expect(store.duplicateIndicatorInstance("missing")).toBeNull();
+    expect(store.duplicateIndicatorInstance("base:sma")).toBeNull();
+    expect(useChartPreferences.getState()).toBe(original);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+    while (getChartIndicatorInstances(useChartPreferences.getState()).length < MAX_CHART_INDICATORS)
+      expect(store.duplicateIndicatorInstance("base:volume")).not.toBeNull();
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    expect(store.duplicateIndicatorInstance("base:volume")).toBeNull();
+    expect(getChartIndicatorInstances(useChartPreferences.getState())).toHaveLength(
+      MAX_CHART_INDICATORS,
+    );
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  });
+});
