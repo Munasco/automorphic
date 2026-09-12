@@ -21,6 +21,21 @@ beforeEach(() => {
 });
 
 describe("futures instrument selection", () => {
+  it("preserves watchlist order and an intentionally empty list after reload", async () => {
+    for (const roots of [["NQ", "MGC"] as const, []]) {
+      useTradingPreferences.getState().setWatchlistRoots([...roots]);
+      const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      useTradingPreferences.setState(useTradingPreferences.getInitialState(), true);
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+      await useTradingPreferences.persist.rehydrate();
+      expect(useTradingPreferences.getState().watchlistRoots).toEqual(roots);
+    }
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+      JSON.stringify({ state: { watchlistRoots: ["MGC", "ES", "MGC", "NQ"] }, version: 0 }),
+    );
+    await useTradingPreferences.persist.rehydrate();
+    expect(useTradingPreferences.getState().watchlistRoots).toEqual(["MGC", "NQ"]);
+  });
   it("persists supported typed intervals and rejects unsupported feed sizes", async () => {
     for (const interval of CHART_INTERVALS) {
       useTradingPreferences.getState().setInterval(interval);

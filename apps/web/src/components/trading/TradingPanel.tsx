@@ -7,7 +7,7 @@ import {
   type InstrumentRoot,
 } from "./tradingInstruments";
 import { AlertIcon } from "./AlertIcon";
-import { MarketInstrumentIcon } from "./MarketInstrumentIcon";
+import { WatchlistPanel } from "./WatchlistPanel";
 import { tradingFetch } from "./tradingTransport";
 import { ChartAlerts, useChartAlerts } from "./ChartAlertsPanel";
 import { ChartIcon } from "./ChartIcon";
@@ -133,7 +133,7 @@ function ReadyTradingPanel({
     },
     [observeQuote],
   );
-  const [sideView, setSideView] = useState<"contracts" | "alerts" | null>(null);
+  const [sideView, setSideView] = useState<"watchlist" | "alerts" | null>(null);
   const error = errors[settings.root];
   const settingsControl = (
     <Tooltip>
@@ -165,7 +165,7 @@ function ReadyTradingPanel({
     <div className="ml-auto flex shrink-0 items-center gap-1">
       {!settings.useTradingView
         ? [
-            { name: "list-details" as const, label: "Symbols", view: "contracts" as const },
+            { name: "list-details" as const, label: "Watchlist", view: "watchlist" as const },
             { name: "bell" as const, label: "Price alerts", view: "alerts" as const },
           ].map((item) => (
             <Tooltip key={item.view}>
@@ -324,7 +324,7 @@ function ReadyTradingPanel({
         </div>
         {sideView && !settings.useTradingView ? (
           <aside
-            aria-label={sideView === "alerts" ? "Chart alerts sidebar" : "Chart contracts sidebar"}
+            aria-label={sideView === "alerts" ? "Chart alerts sidebar" : "Chart watchlist sidebar"}
             className="absolute inset-y-0 right-0 z-20 flex w-[min(300px,100%)] flex-col overflow-hidden border-l border-border bg-background shadow-xl @min-[800px]:static @min-[800px]:h-full @min-[800px]:shrink-0 @min-[800px]:shadow-none"
           >
             {sideView === "alerts" ? (
@@ -336,51 +336,19 @@ function ReadyTradingPanel({
                 onClose={() => setSideView(null)}
               />
             ) : (
-              <>
-                <header className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
-                  <h2 className="text-xs font-semibold">Symbols</h2>
-                  <button
-                    type="button"
-                    aria-label="Close symbols"
-                    onClick={() => setSideView(null)}
-                    className="rounded px-2 py-1 text-muted-foreground hover:bg-accent"
-                  >
-                    ×
-                  </button>
-                </header>
-                <div className="min-h-0 flex-1 overflow-y-auto p-1">
-                  {contracts.map((contract) => (
-                    <Tooltip key={contract.id}>
-                      <TooltipTrigger
-                        type="button"
-                        aria-pressed={symbol === contract.name}
-                        onClick={() => {
-                          settings.setRoot(contract.root);
-                          settings.setSelectedSymbol(contract.name);
-                        }}
-                        className={cn(
-                          "flex w-full items-center justify-between gap-3 rounded px-3 py-2.5 text-sm",
-                          symbol === contract.name
-                            ? "bg-accent text-foreground"
-                            : "text-muted-foreground hover:bg-accent/50",
-                        )}
-                      >
-                        <span className="flex items-center gap-2.5">
-                          <MarketInstrumentIcon root={contract.root} className="size-6 shrink-0" />
-                          <span className="font-medium">{contract.root}</span>
-                        </span>
-                        <span className="text-xs">{INSTRUMENTS[contract.root].name}</span>
-                      </TooltipTrigger>
-                      <TooltipPopup>{contract.name}</TooltipPopup>
-                    </Tooltip>
-                  ))}
-                  {!contracts.length ? (
-                    <p className="p-3 text-xs text-muted-foreground">
-                      {loading ? "Loading contracts…" : "No contracts available."}
-                    </p>
-                  ) : null}
-                </div>
-              </>
+              <WatchlistPanel
+                contracts={contracts}
+                selected={symbol}
+                onClose={() => setSideView(null)}
+                onSelect={(contract) => {
+                  setContracts((current) => [
+                    ...current.filter((item) => item.root !== contract.root),
+                    contract,
+                  ]);
+                  settings.setRoot(contract.root);
+                  settings.setSelectedSymbol(contract.name);
+                }}
+              />
             )}
           </aside>
         ) : null}

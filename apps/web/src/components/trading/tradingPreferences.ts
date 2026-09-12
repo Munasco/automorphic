@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
-import { isInstrumentRoot, type InstrumentRoot } from "./tradingInstruments";
+import { INSTRUMENT_ROOTS, isInstrumentRoot, type InstrumentRoot } from "./tradingInstruments";
 import {
   normalizeChartInterval,
   DEFAULT_CHART_INTERVAL,
@@ -13,6 +13,8 @@ export const useTradingPreferences = create<{
   root: InstrumentRoot;
   interval: ChartInterval;
   selectedSymbol: string;
+  watchlistRoots: InstrumentRoot[];
+  setWatchlistRoots: (roots: InstrumentRoot[]) => void;
   setSelectedSymbol: (symbol: string) => void;
   setTradingView: (value: boolean) => void;
   setLiveWires: (value: boolean) => void;
@@ -26,6 +28,9 @@ export const useTradingPreferences = create<{
       root: "MGC",
       interval: DEFAULT_CHART_INTERVAL,
       selectedSymbol: "",
+      watchlistRoots: [...INSTRUMENT_ROOTS],
+      setWatchlistRoots: (roots) =>
+        set({ watchlistRoots: [...new Set(roots.filter(isInstrumentRoot))] }),
       setSelectedSymbol: (selectedSymbol) => set({ selectedSymbol }),
       setTradingView: (useTradingView) => set({ useTradingView }),
       setLiveWires: (showLiveWires) => set({ showLiveWires }),
@@ -44,6 +49,10 @@ export const useTradingPreferences = create<{
         return {
           ...current,
           ...saved,
+          watchlistRoots:
+            "watchlistRoots" in saved && Array.isArray(saved.watchlistRoots)
+              ? [...new Set(saved.watchlistRoots.filter(isInstrumentRoot))]
+              : [...INSTRUMENT_ROOTS],
           root: "root" in saved && isInstrumentRoot(saved.root) ? saved.root : "MGC",
           interval:
             ("interval" in saved && normalizeChartInterval(saved.interval)) ||

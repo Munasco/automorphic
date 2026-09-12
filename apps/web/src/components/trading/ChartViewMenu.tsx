@@ -9,7 +9,6 @@ import {
   MenuSeparator,
 } from "../ui/menu";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
-import { ChartIcon } from "./ChartIcon";
 import { cn } from "../../lib/utils";
 
 export type ChartView = "chart" | "technicals" | "news";
@@ -19,7 +18,19 @@ function ViewIcon({ view }: { view: ChartView }) {
   ) : view === "news" ? (
     <NewspaperIcon className="size-5" />
   ) : (
-    <ChartIcon name="chart-candle" className="size-5" />
+    <svg
+      viewBox="0 0 18 18"
+      width="18"
+      height="18"
+      fill="none"
+      className="size-5"
+      aria-hidden="true"
+    >
+      <path
+        fill="currentColor"
+        d="M17 8.2 9 16 1 8.2 3.667 3h10.666zM2.226 8 9 14.602 15.773 8l-2.05-4H4.277zM9.5 7H11v3H9.5v2h-1v-2H7V7h1.5V5h1z"
+      />
+    </svg>
   );
 }
 export function ChartViewMenu({

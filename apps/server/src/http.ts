@@ -1,4 +1,5 @@
 import { contracts, chartStream } from "./trading/marketData.ts";
+import { watchlistStream } from "./trading/watchlistData.ts";
 import { ChartIntervalError } from "./trading/chartInterval.ts";
 import { accountSnapshot, parseAccountId, TradingAccountError } from "./trading/accountData.ts";
 import { makeTradingWorkspaceCreator } from "./trading/createWorkspace.ts";
@@ -470,6 +471,10 @@ const tradingReadHandler = Effect.gen(function* () {
     }
     if (url.pathname === "/api/trading/contracts")
       return HttpServerResponse.jsonUnsafe(await contracts(url.searchParams.get("root") ?? "MGC"));
+    if (url.pathname === "/api/trading/watchlist-stream")
+      return HttpServerResponse.fromWeb(
+        await watchlistStream(url.searchParams.get("roots") ?? "MGC,MNQ,GC,NQ"),
+      );
     if (url.pathname === "/api/trading/stream") {
       try {
         return HttpServerResponse.fromWeb(

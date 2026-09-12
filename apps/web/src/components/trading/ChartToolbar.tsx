@@ -63,7 +63,7 @@ export type ChartToolbarProps = {
   navigationControl?: ReactNode;
 };
 const control =
-  "inline-flex h-8 shrink-0 items-center justify-center gap-2 rounded px-2.5 text-[13px] text-zinc-400 outline-none hover:bg-white/5 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-blue-400/70 data-popup-open:bg-white/5 data-popup-open:text-zinc-100";
+  "inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded px-2.5 text-[13px] text-zinc-400 outline-none hover:bg-white/5 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-blue-400/70 data-popup-open:bg-white/5 data-popup-open:text-zinc-100 [&>svg]:size-[18px]";
 
 export function ChartToolbar({
   symbol,
@@ -111,12 +111,14 @@ export function ChartToolbar({
     <div
       role="group"
       aria-label="Chart tools"
-      className="flex min-w-0 shrink-0 items-center border-b border-white/10 bg-[#101013]"
+      className="flex min-w-0 shrink-0 items-center border-b border-white/10 bg-[#101013] [&_svg]:block [&_svg]:shrink-0"
     >
       {navigationControl ? (
-        <div className="shrink-0 border-r border-white/10 px-1.5 py-1">{navigationControl}</div>
+        <div className="relative flex shrink-0 self-stretch items-stretch after:absolute after:right-0 after:top-1/2 after:h-4 after:w-px after:-translate-y-1/2 after:bg-white/10 [&_button]:h-full [&_button]:w-8 [&_button]:p-0 [&_button>svg]:size-[18px]">
+          {navigationControl}
+        </div>
       ) : null}
-      <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto px-1.5 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex min-h-9 min-w-0 flex-1 items-center gap-0.5 overflow-x-auto px-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <Tooltip>
           <TooltipTrigger
             type="button"
@@ -412,7 +414,7 @@ export function ChartToolbar({
         </Tooltip>
       </div>
       {panelActions && (
-        <div className="flex shrink-0 items-center border-l border-white/10 px-1 py-1">
+        <div className="flex shrink-0 self-stretch items-stretch justify-center border-l border-white/10 [&>div]:gap-0 [&_button]:h-full [&_button]:min-h-9 [&_button]:w-8 [&_button]:shrink-0 [&_button]:justify-center [&_button]:p-0 [&_button>svg]:size-[18px]">
           {panelActions}
         </div>
       )}
