@@ -19,6 +19,7 @@ import {
   drawingTimeLabelVisible,
   isSpecialChannelDrawing,
   isFibTimeDrawing,
+  isPitchforkDrawingTool,
   type ChartDrawing,
   type DrawingAnchor,
   type DrawingKind,
@@ -422,19 +423,23 @@ export function createDrawingPrimitive(
           let activeWidth = geometry.strokeWidth ?? drawing.width;
           let activeOpacity = lineAlpha;
           const visibleLines = geometry.lines;
+          const fork = isPitchforkDrawingTool(drawing.kind);
           for (const line of visibleLines) {
             const color = line.color ?? drawing.color;
             const style = line.lineStyle ?? drawing.lineStyle ?? "solid";
             const lineWidth = line.width ?? geometry.strokeWidth ?? drawing.width;
             const opacity =
-              drawing.kind === "channel" && line.opacity !== undefined
+              (drawing.kind === "channel" || fork) && line.opacity !== undefined
                 ? line.opacity * (geometry.opacity ?? 1)
                 : (line.opacity ?? 1) * lineAlpha;
             if (
               color !== activeColor ||
               style !== activeStyle ||
               lineWidth !== activeWidth ||
-              opacity !== activeOpacity
+              opacity !== activeOpacity ||
+              // Coincident pitchfork rails (including zero levels) each retain
+              // their own opacity instead of becoming one unioned canvas path.
+              (fork && previous !== undefined)
             ) {
               if (previous) ctx.stroke();
               ctx.beginPath();

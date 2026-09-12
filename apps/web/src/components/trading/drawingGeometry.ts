@@ -1348,7 +1348,7 @@ function buildLevelDrawingGeometry(
       );
     ray(origin, { value: 0, visible: true, color: drawing.color });
     for (const level of levels) {
-      if (!level.visible || level.value === 0) continue;
+      if (!level.visible) continue;
       for (const sign of [-1, 1]) {
         const ratio = Math.abs(level.value) * sign;
         ray(

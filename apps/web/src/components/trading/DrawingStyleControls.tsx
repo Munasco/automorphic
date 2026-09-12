@@ -723,21 +723,32 @@ export function LineAppearancePicker({
   label = "Line appearance",
   fillOpacity,
   onFillOpacityChange,
+  disabled = false,
 }: {
   drawing: ChartDrawing;
   label?: string;
   fillOpacity?: number;
   onFillOpacityChange?: (opacity: number) => void;
+  disabled?: boolean;
   onChange: (patch: DrawingPatch) => void;
 }) {
   return (
     <Popover>
       <PopoverTrigger
         aria-label={label}
-        className="flex h-[34px] w-[75px] shrink-0 items-center gap-1 rounded border border-white/20 p-1 hover:bg-white/10"
+        disabled={disabled}
+        className="flex h-[34px] w-[75px] shrink-0 items-center gap-1 rounded border border-white/20 p-1 hover:bg-white/10 disabled:opacity-40"
       >
-        <span className="size-6 shrink-0 rounded" style={{ background: drawing.color }} />
-        <svg width="28" height="16" aria-hidden="true">
+        <span
+          className="size-6 shrink-0 rounded"
+          style={{ background: drawing.color, opacity: fillOpacity ?? drawing.lineOpacity ?? 1 }}
+        />
+        <svg
+          width="28"
+          height="16"
+          aria-hidden="true"
+          opacity={fillOpacity ?? drawing.lineOpacity ?? 1}
+        >
           <path
             d="M0 8H28"
             stroke={drawing.color}
@@ -782,8 +793,10 @@ export function Check({
   label,
   checked,
   onChange,
+  hideLabel = false,
 }: {
   label: string;
+  hideLabel?: boolean;
   checked: boolean;
   onChange: (value: boolean) => void;
 }) {
@@ -810,7 +823,7 @@ export function Check({
           ) : null}
         </span>
       </span>
-      {label}
+      <span className={hideLabel ? "sr-only" : undefined}>{label}</span>
     </label>
   );
 }

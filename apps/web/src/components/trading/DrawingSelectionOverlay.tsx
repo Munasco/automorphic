@@ -69,10 +69,12 @@ import {
   defaultRegressionDrawingSettings,
   isSpecialChannelDrawing,
   isFibTimeDrawing,
+  isPitchforkDrawingTool,
 } from "./drawingGeometry";
 import { DrawingRegressionSettings } from "./DrawingRegressionSettings";
 import { DrawingFibTimeSettings } from "./DrawingFibTimeSettings";
 import { DrawingLevelSettings } from "./DrawingLevelSettings";
+import { DrawingPitchforkSettings } from "./DrawingPitchforkSettings";
 import { DrawingParallelChannelSettings } from "./DrawingParallelChannelSettings";
 import {
   DrawingTemplateMenu,
@@ -342,7 +344,9 @@ function DrawingSettings({
   const dialogWidth =
     tab === "Visibility"
       ? 459.07
-      : supportsDrawingLevels(draft.kind) && !isFibTimeDrawing(draft.kind)
+      : supportsDrawingLevels(draft.kind) &&
+          !isFibTimeDrawing(draft.kind) &&
+          !isPitchforkDrawingTool(draft.kind)
         ? 460
         : 380;
   const dialogBounds = dialogPosition
@@ -469,11 +473,13 @@ function DrawingSettings({
               ? "space-y-4 pt-6 pb-6"
               : tab === "Coordinates" || tab === "Visibility"
                 ? "space-y-0"
-                : tab === "Style" && supportsLineStatistics(draft.kind)
-                  ? "pb-8 [&>div]:min-h-[50px] [&>label]:min-h-[50px]"
-                  : tab === "Style" && axisLine
-                    ? "min-h-[145px] [&>div]:min-h-[50px] [&>label]:min-h-[50px]"
-                    : "space-y-6",
+                : tab === "Style" && isPitchforkDrawingTool(draft.kind)
+                  ? "space-y-0"
+                  : tab === "Style" && supportsLineStatistics(draft.kind)
+                    ? "pb-8 [&>div]:min-h-[50px] [&>label]:min-h-[50px]"
+                    : tab === "Style" && axisLine
+                      ? "min-h-[145px] [&>div]:min-h-[50px] [&>label]:min-h-[50px]"
+                      : "space-y-6",
           )}
         >
           {draft.kind === "regression-trend" && (tab === "Style" || tab === "Inputs") ? (
@@ -485,6 +491,8 @@ function DrawingSettings({
           {tab === "Style" && supportsDrawingLevels(draft.kind) ? (
             isFibTimeDrawing(draft.kind) ? (
               <DrawingFibTimeSettings drawing={draft} onChange={update} />
+            ) : isPitchforkDrawingTool(draft.kind) ? (
+              <DrawingPitchforkSettings drawing={draft} onChange={update} />
             ) : (
               <DrawingLevelSettings drawing={draft} onChange={update} />
             )

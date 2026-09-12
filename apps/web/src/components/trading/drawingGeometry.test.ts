@@ -1394,6 +1394,36 @@ describe("configurable Fibonacci and pitchfork geometry", () => {
 });
 
 describe("pitchfork style settings", () => {
+  it.each([
+    "pitchfork",
+    "schiff-pitchfork",
+    "modified-schiff-pitchfork",
+    "inside-pitchfork",
+  ] as const)("%s keeps zero-level rails and accepts signed symmetric ratios", (kind) => {
+    const fork = drawing(kind, [
+      [100, 100],
+      [300, 300],
+      [500, 200],
+    ]);
+    const level = {
+      value: 0,
+      visible: true,
+      color: "#089981",
+      opacity: 0.5,
+      width: 4,
+      lineStyle: "dashed" as const,
+    };
+    const zero = geometry({ ...fork, levels: [level] });
+    const rails = zero.lines.filter((line) => line.color === level.color);
+    expect(rails).toHaveLength(2);
+    expect(rails[0]).toEqual(rails[1]);
+    expect(rails[0]).toMatchObject({ opacity: 0.5, width: 4, lineStyle: "dashed" });
+    expect(zero.lines[0]?.color).toBe(fork.color);
+    expect(geometry({ ...fork, levels: [{ ...level, visible: false }] }).lines).toHaveLength(3);
+    expect(geometry({ ...fork, levels: [{ ...level, value: -0.5 }] })).toEqual(
+      geometry({ ...fork, levels: [{ ...level, value: 0.5 }] }),
+    );
+  });
   it("keeps a separate median, expands enabled positive ratios symmetrically and switches geometry in place", () => {
     const fork = drawing("pitchfork", [
       [100, 100],

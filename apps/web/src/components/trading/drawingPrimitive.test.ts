@@ -1605,6 +1605,65 @@ describe("additional line primitive behavior", () => {
     expect(f.ctx.fillText).not.toHaveBeenCalled();
   });
 
+  it.each([
+    "pitchfork",
+    "schiff-pitchfork",
+    "modified-schiff-pitchfork",
+    "inside-pitchfork",
+  ] as const)(
+    "%s paints independently styled coincident rails even when the median is transparent",
+    (kind) => {
+      const drawing: ChartDrawing = {
+        ...line(kind),
+        lineOpacity: 0,
+        anchors: [
+          { time: 100 as Time, price: 100 },
+          { time: 300 as Time, price: 300 },
+          { time: 500 as Time, price: 200 },
+        ],
+        levels: [
+          {
+            value: 0,
+            visible: true,
+            color: "#089981",
+            opacity: 0.5,
+            width: 4,
+            lineStyle: "dashed",
+          },
+        ],
+      };
+      const f = renderFixture(drawing);
+      const strokes: Array<{ color: string; opacity: number; width: number }> = [];
+      f.ctx.stroke.mockImplementation(() => {
+        const ctx = f.ctx as unknown as CanvasRenderingContext2D;
+        strokes.push({
+          color: String(ctx.strokeStyle),
+          opacity: ctx.globalAlpha,
+          width: ctx.lineWidth,
+        });
+      });
+      f.draw();
+      expect(strokes.filter((stroke) => stroke.color === "#089981")).toEqual([
+        { color: "#089981", opacity: 0.5, width: 4 },
+        { color: "#089981", opacity: 0.5, width: 4 },
+      ]);
+      expect(
+        strokes
+          .filter((stroke) => stroke.color === drawing.color)
+          .every((stroke) => stroke.opacity === 0),
+      ).toBe(true);
+      expect(f.ctx.setLineDash).toHaveBeenCalledWith([8, 5]);
+      drawing.lineOpacity = 0.25;
+      drawing.levels = [{ value: 0.5, visible: true, color: "#089981" }];
+      strokes.length = 0;
+      f.draw();
+      expect(strokes.filter((stroke) => stroke.color === "#089981")).toEqual([
+        { color: "#089981", opacity: 0.25, width: 2 },
+        { color: "#089981", opacity: 0.25, width: 2 },
+      ]);
+    },
+  );
+
   it("recalculates the trend angle after scale changes without showing legacy custom text", () => {
     const drawing = { ...line("trend-angle"), text: "Slope" };
     const f = renderFixture(drawing);
