@@ -889,6 +889,20 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
         >
           <MenuPopup
             aria-label="Drawing context menu"
+            onMouseUpCapture={(event) => {
+              // Canvas hit testing opens this virtual-anchor menu without a DOM trigger.
+              // Releasing the opening right-click must not activate the item under it.
+              const origin = drawings.contextPoint;
+              if (
+                event.button === 2 &&
+                origin &&
+                Math.abs(event.clientX - origin.x) <= 1 &&
+                Math.abs(event.clientY - origin.y) <= 1
+              ) {
+                event.preventDefault();
+                event.stopPropagation();
+              }
+            }}
             className="w-56"
             style={drawingMenuStyle}
             align="start"
