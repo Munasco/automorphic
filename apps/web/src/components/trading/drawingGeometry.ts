@@ -93,7 +93,7 @@ export type DrawingSettings = {
   visibility?: DrawingVisibility;
   showMiddlePoint?: boolean;
   stats?: Array<"price" | "percent" | "ticks" | "bars" | "datetime" | "distance" | "angle">;
-  statsPosition?: "left" | "center" | "right";
+  statsPosition?: "left" | "center" | "right" | "auto";
   alwaysShowStats?: boolean;
   extendLeft?: boolean;
   extendRight?: boolean;
@@ -666,7 +666,7 @@ export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
         ),
       ),
     ];
-  if (["left", "center", "right"].includes(source.statsPosition ?? ""))
+  if (["left", "center", "right", "auto"].includes(source.statsPosition ?? ""))
     result.statsPosition = source.statsPosition!;
   if (
     typeof source.regressionSource === "string" &&

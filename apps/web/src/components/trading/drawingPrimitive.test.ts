@@ -622,6 +622,7 @@ describe("additional line primitive behavior", () => {
       draw,
       ctx,
       plugin,
+      chart,
       series,
       select: () => {
         selected = drawing.id;
@@ -830,6 +831,85 @@ describe("additional line primitive behavior", () => {
       }
     },
   );
+
+  it.each([
+    { endX: 450, endY: 420, panelWidth: 237, expected: [374.5, 259] },
+    { endX: 724, endY: 420, panelWidth: 237, expected: [511.5, 259] },
+    { endX: 1052, endY: 420, panelWidth: 237, expected: [591, 259] },
+    { endX: 1271, endY: 420, panelWidth: 233, expected: [528, 377] },
+    { endX: 2915, endY: 420, panelWidth: 256, expected: [572, 377] },
+    { endX: 450, endY: 215, panelWidth: 237, expected: [374.5, 274.5] },
+    { endX: 1271, endY: 310, panelWidth: 237, expected: [591, 204] },
+  ])(
+    "automatically positions the stats panel for the measured segment case %j",
+    ({ endX, endY, panelWidth, expected }) => {
+      for (const reversed of [false, true]) {
+        const anchors = [
+          { time: 275 as Time, price: 190 },
+          { time: endX as Time, price: 500 - endY },
+        ];
+        const drawing: ChartDrawing = {
+          ...line("trend"),
+          anchors: reversed ? anchors.toReversed() : anchors,
+          stats: ["price", "bars", "angle"],
+          statsPosition: "auto",
+          alwaysShowStats: true,
+        };
+        const f = renderFixture(drawing);
+        const scale = f.chart.timeScale();
+        f.chart.timeScale = () => ({ ...scale, width: () => 828 });
+        f.ctx.measureText.mockReturnValue({ width: panelWidth - 48 });
+        f.draw();
+        expect(f.ctx.fillRect.mock.calls[0]).toEqual([...expected, panelWidth, 94]);
+      }
+    },
+  );
+
+  it("clamps Auto at viewport edges, handles vertical segments, and leaves Center unbounded", () => {
+    const drawing: ChartDrawing = {
+      ...line("trend"),
+      anchors: [
+        { time: 800 as Time, price: 450 },
+        { time: 800 as Time, price: -50 },
+      ],
+      stats: ["price", "bars", "angle"],
+      statsPosition: "auto",
+      alwaysShowStats: true,
+    };
+    const f = renderFixture(drawing);
+    const scale = f.chart.timeScale();
+    f.chart.timeScale = () => ({ ...scale, width: () => 828 });
+    f.ctx.measureText.mockReturnValue({ width: 189 });
+    f.draw();
+    expect(f.ctx.fillRect.mock.calls.at(-1)).toEqual([551, 312, 237, 94]);
+    drawing.anchors = [
+      { time: 275 as Time, price: 490 },
+      { time: 450 as Time, price: 450 },
+    ];
+    f.draw();
+    expect(f.ctx.fillRect.mock.calls.at(-1)).toEqual([374.5, 0, 237, 94]);
+    drawing.anchors = [
+      { time: 275 as Time, price: 100 },
+      { time: 450 as Time, price: 10 },
+    ];
+    f.draw();
+    expect(f.ctx.fillRect.mock.calls.at(-1)).toEqual([374.5, 339, 237, 94]);
+    drawing.statsPosition = "center";
+    drawing.anchors = [
+      { time: 2000 as Time, price: 490 },
+      { time: 3000 as Time, price: 450 },
+    ];
+    f.draw();
+    expect(f.ctx.fillRect.mock.calls.at(-1)).toEqual([2512, -76, 237, 94]);
+    // The canvas pane clip, rather than a position clamp, removes an offscreen Center panel.
+    expect(f.ctx.rect).toHaveBeenCalledWith(0, 0, 828, 500);
+    drawing.statsPosition = "left";
+    f.draw();
+    expect(f.ctx.fillRect.mock.calls.at(-1)).toEqual([591, 0, 237, 94]);
+    drawing.statsPosition = "right";
+    f.draw();
+    expect(f.ctx.fillRect.mock.calls.at(-1)).toEqual([591, 0, 237, 94]);
+  });
 
   it("retains ordinary-line panel visibility for hover, lock and provisional placement", () => {
     const drawing: ChartDrawing = {

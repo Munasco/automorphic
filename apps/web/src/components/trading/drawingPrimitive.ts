@@ -482,7 +482,7 @@ export function createDrawingPrimitive(
                 const point =
                   position === "left"
                     ? left
-                    : position === "center"
+                    : position === "center" || position === "auto"
                       ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
                       : right;
                 ctx.font = `12px ${chart.options().layout.fontFamily}`;
@@ -493,11 +493,35 @@ export function createDrawingPrimitive(
                   const panelWidth =
                     Math.max(0, ...groups.map((row) => ctx.measureText(row.text).width)) + 48;
                   const panelHeight = groups.length * 26 + 16;
-                  const panelX = Math.max(0, Math.min(width - panelWidth, point.x + 12));
-                  const panelY = Math.max(
-                    0,
-                    Math.min(height - panelHeight, point.y - panelHeight - 12),
-                  );
+                  const clampX = (x: number) => Math.max(0, Math.min(width - panelWidth, x));
+                  const clampY = (y: number) => Math.max(0, Math.min(height - panelHeight, y));
+                  const below = position === "auto" && right.y < left.y;
+                  const preferredY = below ? point.y + 12 : point.y - panelHeight - 12;
+                  let panelX = position === "center" ? point.x + 12 : clampX(point.x + 12);
+                  let panelY = position === "center" ? preferredY : clampY(preferredY);
+                  if (position === "auto" && panelX < point.x + 12) {
+                    // Only the actual segment can obstruct the right-clamped panel, not its extensions.
+                    const overlapLeft = Math.max(left.x, panelX);
+                    const overlapRight = Math.min(right.x, panelX + panelWidth);
+                    const yAt = (x: number) =>
+                      left.y + ((right.y - left.y) * (x - left.x)) / (right.x - left.x);
+                    const lowY =
+                      right.x === left.x
+                        ? Math.min(left.y, right.y)
+                        : Math.min(yAt(overlapLeft), yAt(overlapRight));
+                    const highY =
+                      right.x === left.x
+                        ? Math.max(left.y, right.y)
+                        : Math.max(yAt(overlapLeft), yAt(overlapRight));
+                    if (
+                      overlapLeft <= overlapRight &&
+                      lowY <= panelY + panelHeight &&
+                      highY >= panelY
+                    ) {
+                      panelX = clampX(point.x - panelWidth - 12);
+                      panelY = clampY(below ? point.y - panelHeight - 12 : point.y + 12);
+                    }
+                  }
                   const layout = chart.options().layout;
                   const background = layout.background;
                   ctx.globalAlpha = 0.94;

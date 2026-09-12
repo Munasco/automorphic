@@ -617,6 +617,7 @@ function DrawingSettings({
                         ["left", "Left"],
                         ["center", "Center"],
                         ["right", "Right"],
+                        ["auto", "Auto"],
                       ]}
                       className="w-45"
                     />

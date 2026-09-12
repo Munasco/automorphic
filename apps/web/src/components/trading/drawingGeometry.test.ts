@@ -524,6 +524,19 @@ describe("native drawing geometry", () => {
     );
   });
 
+  it("persists automatic statistics positioning and rejects unknown modes", () => {
+    const shape = {
+      ...drawing("trend", [
+        [100, 400],
+        [300, 300],
+      ]),
+      statsPosition: "auto" as const,
+    };
+    expect(sanitizeDrawingSettings({ statsPosition: "auto" })).toEqual({ statsPosition: "auto" });
+    expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+    expect(sanitizeDrawingSettings({ statsPosition: "automatic" as "auto" })).toEqual({});
+  });
+
   it("preserves long multiline Unicode drawing text through settings and stored drawing reloads", () => {
     const text = `${"x".repeat(139)}📈\n${"确认回踩 e\u0301 — wait for confirmation.\n".repeat(20)}`;
     const line = { ...drawing("horizontal-ray", [[100, 400]]), text };
