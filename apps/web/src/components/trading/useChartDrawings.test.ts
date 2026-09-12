@@ -83,8 +83,17 @@ function fixture(symbol: string, initial: string | null = null, candles: Candles
     },
   };
   const change = vi.fn();
-  const open = (intervalMinutes = 1) =>
-    createChartDrawingSession(chart, series, symbol, change, storage, intervalMinutes);
+  const open = (intervalMinutes = 1, directPlacement = false) =>
+    createChartDrawingSession(
+      chart,
+      series,
+      symbol,
+      change,
+      storage,
+      intervalMinutes,
+      undefined,
+      directPlacement,
+    );
   const click = (time: number | undefined, y = 100, paneIndex = 0, x = 50) =>
     listener?.({
       ...(time === undefined ? {} : { time: time as UTCTimestamp }),
@@ -104,6 +113,93 @@ function fixture(symbol: string, initial: string | null = null, candles: Candles
     listener: () => listener,
   };
 }
+
+describe("direct drawing placement", () => {
+  it("ignores chart placement clicks and commits two consecutive rectangle points exactly once", () => {
+    const f = fixture("direct-rectangle"),
+      session = f.open(1, true);
+    session.setTool("rectangle");
+    f.click(900, 400, 0, 900);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ count: 0, pending: false }),
+    );
+    expect(session.placeAt({ x: 100, y: 120 })).toBe(true);
+    // A chart-generated click between native pointer events must not add another anchor.
+    f.click(500, 300, 0, 500);
+    expect(f.saved()).toBeNull();
+    expect(session.placeAt({ x: 450, y: 175 })).toBe(true);
+    expect(f.writes()).toBe(1);
+    const saved = f.saved();
+    expect(JSON.parse(saved!)).toEqual([
+      expect.objectContaining({
+        kind: "rectangle",
+        anchors: [
+          { time: 100, price: 4880 },
+          { time: 450, price: 4825 },
+        ],
+      }),
+    ]);
+    expect(session.placeAt({ x: 700, y: 250 })).toBe(false);
+    expect(f.saved()).toBe(saved);
+    expect(f.writes()).toBe(1);
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toEqual([]);
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ canUndo: false }));
+    session.redo();
+    expect(f.saved()).toBe(saved);
+    session.dispose();
+    const restored = f.open(1, true);
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ count: 1 }));
+    expect(f.saved()).toBe(saved);
+    restored.dispose();
+  });
+
+  it("uses actual point projection and candle OHLC magnet snapping for direct anchors", () => {
+    const f = fixture("direct-magnet", null, [
+      { time: 100 as UTCTimestamp, open: 4890, high: 4940, low: 4840, close: 4870 },
+      { time: 300 as UTCTimestamp, open: 4790, high: 4810, low: 4750, close: 4760 },
+    ]);
+    const session = f.open(1, true);
+    session.toggleMagnet();
+    session.setTool("rectangle");
+    session.placeAt({ x: 104, y: 115 });
+    session.placeAt({ x: 304, y: 205 });
+    expect(JSON.parse(f.saved()!)[0].anchors).toEqual([
+      { time: 100, price: 4890 },
+      { time: 300, price: 4790 },
+    ]);
+    expect(f.writes()).toBe(1);
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toEqual([]);
+    session.redo();
+    expect(JSON.parse(f.saved()!)[0].anchors).toEqual([
+      { time: 100, price: 4890 },
+      { time: 300, price: 4790 },
+    ]);
+    session.dispose();
+  });
+
+  it("leaves cursor selection to chart clicks while direct cursor placement is inert", () => {
+    const f = fixture("direct-cursor"),
+      session = f.open(1, true);
+    session.setTool("rectangle");
+    session.placeAt({ x: 100, y: 100 });
+    session.placeAt({ x: 200, y: 200 });
+    const saved = f.saved();
+    f.click(800, 400, 0, 800);
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ selected: null }));
+    const emissions = f.change.mock.calls.length;
+    expect(session.placeAt({ x: 100, y: 100 })).toBe(false);
+    expect(f.change.mock.calls).toHaveLength(emissions);
+    f.click(100, 100, 0, 100);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: expect.objectContaining({ kind: "rectangle" }) }),
+    );
+    expect(f.saved()).toBe(saved);
+    expect(f.writes()).toBe(1);
+    session.dispose();
+  });
+});
 
 describe("bulk drawing controls", () => {
   it("locks mixed drawings together, preserves individual state on one undo, and restores locks", () => {
