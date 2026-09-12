@@ -163,6 +163,7 @@ packageExtensions:
       vite: "catalog:"
 
 patchedDependencies:
+  "@better-auth/electron@1.6.31": patches/@better-auth__electron@1.6.31.patch
   "@clerk/expo@4.2.0": patches/@clerk__expo@4.2.0.patch
   "@effect/vitest@4.0.0-rc.112": patches/@effect__vitest@4.0.0-rc.112.patch
   "@expo/metro-config@57.0.12": patches/@expo__metro-config@57.0.12.patch

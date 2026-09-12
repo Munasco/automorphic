@@ -1,3 +1,4 @@
+import { authComponent, createAuth } from "./auth";
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
@@ -16,6 +17,79 @@ async function matchesSecret(candidate: string, expected: string) {
   return difference === 0;
 }
 const http = httpRouter();
+authComponent.registerRoutes(http, createAuth, { cors: true });
+http.route({
+  path: "/desktop-start",
+  method: "GET",
+  handler: httpAction(
+    async () =>
+      new Response(
+        `<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in to Automorphic</title>
+<style>body{background:#0C0E0D;color:#eee;font:16px system-ui;display:grid;place-content:center;min-height:90vh;text-align:center;padding:24px}</style>
+<h1>Sign in to Automorphic</h1><p id="status">Connecting to Google…</p>
+<script>
+(async () => {
+  try {
+    const params = new URLSearchParams(location.search);
+    if (params.get('client_id') !== 'electron' || !params.get('state') || !params.get('code_challenge') || params.get('code_challenge_method') !== 'S256') throw new Error();
+    const response = await fetch('/api/auth/sign-in/social?' + params.toString(), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'google', callbackURL: location.origin + '/desktop-auth' })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.url) throw new Error();
+    location.replace(data.url);
+  } catch { document.getElementById('status').textContent = 'Sign-in could not start. Return to Automorphic and try again.'; }
+})();
+</script></html>`,
+        {
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-store",
+            "Referrer-Policy": "no-referrer",
+            "Content-Security-Policy":
+              "default-src 'none'; connect-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+          },
+        },
+      ),
+  ),
+});
+http.route({
+  path: "/desktop-auth",
+  method: "GET",
+  handler: httpAction(
+    async () =>
+      new Response(
+        `<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in to Automorphic</title>
+<style>body{background:#090b10;color:#eee;font:16px system-ui;display:grid;place-content:center;min-height:90vh;text-align:center;padding:24px}a{color:inherit;padding:14px;border:1px solid #555;border-radius:8px;text-decoration:none}p{color:#aaa}</style>
+<h1>Back to your trading workspace.</h1><p id="status">Finishing your sign-in…</p><a id="open" hidden>Open Automorphic</a>
+<script>
+const entry = document.cookie.split('; ').find(value => value.startsWith('better-auth.electron='));
+if (entry) {
+  const token = entry.slice(entry.indexOf('=') + 1);
+  const target = 'com.automorphic.account://auth/callback#token=' + token;
+  const link = document.getElementById('open'); link.href = target; link.hidden = false;
+  document.getElementById('status').textContent = 'You can return to Automorphic now.';
+  history.replaceState(null, '', '/desktop-auth');
+  location.replace(target);
+} else { document.getElementById('status').textContent = 'Please return to Automorphic and start sign-in again.'; }
+</script></html>`,
+        {
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-store",
+            "Referrer-Policy": "no-referrer",
+            "Content-Security-Policy":
+              "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+          },
+        },
+      ),
+  ),
+});
 http.route({
   path: "/tradovate/session",
   method: "GET",

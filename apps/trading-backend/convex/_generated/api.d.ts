@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as tradovate from "../tradovate.js";
@@ -17,6 +18,7 @@ import type * as waitlistValidation from "../waitlistValidation.js";
 import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  auth: typeof auth;
   crons: typeof crons;
   http: typeof http;
   tradovate: typeof tradovate;
@@ -44,4 +46,6 @@ export declare const api: FilterApi<typeof fullApi, FunctionReference<any, "publ
  */
 export declare const internal: FilterApi<typeof fullApi, FunctionReference<any, "internal">>;
 
-export declare const components: {};
+export declare const components: {
+  betterAuth: import("@convex-dev/better-auth/_generated/component.js").ComponentApi<"betterAuth">;
+};

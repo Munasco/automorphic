@@ -1,23 +1,19 @@
-import React from "react";
+import React, { lazy, Suspense } from "react";
+import { AccountGate, AccountLoading } from "./account/AccountGate";
+import { AccountProvider } from "./account/AccountProvider";
 import ReactDOM from "react-dom/client";
-import { createHashHistory, createBrowserHistory } from "@tanstack/react-router";
 
 import "./index.css";
 
 import { isElectron } from "./env";
 import { hasCloudPublicConfig } from "./cloud/publicConfig";
-import { getRouter } from "./router";
 import {
   syncDocumentElectronPlatformClasses,
   syncDocumentWindowControlsOverlayClass,
 } from "./lib/windowControlsOverlay";
-import { AppRoot } from "./AppRoot";
 import { clearChunkReloadGuard, reloadOnceForChunkLoadError } from "./lib/chunkReloadGuard";
 
-// Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
-const history = isElectron ? createHashHistory() : createBrowserHistory();
-
-const router = getRouter(history);
+const AuthenticatedWorkspace = lazy(() => import("./AuthenticatedWorkspace"));
 
 if (isElectron) {
   syncDocumentElectronPlatformClasses(navigator.platform);
@@ -38,7 +34,15 @@ window.addEventListener("vite:preloadError", (event) => {
   }
 });
 
-const app = <AppRoot router={router} />;
+const app = (
+  <AccountProvider>
+    <AccountGate>
+      <Suspense fallback={<AccountLoading />}>
+        <AuthenticatedWorkspace />
+      </Suspense>
+    </AccountGate>
+  </AccountProvider>
+);
 
 // Managed auth is cloud-only, and the Electron Clerk provider bundles the full
 // clerk-js runtime. Loading only the selected runtime as a split chunk keeps
@@ -51,20 +55,12 @@ const managedAuthShellModule =
       : import("./components/clerk/BrowserManagedAuthShell")
     : null;
 
-// The index.html boot splash lives inside #root, and React's first commit
-// clears it. Resolve everything that first commit needs, the selected
-// managed-auth runtime and the initial route's split chunks, before
-// rendering, so the splash holds until real UI paints instead of dropping to
-// a blank window while chunks download.
-export const startup = Promise.all([
+// Keep the boot splash until auth can render. Workspace modules load only
+// inside the authenticated gate, after Convex validates the current user.
+export const startup = Promise.resolve(
   managedAuthShellModule?.then((module) => module.default) ?? null,
-  router.load(),
-])
-  .then(([ManagedAuthShell]) => {
-    // A route chunk failure still resolves router.load(): the error is parked in
-    // the lazy component and surfaces through the route error boundary. Skip the
-    // paint when a reload is on its way, and only re-arm the guard after a boot
-    // that fetched every chunk it asked for.
+)
+  .then((ManagedAuthShell) => {
     if (reloadScheduled) return;
     if (!chunkLoadFailed) clearChunkReloadGuard();
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

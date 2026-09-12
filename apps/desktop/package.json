@@ -12,6 +12,7 @@
     "smoke-test": "node scripts/smoke-test.mjs"
   },
   "dependencies": {
+    "@better-auth/electron": "1.6.31",
     "@clerk/electron": "catalog:",
     "@clerk/electron-passkeys": "catalog:",
     "@crowecawcaw/xa11y": "0.13.0",
@@ -22,6 +23,8 @@
     "@t3tools/shared": "workspace:*",
     "@t3tools/ssh": "workspace:*",
     "@t3tools/tailscale": "workspace:*",
+    "better-auth": "~1.6.31",
+    "conf": "^15.1.0",
     "dbus-next": "0.10.2",
     "effect": "catalog:",
     "electron": "44.1.0",

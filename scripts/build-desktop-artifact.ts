@@ -2720,7 +2720,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       protocols: [
         {
           name: "T3 Code",
-          schemes: ["t3code", "t3code-dev"],
+          schemes: ["t3code", "t3code-dev", "com.automorphic.account"],
         },
       ],
       ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
@@ -2767,7 +2767,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       protocols: [
         {
           name: "T3 Code",
-          schemes: ["t3code", "t3code-dev"],
+          schemes: ["t3code", "t3code-dev", "com.automorphic.account"],
         },
       ],
       desktop: {
@@ -2779,6 +2779,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   }
 
   if (platform === "win") {
+    buildConfig.protocols = [{ name: "Automorphic account", schemes: ["com.automorphic.account"] }];
     buildConfig.npmRebuild = false;
     // Keep blockmap-based differential downloads enabled while changing the
     // installed file topology. The optimization is in the payload shape, not

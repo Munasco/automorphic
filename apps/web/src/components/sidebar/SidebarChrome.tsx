@@ -1,11 +1,10 @@
-import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { AccountMenu } from "../../account/AccountMenu";
+import { ArrowLeftIcon } from "lucide-react";
 import { memo, useCallback } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
-import { useEnvironments } from "../../state/environments";
 import { APP_BASE_NAME } from "../../branding";
 import { T3Wordmark } from "../T3Wordmark";
 import {
@@ -22,7 +21,6 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "../ui/sidebar";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 
@@ -77,31 +75,6 @@ function SidebarBrand() {
   );
 }
 
-function SidebarUtilityItem({
-  icon,
-  label,
-  onClick,
-}: {
-  icon: ReactNode;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <SidebarMenuItem className="shrink-0">
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
-              {icon}
-            </SidebarMenuButton>
-          }
-        />
-        <TooltipPopup side="top">{label}</TooltipPopup>
-      </Tooltip>
-    </SidebarMenuItem>
-  );
-}
-
 export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
@@ -116,27 +89,12 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             ? "usage"
             : null,
   });
-  const { environments } = useEnvironments();
-  // The page reads every connected server, so one of them offering pull requests is enough for
-  // the link to lead somewhere.
 
   const closeMobileSidebar = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
     }
   }, [isMobile, setOpenMobile]);
-
-  const handleSettingsClick = useCallback(() => {
-    closeMobileSidebar();
-    void navigate({ to: "/settings" });
-  }, [closeMobileSidebar, navigate]);
-
-  const handleUsageClick = useCallback(() => {
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-    void navigate({ to: "/usage" });
-  }, [isMobile, navigate, setOpenMobile]);
 
   const handleBackClick = useCallback(() => {
     closeMobileSidebar();
@@ -158,17 +116,9 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
         </SidebarMenuItem>
       ) : (
         <>
-          <SidebarUtilityItem
-            icon={<SettingsIcon />}
-            label="Settings"
-            onClick={handleSettingsClick}
-          />
-
-          <SidebarUtilityItem
-            icon={<ChartNoAxesColumnIcon />}
-            label="Usage"
-            onClick={handleUsageClick}
-          />
+          <li className="min-w-0 flex-1 list-none">
+            <AccountMenu />
+          </li>
         </>
       )}
       <SidebarUpdatePill />

@@ -1,0 +1,29 @@
+diff --git a/dist/index.mjs b/dist/index.mjs
+index a4addf5d8da5f28399654f5a89d2a0d350c17228..46d61c07baa8c66add73f9d46fc60fdadaaf6ffb 100644
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -3,10 +3,8 @@ import { createAuthMiddleware } from "@better-auth/core/api";
+ import { APIError, BASE_ERROR_CODES } from "@better-auth/core/error";
+ import { base64Url } from "@better-auth/utils/base64";
+ import { defineErrorCodes, safeJSONParse } from "better-auth";
+-import { generateRandomString } from "better-auth/crypto";
++import { generateRandomString, constantTimeEqual } from "better-auth/crypto";
+ import * as z from "zod";
+-import { Buffer } from "node:buffer";
+-import { timingSafeEqual } from "node:crypto";
+ import { SocialProviderListEnum } from "@better-auth/core/social-providers";
+ import { safeJSONParse as safeJSONParse$1 } from "@better-auth/core/utils/json";
+ import { createHash } from "@better-auth/utils/hash";
+@@ -64,9 +62,9 @@ const electronToken = (_opts) => createAuthEndpoint("/electron/token", {
+ 	if (tokenRecord.state !== ctx.body.state) throw APIError.from("BAD_REQUEST", ELECTRON_ERROR_CODES.STATE_MISMATCH);
+ 	if (!tokenRecord.codeChallenge) throw APIError.from("BAD_REQUEST", ELECTRON_ERROR_CODES.MISSING_CODE_CHALLENGE);
+ 	if (tokenRecord.codeChallengeMethod !== "s256") throw APIError.from("BAD_REQUEST", ELECTRON_ERROR_CODES.INVALID_PKCE_METHOD);
+-	const codeChallenge = Buffer.from(base64Url.decode(tokenRecord.codeChallenge));
+-	const codeVerifier = Buffer.from(await createHash("SHA-256").digest(ctx.body.code_verifier));
+-	if (codeChallenge.length !== codeVerifier.length || !timingSafeEqual(codeChallenge, codeVerifier)) throw APIError.from("BAD_REQUEST", ELECTRON_ERROR_CODES.INVALID_CODE_VERIFIER);
++	const codeChallenge = base64Url.decode(tokenRecord.codeChallenge);
++	const codeVerifier = new Uint8Array(await createHash("SHA-256").digest(ctx.body.code_verifier));
++	if (codeChallenge.length !== codeVerifier.length || !constantTimeEqual(codeChallenge, codeVerifier)) throw APIError.from("BAD_REQUEST", ELECTRON_ERROR_CODES.INVALID_CODE_VERIFIER);
+ 	const user = await ctx.context.internalAdapter.findUserById(tokenRecord.userId);
+ 	if (!user) throw APIError.from("INTERNAL_SERVER_ERROR", BASE_ERROR_CODES.USER_NOT_FOUND);
+ 	const session = await ctx.context.internalAdapter.createSession(user.id);
