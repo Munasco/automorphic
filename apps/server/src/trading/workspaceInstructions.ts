@@ -3,6 +3,15 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import { TRADING_VISUALS_SKILL } from "./visualWorkflow.ts";
 import { TRADING_REPORT_CSS } from "./visualStyle.ts";
+import { UPSTREAM_DESIGN_SKILL_FILES } from "./upstreamDesignSkills.ts";
+import { MOCK_CHART_TEMPLATE } from "./mockChartTemplate.ts";
+
+export const DESIGN_WORKFLOW_INSTRUCTIONS = `## Design workflow
+
+For every UI design task in this workspace (reports, dashboards, visual explanations, pages or components), use the trading-visuals style assets and run the design-review skill before finishing. For generated component-based interfaces, use json-render with json-render-react and json-render-shadcn: define the allowed components and data schema, then compose the UI from that catalog. The skills provide implementation guidance; install their runtime dependencies only in the artifact project that needs them. Keep portable single-file HTML/SVG available for simple charts and diagrams.
+
+For mock candlestick setups, copy the trading-visuals assets/mock-chart.html starter to .work/.diagrams/<topic>/index.html and edit its setup object. Keep its synthetic-data label. For real market evidence, use trading_create_chart with a saved dataset. Never present mock candles as a historical trade.
+`;
 
 export const TRADING_WORKSPACE_INSTRUCTIONS = `# Automorphic trading workspace
 
@@ -59,6 +68,8 @@ Use the prebuilt trading-visuals skill when the trader asks to see, draw, annota
 Use research/ for hypotheses and macro notes, backtests/ for reproducible experiments and results, journal/ for trade records and reviews, and indicators/ and alerts/ for their definitions and tests. Create folders as needed, preserve existing work, and keep each experiment's assumptions with its results.
 
 The bundled trading-workflow skill provides a practical research and review checklist. Follow additional user instructions and respect any more specific instructions in subfolders.
+
+${DESIGN_WORKFLOW_INSTRUCTIONS}
 `;
 
 export const TRADING_WORKFLOW_SKILL = `---
@@ -93,6 +104,16 @@ Read and follow AGENTS.md for the shared trading research, journaling, risk, and
   ".claude/skills/trading-visuals/SKILL.md": TRADING_VISUALS_SKILL,
   ".agents/skills/trading-visuals/assets/report.css": TRADING_REPORT_CSS,
   ".claude/skills/trading-visuals/assets/report.css": TRADING_REPORT_CSS,
+  ".agents/skills/trading-visuals/assets/mock-chart.html": MOCK_CHART_TEMPLATE,
+  ".claude/skills/trading-visuals/assets/mock-chart.html": MOCK_CHART_TEMPLATE,
+  ...Object.fromEntries(
+    [".agents", ".claude"].flatMap((agent) =>
+      Object.entries(UPSTREAM_DESIGN_SKILL_FILES).map(([relativePath, content]) => [
+        `${agent}/skills/${relativePath}`,
+        content,
+      ]),
+    ),
+  ),
 } as const;
 
 /** Seed missing guidance only; never overwrite a trader's instructions or follow an existing file symlink. */

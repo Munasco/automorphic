@@ -21,6 +21,29 @@ it.effect("preserves existing instruction files and file symlinks when seeded co
         yield* fs.readFileString(`${root}/.agents/skills/trading-visuals/SKILL.md`),
         yield* fs.readFileString(`${root}/.claude/skills/trading-visuals/SKILL.md`),
       );
+      for (const provider of [".agents", ".claude"]) {
+        for (const skill of [
+          "json-render",
+          "json-render-react",
+          "json-render-shadcn",
+          "design-review",
+        ]) {
+          assert.include(
+            yield* fs.readFileString(`${root}/${provider}/skills/${skill}/SKILL.md`),
+            `name: ${skill}`,
+          );
+          assert.include(
+            yield* fs.readFileString(`${root}/${provider}/skills/${skill}/SOURCE.md`),
+            "https://github.com/vercel-labs/",
+          );
+        }
+        assert.include(
+          yield* fs.readFileString(
+            `${root}/${provider}/skills/trading-visuals/assets/mock-chart.html`,
+          ),
+          "Synthetic candles",
+        );
+      }
       yield* fs.writeFileString(
         `${root}/.agents/skills/trading-visuals/SKILL.md`,
         "Custom visual workflow",
