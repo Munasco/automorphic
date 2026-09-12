@@ -114,7 +114,7 @@ describe("selected Tradovate contract", () => {
       const envFile = NodePath.join(directory, ".env");
       await NodeFSP.writeFile(
         envFile,
-        "TRADOVATE_ACCESS_TOKEN=test-session\nTRADOVATE_ENVIRONMENT=demo\n",
+        "TRADOVATE_ACCESS_TOKEN=test-session\nTRADOVATE_ENVIRONMENT=demo\nTRADOVATE_TOKEN_EXPIRATION=2099-01-01T00:00:00.000Z\n",
       );
       vi.stubEnv("AUTOMORPHIC_ENV_FILE", envFile);
       const lookup = vi.fn(async (_url: string, _options: RequestInit) =>

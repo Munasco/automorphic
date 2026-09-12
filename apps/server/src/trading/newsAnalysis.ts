@@ -2,7 +2,7 @@
 import * as NodeCrypto from "node:crypto";
 import { TOMBSTONE_RETENTION, type StoredAnalysis } from "./newsStore.ts";
 import * as NodeFSP from "node:fs/promises";
-import * as NodeURL from "node:url";
+import { resolveTradingEnvironmentFile } from "./runtimeEnv.ts";
 import * as NodeUtil from "node:util";
 
 export type NewsInstrument = "MGC" | "NQ";
@@ -178,9 +178,7 @@ export function createNewsAnalyst(classify: Classifier, now = Date.now, persiste
 async function configuration() {
   let env: Record<string, string | undefined> = {};
   try {
-    const path =
-      process.env.AUTOMORPHIC_ENV_FILE ??
-      NodeURL.fileURLToPath(new URL("../../../../.env", import.meta.url));
+    const path = resolveTradingEnvironmentFile();
     env = NodeUtil.parseEnv(await NodeFSP.readFile(path, "utf8"));
   } catch {
     /* Environment variables also support deployed servers without a .env file. */

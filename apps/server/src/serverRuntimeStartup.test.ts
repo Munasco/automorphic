@@ -152,7 +152,7 @@ it.effect(
       );
 
       assert.deepStrictEqual(welcome, {
-        cwd: "/tmp/mock-automorphic-home/Automorphic/Workspaces/My workspace",
+        cwd: "/tmp/mock-automorphic-home/.automorphic/my-workspace",
         projectName: "My workspace",
       });
     }),
@@ -271,22 +271,31 @@ it.effect.each([
   },
   { mode: "web", autoBootstrapProjectFromCwd: false, legacy: true, conflict: true, oldHome: false },
   { mode: "web", autoBootstrapProjectFromCwd: false, legacy: true, conflict: false, oldHome: true },
+  {
+    mode: "web",
+    autoBootstrapProjectFromCwd: false,
+    legacy: false,
+    conflict: false,
+    oldHome: true,
+  },
 ] as const)("trading workspace persists independently of launch directory: %j", (options) =>
   Effect.scoped(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "automorphic-workspace-" });
-      const workspaceRoot = `${stateDir}/Automorphic/Workspaces/My workspace`;
+      const workspaceRoot = `${stateDir}/.automorphic/my-workspace`;
       const projects = new Map<string, OrchestrationProject>();
       const threads = new Map<ProjectId, ThreadId>();
       const commands: string[] = [];
       const legacyRoot = options.oldHome
-        ? `${stateDir}/Automorphic/Workspaces/My Trading Workspace`
+        ? `${stateDir}/Automorphic/Workspaces/My workspace`
         : `${stateDir}/workspaces/trading`;
       const threadTitles = new Map<ThreadId, string>();
-      if (options.legacy) {
+      if (options.legacy || options.oldHome) {
         yield* fs.makeDirectory(legacyRoot, { recursive: true });
         yield* fs.writeFileString(`${legacyRoot}/strategy.md`, "Preserve my research");
+      }
+      if (options.legacy) {
         const id = ProjectId.make("legacy-trading-project");
         projects.set(legacyRoot, {
           id,
@@ -378,6 +387,8 @@ it.effect.each([
       if (options.legacy) {
         assert.equal(first.bootstrapProjectId, "legacy-trading-project");
         assert.equal(first.bootstrapThreadId, "legacy-trading-thread");
+      }
+      if (options.legacy || options.oldHome) {
         assert.equal(
           yield* fs.readFileString(`${workspaceRoot}/strategy.md`),
           "Preserve my research",

@@ -99,7 +99,7 @@ describe("read-only account snapshot", () => {
     const path = NodePath.join(directory, ".env");
     await NodeFSP.writeFile(
       path,
-      "TRADOVATE_ACCESS_TOKEN=test-session\nTRADOVATE_ENVIRONMENT=demo\n",
+      "TRADOVATE_ACCESS_TOKEN=test-session\nTRADOVATE_ENVIRONMENT=demo\nTRADOVATE_TOKEN_EXPIRATION=2099-01-01T00:00:00.000Z\n",
       { mode: 0o600 },
     );
     vi.stubEnv("AUTOMORPHIC_ENV_FILE", path);

@@ -23,9 +23,9 @@ vp run dev
 
 Open the pairing URL printed by the server. Authenticate an AI provider in Settings, then open **Trading** from the side panel. The button beside the chat input opens the bottom dock.
 
-The default **My workspace** folder lives under `~/Automorphic/Workspaces`. Create additional workspaces by name, or import an existing folder. Settings, drawings and cached news analysis persist in SQLite. Temporary news data expires after 24 hours or seven days; saved chart work is retained.
+The default **My workspace** folder is `~/.automorphic/my-workspace`. New workspaces are created beneath `~/.automorphic`; you can also import an existing folder. Settings, drawings and cached news analysis persist in SQLite. Temporary news data expires after 24 hours or seven days; saved chart work is retained.
 
-Market-data and headline analysis connections require server-side configuration. Keep credentials in the ignored `.env` file; never commit them. Session renewal can run locally or through the optional backend in `apps/trading-backend`.
+Market-data and headline analysis connections require server-side configuration. Keep credentials in `~/.automorphic/.env`; never commit them. Session renewal can run locally or through the optional backend in `apps/trading-backend`.
 
 ## Landing page
 

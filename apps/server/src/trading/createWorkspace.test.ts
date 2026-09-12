@@ -15,6 +15,12 @@ it("accepts ordinary titles and rejects traversal, reserved names and control ch
   for (const input of [
     "",
     "..",
+    "userdata",
+    "SECRETS",
+    "caches",
+    "dev",
+    "runtime",
+    ".env",
     ".hidden",
     "../other",
     "a/b",
@@ -79,14 +85,23 @@ it.effect(
           { concurrency: "unbounded" },
         );
         assert.deepEqual(first, second);
-        const folder = `${home}/Automorphic/Workspaces/Gold research`;
+        const folder = `${home}/.automorphic/Gold research`;
         assert.equal(yield* fs.exists(folder), true);
         yield* fs.writeFileString(`${folder}/notes.md`, "Keep this research");
         const reopened = yield* make;
         assert.deepEqual(yield* reopened("GOLD RESEARCH"), first);
         assert.equal(yield* fs.readFileString(`${folder}/notes.md`), "Keep this research");
         assert.deepEqual(commands, ["project.create", "thread.create"]);
-        yield* fs.writeFileString(`${home}/Automorphic/Workspaces/Blocked`, "a file");
+        const defaultWorkspace = yield* create("My workspace");
+        assert.equal(yield* fs.exists(`${home}/.automorphic/my-workspace`), true);
+        assert.deepEqual(yield* create("my-workspace"), defaultWorkspace);
+        yield* fs.makeDirectory(`${home}/.automorphic/userdata`, { recursive: true });
+        yield* fs.symlink(`${home}/.automorphic/userdata`, `${home}/.automorphic/Protected alias`);
+        assert.equal(
+          (yield* create("Protected alias").pipe(Effect.flip))._tag,
+          "InvalidTradingWorkspaceName",
+        );
+        yield* fs.writeFileString(`${home}/.automorphic/Blocked`, "a file");
         assert.equal(
           (yield* create("Blocked").pipe(Effect.flip))._tag,
           "InvalidTradingWorkspaceName",

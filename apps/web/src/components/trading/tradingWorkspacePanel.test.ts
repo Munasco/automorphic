@@ -33,6 +33,11 @@ describe("default workspace trading surface", () => {
     );
   });
   it("recognizes only a managed workspace root, including Windows paths", () => {
+    expect(isManagedTradingWorkspace("/Users/me/.automorphic/my-workspace")).toBe(true);
+    expect(isManagedTradingWorkspace("C:\\Users\\me\\.automorphic\\Research")).toBe(true);
+    expect(isManagedTradingWorkspace("/Users/me/.automorphic/userdata")).toBe(false);
+    expect(isManagedTradingWorkspace("/Users/me/.automorphic/.env")).toBe(false);
+    expect(isManagedTradingWorkspace("/Users/me/.automorphic/Research/src")).toBe(false);
     expect(isManagedTradingWorkspace("/Users/me/Automorphic/Workspaces/My Trading Workspace")).toBe(
       true,
     );

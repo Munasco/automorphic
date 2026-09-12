@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalTimers:off - Native WebSocket/ReadableStream adapter; its lifecycle is tied to the HTTP response.
 import * as NodeFSP from "node:fs/promises";
-import * as NodeURL from "node:url";
+import { resolveTradingEnvironmentFile, synchronizeTradingSession } from "./runtimeEnv.ts";
 import * as NodeUtil from "node:util";
 import * as NodeStreamWeb from "node:stream/web";
 
@@ -71,9 +71,8 @@ export function normalizeQuote(quote: unknown, symbol: string, contractId: numbe
 }
 
 export async function credentials() {
-  const path =
-    process.env.AUTOMORPHIC_ENV_FILE ??
-    NodeURL.fileURLToPath(new URL("../../../../.env", import.meta.url));
+  const path = resolveTradingEnvironmentFile();
+  await synchronizeTradingSession(path);
   const env = NodeUtil.parseEnv(await NodeFSP.readFile(path, "utf8"));
   if (!env.TRADOVATE_ACCESS_TOKEN || !["demo", "live"].includes(env.TRADOVATE_ENVIRONMENT ?? "")) {
     throw new Error("Configure a Tradovate session on the server.");

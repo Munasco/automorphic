@@ -1,4 +1,8 @@
 import {
+  isReservedWorkspaceDirectory,
+  DEFAULT_WORKSPACE_DIRECTORY,
+} from "@t3tools/shared/automorphicPaths";
+import {
   CommandId,
   DEFAULT_MODEL,
   DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -17,7 +21,10 @@ import * as Semaphore from "effect/Semaphore";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
-import { resolveTradingWorkspacesRoot } from "./defaultWorkspace.ts";
+import {
+  resolveTradingWorkspacesRoot,
+  DEFAULT_TRADING_WORKSPACE_TITLE,
+} from "./defaultWorkspace.ts";
 
 export class InvalidTradingWorkspaceName extends Data.TaggedError("InvalidTradingWorkspaceName")<{
   message: string;
@@ -27,6 +34,7 @@ export function normalizeWorkspaceTitle(value: string): string | undefined {
   const title = value.trim().normalize("NFC");
   if (
     !title ||
+    isReservedWorkspaceDirectory(title) ||
     title.length > 80 ||
     /[<>:"/\\|?*\p{Cc}]/u.test(title) ||
     /^[.]/.test(title) ||
@@ -52,17 +60,22 @@ export const makeTradingWorkspaceCreator = Effect.gen(function* () {
       return yield* Effect.fail(
         new InvalidTradingWorkspaceName({
           message:
-            "Use a workspace name of 1–80 characters without path separators or reserved filename characters.",
+            "Use a workspace name of 1–80 characters without path separators or reserved application folder names.",
         }),
       );
     yield* fs.makeDirectory(root, { recursive: true });
+    const folderName =
+      title.toLocaleLowerCase("en-US") ===
+      DEFAULT_TRADING_WORKSPACE_TITLE.toLocaleLowerCase("en-US")
+        ? DEFAULT_WORKSPACE_DIRECTORY
+        : title;
     // Match case-insensitively on all platforms so two clients cannot create case-only duplicates.
     const entries = yield* fs.readDirectory(root);
     const existingName = entries.find(
       (entry) =>
-        entry.normalize("NFC").toLocaleLowerCase("en-US") === title.toLocaleLowerCase("en-US"),
+        entry.normalize("NFC").toLocaleLowerCase("en-US") === folderName.toLocaleLowerCase("en-US"),
     );
-    const folder = path.join(root, existingName ?? title);
+    const folder = path.join(root, existingName ?? folderName);
     if (existingName && (yield* fs.stat(folder)).type !== "Directory")
       return yield* Effect.fail(
         new InvalidTradingWorkspaceName({ message: "A file already uses this workspace name." }),
@@ -70,10 +83,13 @@ export const makeTradingWorkspaceCreator = Effect.gen(function* () {
     yield* fs.makeDirectory(folder, { recursive: true });
     const canonicalRoot = yield* fs.realPath(root);
     const canonicalFolder = yield* fs.realPath(folder);
-    if (path.dirname(canonicalFolder) !== canonicalRoot)
+    if (
+      path.dirname(canonicalFolder) !== canonicalRoot ||
+      isReservedWorkspaceDirectory(path.basename(canonicalFolder))
+    )
       return yield* Effect.fail(
         new InvalidTradingWorkspaceName({
-          message: "The workspace must be a folder inside Automorphic/Workspaces.",
+          message: "The workspace must be a folder inside ~/.automorphic.",
         }),
       );
     const existing = yield* query.getActiveProjectByWorkspaceRoot(folder);
@@ -85,7 +101,10 @@ export const makeTradingWorkspaceCreator = Effect.gen(function* () {
         type: "project.create",
         commandId: CommandId.make(yield* crypto.randomUUIDv4),
         projectId,
-        title: existingName ?? title,
+        title:
+          folderName === DEFAULT_WORKSPACE_DIRECTORY
+            ? DEFAULT_TRADING_WORKSPACE_TITLE
+            : (existingName ?? title),
         workspaceRoot: folder,
         createdAt: DateTime.formatIso(yield* DateTime.now),
       });

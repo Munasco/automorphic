@@ -33,6 +33,7 @@ import * as ServerConfig from "./config.ts";
 import {
   DEFAULT_TRADING_WORKSPACE_TITLE,
   resolveDefaultTradingWorkspaceRoot,
+  resolveLegacyTradingWorkspaceRoots,
 } from "./trading/defaultWorkspace.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
@@ -220,15 +221,16 @@ export const resolveAutoBootstrapWelcomeTargets = Effect.gen(function* () {
       yield* projectionReadModelQuery.getActiveProjectByWorkspaceRoot(workspaceRoot);
     if (Option.isNone(existingProject)) {
       const legacyRoots = [
-        path.join(path.dirname(workspaceRoot), "My Trading Workspace"),
+        ...(yield* resolveLegacyTradingWorkspaceRoots),
         path.join(stateDir, "workspaces", "trading"),
       ];
       for (const legacyRoot of legacyRoots) {
         const legacyProject =
           yield* projectionReadModelQuery.getActiveProjectByWorkspaceRoot(legacyRoot);
-        if (Option.isSome(legacyProject)) {
+        const legacyFolderExists = yield* fs.exists(legacyRoot);
+        if (Option.isSome(legacyProject) || legacyFolderExists) {
           yield* fs.makeDirectory(path.dirname(workspaceRoot), { recursive: true });
-          if (yield* fs.exists(legacyRoot)) {
+          if (legacyFolderExists) {
             // Never merge or overwrite a user's existing home folder during migration.
             // A failed move leaves the old project and all its files untouched.
             if (yield* fs.exists(workspaceRoot)) {
@@ -238,6 +240,7 @@ export const resolveAutoBootstrapWelcomeTargets = Effect.gen(function* () {
           } else {
             yield* fs.makeDirectory(workspaceRoot, { recursive: true });
           }
+          if (Option.isNone(legacyProject)) break;
           yield* orchestrationEngine.dispatch({
             type: "project.meta.update",
             commandId: CommandId.make(yield* randomUUID),

@@ -1,3 +1,4 @@
+import { isReservedWorkspaceDirectory } from "@t3tools/shared/automorphicPaths";
 import { useEffect } from "react";
 import { scopeProjectRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ProjectId, ScopedThreadRef } from "@t3tools/contracts";
@@ -28,7 +29,11 @@ export function initializeTradingWorkspacePanel(ref: ScopedThreadRef) {
 }
 
 export function isManagedTradingWorkspace(path: string) {
-  return /\/Automorphic\/Workspaces\/[^/]+\/?$/.test(path.replaceAll("\\", "/"));
+  const normalized = path.replaceAll("\\", "/");
+  const current = /\/\.automorphic\/([^/]+)\/?$/.exec(normalized);
+  if (current) return !isReservedWorkspaceDirectory(current[1]!);
+  // Existing projects remain recognized while their startup migration is pending.
+  return /\/Automorphic\/Workspaces\/[^/]+\/?$/.test(normalized);
 }
 
 export function useDefaultTradingWorkspacePanel(
