@@ -896,6 +896,72 @@ describe("additional line primitive behavior", () => {
 });
 
 describe("level colors and labels", () => {
+  it("renders extended channel level appearance independently and restores inherited stroke settings", () => {
+    const { chart, series } = fixture();
+    const shape: ChartDrawing = {
+      id: "channel",
+      kind: "channel",
+      color: "#0000ff",
+      width: 2,
+      lineOpacity: 0.2,
+      anchors: [
+        { time: 100 as Time, price: 400 },
+        { time: 200 as Time, price: 300 },
+        { time: 200 as Time, price: 200 },
+      ],
+      levels: [
+        { value: 0, visible: true, color: "#ff0000", width: 5, lineStyle: "dashed", opacity: 0.8 },
+        { value: 1, visible: false },
+        { value: 0.5, visible: true },
+      ],
+      extendLeft: true,
+      background: true,
+      backgroundColor: "#00ff00",
+      backgroundOpacity: 0.4,
+    };
+    const strokes: Array<{ color: string; opacity: number; width: number; dash: number[] }> = [],
+      fills: Array<[string, number]> = [];
+    let dash: number[] = [];
+    const ctx = {
+      strokeStyle: "",
+      fillStyle: "",
+      globalAlpha: 1,
+      lineWidth: 1,
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      closePath: vi.fn(),
+      rect: vi.fn(),
+      clip: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      setLineDash: (value: number[]) => {
+        dash = value;
+      },
+      stroke: () =>
+        strokes.push({
+          color: ctx.strokeStyle,
+          opacity: ctx.globalAlpha,
+          width: ctx.lineWidth,
+          dash,
+        }),
+      fill: () => fills.push([ctx.fillStyle, ctx.globalAlpha]),
+    };
+    const plugin = createDrawingPrimitive(chart, series, () => ({
+      drawings: [shape],
+      selected: null,
+    }));
+    const renderer = plugin.primitive.paneViews!()[0]!.renderer()!;
+    renderer.draw({
+      useMediaCoordinateSpace: (callback: (scope: { context: typeof ctx }) => void) =>
+        callback({ context: ctx }),
+    } as unknown as Parameters<typeof renderer.draw>[0]);
+    expect(fills).toEqual([["#00ff00", 0.4]]);
+    expect(strokes).toEqual([
+      { color: "#ff0000", opacity: 0.8, width: 5, dash: [8, 5] },
+      { color: "#0000ff", opacity: 0.2, width: 2, dash: [] },
+    ]);
+  });
   it.each(["rectangle", "circle", "ellipse", "triangle", "rotated-rectangle"] as const)(
     "paints %s backgrounds independently from borders, then removes only the fill",
     (kind) => {

@@ -37,6 +37,8 @@ import {
 } from "./drawingVisibility";
 import {
   supportsLineExtensions,
+  drawingLineExtensions,
+  drawingLineMarkers,
   supportsShapeBackground,
   DEFAULT_SHAPE_BACKGROUND_OPACITY,
   supportsLineMarkers,
@@ -55,6 +57,7 @@ import {
 import { DrawingRegressionSettings } from "./DrawingRegressionSettings";
 import { DrawingFibTimeSettings } from "./DrawingFibTimeSettings";
 import { DrawingLevelSettings } from "./DrawingLevelSettings";
+import { DrawingParallelChannelSettings } from "./DrawingParallelChannelSettings";
 import { DrawingTemplateMenu } from "./DrawingTemplateMenu";
 import { applyDrawingTemplate } from "./drawingTemplates";
 import { cn } from "../../lib/utils";
@@ -176,8 +179,8 @@ function DrawingSettings({
     );
   }, []);
   const visibility = sanitizeDrawingVisibility(draft.visibility);
-  const extendLeft = draft.extendLeft ?? draft.kind === "extended-line";
-  const extendRight = draft.extendRight ?? ["ray", "extended-line"].includes(draft.kind);
+  const { left: extendLeft, right: extendRight } = drawingLineExtensions(draft);
+  const markers = drawingLineMarkers(draft);
   const canSave = validDrawingAnchors(draft.kind, draft.anchors);
   const dialogWidth =
     tab === "Visibility" || (supportsDrawingLevels(draft.kind) && !isFibTimeDrawing(draft.kind))
@@ -257,6 +260,9 @@ function DrawingSettings({
           {draft.kind === "regression-trend" && (tab === "Style" || tab === "Inputs") ? (
             <DrawingRegressionSettings drawing={draft} tab={tab} onChange={update} />
           ) : null}
+          {tab === "Style" && draft.kind === "channel" ? (
+            <DrawingParallelChannelSettings drawing={draft} onChange={update} />
+          ) : null}
           {tab === "Style" && supportsDrawingLevels(draft.kind) ? (
             isFibTimeDrawing(draft.kind) ? (
               <DrawingFibTimeSettings drawing={draft} onChange={update} />
@@ -266,6 +272,7 @@ function DrawingSettings({
           ) : null}
           {tab === "Style" &&
           !supportsDrawingLevels(draft.kind) &&
+          draft.kind !== "channel" &&
           draft.kind !== "regression-trend" ? (
             <>
               <div className="flex items-center gap-2">
@@ -275,12 +282,12 @@ function DrawingSettings({
                   <>
                     <MarkerPicker
                       side="start"
-                      value={draft.startMarker ?? "normal"}
+                      value={markers.start}
                       onChange={(startMarker) => update({ startMarker })}
                     />
                     <MarkerPicker
                       side="end"
-                      value={draft.endMarker ?? "normal"}
+                      value={markers.end}
                       onChange={(endMarker) => update({ endMarker })}
                     />
                   </>
@@ -692,6 +699,34 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
     selected.kind === "regression-trend"
       ? { ...defaultRegressionDrawingSettings(), ...selected }
       : null;
+  const channelLevels =
+    selected.kind === "channel" ? (selected.levels ?? defaultDrawingLevels("channel")) : null;
+  const firstChannelLevel = channelLevels?.[0];
+  const toolbarAppearance: ChartDrawing = firstChannelLevel
+    ? {
+        ...selected,
+        color: firstChannelLevel.color ?? selected.color,
+        width: firstChannelLevel.width ?? selected.width,
+        lineStyle: firstChannelLevel.lineStyle ?? selected.lineStyle ?? "solid",
+        lineOpacity: firstChannelLevel.opacity ?? selected.lineOpacity ?? 1,
+      }
+    : selected;
+  const updateLineAppearance = (patch: DrawingPatch) => {
+    if (!channelLevels) {
+      drawings.updateSelected(patch);
+      return;
+    }
+    drawings.updateSelected({
+      ...patch,
+      levels: channelLevels.map((level) => ({
+        ...level,
+        ...(patch.color === undefined ? {} : { color: patch.color }),
+        ...(patch.width === undefined ? {} : { width: patch.width }),
+        ...(patch.lineStyle === undefined ? {} : { lineStyle: patch.lineStyle }),
+        ...(patch.lineOpacity === undefined ? {} : { opacity: patch.lineOpacity }),
+      })),
+    });
+  };
   const closeThen = (action: () => void) => {
     drawings.closeContextMenu();
     action();
@@ -808,11 +843,16 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
         ) : (
           <>
             <ColorPicker
-              value={selected.color}
+              value={toolbarAppearance.color}
               icon="pencil"
-              opacity={selected.lineOpacity ?? 1}
-              onOpacityChange={(lineOpacity) => drawings.updateSelected({ lineOpacity })}
-              onChange={(color) => drawings.updateSelected({ color })}
+              mixed={
+                channelLevels
+                  ? new Set(channelLevels.map((level) => level.color ?? selected.color)).size > 1
+                  : false
+              }
+              opacity={toolbarAppearance.lineOpacity ?? 1}
+              onOpacityChange={(lineOpacity) => updateLineAppearance({ lineOpacity })}
+              onChange={(color) => updateLineAppearance({ color })}
             />
             {supportsInlineDrawingText(selected.kind) ? (
               <ColorPicker
@@ -824,8 +864,16 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
                 onOpacityChange={(textOpacity) => drawings.updateSelected({ textOpacity })}
               />
             ) : null}
-            <WidthPicker drawing={selected} onChange={drawings.updateSelected} />
-            <LineStylePicker drawing={selected} onChange={drawings.updateSelected} />
+            <WidthPicker
+              drawing={toolbarAppearance}
+              onChange={updateLineAppearance}
+              mixed={
+                channelLevels
+                  ? new Set(channelLevels.map((level) => level.width ?? selected.width)).size > 1
+                  : false
+              }
+            />
+            <LineStylePicker drawing={toolbarAppearance} onChange={updateLineAppearance} />
           </>
         )}
         <span className="mx-1 h-6 border-l border-white/10" />

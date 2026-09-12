@@ -340,7 +340,10 @@ export function createDrawingPrimitive(
             const color = line.color ?? drawing.color;
             const style = line.lineStyle ?? drawing.lineStyle ?? "solid";
             const lineWidth = line.width ?? geometry.strokeWidth ?? drawing.width;
-            const opacity = (line.opacity ?? 1) * lineAlpha;
+            const opacity =
+              drawing.kind === "channel" && line.opacity !== undefined
+                ? line.opacity * (geometry.opacity ?? 1)
+                : (line.opacity ?? 1) * lineAlpha;
             if (
               color !== activeColor ||
               style !== activeStyle ||
