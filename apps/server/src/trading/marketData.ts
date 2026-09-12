@@ -4,6 +4,7 @@ import * as NodeFSP from "node:fs/promises";
 import { resolveTradingEnvironmentFile, synchronizeTradingSession } from "./runtimeEnv.ts";
 import * as NodeUtil from "node:util";
 import * as NodeStreamWeb from "node:stream/web";
+import { createCalendarSeries } from "./calendarSeries.ts";
 import { resolveChartInterval } from "./chartInterval.ts";
 import { createTickSeries, tickHistoryRequestLimit, type TickBarSize } from "./tickSeries.ts";
 import { createNativeTickSeries, type NativeTickSize } from "./nativeTickSeries.ts";
@@ -168,7 +169,11 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
   }
   const { chartDescription, ...intervalMetadata } = resolveChartInterval(interval, intervalUnit);
   const tickSize = intervalMetadata.intervalUnit === "tick" ? (interval as TickBarSize) : undefined;
-  const historyLimit = tickSize === 1 ? tickHistoryRequestLimit(1) : 500;
+  const calendar =
+    intervalUnit === "week" || intervalUnit === "month"
+      ? createCalendarSeries(intervalUnit, interval)
+      : null;
+  const historyLimit = tickSize === 1 ? tickHistoryRequestLimit(1) : calendar ? 2000 : 500;
   const session = await credentials();
   // https://api.tradovate.com/: contract/find binds the requested expiry to its ID.
   const contractResponse = await fetch(
@@ -338,7 +343,11 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
                 if (chart.id === historicalId && chart.eoh) finishedHistory = true;
                 continue;
               }
-              const bars = normalizeBars(chart.bars);
+              const incomingBars = normalizeBars(chart.bars);
+              const bars =
+                calendar && incomingBars.length
+                  ? calendar.accept(incomingBars, chart.id === historicalId)
+                  : incomingBars;
               if (bars.length) {
                 receivedBars = true;
                 clearTimeout(timeout);
@@ -346,6 +355,7 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
                   type: "bars",
                   bars,
                   historical: !finishedHistory,
+                  ...(calendar ? { snapshot: true } : {}),
                   symbol,
                   ...intervalMetadata,
                 });

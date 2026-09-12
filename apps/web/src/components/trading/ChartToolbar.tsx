@@ -85,14 +85,23 @@ export function ChartToolbar({
   navigationControl,
 }: ChartToolbarProps) {
   const id = useId();
-  const intervalGroups = (["Ticks", "Seconds", "Minutes", "Hours"] as const).map((group) => ({
+  const intervalGroups = (
+    ["Ticks", "Seconds", "Minutes", "Hours", "Days", "Weeks", "Months"] as const
+  ).map((group) => ({
     group,
     items: CHART_INTERVALS.filter((item) =>
       group === "Ticks"
         ? item.unit === "tick"
         : group === "Seconds"
-          ? item.unit === "second"
-          : item.unit === "minute" && (group === "Minutes" ? item.value < 60 : item.value >= 60),
+          ? item.unit === "second" && item.value === 30
+          : group === "Days"
+            ? item.unit === "day"
+            : group === "Weeks"
+              ? item.unit === "week"
+              : group === "Months"
+                ? item.unit === "month"
+                : item.unit === "minute" &&
+                  (group === "Minutes" ? item.value < 60 : item.value >= 60),
     ).map((item) => {
       const count = group === "Hours" ? item.value / 60 : item.value;
       return {

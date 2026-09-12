@@ -19,6 +19,19 @@ describe("drawing visibility", () => {
     settings.ticks = true;
     expect(isDrawingVisibleAtInterval(settings, { unit: "tick", value: 1000 })).toBe(true);
   });
+  it("uses calendar units directly instead of confusing months with minutes", () => {
+    const settings = sanitizeDrawingVisibility({
+      minutes: { enabled: false },
+      days: { enabled: true, min: 2, max: 3 },
+      weeks: { enabled: false },
+      months: { enabled: true, min: 3, max: 6 },
+    });
+    expect(isDrawingVisibleAtInterval(settings, { unit: "day", value: 3 })).toBe(true);
+    expect(isDrawingVisibleAtInterval(settings, { unit: "day", value: 1 })).toBe(false);
+    expect(isDrawingVisibleAtInterval(settings, { unit: "week", value: 1 })).toBe(false);
+    expect(isDrawingVisibleAtInterval(settings, { unit: "month", value: 3 })).toBe(true);
+    expect(isDrawingVisibleAtInterval(settings, { unit: "month", value: 12 })).toBe(false);
+  });
   it("restores missing legacy settings and malformed records with independent defaults", () => {
     for (const input of [undefined, null, [], "invalid", 42]) {
       expect(sanitizeDrawingVisibility(input)).toEqual(DEFAULT_DRAWING_VISIBILITY);

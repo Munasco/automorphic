@@ -31,7 +31,16 @@ describe("chart interval requests", () => {
       expect(resolveChartInterval(value, "second").intervalUnit).toBe("second");
     for (const value of [1, 10, 100, 1000])
       expect(resolveChartInterval(value, "tick").intervalUnit).toBe("tick");
+    for (const unit of ["day", "week", "month"])
+      expect(resolveChartInterval(1, unit).chartDescription).toMatchObject({
+        underlyingType: "DailyBar",
+        elementSize: 1,
+      });
+    expect(resolveChartInterval(3, "day").chartDescription.elementSize).toBe(3);
+    expect(resolveChartInterval(12, "month").chartDescription.elementSize).toBe(1);
     for (const [value, unit] of [
+      [2, "week"],
+      [2, "month"],
       [0, "minute"],
       [0.5, "minute"],
       [NaN, "minute"],

@@ -104,7 +104,7 @@ describe("selected Tradovate contract", () => {
     vi.stubGlobal("fetch", fetch);
     vi.stubGlobal("WebSocket", socket);
     await expect(chartStream("MNQU6", 2, "tick")).rejects.toThrow("supported tick interval");
-    await expect(chartStream("MNQU6", 5, "unknown")).rejects.toThrow("minute, second or tick");
+    await expect(chartStream("MNQU6", 5, "unknown")).rejects.toThrow("supported chart interval");
     await expect(chartStream("MNQU6", 0.5, "minute")).rejects.toThrow("supported minute interval");
     expect(fetch).not.toHaveBeenCalled();
     expect(socket).not.toHaveBeenCalled();
@@ -183,6 +183,11 @@ describe("selected Tradovate contract", () => {
     ["MNQU6", 3, "minute"],
     ["GCZ6", 30, "minute"],
     ["NQU6", 240, "minute"],
+    ["NQU6", 1, "day"],
+    ["NQU6", 3, "day"],
+    ["NQU6", 1, "week"],
+    ["GCZ6", 1, "month"],
+    ["GCZ6", 12, "month"],
     ["MNQU6", 1, "second"],
     ["MNQU6", 5, "second"],
     ["MNQU6", 10, "second"],
@@ -249,8 +254,12 @@ describe("selected Tradovate contract", () => {
           symbol,
           chartDescription: {
             underlyingType:
-              intervalUnit === "second" || intervalUnit === "tick" ? "Tick" : "MinuteBar",
-            elementSize: interval,
+              intervalUnit === "day" || intervalUnit === "week" || intervalUnit === "month"
+                ? "DailyBar"
+                : intervalUnit === "second" || intervalUnit === "tick"
+                  ? "Tick"
+                  : "MinuteBar",
+            elementSize: intervalUnit === "week" || intervalUnit === "month" ? 1 : interval,
             elementSizeUnit: intervalUnit === "second" ? "Seconds" : "UnderlyingUnits",
           },
         });

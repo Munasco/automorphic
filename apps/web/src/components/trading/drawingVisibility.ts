@@ -71,6 +71,12 @@ export function isDrawingVisibleAtInterval(
   interval: number | ChartInterval,
 ): boolean {
   const settings = visibility ?? DEFAULT_DRAWING_VISIBILITY;
+  if (typeof interval !== "number" && interval.unit === "day")
+    return inRange(settings.days, interval.value);
+  if (typeof interval !== "number" && interval.unit === "week")
+    return inRange(settings.weeks, interval.value);
+  if (typeof interval !== "number" && interval.unit === "month")
+    return inRange(settings.months, interval.value);
   if (typeof interval !== "number" && interval.unit === "tick") return settings.ticks;
   const intervalMinutes =
     typeof interval === "number"
