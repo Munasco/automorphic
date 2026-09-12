@@ -28,8 +28,7 @@ export function DrawingParallelChannelSettings({
   const changeLevel = (index: number, patch: Partial<DrawingLevel>) =>
     onChange({ levels: levels.map((level, i) => (i === index ? { ...level, ...patch } : level)) });
   return (
-    <div className="space-y-4">
-      <div className="text-sm">Channel’s levels</div>
+    <div className="space-y-3">
       {levels.slice(0, 7).map((level, index) => (
         <div key={rowKeys[index]} className="flex h-[34px] items-center gap-2">
           {index === 1 || index === 5 ? (
@@ -108,12 +107,14 @@ export function DrawingParallelChannelSettings({
           className="w-44"
         />
       </label>
-      <div className="flex items-center justify-between gap-3">
-        <Check
-          label="Background"
-          checked={drawing.background ?? false}
-          onChange={(background) => onChange({ background })}
-        />
+      <div className="flex items-center gap-3">
+        <div className="w-[100px] shrink-0">
+          <Check
+            label="Background"
+            checked={drawing.background ?? false}
+            onChange={(background) => onChange({ background })}
+          />
+        </div>
         <div inert={!drawing.background} className={cn(!drawing.background && "opacity-40")}>
           <ColorPicker
             label="Background color"
