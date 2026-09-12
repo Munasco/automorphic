@@ -76,7 +76,7 @@ export const ResearchToolkit = Toolkit.make(
   Tool.make("trading_create_chart", {
     ...base,
     description:
-      "Create a self-contained HTML candlestick report from a saved dataset, with numbered setup annotations and price levels. Reads actual candles, never model-supplied OHLC. Saves the selected data/provenance and annotation specification alongside the HTML. Return the path as a Markdown file link so the user can open its browser preview. Choose offset/limit to focus on a setup (at most 500 bars); annotation times must exactly match displayed candles, in epoch seconds. Does not change the live chart or activate orders/alerts.",
+      "Create a self-contained HTML candlestick report from a saved dataset, with numbered setup annotations and price levels. Reads actual candles, never model-supplied OHLC. Saves index.html and report.json under .work/.diagrams/<report-id>/ in the active workspace, including selected data/provenance and annotations. Return the path as a Markdown file link so the user can open its browser preview. Choose offset/limit to focus on a setup (at most 500 bars); annotation times must exactly match displayed candles, in epoch seconds. Does not change the live chart or activate orders/alerts.",
     parameters: Schema.Struct({
       datasetId: Schema.String,
       offset: Schema.optionalKey(Schema.Int),
@@ -263,14 +263,45 @@ const make = Effect.gen(function* () {
             }),
         });
         const id = yield* crypto.randomUUIDv4;
-        const specPath = yield* write(directory, "visuals", id, {
+        const scope = yield* requireMcpCapability("trading");
+        const thread = yield* query.getThreadShellById(scope.threadId);
+        if (Option.isNone(thread)) return yield* Effect.fail(fail());
+        const project = yield* query.getProjectShellById(thread.value.projectId);
+        if (Option.isNone(project)) return yield* Effect.fail(fail());
+        const workspaceRoot = yield* fs.realPath(
+          thread.value.worktreePath ?? project.value.workspaceRoot,
+        );
+        let output = workspaceRoot;
+        // Check each parent before creating its child; a workspace symlink must not redirect output outside it.
+        for (const segment of [".work", ".diagrams"]) {
+          output = path.join(output, segment);
+          yield* fs.makeDirectory(output, { recursive: true });
+          output = yield* fs.realPath(output);
+          const relative = path.relative(workspaceRoot, output);
+          if (
+            !relative ||
+            relative === ".." ||
+            relative.startsWith(`..${path.sep}`) ||
+            path.isAbsolute(relative)
+          )
+            return yield* Effect.fail(
+              new ResearchError({
+                message: "The visual output directory must stay inside this workspace.",
+              }),
+            );
+        }
+        output = path.join(output, id);
+        yield* fs.makeDirectory(output);
+        const specPath = path.join(output, "report.json");
+        const spec = yield* encodeJson({
           ...input,
           offset: bounds.offset,
           limit: bounds.limit,
           evidence,
           bars,
         });
-        const reportPath = path.join(directory, "visuals", `${id}.html`);
+        yield* fs.writeFileString(specPath, spec, { flag: "wx", mode: 0o600 });
+        const reportPath = path.join(output, "index.html");
         yield* fs.writeFileString(reportPath, html, { flag: "wx", mode: 0o600 });
         return { reportId: id, path: reportPath, specPath, barCount: bars.length, evidence };
       }).pipe(Effect.mapError((error) => (isResearchError(error) ? error : fail()))),

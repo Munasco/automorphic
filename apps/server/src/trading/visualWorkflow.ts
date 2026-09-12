@@ -5,11 +5,19 @@ description: Explain a trading setup with an annotated price chart, illustrate a
 
 # Trading visuals
 
+## When to use this skill
+
+Use when the user asks to show, draw, annotate, visualize, or explain a chart/setup; to illustrate a trading decision or macro scenario; or to explore backtest results visually. Also use when a visual would materially clarify a complex setup or comparison. Examples: "mark the neckline and invalidation", "show why this trade failed", "diagram my entry rules", and "plot drawdown against the baseline". Skip it for a simple quote, one-line factual answer, or a task that does not benefit from a visual.
+
+## Output location
+
+Keep generated output inside the active workspace at .work/.diagrams/<topic-or-report-id>/. Use index.html for the rendered view and save report.json or the source data/diagram beside it. Resolve the workspace from the current session rather than hardcoding a home path. Create folders as needed, preserve unrelated artifacts, and revise the same report when the user asks for an edit. Return a clickable absolute path to index.html. The chart tool returns these paths automatically; conceptual diagrams and custom HTML use the same convention.
+
 Choose the output that answers the trader's question:
 
 - **Explain an observed setup:** use actual OHLCV and timestamped annotations. Read trading_get_workspace for the current chart context, export the relevant history with trading_export_dataset, inspect a window using trading_read_dataset, then call trading_create_chart with that datasetId, offset/limit, title, summary, annotations and levels. Its HTML has hoverable candles, numbered notes, levels and the source data. Annotations use exact displayed candle timestamps in epoch seconds. Keep the window focused (usually 50–150 bars, maximum 500). Use levels for support, entry, invalidation or targets; explain which are observations and which are hypotheses. Return the saved HTML path as a Markdown file link, with one concise finding. The user can open the file's browser preview.
-- **Explain a concept or decision:** draw a labeled SVG or self-contained HTML diagram under research/visuals/<topic>/. An invented double-bottom sketch must say it is schematic; it is not historical evidence. Use an available Excalidraw integration if the user requests an editable sketch. Verify its actual tools and preview support first; do not imply it is installed merely because this skill mentions it.
-- **Compare or explore results:** build a self-contained HTML report under research/visuals/<topic>/ with the saved results, a concise conclusion, and only controls that change a meaningful scenario. Save source data and assumptions next to the report. Drawdown, expectancy and sample size matter alongside win rate. Generated dashboards must not contain invented performance or trade data.
+- **Explain a concept or decision:** draw a labeled SVG or self-contained HTML diagram under .work/.diagrams/<topic>/. An invented double-bottom sketch must say it is schematic; it is not historical evidence. Use an available Excalidraw integration if the user requests an editable sketch. Verify its actual tools and preview support first; do not imply it is installed merely because this skill mentions it.
+- **Compare or explore results:** build a self-contained HTML report under .work/.diagrams/<topic>/ with the saved results, a concise conclusion, and only controls that change a meaningful scenario. Save source data and assumptions next to the report. Drawdown, expectancy and sample size matter alongside win rate. Generated dashboards must not contain invented performance or trade data.
 
 If trading_create_chart is not listed in an existing session, use available file tools to create a local report from verified bars, or start a new session after the server has been updated. Never claim a tool ran when it was unavailable.
 

@@ -37,7 +37,7 @@ The engine cannot establish that user-generated signals avoid future information
 
 Ask “Show me this double bottom, mark the neckline and invalidation, and explain what would confirm it.” The agent can create an annotated chart from saved candles and return an HTML report you can open in the browser preview. Numbered notes link the explanation to the candles; the report includes its source data and timestamps. The chart is a saved review, not a live order or alert.
 
-The bundled trading-visuals skill also guides agents to create diagrams and interactive HTML reports when those explain an idea better. Custom HTML/SVG files use the existing file and browser preview tools. Optional hosted drawing tools can be added through Plugins; they are not required for local reports.
+The prebuilt trading-visuals skill is available to Claude and Codex in each trading workspace. It applies when you ask to show, draw, annotate or explain a setup, diagram a decision, or explore results visually. Reports and their source data are saved under `.work/.diagrams/<topic-or-report-id>/` in the workspace; open `index.html` from the agent's reply. Custom HTML/SVG files use the existing file and browser preview tools. Optional hosted drawing tools can be added through Plugins; they are not required for local reports.
 
 ## Custom integrations
 

@@ -163,6 +163,13 @@ it.effect(
       expect(result.isError).not.toBe(true);
       const report = yield* decodeChartReport(result.structuredContent);
       expect(report.barCount).toBe(2);
+      expect(
+        path.relative(
+          yield* fs.realPath(path.join(config.stateDir, "test-workspace", ".work", ".diagrams")),
+          report.path,
+        ),
+      ).toMatch(/^[a-f0-9-]{36}[/\\]index\.html$/);
+      expect(path.dirname(report.path)).toBe(path.dirname(report.specPath));
       expect(yield* fs.readFileString(report.path)).toContain("Setup review");
       const saved = yield* decodeChartSpec(yield* fs.readFileString(report.specPath));
       expect(saved.bars).toEqual(bars.slice(1));
@@ -179,6 +186,13 @@ it.effect(
       expect((yield* call({ ...args, datasetId: "../../project-a/datasets/secret" })).isError).toBe(
         true,
       );
+      const work = path.join(config.stateDir, "test-workspace", ".work");
+      const outside = path.join(config.stateDir, "outside-visuals");
+      yield* fs.makeDirectory(outside);
+      yield* fs.rename(work, `${work}-saved`);
+      yield* fs.symlink(outside, work);
+      expect((yield* call(args)).isError).toBe(true);
+      expect(yield* fs.readDirectory(outside)).toEqual([]);
     }).pipe(Effect.provide(scopedLayer)),
 );
 it.effect("rejects a trading credential whose thread no longer exists", () =>
@@ -200,28 +214,47 @@ const decodeThread = Schema.decodeUnknownSync(OrchestrationThreadShell);
 const scopedLayer = ResearchToolkitRegistrationLive.pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
   Layer.provide(
-    Layer.mock(ProjectionSnapshotQuery)({
-      getThreadShellById: (id) =>
-        Effect.succeedSome(
-          decodeThread({
-            id,
-            projectId: id === "thread" ? "project-a" : "project-b",
-            title: "Research",
-            modelSelection: { instanceId: "codex", model: "gpt-5.6-sol" },
-            runtimeMode: "full-access",
-            branch: null,
-            worktreePath: null,
-            latestTurn: null,
-            createdAt: "2026-01-01T00:00:00.000Z",
-            updatedAt: "2026-01-01T00:00:00.000Z",
-            session: null,
-            latestUserMessageAt: null,
-            hasPendingApprovals: false,
-            hasPendingUserInput: false,
-            hasActionableProposedPlan: false,
-          }),
-        ),
-    }),
+    Layer.unwrap(
+      Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const workspaceRoot = path.join(config.stateDir, "test-workspace");
+        yield* fs.makeDirectory(workspaceRoot, { recursive: true });
+        return Layer.mock(ProjectionSnapshotQuery)({
+          getProjectShellById: (id) =>
+            Effect.succeedSome({
+              id,
+              title: "Workspace",
+              workspaceRoot,
+              defaultModelSelection: null,
+              scripts: [],
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            }),
+          getThreadShellById: (id) =>
+            Effect.succeedSome(
+              decodeThread({
+                id,
+                projectId: id === "thread" ? "project-a" : "project-b",
+                title: "Research",
+                modelSelection: { instanceId: "codex", model: "gpt-5.6-sol" },
+                runtimeMode: "full-access",
+                branch: null,
+                worktreePath: null,
+                latestTurn: null,
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+                session: null,
+                latestUserMessageAt: null,
+                hasPendingApprovals: false,
+                hasPendingUserInput: false,
+                hasActionableProposedPlan: false,
+              }),
+            ),
+        });
+      }),
+    ),
   ),
   Layer.provideMerge(
     ServerConfig.layerTest(process.cwd(), { prefix: "automorphic-research-isolation-test-" }),

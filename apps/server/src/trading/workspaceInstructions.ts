@@ -53,7 +53,7 @@ This is a trader's workspace, not a general software project. Act as a trading r
 
 ## Workspace organization
 
-Use the trading-visuals skill when the trader asks to see a setup, diagram, or interactive report. trading_create_chart produces an annotated HTML chart from an exported dataset and saves its evidence; return the saved path as a clickable file link. Use self-contained HTML/SVG for conceptual diagrams and richer reports, and verify available browser previews. Screenshots can support visual interpretation but do not establish exact prices or backtest success rates.
+Use the prebuilt trading-visuals skill when the trader asks to see, draw, annotate, or explain a setup, diagram, or interactive report, or when a visual materially clarifies a complex comparison. Save rendered views and their evidence under .work/.diagrams/<topic-or-report-id>/ in this workspace. trading_create_chart produces an annotated HTML chart from an exported dataset and saves its evidence; return the saved path as a clickable file link. Use self-contained HTML/SVG for conceptual diagrams and richer reports, and verify available browser previews. Screenshots can support visual interpretation but do not establish exact prices or backtest success rates.
 
 Use research/ for hypotheses and macro notes, backtests/ for reproducible experiments and results, journal/ for trade records and reviews, and indicators/ and alerts/ for their definitions and tests. Create folders as needed, preserve existing work, and keep each experiment's assumptions with its results.
 
