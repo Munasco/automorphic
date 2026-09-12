@@ -182,6 +182,7 @@ function DrawingSettings({
   const { left: extendLeft, right: extendRight } = drawingLineExtensions(draft);
   const markers = drawingLineMarkers(draft);
   const canSave = validDrawingAnchors(draft.kind, draft.anchors);
+  const channelOffset = draft.kind === "channel" ? drawings.channelPriceOffset(draft) : null;
   const dialogWidth =
     tab === "Visibility" || (supportsDrawingLevels(draft.kind) && !isFibTimeDrawing(draft.kind))
       ? 460
@@ -599,50 +600,74 @@ function DrawingSettings({
           ) : null}
           {tab === "Coordinates" ? (
             <>
-              {draft.anchors.map((anchor, index) => (
-                <div key={anchorKeys[index]} className="space-y-2">
-                  <span className="text-sm text-zinc-400">
-                    #{index + 1} ({draft.kind === "regression-trend" ? "bar" : "price, bar"})
-                  </span>
-                  <div className="flex gap-3">
-                    {draft.kind !== "regression-trend" ? (
+              {draft.anchors
+                .slice(0, draft.kind === "channel" ? 2 : undefined)
+                .map((anchor, index) => (
+                  <div key={anchorKeys[index]} className="space-y-2">
+                    <span className="text-sm text-zinc-400">
+                      #{index + 1} ({draft.kind === "regression-trend" ? "bar" : "price, bar"})
+                    </span>
+                    <div className="flex gap-3">
+                      {draft.kind !== "regression-trend" ? (
+                        <input
+                          aria-label={`Point ${index + 1} price`}
+                          type="number"
+                          step="any"
+                          value={drawings.coordinatePrice(anchor.price)}
+                          onChange={(event) => {
+                            const price = event.target.valueAsNumber;
+                            if (Number.isFinite(price))
+                              update({
+                                anchors: draft.anchors.map((point, i) =>
+                                  i === index ? { ...point, price } : point,
+                                ),
+                              });
+                          }}
+                          className={cn(inputClass, "w-28")}
+                        />
+                      ) : null}
                       <input
-                        aria-label={`Point ${index + 1} price`}
+                        aria-label={`Point ${index + 1} bar`}
                         type="number"
-                        step="any"
-                        value={drawings.coordinatePrice(anchor.price)}
+                        step="1"
+                        value={Math.round(drawings.anchorBar(anchor) ?? 0)}
                         onChange={(event) => {
-                          const price = event.target.valueAsNumber;
-                          if (Number.isFinite(price))
+                          const bar = event.target.valueAsNumber;
+                          const next = Number.isFinite(bar)
+                            ? drawings.anchorAtBar(bar, anchor.price)
+                            : null;
+                          if (next)
                             update({
                               anchors: draft.anchors.map((point, i) =>
-                                i === index ? { ...point, price } : point,
+                                i === index ? next : point,
                               ),
                             });
                         }}
                         className={cn(inputClass, "w-28")}
                       />
-                    ) : null}
-                    <input
-                      aria-label={`Point ${index + 1} bar`}
-                      type="number"
-                      step="1"
-                      value={Math.round(drawings.anchorBar(anchor) ?? 0)}
-                      onChange={(event) => {
-                        const bar = event.target.valueAsNumber;
-                        const next = Number.isFinite(bar)
-                          ? drawings.anchorAtBar(bar, anchor.price)
-                          : null;
-                        if (next)
-                          update({
-                            anchors: draft.anchors.map((point, i) => (i === index ? next : point)),
-                          });
-                      }}
-                      className={cn(inputClass, "w-28")}
-                    />
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              {draft.kind === "channel" ? (
+                <label className="flex items-center gap-3 text-sm">
+                  <span className="w-28">Price offset</span>
+                  <input
+                    aria-label="Price offset"
+                    type="number"
+                    step="any"
+                    disabled={channelOffset === null}
+                    value={channelOffset === null ? "" : drawings.coordinatePrice(channelOffset)}
+                    onChange={(event) => {
+                      const offset = event.target.valueAsNumber;
+                      const anchors = Number.isFinite(offset)
+                        ? drawings.channelAnchorsAtOffset(draft, offset)
+                        : null;
+                      if (anchors) update({ anchors });
+                    }}
+                    className={cn(inputClass, "w-28 disabled:opacity-40")}
+                  />
+                </label>
+              ) : null}
               {!canSave ? (
                 <p className="text-xs text-red-400">Choose distinct points for this drawing.</p>
               ) : null}
