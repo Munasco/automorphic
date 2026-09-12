@@ -380,6 +380,7 @@ export const INDICATOR_DEFINITIONS = [
       length(14, "stochasticPeriod", "Stochastic length"),
       length(3, "smoothK", "K smoothing"),
       length(3, "periodD", "D smoothing"),
+      { ...priceSource, label: "RSI source" },
     ],
     styles: [
       style("main", "Primary line", "#a78bfa", true),
@@ -393,6 +394,7 @@ export const INDICATOR_DEFINITIONS = [
           inputs.stochasticPeriod,
           inputs.smoothK,
           inputs.periodD,
+          PRICE_SOURCES[inputs.source ?? 0] ?? "close",
         ),
       ),
   }),

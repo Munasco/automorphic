@@ -9,6 +9,7 @@ import {
   isValidInitialBalanceSettings,
 } from "./indicatorCatalog";
 import { normalizeChartPreferences, useChartPreferences } from "./chartPreferences";
+import { calculateStochasticRSI } from "./advancedIndicators";
 
 describe("indicator catalog and saved preferences", () => {
   it("does not fabricate an initial balance from non-time tick bars", () => {
@@ -189,7 +190,7 @@ describe("indicator inputs", () => {
       sma: { period: 50, source: 0 },
       bollinger: { period: 20, deviations: 1.5, source: 0 },
       keltner: { period: 20, atrPeriod: 8, multiplier: 2 },
-      stochRsi: { rsiPeriod: 10, stochasticPeriod: 14, smoothK: 2, periodD: 3 },
+      stochRsi: { rsiPeriod: 10, stochasticPeriod: 14, smoothK: 2, periodD: 3, source: 0 },
       macd: { fast: 12, slow: 26, signalPeriod: 5, source: 0, oscillatorMA: 0, signalMA: 0 },
     });
     expect(normalizeChartPreferences({ indicators: { sma: true } }).indicatorInputs).toEqual({});
@@ -436,6 +437,57 @@ describe("ATR smoothing inputs", () => {
           .indicatorInputs.atr,
       ).toEqual({ period: 7, smoothing: 0 });
       expect(calculate(smoothing)).toEqual(calculate(0));
+    }
+  });
+});
+
+describe("Stochastic RSI source inputs", () => {
+  const definition = INDICATOR_CATALOG.find((item) => item.key === "stochRsi")!;
+  const bars = Array.from({ length: 40 }, (_, index) => ({
+    time: index + 1,
+    open: 100 + (index % 5),
+    high: 120 + ((index * 7) % 13),
+    low: 90 - (index % 3),
+    close: 100 + ((index * 3) % 11),
+    volume: 1,
+  }));
+  it("routes the selected RSI source to both K and D without changing smoothing or legend", () => {
+    const values = { rsiPeriod: 3, stochasticPeriod: 3, smoothK: 2, periodD: 2 };
+    const close = calculateStochasticRSI(bars, 3, 3, 2, 2);
+    const high = calculateStochasticRSI(bars, 3, 3, 2, 2, "high");
+    expect(high.k).not.toEqual(close.k);
+    expect(high.d).not.toEqual(close.d);
+    const inputs = getIndicatorInputs("stochRsi", { stochRsi: { ...values, source: 2 } });
+    const result = definition.calculate({
+      bars,
+      inputs,
+      interval: 5,
+      session: DEFAULT_INITIAL_BALANCE,
+    });
+    expect(result.plots.find((plot) => plot.id === "k")?.points).toEqual(high.k);
+    expect(result.plots.find((plot) => plot.id === "d")?.points).toEqual(high.d);
+    expect(getIndicatorLabel("stochRsi", { stochRsi: inputs })).toBe(
+      "Stochastic RSI 3 / 3 / 2 / 2",
+    );
+  });
+  it("repairs missing or invalid saved sources to Close while retaining lengths", () => {
+    for (const source of [undefined, -1, 7, 1.5, NaN]) {
+      const inputs = getIndicatorInputs("stochRsi", {
+        stochRsi: {
+          rsiPeriod: 7,
+          stochasticPeriod: 9,
+          smoothK: 1,
+          periodD: 2,
+          ...(source === undefined ? {} : { source }),
+        },
+      });
+      expect(inputs).toEqual({
+        rsiPeriod: 7,
+        stochasticPeriod: 9,
+        smoothK: 1,
+        periodD: 2,
+        source: 0,
+      });
     }
   });
 });

@@ -701,3 +701,36 @@ it("hydrates legacy and malformed ATR smoothing without losing each instance's l
     { id: "invalid-atr", inputs: { period: 9, smoothing: 0 }, hidden: true },
   ]);
 });
+
+it("retains independent Stochastic RSI sources through duplication, reload, and reset", async () => {
+  const store = useChartPreferences.getState();
+  const original = store.addIndicator("stochRsi")!;
+  const custom = { rsiPeriod: 7, stochasticPeriod: 9, smoothK: 2, periodD: 1, source: 4 };
+  expect(store.setIndicatorInstanceInputs(original, custom)).toBe(true);
+  const duplicate = store.duplicateIndicatorInstance(original)!;
+  expect(store.setIndicatorInstanceInputs(duplicate, { source: 6 })).toBe(true);
+  const instances = () =>
+    getChartIndicatorInstances(useChartPreferences.getState()).filter(
+      (item) => item.key === "stochRsi",
+    );
+  const reload = async () => {
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    await useChartPreferences.persist.rehydrate();
+  };
+  await reload();
+  expect(instances().map((item) => item.inputs)).toEqual([custom, { ...custom, source: 6 }]);
+  vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+  expect(useChartPreferences.getState().setIndicatorInstanceInputs(duplicate, { source: 9 })).toBe(
+    false,
+  );
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  expect(instances().map((item) => item.inputs)).toEqual([custom, { ...custom, source: 6 }]);
+  useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
+  await reload();
+  expect(instances().map((item) => item.inputs)).toEqual([
+    custom,
+    { rsiPeriod: 14, stochasticPeriod: 14, smoothK: 3, periodD: 3, source: 0 },
+  ]);
+});

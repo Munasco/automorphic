@@ -25,6 +25,13 @@ const bars = (closes: number[]): Candle[] =>
     close,
     volume: 10,
   }));
+const stochasticSourceBars = () =>
+  bars([12, 10, 12, 11, 16, 9, 14, 12]).map((bar, index) => ({
+    ...bar,
+    open: [10, 12, 11, 14, 13, 12, 10, 15][index]!,
+    high: [15, 16, 14, 18, 17, 15, 16, 18][index]!,
+    low: [5, 8, 7, 9, 6, 7, 8, 9][index]!,
+  }));
 const values = (points: IndicatorPoint[]) => points.map((point) => point.value);
 const near = (points: IndicatorPoint[], expected: number[]) => {
   expect(points).toHaveLength(expected.length);
@@ -64,6 +71,80 @@ describe("common chart indicators", () => {
     expect(calculateStochasticRSI(longer).k[0]?.time).toBe(longer[29]?.time);
     expect(calculateStochasticRSI(longer).d[0]?.time).toBe(longer[31]?.time);
   });
+
+  it.each([
+    {
+      source: "close",
+      k: [50, 65000 / 2079, 13295098 / 234927],
+      d: [84475 / 2079, 10320049 / 234927],
+      first: 5,
+    },
+    { source: "open", k: [0, 0, 50], d: [0, 25], first: 5 },
+    {
+      source: "high",
+      k: [55 / 2, 5500 / 141, 12550 / 141],
+      d: [18755 / 564, 9025 / 141],
+      first: 5,
+    },
+    { source: "low", k: [2600 / 147, 9950 / 147, 100], d: [6275 / 147, 12325 / 147], first: 5 },
+    { source: "hl2", k: [0, 50, 100], d: [25, 75], first: 5 },
+    {
+      source: "hlc3",
+      k: [50, 193375 / 6176, 502175 / 6176],
+      d: [502175 / 12352, 347775 / 6176],
+      first: 5,
+    },
+    { source: "ohlc4", k: [50, 20350 / 783, 59500 / 783], d: [29750 / 783, 39925 / 783], first: 5 },
+  ] as const)(
+    "calculates stochastic RSI K/D from $source's distinct trajectory",
+    ({ source, k, d, first }) => {
+      const input = stochasticSourceBars();
+      const original = structuredClone(input);
+      const result = calculateStochasticRSI(input, 2, 3, 2, 2, source);
+      near(result.k, [...k]);
+      near(result.d, [...d]);
+      expect(result.k.map((point) => point.time)).toEqual(
+        input.slice(first).map((bar) => bar.time),
+      );
+      expect(result.d.map((point) => point.time)).toEqual(
+        input.slice(first + 1).map((bar) => bar.time),
+      );
+      if (source === "close") expect(calculateStochasticRSI(input, 2, 3, 2, 2)).toEqual(result);
+      expect(input).toEqual(original);
+    },
+  );
+
+  it.each([
+    { source: "close", used: "close", unused: "open" },
+    { source: "open", used: "open", unused: "close" },
+    { source: "high", used: "high", unused: "low" },
+    { source: "low", used: "low", unused: "high" },
+    { source: "hl2", used: "low", unused: "close" },
+    { source: "hlc3", used: "high", unused: "open" },
+    { source: "ohlc4", used: "open", unused: "volume" },
+  ] as const)(
+    "restarts all stochastic RSI warmups for invalid $source data but ignores unused $unused",
+    ({ source, used, unused }) => {
+      const before = stochasticSourceBars();
+      const after = stochasticSourceBars().map((bar) => ({ ...bar, time: bar.time + 9 * 60 }));
+      for (const patch of [
+        { [used]: NaN },
+        { [used]: Infinity },
+        { [used]: undefined },
+        { time: NaN },
+      ]) {
+        const invalid = { ...before[0]!, time: before[0]!.time + 8 * 60, ...patch };
+        const result = calculateStochasticRSI([...before, invalid, ...after], 2, 3, 2, 2, source);
+        const first = calculateStochasticRSI(before, 2, 3, 2, 2, source);
+        const second = calculateStochasticRSI(after, 2, 3, 2, 2, source);
+        expect(result).toEqual({ k: [...first.k, ...second.k], d: [...first.d, ...second.d] });
+      }
+      const incomplete = before.map((bar) => ({ ...bar, [unused]: NaN }));
+      expect(calculateStochasticRSI(incomplete, 2, 3, 2, 2, source)).toEqual(
+        calculateStochasticRSI(before, 2, 3, 2, 2, source),
+      );
+    },
+  );
 
   it("aligns Keltner EMA and ATR warmups and uses the configured multiplier", () => {
     const input = bars([10, 14, 13, 18]);

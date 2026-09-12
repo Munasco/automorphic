@@ -388,11 +388,15 @@ export function calculateStochasticRSI(
   stochasticPeriod = 14,
   smoothK = 3,
   periodD = 3,
+  source: PriceSource = "close",
 ) {
   const result: { k: IndicatorPoint[]; d: IndicatorPoint[] } = { k: [], d: [] };
   if (![rsiPeriod, stochasticPeriod, smoothK, periodD].every(validPeriod)) return result;
-  for (const segment of segments(bars, validClose)) {
-    const rsi = calculateRSI(segment, rsiPeriod).map(({ time, value }) => ({
+  for (const segment of segments(
+    bars,
+    (bar) => Number.isFinite(bar.time) && Number.isFinite(sourcePrice(bar, source)),
+  )) {
+    const rsi = calculateRSI(segment, rsiPeriod, source).map(({ time, value }) => ({
       time,
       open: value,
       high: value,
