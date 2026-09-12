@@ -1558,6 +1558,7 @@ export function useChartDrawings(
   );
   return {
     ...state,
+    interval: intervalMinutes,
     channelPriceOffset,
     channelAnchorsAtOffset,
     coordinatePrice,

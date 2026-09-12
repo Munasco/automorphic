@@ -280,7 +280,6 @@ export function DrawingTools({
   const favorites = useDrawingFavorites((state) => state.kinds);
   const favoritesVisible = useDrawingFavorites((state) => state.visible);
   const toggleFavorites = useDrawingFavorites((state) => state.toggleVisible);
-  const selected = drawings.selected;
   const [removeOpen, setRemoveOpen] = useState(false);
   const [magnetOpen, setMagnetOpen] = useState(false);
   const [hideOpen, setHideOpen] = useState(false);
@@ -298,121 +297,6 @@ export function DrawingTools({
           onSelect={drawings.setTool}
         />
       ))}
-      <Popover>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <PopoverTrigger
-                aria-label={`Drawing objects, ${drawings.count}`}
-                className="flex size-8 shrink-0 items-center justify-center rounded text-zinc-400 hover:bg-white/10 hover:text-white"
-              />
-            }
-          >
-            <DrawingToolIcon name="list-numbers" className="size-[18px]" />
-          </TooltipTrigger>
-          <TooltipPopup side="right">Drawing objects</TooltipPopup>
-        </Tooltip>
-        <PopoverPopup
-          instant
-          style={{ background: "#1f1f1f", backdropFilter: "none" }}
-          side="right"
-          className="w-80 max-w-[calc(100vw-4rem)] space-y-3 p-3"
-        >
-          <PopoverTitle className="text-sm">Drawing objects · {drawings.count}</PopoverTitle>
-          {drawings.hidden && drawings.count > 0 ? (
-            <button type="button" onClick={drawings.toggleHidden} className="text-xs text-blue-300">
-              Show drawings on chart
-            </button>
-          ) : null}
-          {drawings.objects.length === 0 ? (
-            <p className="text-xs text-zinc-400">Draw on the chart to add an object.</p>
-          ) : (
-            <div className="max-h-80 space-y-2 overflow-y-auto" aria-label="Drawing object list">
-              {drawings.objects.toReversed().map((object) => {
-                const label =
-                  object.name ||
-                  (object.kind === "text" ? object.text : null) ||
-                  tools.find((tool) => tool.kind === object.kind)?.label ||
-                  object.kind;
-                return (
-                  <div
-                    key={object.id}
-                    className={cn(
-                      "rounded border border-white/10 p-2",
-                      selected?.id === object.id && "border-blue-400/60 bg-blue-400/5",
-                    )}
-                  >
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        aria-label={`Select ${label}`}
-                        aria-pressed={selected?.id === object.id}
-                        onClick={() => drawings.selectDrawing(object.id)}
-                        className="min-w-0 flex-1 truncate text-left text-xs text-zinc-200"
-                      >
-                        {label}
-                      </button>
-                      <Action
-                        compact
-                        label={`${object.hidden ? "Show" : "Hide"} ${label}`}
-                        onClick={() =>
-                          drawings.updateDrawing(object.id, { hidden: !object.hidden })
-                        }
-                      >
-                        <DrawingToolIcon
-                          name={object.hidden ? "eye-off" : "eye"}
-                          className="size-4"
-                        />
-                      </Action>
-                      <Action
-                        compact
-                        label={`${object.locked ? "Unlock" : "Lock"} ${label}`}
-                        onClick={() =>
-                          drawings.updateDrawing(object.id, { locked: !object.locked })
-                        }
-                      >
-                        <DrawingToolIcon
-                          name={object.locked ? "lock" : "lock-open"}
-                          className="size-4"
-                        />
-                      </Action>
-                      <Action
-                        compact
-                        label={`Duplicate ${label}`}
-                        disabled={drawings.count >= 100}
-                        onClick={() => drawings.duplicateDrawing(object.id)}
-                      >
-                        <DrawingToolIcon name="copy" className="size-4" />
-                      </Action>
-                      <Action
-                        compact
-                        label={`Delete ${label}`}
-                        onClick={() => drawings.deleteDrawing(object.id)}
-                      >
-                        <ChartIcon name="trash" className="size-4" />
-                      </Action>
-                    </div>
-                    <input
-                      key={`${object.id}:${object.name ?? ""}`}
-                      aria-label={`Name for ${label}`}
-                      defaultValue={object.name ?? ""}
-                      placeholder="Drawing name"
-                      maxLength={80}
-                      onBlur={(event) =>
-                        drawings.updateDrawing(object.id, { name: event.target.value })
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") event.currentTarget.blur();
-                      }}
-                      className="mt-2 w-full rounded border border-white/10 bg-transparent px-2 py-1 text-xs"
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </PopoverPopup>
-      </Popover>
       <div className="my-1 w-5 border-t border-white/10" />
       <Popover open={magnetOpen} onOpenChange={setMagnetOpen}>
         <div className="group/tool relative flex h-9 w-10 shrink-0 items-center justify-center rounded hover:bg-white/5 focus-within:bg-white/5">

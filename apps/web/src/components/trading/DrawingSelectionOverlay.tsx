@@ -60,7 +60,17 @@ import { DrawingRegressionSettings } from "./DrawingRegressionSettings";
 import { DrawingFibTimeSettings } from "./DrawingFibTimeSettings";
 import { DrawingLevelSettings } from "./DrawingLevelSettings";
 import { DrawingParallelChannelSettings } from "./DrawingParallelChannelSettings";
-import { DrawingTemplateMenu } from "./DrawingTemplateMenu";
+import {
+  DrawingTemplateMenu,
+  DrawingTemplateSaveDialog,
+  DrawingTemplateSubmenu,
+} from "./DrawingTemplateMenu";
+import { DrawingVisibilitySubmenu } from "./DrawingVisibilitySubmenu";
+import {
+  drawingContextMenuStyle as drawingMenuStyle,
+  drawingContextMenuPopupClass,
+  drawingContextMenuItemClass as drawingMenuItemClass,
+} from "./drawingContextMenuStyles";
 import { applyDrawingTemplate } from "./drawingTemplates";
 import { cn, isMacPlatform } from "../../lib/utils";
 
@@ -779,9 +789,16 @@ function DrawingSettings({
     </Dialog>
   );
 }
-export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsController }) {
+export function DrawingSelectionOverlay({
+  drawings,
+  onOpenObjectTree,
+}: {
+  drawings: ChartDrawingsController;
+  onOpenObjectTree?: (() => void) | undefined;
+}) {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [settingsTab, setSettingsTab] = useState("Style");
+  const [templateDrawing, setTemplateDrawing] = useState<ChartDrawing | null>(null);
   const drag = useRef<{ x: number; y: number; originX: number; originY: number } | null>(null);
   const selected = drawings.selected;
   if (!selected || drawings.tool !== "cursor") return null;
@@ -1006,11 +1023,15 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
           </MenuTrigger>
           <MenuPopup
             aria-label="Drawing options"
-            className="w-[276px]"
+            className={drawingContextMenuPopupClass}
             style={drawingMenuStyle}
             onCopy={copyFromMenu}
           >
-            <DrawingMenuCommands drawings={drawings} />
+            <DrawingMenuCommands
+              drawings={drawings}
+              onSaveTemplate={() => setTemplateDrawing(selected)}
+              onOpenObjectTree={onOpenObjectTree}
+            />
           </MenuPopup>
         </Menu>
       </div>
@@ -1047,7 +1068,7 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
                 event.stopPropagation();
               }
             }}
-            className="w-[276px]"
+            className={drawingContextMenuPopupClass}
             style={drawingMenuStyle}
             align="start"
             sideOffset={0}
@@ -1056,21 +1077,25 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
                 new DOMRect(drawings.contextPoint!.x, drawings.contextPoint!.y, 0, 0),
             }}
           >
-            <DrawingMenuCommands drawings={drawings} onAction={closeThen} />
+            <DrawingMenuCommands
+              drawings={drawings}
+              onAction={closeThen}
+              onSaveTemplate={() => setTemplateDrawing(selected)}
+              onOpenObjectTree={onOpenObjectTree}
+            />
           </MenuPopup>
         </ContextMenu.Root>
+      ) : null}
+      {templateDrawing ? (
+        <DrawingTemplateSaveDialog
+          drawing={templateDrawing}
+          onClose={() => setTemplateDrawing(null)}
+        />
       ) : null}
     </>
   );
 }
 
-const drawingMenuStyle = {
-  background: "#1f1f1f",
-  backdropFilter: "none",
-  transition: "none",
-  animation: "none",
-};
-const drawingMenuItemClass = "h-8 min-h-8 gap-3 px-3 py-0 text-sm sm:min-h-8";
 function DrawingMenuIcon({ children }: { children?: ReactNode }) {
   return (
     <span aria-hidden="true" className="flex size-4.5 shrink-0 items-center justify-center">
@@ -1082,9 +1107,13 @@ const executeDrawingAction = (action: () => void) => action();
 function DrawingMenuCommands({
   drawings,
   onAction = executeDrawingAction,
+  onSaveTemplate,
+  onOpenObjectTree,
 }: {
   drawings: ChartDrawingsController;
   onAction?: (action: () => void) => void;
+  onSaveTemplate: () => void;
+  onOpenObjectTree?: (() => void) | undefined;
 }) {
   const selected = drawings.selected;
   if (!selected) return null;
@@ -1103,7 +1132,22 @@ function DrawingMenuCommands({
   };
   return (
     <>
+      <DrawingTemplateSubmenu
+        drawing={selected}
+        onApply={(patch) => onAction(() => drawings.applySelectedTemplate(patch))}
+        onSave={() => onAction(onSaveTemplate)}
+      />
       <DrawingOrderSubmenu drawings={drawings} />
+      <DrawingVisibilitySubmenu
+        interval={drawings.interval}
+        onApply={(visibility) => onAction(() => drawings.updateSelected({ visibility }))}
+      />
+      {onOpenObjectTree ? (
+        <MenuItem className={drawingMenuItemClass} onClick={() => onAction(onOpenObjectTree)}>
+          <DrawingMenuIcon />
+          Object tree
+        </MenuItem>
+      ) : null}
       <MenuSeparator />
       <MenuItem
         className={drawingMenuItemClass}
@@ -1170,7 +1214,12 @@ function DrawingOrderSubmenu({ drawings }: { drawings: ChartDrawingsController }
         <DrawingMenuIcon />
         Visual order
       </MenuSubTrigger>
-      <MenuSubPopup aria-label="Visual order" className="w-[276px]" style={drawingMenuStyle}>
+      <MenuSubPopup
+        aria-label="Visual order"
+        alignOffset={-6}
+        className={drawingContextMenuPopupClass}
+        style={drawingMenuStyle}
+      >
         {(
           [
             ["front", "Bring to front", index === last],
@@ -1185,7 +1234,6 @@ function DrawingOrderSubmenu({ drawings }: { drawings: ChartDrawingsController }
             disabled={index < 0 || boundary}
             onClick={() => drawings.reorderSelected(direction)}
           >
-            <DrawingMenuIcon />
             {label}
           </MenuItem>
         ))}

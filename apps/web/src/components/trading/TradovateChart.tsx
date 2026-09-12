@@ -55,6 +55,7 @@ import { DrawingTools, FavoriteDrawingToolbar } from "./DrawingTools";
 import { DrawingSelectionOverlay } from "./DrawingSelectionOverlay";
 import { DrawingInlineTextEditor } from "./DrawingInlineTextEditor";
 import { ChartContextMenu } from "./ChartContextMenu";
+import { DrawingObjectTree } from "./DrawingObjectTree";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 
@@ -253,6 +254,7 @@ export function TradovateChart({
   const [last, setLast] = useState<Candle | null>(null);
   const [hovered, setHovered] = useState<Candle | null>(null);
   const [notice, setNotice] = useState("");
+  const [objectTreeOpen, setObjectTreeOpen] = useState(false);
   const [readings, setReadings] = useState<Partial<Record<IndicatorKey, number>>>({});
   const [hoverReadings, setHoverReadings] = useState<Partial<Record<IndicatorKey, number>> | null>(
     null,
@@ -607,7 +609,18 @@ export function TradovateChart({
         logScale={settings.logScale}
         onToggleLogScale={settings.toggleLogScale}
         onScreenshot={screenshot}
-        panelActions={panelActions}
+        panelActions={
+          <>
+            <ChartAction
+              label="Object tree"
+              active={objectTreeOpen}
+              onClick={() => setObjectTreeOpen((open) => !open)}
+            >
+              <ChartIcon name="list-details" className="size-[18px]" />
+            </ChartAction>
+            {panelActions}
+          </>
+        }
         navigationControl={navigationControl}
       />
       <div className="relative flex min-h-0 min-w-0 flex-1">
@@ -654,7 +667,10 @@ export function TradovateChart({
           <div className="relative min-h-0 min-w-0 flex-1 overflow-y-auto">
             <div className="relative h-full" style={{ minHeight: 240 + paneCount * 110 }}>
               <div ref={host} className="absolute inset-0" />
-              <DrawingSelectionOverlay drawings={drawings} />
+              <DrawingSelectionOverlay
+                drawings={drawings}
+                onOpenObjectTree={() => setObjectTreeOpen(true)}
+              />
               <DrawingInlineTextEditor
                 chart={activeEngine?.chart ?? null}
                 series={activeEngine?.prices[settings.style] ?? null}
@@ -723,6 +739,22 @@ export function TradovateChart({
             </div>
           </div>
         </div>
+        {objectTreeOpen && !technicals ? (
+          <DrawingObjectTree
+            drawings={drawings}
+            symbol={symbol}
+            onClose={() => setObjectTreeOpen(false)}
+            indicators={INDICATOR_CATALOG.filter(({ key }) => settings.indicators[key]).map(
+              ({ key, label }) => ({
+                key,
+                label,
+                hidden: settings.hiddenIndicators[key],
+                onToggleHidden: () => settings.toggleIndicatorVisibility(key),
+                onRemove: () => settings.toggleIndicator(key),
+              }),
+            )}
+          />
+        ) : null}
         {technicals ? (
           <TechnicalsMarket
             symbol={symbol}

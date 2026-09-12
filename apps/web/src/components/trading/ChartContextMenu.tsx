@@ -4,11 +4,15 @@ import type { IChartApi, ISeriesApi, SeriesType } from "lightweight-charts";
 import { MenuItem, MenuPopup, MenuSeparator, MenuShortcut } from "../ui/menu";
 import { toastManager } from "../ui/toast";
 import { isMacPlatform } from "../../lib/utils";
+import {
+  drawingContextMenuStyle,
+  drawingContextMenuPopupClass,
+  drawingContextMenuItemClass as itemClass,
+} from "./drawingContextMenuStyles";
 import { ChartIcon } from "./ChartIcon";
 import type { ChartDrawingsController } from "./useChartDrawings";
 
 type MenuPoint = { chart: IChartApi; x: number; y: number; price: string | null };
-const itemClass = "h-8 min-h-8 gap-3 px-3 py-0 text-sm sm:min-h-8";
 
 /** Drawing hits own their context menu; this handles unoccupied price-pane space. */
 export function ChartContextMenu({
@@ -94,13 +98,8 @@ export function ChartContextMenu({
     >
       <MenuPopup
         aria-label="Chart context menu"
-        className="w-[276px]"
-        style={{
-          background: "#1f1f1f",
-          backdropFilter: "none",
-          transition: "none",
-          animation: "none",
-        }}
+        className={drawingContextMenuPopupClass}
+        style={drawingContextMenuStyle}
         align="start"
         sideOffset={0}
         anchor={{ getBoundingClientRect: () => new DOMRect(point.x, point.y, 0, 0) }}
