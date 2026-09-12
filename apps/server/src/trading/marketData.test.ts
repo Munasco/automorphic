@@ -98,6 +98,18 @@ describe("selected Tradovate contract", () => {
     vi.unstubAllEnvs();
   });
 
+  it("rejects invalid units and 1-tick requests before opening a connection or reading market data", async () => {
+    const fetch = vi.fn(),
+      socket = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    vi.stubGlobal("WebSocket", socket);
+    await expect(chartStream("MNQU6", 1, "tick")).rejects.toThrow("trade-ID support");
+    await expect(chartStream("MNQU6", 5, "unknown")).rejects.toThrow("minute, second or tick");
+    await expect(chartStream("MNQU6", 0.5, "minute")).rejects.toThrow("supported minute interval");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(socket).not.toHaveBeenCalled();
+  });
+
   it.each(["MGC", "MNQ", "GC", "NQ"])(
     "selects the active %s expiry using only exact-root candidates and their activity IDs",
     async (root) => {
@@ -167,13 +179,22 @@ describe("selected Tradovate contract", () => {
   });
 
   it.each([
-    ["MGCV6", 15],
-    ["MNQU6", 3],
-    ["GCZ6", 30],
-    ["NQU6", 240],
+    ["MGCV6", 15, undefined],
+    ["MNQU6", 3, "minute"],
+    ["GCZ6", 30, "minute"],
+    ["NQU6", 240, "minute"],
+    ["MNQU6", 1, "second"],
+    ["MNQU6", 5, "second"],
+    ["MNQU6", 10, "second"],
+    ["MNQU6", 15, "second"],
+    ["MNQU6", 30, "second"],
+    ["MNQU6", 45, "second"],
+    ["MNQU6", 10, "tick"],
+    ["MNQU6", 100, "tick"],
+    ["MNQU6", 1000, "tick"],
   ] as const)(
-    "resolves %s at %d minutes and emits only its quotes and chart subscription from mixed batches",
-    async (symbol, interval) => {
+    "resolves %s at %d %s and emits only its quotes and chart subscription from mixed batches",
+    async (symbol, interval, intervalUnit) => {
       const directory = await NodeFSP.mkdtemp(
         NodePath.join(NodeOS.tmpdir(), "automorphic-md-test-"),
       );
@@ -209,7 +230,7 @@ describe("selected Tradovate contract", () => {
           }
         }
         vi.stubGlobal("WebSocket", FakeSocket);
-        response = await chartStream(symbol, interval);
+        response = await chartStream(symbol, interval, intervalUnit);
         expect(lookup.mock.calls[0]?.[0]).toBe(
           `https://demo.tradovateapi.com/v1/contract/find?name=${symbol}`,
         );
@@ -226,19 +247,25 @@ describe("selected Tradovate contract", () => {
         expect(JSON.parse(chartRequest.split("\n\n")[1]!)).toMatchObject({
           symbol,
           chartDescription: {
-            underlyingType: "MinuteBar",
+            underlyingType:
+              intervalUnit === "second" || intervalUnit === "tick" ? "Tick" : "MinuteBar",
             elementSize: interval,
-            elementSizeUnit: "UnderlyingUnits",
+            elementSizeUnit: intervalUnit === "second" ? "Seconds" : "UnderlyingUnits",
           },
         });
-        socket.receive('a[{"i":2,"s":200,"d":{"historicalId":31,"realtimeId":32}}]');
         const bar = {
           timestamp: "2026-09-11T12:00:00Z",
           open: 100,
           high: 102,
           low: 99,
           close: 101,
+          upVolume: 7,
+          downVolume: 11,
         };
+        socket.receive(
+          `a${JSON.stringify([{ e: "chart", d: { charts: [{ bars: [{ ...bar, open: 77777 }] }] } }])}`,
+        );
+        socket.receive('a[{"i":2,"s":200,"d":{"historicalId":31,"realtimeId":32}}]');
         socket.receive(
           `a${JSON.stringify([
             {
@@ -258,6 +285,21 @@ describe("selected Tradovate contract", () => {
         );
         socket.receive('a[{"i":1,"s":401}]'); // End the stream after the supplied batch.
         const output = await response.text();
+        const messages = output
+          .split("\n\n")
+          .filter(Boolean)
+          .map((frame) => JSON.parse(frame.slice(6)));
+        expect(messages[0]).toMatchObject({
+          state: "connecting",
+          interval,
+          intervalUnit: intervalUnit ?? "minute",
+          intervalKey: `${intervalUnit ?? "minute"}:${interval}`,
+        });
+        expect(
+          messages
+            .filter((message) => message.type === "bars")
+            .map((message) => message.bars[0].volume),
+        ).toEqual([18, 18]);
         expect(output).toContain('"open":4325.2');
         expect(output).toContain('"high":4410.8');
         expect(output).toContain('"low":4300.1');
@@ -265,10 +307,11 @@ describe("selected Tradovate contract", () => {
         expect(output.match(/"type":"quote"/g)).toHaveLength(1);
         expect(output.match(/"type":"bars"/g)).toHaveLength(2);
         expect(output).not.toContain("88888");
+        expect(output).not.toContain("77777");
         expect(output).toContain(`"symbol":"${symbol}"`);
         expect(socket.readyState).toBe(3);
         lookup.mockResolvedValueOnce(Response.json({ id: 987654, name: "MGCZ6" }));
-        await expect(chartStream(symbol, interval)).rejects.toThrow(
+        await expect(chartStream(symbol, interval, intervalUnit)).rejects.toThrow(
           "did not confirm the selected contract",
         );
         expect(sockets).toHaveLength(1);

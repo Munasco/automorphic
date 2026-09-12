@@ -130,7 +130,7 @@ export function calculateInitialBalance(
     !Number.isSafeInteger(config.durationMinutes) ||
     config.durationMinutes <= 0 ||
     hour * 60 + minute + config.durationMinutes > 1440 ||
-    !Number.isSafeInteger(barIntervalMinutes) ||
+    !Number.isSafeInteger(barIntervalMinutes * 60) ||
     barIntervalMinutes <= 0
   ) {
     return {

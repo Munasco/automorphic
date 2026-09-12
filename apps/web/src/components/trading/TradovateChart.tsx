@@ -1,4 +1,10 @@
-import { formatChartInterval, type ChartInterval } from "./tradingIntervals";
+import {
+  chartIntervalKey,
+  chartIntervalMinutes,
+  chartIntervalQuery,
+  formatChartInterval,
+  type ChartInterval,
+} from "./tradingIntervals";
 import { ChartTechnicals, chartTechnicalReadings } from "./ChartTechnicals";
 import type { InstrumentRoot } from "./tradingInstruments";
 import { openTradingStream } from "./tradingTransport";
@@ -42,7 +48,7 @@ import { cn } from "../../lib/utils";
 
 type ChartEngine = {
   symbol: string;
-  interval: number;
+  interval: ChartInterval;
   chart: IChartApi;
   prices: Record<ChartStyle, ISeriesApi<SeriesType>>;
   volume: ISeriesApi<"Histogram">;
@@ -144,7 +150,11 @@ export function TradovateChart({
     null,
   );
   const activeEngine =
-    engine?.symbol === symbol && engine.interval === interval && !engine.disposed ? engine : null;
+    engine?.symbol === symbol &&
+    chartIntervalKey(engine.interval) === chartIntervalKey(interval) &&
+    !engine.disposed
+      ? engine
+      : null;
   const technicalRows = useMemo(
     () => chartTechnicalReadings(readings, visibleIndicators, settings.indicatorInputs),
     [readings, visibleIndicators, settings.indicatorInputs],
@@ -194,7 +204,7 @@ export function TradovateChart({
       grid: { vertLines: { color: "#171a23" }, horzLines: { color: "#171a23" } },
       timeScale: {
         timeVisible: true,
-        secondsVisible: false,
+        secondsVisible: interval.unit !== "minute",
         borderColor: "#242730",
         rightOffset: 5,
       },
@@ -263,7 +273,7 @@ export function TradovateChart({
           sorted,
           enabled,
           initialBalanceSettings.current,
-          interval,
+          chartIntervalMinutes(interval) ?? 0,
           appearanceSettings.current,
           inputSettings.current,
         );
@@ -372,7 +382,7 @@ export function TradovateChart({
     const connect = () => {
       if (state.disposed) return;
       source = openTradingStream(
-        `/api/trading/stream?${new URLSearchParams({ symbol, interval: String(interval) })}`,
+        `/api/trading/stream?${new URLSearchParams({ symbol, ...chartIntervalQuery(interval) })}`,
         {
           onMessage: (data) => {
             let message;
@@ -381,6 +391,11 @@ export function TradovateChart({
             } catch {
               return;
             }
+            if (
+              (message.type === "bars" || message.type === "status") &&
+              message.intervalKey !== chartIntervalKey(interval)
+            )
+              return;
             if (message.type === "status") {
               setStatus(message.message);
               if (message.state === "disconnected" || message.state === "connecting")
@@ -477,7 +492,7 @@ export function TradovateChart({
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${symbol}-${interval}m-chart.png`;
+      link.download = `${symbol}-${formatChartInterval(interval)}-chart.png`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       setNotice("Chart image downloaded.");

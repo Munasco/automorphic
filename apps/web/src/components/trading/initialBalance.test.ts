@@ -27,6 +27,31 @@ const session = (date = "2026-09-14", utcHour = 13): Candle[] => [
 ];
 
 describe("initial balance", () => {
+  it.each([1, 5, 10, 15, 30, 45])(
+    "uses exact %ss coverage and excludes the boundary bar from the first hour",
+    (seconds) => {
+      const start = Date.parse("2026-09-14T13:30:00Z") / 1000;
+      const count = 3600 / seconds;
+      const bars = Array.from({ length: count + 1 }, (_, index) => ({
+        time: start + index * seconds,
+        open: 100,
+        high: index < count ? 110 : 900,
+        low: index < count ? 90 : 1,
+        close: 100,
+        volume: 1,
+      }));
+      const result = calculateInitialBalance(bars, DEFAULT_INITIAL_BALANCE, seconds / 60);
+      expect(result.status).toBe("complete");
+      expect(result.segments[0]?.range).toMatchObject({
+        high: 110,
+        low: 90,
+        volume: count,
+        endTime: start + 3600,
+      });
+      const missing = calculateInitialBalance(bars.slice(1), DEFAULT_INITIAL_BALANCE, seconds / 60);
+      expect(missing.status).toBe("incomplete");
+    },
+  );
   it("tracks the exact 5m opening hour, frozen volume, projection end and live dashboard statistics", () => {
     const start = Date.parse("2026-09-14T13:30:00Z") / 1000;
     const input = Array.from({ length: 14 }, (_, index) => ({

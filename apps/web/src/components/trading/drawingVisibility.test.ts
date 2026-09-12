@@ -7,6 +7,18 @@ import {
 } from "./drawingVisibility";
 
 describe("drawing visibility", () => {
+  it("uses the tick flag independently of same-sized second and minute groups", () => {
+    const settings = sanitizeDrawingVisibility({
+      ticks: false,
+      seconds: { enabled: true, min: 5, max: 30 },
+      minutes: { enabled: false },
+    });
+    expect(isDrawingVisibleAtInterval(settings, { unit: "tick", value: 10 })).toBe(false);
+    expect(isDrawingVisibleAtInterval(settings, { unit: "second", value: 10 })).toBe(true);
+    expect(isDrawingVisibleAtInterval(settings, { unit: "minute", value: 10 })).toBe(false);
+    settings.ticks = true;
+    expect(isDrawingVisibleAtInterval(settings, { unit: "tick", value: 1000 })).toBe(true);
+  });
   it("restores missing legacy settings and malformed records with independent defaults", () => {
     for (const input of [undefined, null, [], "invalid", 42]) {
       expect(sanitizeDrawingVisibility(input)).toEqual(DEFAULT_DRAWING_VISIBILITY);

@@ -1,3 +1,4 @@
+import type { ChartInterval } from "./tradingIntervals";
 export interface DrawingVisibilityRange {
   enabled: boolean;
   min: number;
@@ -65,19 +66,19 @@ function inRange(range: DrawingVisibilityRange, value: number): boolean {
   return range.enabled && value >= range.min && value <= range.max;
 }
 
-/**
- * The chart currently identifies timeframes by duration, not an interval unit.
- * Normalize exact 30-day multiples to months, then exact 7-day multiples to
- * weeks; other durations use days, hours, minutes or seconds. Consequently 7D
- * and 1W are indistinguishable here. Tick/range flags are retained for future
- * non-time charts, but neither is represented by a numeric minute duration.
- */
 export function isDrawingVisibleAtInterval(
   visibility: DrawingVisibility | undefined,
-  intervalMinutes: number,
+  interval: number | ChartInterval,
 ): boolean {
-  if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) return false;
   const settings = visibility ?? DEFAULT_DRAWING_VISIBILITY;
+  if (typeof interval !== "number" && interval.unit === "tick") return settings.ticks;
+  const intervalMinutes =
+    typeof interval === "number"
+      ? interval
+      : interval.unit === "second"
+        ? interval.value / 60
+        : interval.value;
+  if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) return false;
   if (intervalMinutes % 43_200 === 0) return inRange(settings.months, intervalMinutes / 43_200);
   if (intervalMinutes % 10_080 === 0) return inRange(settings.weeks, intervalMinutes / 10_080);
   if (intervalMinutes >= 1_440) return inRange(settings.days, intervalMinutes / 1_440);

@@ -4,6 +4,7 @@ import * as NodeFSP from "node:fs/promises";
 import { resolveTradingEnvironmentFile, synchronizeTradingSession } from "./runtimeEnv.ts";
 import * as NodeUtil from "node:util";
 import * as NodeStreamWeb from "node:stream/web";
+import { resolveChartInterval } from "./chartInterval.ts";
 
 export type Candle = {
   time: number;
@@ -151,13 +152,11 @@ export async function contracts(root: string) {
   }
 }
 
-export async function chartStream(symbol: string, interval: number) {
-  if (
-    !/^(MGC|MNQ|GC|NQ)[FGHJKMNQUVXZ]\d{1,2}$/.test(symbol) ||
-    ![1, 2, 3, 5, 10, 15, 30, 45, 60, 120, 180, 240].includes(interval)
-  ) {
-    throw new Error("Choose a valid MGC, MNQ, GC or NQ contract and chart interval.");
+export async function chartStream(symbol: string, interval: number, intervalUnit = "minute") {
+  if (!/^(MGC|MNQ|GC|NQ)[FGHJKMNQUVXZ]\d{1,2}$/.test(symbol)) {
+    throw new Error("Choose a valid MGC, MNQ, GC or NQ contract.");
   }
+  const { chartDescription, ...intervalMetadata } = resolveChartInterval(interval, intervalUnit);
   const session = await credentials();
   // https://api.tradovate.com/: contract/find binds the requested expiry to its ID.
   const contractResponse = await fetch(
@@ -224,7 +223,12 @@ export async function chartStream(symbol: string, interval: number) {
       }, 20_000);
       // Reconnect periodically so a long-running chart picks up Convex's renewed token.
       const rotate = setTimeout(() => finish("Refreshing market-data connection…"), 45 * 60_000);
-      send({ type: "status", state: "connecting", message: "Connecting to Tradovate…" });
+      send({
+        type: "status",
+        state: "connecting",
+        message: "Connecting to Tradovate…",
+        ...intervalMetadata,
+      });
       ws.addEventListener("message", (event) => {
         const raw = String(event.data);
         if (raw === "o") {
@@ -250,7 +254,7 @@ export async function chartStream(symbol: string, interval: number) {
               return;
             }
             ws.send(
-              `md/getChart\n2\n\n${JSON.stringify({ symbol, chartDescription: { underlyingType: "MinuteBar", elementSize: interval, elementSizeUnit: "UnderlyingUnits" }, timeRange: { asMuchAsElements: 500 } })}`,
+              `md/getChart\n2\n\n${JSON.stringify({ symbol, chartDescription, timeRange: { asMuchAsElements: 500 } })}`,
             );
             ws.send(`md/subscribeQuote\n4\n\n${JSON.stringify({ symbol })}`);
           } else if (message.i === 2) {
@@ -265,6 +269,7 @@ export async function chartStream(symbol: string, interval: number) {
               state: "connected",
               message: "Tradovate connected",
               mode: message.d?.mode,
+              ...intervalMetadata,
             });
           } else if (message.e === "md" && Array.isArray(message.d?.quotes)) {
             for (const rawQuote of message.d.quotes) {
@@ -273,12 +278,19 @@ export async function chartStream(symbol: string, interval: number) {
             }
           } else if (message.e === "chart" && Array.isArray(message.d?.charts)) {
             for (const chart of message.d.charts) {
+              if (!chart || !Number.isSafeInteger(chart.id)) continue;
               if (chart.id !== historicalId && chart.id !== realtimeId) continue;
               const bars = normalizeBars(chart.bars);
               if (bars.length) {
                 receivedBars = true;
                 clearTimeout(timeout);
-                send({ type: "bars", bars, historical: !finishedHistory, symbol });
+                send({
+                  type: "bars",
+                  bars,
+                  historical: !finishedHistory,
+                  symbol,
+                  ...intervalMetadata,
+                });
               }
               if (chart.eoh) finishedHistory = true;
             }

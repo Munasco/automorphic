@@ -21,24 +21,36 @@ beforeEach(() => {
 });
 
 describe("futures instrument selection", () => {
-  it("persists supported minute intervals and rejects unsupported feed sizes", async () => {
+  it("persists supported typed intervals and rejects unsupported feed sizes", async () => {
     for (const interval of CHART_INTERVALS) {
       useTradingPreferences.getState().setInterval(interval);
       const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
       useTradingPreferences.setState(useTradingPreferences.getInitialState(), true);
       vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
       await useTradingPreferences.persist.rehydrate();
-      expect(useTradingPreferences.getState().interval).toBe(interval);
+      expect(useTradingPreferences.getState().interval).toEqual(interval);
     }
     for (const interval of [0, 0.5, 7, 1440, NaN, Infinity]) {
       useTradingPreferences.getState().setInterval(interval);
-      expect(useTradingPreferences.getState().interval).toBe(240);
+      expect(useTradingPreferences.getState().interval).toEqual({ unit: "minute", value: 240 });
     }
     vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
       JSON.stringify({ state: { interval: 0.5 }, version: 0 }),
     );
     await useTradingPreferences.persist.rehydrate();
-    expect(useTradingPreferences.getState().interval).toBe(5);
+    expect(useTradingPreferences.getState().interval).toEqual({ unit: "minute", value: 5 });
+  });
+  it("migrates old numeric minute settings and rejects unsupported typed tick sizes", async () => {
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+      JSON.stringify({ state: { interval: 15 }, version: 0 }),
+    );
+    await useTradingPreferences.persist.rehydrate();
+    expect(useTradingPreferences.getState().interval).toEqual({ unit: "minute", value: 15 });
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+      JSON.stringify({ state: { interval: { unit: "tick", value: 1 } }, version: 0 }),
+    );
+    await useTradingPreferences.persist.rehydrate();
+    expect(useTradingPreferences.getState().interval).toEqual({ unit: "minute", value: 5 });
   });
   it.each(INSTRUMENT_ROOTS)(
     "restores %s and its exact selected expiry without substituting contract size",

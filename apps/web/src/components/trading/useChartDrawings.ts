@@ -1,3 +1,4 @@
+import type { ChartInterval } from "./tradingIntervals";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { randomUUID } from "../../lib/utils";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
@@ -85,7 +86,7 @@ export function createChartDrawingSession(
   symbol: string,
   onChange: (state: DrawingState) => void,
   storage: DrawingStorage | undefined = tradingWorkspaceStorage,
-  intervalMinutes = 1,
+  intervalMinutes: number | ChartInterval = 1,
   regressionSeries: ISeriesApi<SeriesType> = series,
 ) {
   const key = `automorphic:chart-drawings:v1:${encodeURIComponent(symbol)}`;
@@ -1030,7 +1031,7 @@ export function useChartDrawings(
   chart: IChartApi | null,
   series: ISeriesApi<SeriesType> | null,
   symbol: string,
-  intervalMinutes = 1,
+  intervalMinutes: number | ChartInterval = 1,
   regressionSeries?: ISeriesApi<SeriesType>,
 ) {
   const [state, setState] = useState<DrawingState>(EMPTY);

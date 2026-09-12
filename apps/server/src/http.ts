@@ -1,4 +1,5 @@
 import { contracts, chartStream } from "./trading/marketData.ts";
+import { ChartIntervalError } from "./trading/chartInterval.ts";
 import { accountSnapshot, parseAccountId, TradingAccountError } from "./trading/accountData.ts";
 import { makeTradingWorkspaceCreator } from "./trading/createWorkspace.ts";
 import { TradingWorkspace } from "./trading/TradingWorkspace.ts";
@@ -469,13 +470,21 @@ const tradingReadHandler = Effect.gen(function* () {
     }
     if (url.pathname === "/api/trading/contracts")
       return HttpServerResponse.jsonUnsafe(await contracts(url.searchParams.get("root") ?? "MGC"));
-    if (url.pathname === "/api/trading/stream")
-      return HttpServerResponse.fromWeb(
-        await chartStream(
-          url.searchParams.get("symbol") ?? "",
-          Number(url.searchParams.get("interval") ?? 5),
-        ),
-      );
+    if (url.pathname === "/api/trading/stream") {
+      try {
+        return HttpServerResponse.fromWeb(
+          await chartStream(
+            url.searchParams.get("symbol") ?? "",
+            Number(url.searchParams.get("interval") ?? 5),
+            url.searchParams.get("intervalUnit") ?? "minute",
+          ),
+        );
+      } catch (error) {
+        if (error instanceof ChartIntervalError)
+          return HttpServerResponse.jsonUnsafe({ error: error.message }, { status: 400 });
+        throw error;
+      }
+    }
     return HttpServerResponse.empty({ status: 404 });
   }).pipe(
     Effect.orElseSucceed(() =>

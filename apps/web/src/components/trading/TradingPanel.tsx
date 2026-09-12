@@ -1,3 +1,4 @@
+import { chartIntervalKey } from "./tradingIntervals";
 import { ChartViewMenu, type ChartView } from "./ChartViewMenu";
 import {
   INSTRUMENTS,
@@ -115,10 +116,12 @@ function ReadyTradingPanel({
     contracts.find((contract) => contract.root === settings.root)?.name ??
     "";
   const technicalsAvailable =
-    !settings.useTradingView && technicalSource === `${symbol}:${settings.interval}`;
+    !settings.useTradingView &&
+    technicalSource === `${symbol}:${chartIntervalKey(settings.interval)}`;
   const activeView = view === "technicals" && !technicalsAvailable ? "chart" : view;
   const handleTechnicalsAvailability = useCallback(
-    (available: boolean) => setTechnicalSource(available ? `${symbol}:${settings.interval}` : null),
+    (available: boolean) =>
+      setTechnicalSource(available ? `${symbol}:${chartIntervalKey(settings.interval)}` : null),
     [symbol, settings.interval],
   );
   const alerts = useChartAlerts(symbol);
@@ -304,7 +307,7 @@ function ReadyTradingPanel({
             />
           ) : (
             <TradovateChart
-              key={`${symbol}:${settings.interval}`}
+              key={`${symbol}:${chartIntervalKey(settings.interval)}`}
               symbol={symbol}
               interval={settings.interval}
               onQuote={handleQuote}

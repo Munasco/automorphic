@@ -1,4 +1,4 @@
-import { formatChartInterval } from "./tradingIntervals";
+import { formatChartInterval, type ChartInterval } from "./tradingIntervals";
 import { GaugeIcon } from "lucide-react";
 import {
   INDICATOR_CATALOG,
@@ -41,7 +41,7 @@ export function ChartTechnicals({
   rows,
 }: {
   symbol: string;
-  interval: number;
+  interval: ChartInterval;
   time: number | null;
   rows: ReturnType<typeof chartTechnicalReadings>;
 }) {

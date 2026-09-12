@@ -1,6 +1,9 @@
+import { TradingSelect } from "./TradingSelect";
+
 import {
   CHART_INTERVALS,
-  isChartInterval,
+  chartIntervalKey,
+  chartIntervalFromKey,
   formatChartInterval,
   type ChartInterval,
 } from "./tradingIntervals";
@@ -82,6 +85,22 @@ export function ChartToolbar({
   navigationControl,
 }: ChartToolbarProps) {
   const id = useId();
+  const intervalGroups = (["Ticks", "Seconds", "Minutes", "Hours"] as const).map((group) => ({
+    group,
+    items: CHART_INTERVALS.filter((item) =>
+      group === "Ticks"
+        ? item.unit === "tick"
+        : group === "Seconds"
+          ? item.unit === "second"
+          : item.unit === "minute" && (group === "Minutes" ? item.value < 60 : item.value >= 60),
+    ).map((item) => {
+      const count = group === "Hours" ? item.value / 60 : item.value;
+      return {
+        key: chartIntervalKey(item),
+        label: `${count} ${group.toLowerCase().slice(0, -1)}${count === 1 ? "" : "s"}`,
+      };
+    }),
+  }));
   const [indicatorSearch, setIndicatorSearch] = useState("");
   const [indicatorCategory, setIndicatorCategory] = useState<string>("All");
   const matchingIndicators = findIndicators(indicatorSearch).filter(
@@ -117,75 +136,49 @@ export function ChartToolbar({
         </Tooltip>
         <span className="mx-1 h-4 w-px shrink-0 bg-white/10" aria-hidden="true" />
         <Select
-          value={interval}
+          value={chartIntervalKey(interval)}
           onValueChange={(value) => {
-            if (isChartInterval(value)) onIntervalChange(value);
+            const next = chartIntervalFromKey(value);
+            if (next) onIntervalChange(next);
           }}
         >
           <SelectTrigger
             aria-label="Chart interval"
-            variant="ghost"
-            size="compact"
-            className="h-7 w-auto min-w-0 shrink-0 gap-1 px-1.5 text-[11px] text-zinc-300"
+            size="sm"
+            className="w-auto min-w-0 shrink-0 px-2"
           >
             <SelectValue>{formatChartInterval(interval)}</SelectValue>
           </SelectTrigger>
-          <SelectPopup
-            alignItemWithTrigger={false}
-            matchTriggerWidth={false}
-            popupClassName="!bg-[#202020] !backdrop-filter-none"
-            className="min-w-24 p-1"
-          >
-            {(["Minutes", "Hours"] as const).map((group) => (
-              <SelectGroup key={group}>
-                <SelectGroupLabel className="px-2 py-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
-                  {group}
-                </SelectGroupLabel>
-                {CHART_INTERVALS.filter((value) =>
-                  group === "Minutes" ? value < 60 : value >= 60,
-                ).map((value) => {
-                  const count = value < 60 ? value : value / 60;
-                  return (
-                    <SelectItem key={value} value={value} className="min-h-8 text-xs">
-                      {count} {value < 60 ? "minute" : "hour"}
-                      {count === 1 ? "" : "s"}
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            {intervalGroups
+              .filter((group) => group.items.length > 0)
+              .map(({ group, items }) => (
+                <SelectGroup key={group}>
+                  <SelectGroupLabel>{group}</SelectGroupLabel>
+                  {items.map((item) => (
+                    <SelectItem hideIndicator key={item.key} value={item.key}>
+                      {item.label}
                     </SelectItem>
-                  );
-                })}
-              </SelectGroup>
-            ))}
+                  ))}
+                </SelectGroup>
+              ))}
           </SelectPopup>
         </Select>
-        <Select
+        <TradingSelect
+          label="Chart style"
           value={style}
-          onValueChange={(value) => {
-            if (value !== null) onStyleChange(value);
+          className="w-auto shrink-0"
+          options={[
+            ["candles", "Candles"],
+            ["bars", "Bars"],
+            ["line", "Line"],
+            ["area", "Area"],
+          ]}
+          onChange={(value) => {
+            if (value === "candles" || value === "bars" || value === "line" || value === "area")
+              onStyleChange(value);
           }}
-        >
-          <SelectTrigger
-            aria-label="Chart style"
-            variant="ghost"
-            size="compact"
-            className="h-7 w-auto min-w-0 shrink-0 gap-1.5 px-1.5 text-xs text-zinc-300"
-          >
-            <ChartIcon name="chart-candle" className="size-4 text-zinc-500" />
-            <SelectValue>
-              {{ candles: "Candles", bars: "Bars", line: "Line", area: "Area" }[style]}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectPopup
-            alignItemWithTrigger={false}
-            matchTriggerWidth={false}
-            popupClassName="!bg-[#202020] !backdrop-filter-none"
-            className="min-w-28 p-1"
-          >
-            {(["candles", "bars", "line", "area"] as const).map((value) => (
-              <SelectItem key={value} value={value} className="text-xs">
-                {value[0]!.toUpperCase() + value.slice(1)}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
+        />
         <span className="mx-1 h-4 w-px shrink-0 bg-white/10" aria-hidden="true" />
         <Dialog>
           <Tooltip>
@@ -311,42 +304,29 @@ export function ChartToolbar({
                                 <label htmlFor={`${id}-ib-zone`} className="text-[11px]">
                                   Time zone
                                 </label>
-                                <Select
+                                <TradingSelect
+                                  id={`${id}-ib-zone`}
+                                  label="Initial balance time zone"
                                   value={initialBalance.timeZone}
-                                  onValueChange={(timeZone) => {
-                                    if (timeZone !== null)
-                                      onInitialBalanceChange({ ...initialBalance, timeZone });
-                                  }}
-                                >
-                                  <SelectTrigger
-                                    id={`${id}-ib-zone`}
-                                    aria-label="Initial balance time zone"
-                                    size="compact"
-                                    className="h-7 min-w-0 text-xs"
-                                  >
-                                    <SelectValue>
-                                      {initialBalance.timeZone === "America/New_York"
-                                        ? "New York"
-                                        : initialBalance.timeZone === "America/Chicago"
-                                          ? "Chicago"
-                                          : "UTC"}
-                                    </SelectValue>
-                                  </SelectTrigger>
-                                  <SelectPopup
-                                    alignItemWithTrigger={false}
-                                    popupClassName="!bg-[#202020] !backdrop-filter-none"
-                                  >
-                                    {INITIAL_BALANCE_TIME_ZONES.map((zone) => (
-                                      <SelectItem key={zone} value={zone} className="text-xs">
-                                        {zone === "America/New_York"
+                                  options={INITIAL_BALANCE_TIME_ZONES.map(
+                                    (zone) =>
+                                      [
+                                        zone,
+                                        zone === "America/New_York"
                                           ? "New York"
                                           : zone === "America/Chicago"
                                             ? "Chicago"
-                                            : "UTC"}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectPopup>
-                                </Select>
+                                            : "UTC",
+                                      ] as const,
+                                  )}
+                                  onChange={(value) => {
+                                    const timeZone = INITIAL_BALANCE_TIME_ZONES.find(
+                                      (zone) => zone === value,
+                                    );
+                                    if (timeZone)
+                                      onInitialBalanceChange({ ...initialBalance, timeZone });
+                                  }}
+                                />
                               </div>
                               <div className="flex items-center justify-between gap-3">
                                 <label htmlFor={`${id}-ib-duration`} className="text-[11px]">

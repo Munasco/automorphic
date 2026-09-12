@@ -75,6 +75,11 @@ const stochasticPlots = (result: ReturnType<typeof calculateStochastic>): Indica
   ],
 });
 function calculateSession({ bars, session, interval }: IndicatorContext): IndicatorResult {
+  if (interval === 0)
+    return {
+      plots: [],
+      status: "Initial balance needs time-based bars; choose a second or minute interval.",
+    };
   const resolved = resolveInitialBalanceSettings(session);
   const result = calculateInitialBalance(bars, resolved, interval);
   const atr = calculateATR(bars).at(-1);

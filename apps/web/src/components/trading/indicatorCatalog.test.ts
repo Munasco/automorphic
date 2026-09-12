@@ -11,6 +11,18 @@ import {
 import { normalizeChartPreferences, useChartPreferences } from "./chartPreferences";
 
 describe("indicator catalog and saved preferences", () => {
+  it("does not fabricate an initial balance from non-time tick bars", () => {
+    const ib = INDICATOR_CATALOG.find((item) => item.key === "ib")!;
+    const result = ib.calculate({
+      bars: [],
+      inputs: {},
+      interval: 0,
+      session: DEFAULT_INITIAL_BALANCE,
+    });
+    expect(result.plots).toEqual([]);
+    expect(result.sessionStats).toBeUndefined();
+    expect(result.status).toContain("needs time-based bars");
+  });
   it("preserves old chart choices and merges new indicators disabled", () => {
     const restored = normalizeChartPreferences({
       style: "area",
