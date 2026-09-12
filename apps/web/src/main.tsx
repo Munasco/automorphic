@@ -15,6 +15,14 @@ import { clearChunkReloadGuard, reloadOnceForChunkLoadError } from "./lib/chunkR
 
 const AuthenticatedWorkspace = lazy(() => import("./AuthenticatedWorkspace"));
 
+// An HMR evaluation must reuse the root owned by this entry, and an older
+// asynchronous startup must not mount after its module has been replaced.
+let disposed = false;
+let root: ReactDOM.Root | undefined = import.meta.hot?.data.reactRoot;
+import.meta.hot?.dispose(() => {
+  disposed = true;
+});
+
 if (isElectron) {
   syncDocumentElectronPlatformClasses(navigator.platform);
   syncDocumentWindowControlsOverlayClass();
@@ -26,12 +34,16 @@ const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string
 // a deploy; one guarded reload picks up the fresh index.html.
 let chunkLoadFailed = false;
 let reloadScheduled = false;
-window.addEventListener("vite:preloadError", (event) => {
+const handlePreloadError = (event: Event) => {
   chunkLoadFailed = true;
   if (reloadOnceForChunkLoadError()) {
     reloadScheduled = true;
     event.preventDefault();
   }
+};
+window.addEventListener("vite:preloadError", handlePreloadError);
+import.meta.hot?.dispose(() => {
+  window.removeEventListener("vite:preloadError", handlePreloadError);
 });
 
 const app = (
@@ -61,9 +73,13 @@ export const startup = Promise.resolve(
   managedAuthShellModule?.then((module) => module.default) ?? null,
 )
   .then((ManagedAuthShell) => {
-    if (reloadScheduled) return;
+    if (reloadScheduled || disposed) return;
     if (!chunkLoadFailed) clearChunkReloadGuard();
-    ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    if (!root) {
+      root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
+      if (import.meta.hot) import.meta.hot.data.reactRoot = root;
+    }
+    root.render(
       <React.StrictMode>
         {ManagedAuthShell && clerkPublishableKey ? (
           <ManagedAuthShell publishableKey={clerkPublishableKey}>{app}</ManagedAuthShell>
@@ -75,6 +91,6 @@ export const startup = Promise.resolve(
   })
   .catch((error: unknown) => {
     // Let the bootstrap entry show the error unless a reload is already scheduled.
-    if (reloadScheduled) return;
+    if (reloadScheduled || disposed) return;
     throw error;
   });
