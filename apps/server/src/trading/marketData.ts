@@ -1,4 +1,5 @@
-// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalTimers:off - Native WebSocket/ReadableStream adapter; its lifecycle is tied to the HTTP response.
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalTimers:off globalDate:off - Native WebSocket/ReadableStream adapter; its lifecycle is tied to the HTTP response.
+import { activeCandidates, mostActiveContract, readContractActivity } from "./activeContract.ts";
 import * as NodeFSP from "node:fs/promises";
 import { resolveTradingEnvironmentFile, synchronizeTradingSession } from "./runtimeEnv.ts";
 import * as NodeUtil from "node:util";
@@ -80,31 +81,79 @@ export async function credentials() {
   return { token: env.TRADOVATE_ACCESS_TOKEN, environment: env.TRADOVATE_ENVIRONMENT };
 }
 
+const activeContractCache = new Map<
+  string,
+  {
+    token: string;
+    expires: number;
+    pending: Promise<{ id: number; name: string }[]>;
+  }
+>();
+
 export async function contracts(root: string) {
-  if (root !== "MGC" && root !== "NQ") throw new Error("Choose MGC or NQ.");
+  if (!["MGC", "MNQ", "NQ"].includes(root)) throw new Error("Choose MGC or MNQ.");
   const session = await credentials();
-  const response = await fetch(
-    `https://${session.environment}.tradovateapi.com/v1/contract/suggest?t=${root}&l=12`,
-    {
-      headers: { Authorization: `Bearer ${session.token}` },
-      signal: AbortSignal.timeout(10_000),
-      redirect: "error",
-    },
-  );
-  if (!response.ok) throw new Error(`Tradovate contract lookup returned HTTP ${response.status}.`);
-  const body = await response.json();
-  if (!Array.isArray(body)) throw new Error("Tradovate returned no contracts.");
-  return body
-    .filter(
-      (x) =>
-        typeof x.name === "string" && new RegExp(`^${root}[FGHJKMNQUVXZ]\\d{1,2}$`).test(x.name),
-    )
-    .map((x) => ({ id: Number(x.id), name: String(x.name) }));
+  const key = `${session.environment}:${root}`;
+  const cached = activeContractCache.get(key);
+  if (cached && cached.token === session.token && cached.expires > Date.now())
+    return cached.pending;
+  const lookup = async () => {
+    const get = async (path: string) => {
+      const response = await fetch(`https://${session.environment}.tradovateapi.com/v1/${path}`, {
+        headers: { Authorization: `Bearer ${session.token}` },
+        signal: AbortSignal.timeout(10_000),
+        redirect: "error",
+      });
+      if (!response.ok) throw new Error(`Contract lookup returned HTTP ${response.status}.`);
+      const body = await response.json();
+      if (!Array.isArray(body)) throw new Error("Invalid contract response.");
+      return body;
+    };
+    const suggested = await get(`contract/suggest?t=${root}&l=12`);
+    const matching = suggested.filter(
+      (item) =>
+        item &&
+        typeof item.name === "string" &&
+        new RegExp(`^${root}[FGHJKMNQUVXZ]\\d{1,2}$`).test(item.name) &&
+        Number.isSafeInteger(item.id) &&
+        item.id > 0 &&
+        Number.isSafeInteger(item.contractMaturityId),
+    );
+    if (!matching.length) throw new Error("No current contracts available.");
+    const maturities = await get(
+      `contractMaturity/items?ids=${matching.map((item) => item.contractMaturityId).join(",")}`,
+    );
+    const candidates = activeCandidates(
+      matching.flatMap((item) => {
+        const maturity = maturities.find((value) => value.id === item.contractMaturityId);
+        return maturity && !maturity.archived
+          ? [
+              {
+                id: item.id,
+                name: item.name,
+                expirationDate: maturity.expirationDate,
+                ...(maturity.firstIntentDate ? { firstIntentDate: maturity.firstIntentDate } : {}),
+              },
+            ]
+          : [];
+      }),
+    );
+    return [mostActiveContract(candidates, await readContractActivity(candidates, session.token))];
+  };
+  const pending = lookup();
+  const entry = { token: session.token, expires: Date.now() + 15 * 60_000, pending };
+  activeContractCache.set(key, entry);
+  try {
+    return await pending;
+  } catch (error) {
+    if (activeContractCache.get(key) === entry) activeContractCache.delete(key);
+    throw error;
+  }
 }
 
 export async function chartStream(symbol: string, interval: number) {
-  if (!/^(MGC|NQ)[FGHJKMNQUVXZ]\d{1,2}$/.test(symbol) || ![1, 5, 15, 60].includes(interval)) {
-    throw new Error("Choose a valid MGC/NQ contract and chart interval.");
+  if (!/^(MGC|MNQ|NQ)[FGHJKMNQUVXZ]\d{1,2}$/.test(symbol) || ![1, 5, 15, 60].includes(interval)) {
+    throw new Error("Choose a valid MGC/MNQ contract and chart interval.");
   }
   const session = await credentials();
   // https://api.tradovate.com/: contract/find binds the requested expiry to its ID.

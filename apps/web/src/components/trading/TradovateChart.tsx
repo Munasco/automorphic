@@ -98,7 +98,7 @@ export function TradovateChart({
 }: {
   symbol: string;
   interval: number;
-  root: "MGC" | "NQ";
+  root: "MGC" | "MNQ";
   onQuote?: ((quote: MarketQuote | null) => void) | undefined;
   onSelectSymbol: () => void;
   onIntervalChange: (interval: number) => void;

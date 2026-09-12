@@ -3,7 +3,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { MarketStatusIcon } from "./MarketStatusIcon";
 import { getFuturesSession } from "./marketSession";
 
-export function MarketSessionBadge({ root }: { root: "MGC" | "NQ" }) {
+export function MarketSessionBadge({ root }: { root: "MGC" | "MNQ" }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const refresh = () => setNow(new Date());

@@ -1,3 +1,5 @@
+import { MarketInstrumentIcon } from "./MarketInstrumentIcon";
+import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { useRef, useState } from "react";
 import { CheckIcon, SearchIcon } from "lucide-react";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogDescription } from "../ui/dialog";
@@ -27,7 +29,7 @@ export function SymbolPicker({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "MGC" | "NQ">("all");
+  const [filter, setFilter] = useState<"all" | "MGC" | "MNQ">("all");
   const filtered = contracts.filter(
     (contract) =>
       (filter === "all" || contract.root === filter) &&
@@ -44,7 +46,7 @@ export function SymbolPicker({
       >
         <DialogHeader className="pb-4">
           <DialogTitle>Symbol search</DialogTitle>
-          <DialogDescription>Choose a futures contract from Tradovate.</DialogDescription>
+          <DialogDescription>Choose a market.</DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-3 border-y border-border px-6 py-3">
           <SearchIcon className="size-4 shrink-0 text-muted-foreground" />
@@ -64,7 +66,7 @@ export function SymbolPicker({
           />
         </div>
         <div className="flex gap-2 px-6 py-3" aria-label="Symbol categories">
-          {(["all", "MGC", "NQ"] as const).map((value) => (
+          {(["all", "MGC", "MNQ"] as const).map((value) => (
             <button
               type="button"
               key={value}
@@ -83,28 +85,31 @@ export function SymbolPicker({
         </div>
         <div className="max-h-[min(50vh,360px)] overflow-y-auto px-3 pb-3">
           {filtered.map((contract) => (
-            <button
-              key={contract.id}
-              type="button"
-              onClick={() => {
-                onSelect(contract);
-                onOpenChange(false);
-              }}
-              className="flex w-full items-center gap-3 rounded-md px-3 py-3 text-left outline-none hover:bg-accent focus-visible:bg-accent"
-            >
-              <span className="w-20 shrink-0 text-sm font-semibold">{contract.name}</span>
-              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                {INSTRUMENTS[contract.root].name}
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                {INSTRUMENTS[contract.root].exchange}
-              </span>
-              {selected === contract.name ? (
-                <CheckIcon className="size-4 text-foreground" aria-label="Selected" />
-              ) : (
-                <span className="size-4" />
-              )}
-            </button>
+            <Tooltip key={contract.id}>
+              <TooltipTrigger
+                type="button"
+                onClick={() => {
+                  onSelect(contract);
+                  onOpenChange(false);
+                }}
+                className="flex w-full items-center gap-3 rounded-md px-3 py-3 text-left outline-none hover:bg-accent focus-visible:bg-accent"
+              >
+                <MarketInstrumentIcon root={contract.root} className="size-6 shrink-0" />
+                <span className="w-14 shrink-0 text-sm font-semibold">{contract.root}</span>
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                  {INSTRUMENTS[contract.root].name}
+                </span>
+                <span className="text-[10px] text-muted-foreground">
+                  {INSTRUMENTS[contract.root].exchange}
+                </span>
+                {selected === contract.name ? (
+                  <CheckIcon className="size-4 text-foreground" aria-label="Selected" />
+                ) : (
+                  <span className="size-4" />
+                )}
+              </TooltipTrigger>
+              <TooltipPopup>{contract.name}</TooltipPopup>
+            </Tooltip>
           ))}
           {filtered.length === 0 ? (
             <p role="status" className="py-8 text-center text-sm text-muted-foreground">

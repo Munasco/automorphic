@@ -1,3 +1,4 @@
+import { MarketInstrumentIcon } from "./MarketInstrumentIcon";
 import { ChartIcon } from "./ChartIcon";
 import { useId, useState, type ReactNode } from "react";
 import { cn } from "../../lib/utils";
@@ -85,10 +86,15 @@ export function ChartToolbar({
             aria-label={`Change chart symbol${symbol ? `, currently ${symbol}` : ""}`}
             className={cn(control, "max-w-32 font-semibold text-zinc-200")}
           >
-            <ChartIcon name="search" className="size-3.5 shrink-0" aria-hidden="true" />
-            <span className="truncate">{symbol || "Symbol"}</span>
+            <MarketInstrumentIcon
+              root={symbol.startsWith("MGC") ? "MGC" : "MNQ"}
+              className="size-5 shrink-0"
+            />
+            <span className="truncate">
+              {symbol.replace(/[FGHJKMNQUVXZ]\d{1,2}$/, "") || "Symbol"}
+            </span>
           </TooltipTrigger>
-          <TooltipPopup>Select symbol</TooltipPopup>
+          <TooltipPopup>{symbol || "Select symbol"}</TooltipPopup>
         </Tooltip>
         <span className="mx-1 h-4 w-px shrink-0 bg-white/10" aria-hidden="true" />
         <div className="relative shrink-0">

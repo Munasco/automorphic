@@ -20,7 +20,7 @@ const scheduleNote =
 // Regular hours: https://www.cmegroup.com/markets/microsuite/metals.html
 // Equity pause: https://www.cmegroup.com/trading/equity-index/e-mini-s-and-p-select-sector-futures-faq.html
 // Overrides: https://www.cmegroup.com/trading-hours.html
-export function getFuturesSession(root: "MGC" | "NQ", now: Date): FuturesSession {
+export function getFuturesSession(root: "MGC" | "MNQ" | "NQ", now: Date): FuturesSession {
   const parts = chicagoClock.formatToParts(now);
   const day = parts.find((part) => part.type === "weekday")?.value;
   const minute =
@@ -51,7 +51,7 @@ export function getFuturesSession(root: "MGC" | "NQ", now: Date): FuturesSession
     };
   }
 
-  if (root === "NQ" && day !== "Sun" && minute >= 15 * 60 + 15 && minute < 15 * 60 + 30) {
+  if (root !== "MGC" && day !== "Sun" && minute >= 15 * 60 + 15 && minute < 15 * 60 + 30) {
     return {
       status: "break",
       label: "Session break",

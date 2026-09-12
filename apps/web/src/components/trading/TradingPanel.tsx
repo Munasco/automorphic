@@ -1,3 +1,4 @@
+import { MarketInstrumentIcon } from "./MarketInstrumentIcon";
 import { tradingFetch } from "./tradingTransport";
 import { ChartAlerts, useChartAlerts } from "./ChartAlertsPanel";
 import { ChartIcon } from "./ChartIcon";
@@ -32,15 +33,14 @@ function ReadyTradingPanel({
   const [view, setView] = useState<"chart" | "news">("chart");
   const activeView = expanded ? "chart" : view;
   const [contracts, setContracts] = useState<FuturesContract[]>([]);
-  const selected = settings.selectedSymbol;
-  const [errors, setErrors] = useState<Partial<Record<"MGC" | "NQ", string>>>({});
+  const [errors, setErrors] = useState<Partial<Record<"MGC" | "MNQ", string>>>({});
   const [loading, setLoading] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [quote, setQuote] = useState<MarketQuote | null>(null);
   const request = useRef<AbortController | null>(null);
   const loadContracts = useCallback(async (signal: AbortSignal) => {
     const results = await Promise.allSettled(
-      (["MGC", "NQ"] as const).map(async (root) => {
+      (["MGC", "MNQ"] as const).map(async (root) => {
         const response = await tradingFetch(`/api/trading/contracts?root=${root}`, {
           signal,
           credentials: "same-origin",
@@ -64,15 +64,19 @@ function ReadyTradingPanel({
       }),
     );
     if (signal.aborted) return;
-    const nextErrors: Partial<Record<"MGC" | "NQ", string>> = {};
+    const nextErrors: Partial<Record<"MGC" | "MNQ", string>> = {};
     const nextContracts: FuturesContract[] = [];
     results.forEach((result, index) => {
       if (result.status === "fulfilled") nextContracts.push(...result.value);
       else
-        nextErrors[index === 0 ? "MGC" : "NQ"] =
+        nextErrors[index === 0 ? "MGC" : "MNQ"] =
           result.reason instanceof Error ? result.reason.message : "Contract lookup failed.";
     });
-    setContracts(nextContracts);
+    // A temporary refresh failure must not tear down an already loaded chart.
+    setContracts((previous) => [
+      ...nextContracts,
+      ...previous.filter((contract) => nextErrors[contract.root]),
+    ]);
     setErrors(nextErrors);
     setLoading(false);
   }, []);
@@ -82,13 +86,21 @@ function ReadyTradingPanel({
     // State changes occur only after both network requests settle.
     // eslint-disable-next-line react/set-state-in-effect
     void loadContracts(abort.signal);
-    return () => request.current?.abort();
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      request.current?.abort();
+      request.current = new AbortController();
+      void loadContracts(request.current.signal);
+    };
+    const timer = window.setInterval(refresh, 15 * 60_000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      request.current?.abort();
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+    };
   }, [loadContracts]);
-  const symbol =
-    contracts.find((contract) => contract.root === settings.root && contract.name === selected)
-      ?.name ??
-    contracts.find((contract) => contract.root === settings.root)?.name ??
-    "";
+  const symbol = contracts.find((contract) => contract.root === settings.root)?.name ?? "";
   const alerts = useChartAlerts(symbol);
   const { observeQuote } = alerts;
   const handleQuote = useCallback(
@@ -120,7 +132,7 @@ function ReadyTradingPanel({
     <div className="ml-auto flex shrink-0 items-center gap-1">
       {!settings.useTradingView
         ? [
-            { name: "list-details" as const, label: "Contracts", view: "contracts" as const },
+            { name: "list-details" as const, label: "Symbols", view: "contracts" as const },
             { name: "bell" as const, label: "Price alerts", view: "alerts" as const },
           ].map((item) => (
             <Tooltip key={item.view}>
@@ -316,10 +328,10 @@ function ReadyTradingPanel({
             ) : (
               <>
                 <header className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
-                  <h2 className="text-xs font-semibold">Contracts</h2>
+                  <h2 className="text-xs font-semibold">Symbols</h2>
                   <button
                     type="button"
-                    aria-label="Close contracts"
+                    aria-label="Close symbols"
                     onClick={() => setSideView(null)}
                     className="rounded px-2 py-1 text-muted-foreground hover:bg-accent"
                   >
@@ -328,26 +340,31 @@ function ReadyTradingPanel({
                 </header>
                 <div className="min-h-0 flex-1 overflow-y-auto p-1">
                   {contracts.map((contract) => (
-                    <button
-                      key={contract.id}
-                      type="button"
-                      aria-pressed={symbol === contract.name}
-                      onClick={() => {
-                        settings.setRoot(contract.root);
-                        settings.setSelectedSymbol(contract.name);
-                      }}
-                      className={cn(
-                        "flex w-full items-center justify-between gap-3 rounded px-3 py-2.5 text-sm",
-                        symbol === contract.name
-                          ? "bg-accent text-foreground"
-                          : "text-muted-foreground hover:bg-accent/50",
-                      )}
-                    >
-                      <span className="font-medium">{contract.name}</span>
-                      <span className="text-xs">
-                        {contract.root === "MGC" ? "Micro Gold" : "Nasdaq 100"}
-                      </span>
-                    </button>
+                    <Tooltip key={contract.id}>
+                      <TooltipTrigger
+                        type="button"
+                        aria-pressed={symbol === contract.name}
+                        onClick={() => {
+                          settings.setRoot(contract.root);
+                          settings.setSelectedSymbol(contract.name);
+                        }}
+                        className={cn(
+                          "flex w-full items-center justify-between gap-3 rounded px-3 py-2.5 text-sm",
+                          symbol === contract.name
+                            ? "bg-accent text-foreground"
+                            : "text-muted-foreground hover:bg-accent/50",
+                        )}
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <MarketInstrumentIcon root={contract.root} className="size-6 shrink-0" />
+                          <span className="font-medium">{contract.root}</span>
+                        </span>
+                        <span className="text-xs">
+                          {contract.root === "MGC" ? "Micro Gold" : "Micro Nasdaq 100"}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipPopup>{contract.name}</TooltipPopup>
+                    </Tooltip>
                   ))}
                   {!contracts.length ? (
                     <p className="p-3 text-xs text-muted-foreground">
@@ -362,7 +379,7 @@ function ReadyTradingPanel({
       </div>
       {activeView === "news" ? (
         <div className="min-h-0 flex-1 overflow-hidden">
-          <LiveWires root={settings.root} projectId={projectId} />
+          <LiveWires root={settings.root === "MNQ" ? "NQ" : "MGC"} projectId={projectId} />
         </div>
       ) : null}
     </section>
