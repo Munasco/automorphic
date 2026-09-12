@@ -3,6 +3,7 @@ import type { SVGProps } from "react";
 // Tabler paths retrieved from the Iconify API. MIT license: apps/web/THIRD_PARTY_NOTICES.md.
 // Stroke weight is adapted to match the compact chart controls; geometry is unchanged.
 const PATHS = {
+  stack: "m12 6l-8 4l8 4l8-4zm-8 8l8 4l8-4",
   "layout-grid-add":
     "M4 5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zm10 0a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1zM4 15a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zm10 2h6m-3-3v6",
   bell: "M10 5a2 2 0 1 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3H4a4 4 0 0 0 2-3v-3a7 7 0 0 1 4-6M9 17v1a3 3 0 0 0 6 0v-1",

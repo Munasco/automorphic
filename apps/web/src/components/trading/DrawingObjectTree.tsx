@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { XIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { ChartDrawingGlyph } from "./ChartDrawingGlyph";
 import { ChartIcon } from "./ChartIcon";
 import { DrawingToolIcon } from "./DrawingToolIcon";
@@ -90,6 +91,8 @@ export function DrawingObjectTree({
   const selectedRow = useRef<HTMLLIElement>(null);
   const selected = drawings.selected;
   const selectedId = selected?.id;
+  const selectedIndex = drawings.objects.findIndex((object) => object.id === selectedId);
+  const lastIndex = drawings.objects.length - 1;
   useEffect(() => {
     if (selectedId) selectedRow.current?.scrollIntoView({ block: "nearest" });
   }, [selectedId]);
@@ -102,6 +105,40 @@ export function DrawingObjectTree({
       <header className="flex h-11 shrink-0 items-center justify-between border-b border-white/10 px-3">
         <h3 className="text-sm font-medium">Object tree</h3>
         <div className="flex items-center gap-1">
+          <Menu>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <MenuTrigger
+                    aria-label="Visual order"
+                    disabled={selectedIndex < 0}
+                    className="flex size-7 shrink-0 items-center justify-center rounded text-zinc-400 hover:bg-white/10 hover:text-white data-popup-open:bg-white/10 data-popup-open:text-white disabled:pointer-events-none disabled:text-zinc-600 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400"
+                  />
+                }
+              >
+                <ChartIcon name="stack" className="size-4" />
+              </TooltipTrigger>
+              <TooltipPopup>Visual order</TooltipPopup>
+            </Tooltip>
+            <MenuPopup align="end" aria-label="Visual order">
+              {(
+                [
+                  ["front", "Bring to front", selectedIndex === lastIndex],
+                  ["back", "Send to back", selectedIndex === 0],
+                  ["forward", "Bring forward", selectedIndex === lastIndex],
+                  ["backward", "Send backward", selectedIndex === 0],
+                ] as const
+              ).map(([direction, label, boundary]) => (
+                <MenuItem
+                  key={direction}
+                  disabled={selectedIndex < 0 || boundary}
+                  onClick={() => drawings.reorderSelected(direction)}
+                >
+                  {label}
+                </MenuItem>
+              ))}
+            </MenuPopup>
+          </Menu>
           <RowAction
             label="Duplicate selected drawing"
             active
