@@ -1,5 +1,8 @@
 import { supportsInlineDrawingText } from "./drawingPrimitive";
 import { getDrawingDialogBounds } from "./drawingDialogBounds";
+import { DrawingTextSettings } from "./DrawingTextSettings";
+import { DrawingNumberField } from "./DrawingNumberField";
+import { DrawingVisibilitySettings } from "./DrawingVisibilitySettings";
 import {
   ColorPicker,
   DrawingSelect,
@@ -19,7 +22,6 @@ import {
   type ReactNode,
   type PointerEventHandler,
 } from "react";
-import { Slider } from "@base-ui/react/slider";
 import { ContextMenu } from "@base-ui/react/context-menu";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
@@ -41,11 +43,7 @@ import { DrawingToolIcon } from "./DrawingToolIcon";
 import { SolarSettingsIcon } from "./SolarSettingsIcon";
 import { type ChartDrawing, validDrawingAnchors } from "./drawingGeometry";
 import type { ChartDrawingsController, DrawingPatch } from "./useChartDrawings";
-import {
-  DEFAULT_DRAWING_VISIBILITY,
-  sanitizeDrawingVisibility,
-  type DrawingVisibility,
-} from "./drawingVisibility";
+import { sanitizeDrawingVisibility } from "./drawingVisibility";
 import {
   supportsLineExtensions,
   drawingLineExtensions,
@@ -170,7 +168,7 @@ function DrawingSettingsTitle({
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onLostPointerCapture={onPointerUp}
-      className="flex min-h-16 shrink-0 touch-none items-center gap-2 px-5 pb-4 pr-12 pt-5 text-xl font-medium"
+      className="flex h-[68px] shrink-0 touch-none items-center gap-2 px-5 py-5 pr-12 text-xl font-semibold leading-7"
     >
       {editing ? (
         <input
@@ -281,6 +279,8 @@ function DrawingSettings({
       block: "nearest",
       inline: "nearest",
     });
+    // Tab changes and viewport resizes both change the DOM scroll target's visible bounds.
+    // eslint-disable-next-line react/exhaustive-effect-dependencies
   }, [tab, viewport.width]);
   useEffect(() => {
     const resize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
@@ -304,9 +304,11 @@ function DrawingSettings({
   const canSave = validDrawingAnchors(draft.kind, draft.anchors);
   const channelOffset = draft.kind === "channel" ? drawings.channelPriceOffset(draft) : null;
   const dialogWidth =
-    tab === "Visibility" || (supportsDrawingLevels(draft.kind) && !isFibTimeDrawing(draft.kind))
-      ? 460
-      : 380;
+    tab === "Visibility"
+      ? 459.07
+      : supportsDrawingLevels(draft.kind) && !isFibTimeDrawing(draft.kind)
+        ? 460
+        : 380;
   const dialogBounds = dialogPosition
     ? getDrawingDialogBounds(dialogPosition, dialogWidth, viewport)
     : null;
@@ -331,9 +333,10 @@ function DrawingSettings({
         bottomStickOnMobile={false}
         backdropStyle={{ background: "transparent", backdropFilter: "none", transition: "none" }}
         ref={measureDialog}
-        className="max-w-[calc(100vw-24px)] overflow-hidden rounded-lg border border-white/10 p-0 text-zinc-100 transition-none data-starting-style:scale-100 data-ending-style:scale-100 data-starting-style:opacity-100 data-ending-style:opacity-100"
+        className="max-w-[calc(100vw-24px)] overflow-hidden rounded-md border-0 p-0 text-zinc-100 transition-none data-starting-style:scale-100 data-ending-style:scale-100 data-starting-style:opacity-100 data-ending-style:opacity-100"
         style={{
           background: "#202020",
+          fontFamily: '-apple-system, system-ui, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
           backdropFilter: "none",
           width: dialogWidth,
           ...(dialogBounds ? { position: "fixed", ...dialogBounds } : {}),
@@ -374,7 +377,7 @@ function DrawingSettings({
           ref={tabList}
           role="tablist"
           aria-label="Drawing settings"
-          className="flex shrink-0 overflow-x-auto border-b border-white/10 px-5"
+          className="flex h-8 shrink-0 overflow-x-auto border-b border-white/10 px-5"
         >
           {availableTabs.map((name) => (
             <button
@@ -401,8 +404,8 @@ function DrawingSettings({
               }}
               onClick={() => setTab(name)}
               className={cn(
-                "mr-6 shrink-0 border-b-2 border-transparent pb-3 text-base font-medium text-zinc-400 hover:text-white",
-                tab === name && "border-white text-white",
+                "relative mr-6 h-8 shrink-0 pb-2 text-base font-semibold leading-6 text-zinc-400 after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-transparent hover:text-white",
+                tab === name && "text-white after:bg-white",
               )}
             >
               {name}
@@ -413,7 +416,16 @@ function DrawingSettings({
           role="tabpanel"
           id={`drawing-panel-${tab}`}
           aria-labelledby={`drawing-tab-${tab}`}
-          className="max-h-[calc(100dvh-220px)] min-h-0 space-y-6 overflow-y-auto p-5"
+          className={cn(
+            "max-h-[calc(100dvh-220px)] min-h-0 overflow-y-auto px-5 py-4",
+            tab === "Text"
+              ? "space-y-4 pb-8"
+              : tab === "Coordinates" || tab === "Visibility"
+                ? "space-y-0"
+                : tab === "Style" && supportsLineStatistics(draft.kind)
+                  ? "pb-8 [&>div]:min-h-[50px] [&>label]:min-h-[50px]"
+                  : "space-y-6",
+          )}
         >
           {draft.kind === "regression-trend" && (tab === "Style" || tab === "Inputs") ? (
             <DrawingRegressionSettings drawing={draft} tab={tab} onChange={update} />
@@ -516,7 +528,9 @@ function DrawingSettings({
               ) : null}
               {supportsLineStatistics(draft.kind) ? (
                 <>
-                  <div className="text-[11px] text-zinc-500">INFO</div>
+                  <h4 className="flex h-8 items-center text-[11px] font-normal text-zinc-500">
+                    INFO
+                  </h4>
                   <div className="flex items-center gap-2 text-sm">
                     <span className="w-[100px] shrink-0">Stats</span>
                     <Popover>
@@ -587,212 +601,43 @@ function DrawingSettings({
               ) : null}
             </>
           ) : null}
-          {tab === "Text" ? (
-            <>
-              <div className="flex items-center gap-3">
-                <ColorPicker
-                  label="Text color"
-                  value={draft.textColor ?? draft.color}
-                  onChange={(textColor) => update({ textColor })}
-                  opacity={draft.textOpacity ?? 1}
-                  onOpacityChange={(textOpacity) => update({ textOpacity })}
-                />
-                <DrawingSelect
-                  label="Text size"
-                  value={String(draft.textFontSize ?? 14)}
-                  onChange={(value) => update({ textFontSize: Number(value) })}
-                  options={[8, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 40, 48].map(
-                    (size) => [String(size), String(size)] as const,
-                  )}
-                  className="w-20"
-                />
-                <button
-                  type="button"
-                  aria-label="Bold text"
-                  aria-pressed={draft.textBold ?? false}
-                  onClick={() => update({ textBold: !draft.textBold })}
-                  className="size-8 rounded font-bold hover:bg-white/10 aria-pressed:bg-blue-600"
-                >
-                  B
-                </button>
-                <button
-                  type="button"
-                  aria-label="Italic text"
-                  aria-pressed={draft.textItalic ?? false}
-                  onClick={() => update({ textItalic: !draft.textItalic })}
-                  className="size-8 rounded italic hover:bg-white/10 aria-pressed:bg-blue-600"
-                >
-                  I
-                </button>
-              </div>
-              <textarea
-                aria-label="Drawing text"
-                maxLength={140}
-                value={draft.text ?? ""}
-                onChange={(event) => update({ text: event.target.value })}
-                className={cn(inputClass, "h-28 w-full resize-y py-2")}
-              />
-              <div className="flex items-center gap-3">
-                <span className="mr-auto text-sm">Alignment</span>
-                <DrawingSelect
-                  label="Text vertical alignment"
-                  value={draft.textPosition ?? "above"}
-                  onChange={(value) =>
-                    update({ textPosition: value as NonNullable<ChartDrawing["textPosition"]> })
-                  }
-                  options={[
-                    ["above", "Top"],
-                    ["center", "Middle"],
-                    ["below", "Bottom"],
-                  ]}
-                  className="w-24"
-                />
-                <DrawingSelect
-                  label="Text horizontal alignment"
-                  value={draft.textAlignment ?? (draft.kind === "text" ? "left" : "center")}
-                  onChange={(value) =>
-                    update({ textAlignment: value as NonNullable<ChartDrawing["textAlignment"]> })
-                  }
-                  options={[
-                    ["left", "Left"],
-                    ["center", "Center"],
-                    ["right", "Right"],
-                  ]}
-                  className="w-24"
-                />
-              </div>
-            </>
-          ) : null}
+          {tab === "Text" ? <DrawingTextSettings drawing={draft} onChange={update} /> : null}
           {tab === "Visibility" ? (
-            <>
-              <Check
-                label="Ticks"
-                checked={visibility.ticks}
-                onChange={(ticks) => update({ visibility: { ...visibility, ticks } })}
-              />
-              {(["seconds", "minutes", "hours", "days", "weeks", "months"] as const).map((unit) => {
-                const range = visibility[unit];
-                const limit = DEFAULT_DRAWING_VISIBILITY[unit].max;
-                const setRange = (patch: Partial<DrawingVisibility[typeof unit]>) =>
-                  update({ visibility: { ...visibility, [unit]: { ...range, ...patch } } });
-                return (
-                  <div key={unit} className="space-y-2">
-                    <div className="flex items-center gap-3">
-                      <span className="w-28">
-                        <Check
-                          label={unit[0]!.toUpperCase() + unit.slice(1)}
-                          checked={range.enabled}
-                          onChange={(enabled) => setRange({ enabled })}
-                        />
-                      </span>
-                      <input
-                        type="number"
-                        aria-label={`${unit} minimum`}
-                        disabled={!range.enabled}
-                        min={1}
-                        max={range.max}
-                        value={range.min}
-                        onChange={(event) => {
-                          const min = event.target.valueAsNumber;
-                          if (Number.isFinite(min))
-                            setRange({ min: Math.max(1, Math.min(range.max, min)) });
-                        }}
-                        className={cn(
-                          inputClass,
-                          "w-16 disabled:cursor-not-allowed disabled:opacity-40",
-                        )}
-                      />
-                      <span className="text-zinc-500">—</span>
-                      <input
-                        type="number"
-                        aria-label={`${unit} maximum`}
-                        disabled={!range.enabled}
-                        min={range.min}
-                        max={limit}
-                        value={range.max}
-                        onChange={(event) => {
-                          const max = event.target.valueAsNumber;
-                          if (Number.isFinite(max))
-                            setRange({ max: Math.min(limit, Math.max(range.min, max)) });
-                        }}
-                        className={cn(
-                          inputClass,
-                          "w-16 disabled:cursor-not-allowed disabled:opacity-40",
-                        )}
-                      />
-                    </div>
-                    <Slider.Root
-                      disabled={!range.enabled}
-                      min={1}
-                      max={limit}
-                      value={[range.min, range.max]}
-                      onValueChange={(values) => setRange({ min: values[0]!, max: values[1]! })}
-                      className={cn("ml-32", !range.enabled && "opacity-40")}
-                    >
-                      <Slider.Control className="relative flex h-5 w-full touch-none items-center">
-                        <Slider.Track className="relative h-0.5 w-full rounded bg-zinc-600">
-                          <Slider.Indicator className="rounded bg-zinc-200" />
-                          <Slider.Thumb
-                            index={0}
-                            getAriaLabel={() => `${unit} minimum slider`}
-                            className="size-3 rounded-full border border-zinc-400 bg-[#202020] outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                          />
-                          <Slider.Thumb
-                            index={1}
-                            getAriaLabel={() => `${unit} maximum slider`}
-                            className="size-3 rounded-full border border-zinc-400 bg-[#202020] outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                          />
-                        </Slider.Track>
-                      </Slider.Control>
-                    </Slider.Root>
-                  </div>
-                );
-              })}
-              <Check
-                label="Ranges"
-                checked={visibility.ranges}
-                onChange={(ranges) => update({ visibility: { ...visibility, ranges } })}
-              />
-            </>
+            <DrawingVisibilitySettings
+              visibility={visibility}
+              onChange={(visibility) => update({ visibility })}
+            />
           ) : null}
           {tab === "Coordinates" ? (
-            <>
+            <div className="min-h-[113px]">
               {draft.anchors
                 .slice(0, draft.kind === "channel" ? 2 : undefined)
                 .map((anchor, index) => (
-                  <div key={anchorKeys[index]} className="space-y-2">
-                    <span className="text-sm text-zinc-400">
+                  <div key={anchorKeys[index]} className="flex h-[50px] items-center">
+                    <span className="w-[113px] shrink-0 pr-5 text-sm leading-[18px] text-zinc-400">
                       #{index + 1} ({draft.kind === "regression-trend" ? "bar" : "price, bar"})
                     </span>
-                    <div className="flex gap-3">
+                    <div className="flex gap-2">
                       {draft.kind !== "regression-trend" ? (
-                        <input
-                          aria-label={`Point ${index + 1} price`}
-                          type="number"
+                        <DrawingNumberField
+                          label={`Point ${index + 1} price`}
                           step="any"
                           value={drawings.coordinatePrice(anchor.price)}
-                          onChange={(event) => {
-                            const price = event.target.valueAsNumber;
-                            if (Number.isFinite(price))
-                              update({
-                                anchors: draft.anchors.map((point, i) =>
-                                  i === index ? { ...point, price } : point,
-                                ),
-                              });
+                          onValueChange={(price) => {
+                            update({
+                              anchors: draft.anchors.map((point, i) =>
+                                i === index ? { ...point, price } : point,
+                              ),
+                            });
                           }}
-                          className={cn(inputClass, "w-28")}
                         />
                       ) : null}
-                      <input
-                        aria-label={`Point ${index + 1} bar`}
-                        type="number"
-                        step="1"
+                      <DrawingNumberField
+                        label={`Point ${index + 1} bar`}
+                        step={1}
                         value={Math.round(drawings.anchorBar(anchor) ?? 0)}
-                        onChange={(event) => {
-                          const bar = event.target.valueAsNumber;
-                          const next = Number.isFinite(bar)
-                            ? drawings.anchorAtBar(bar, anchor.price)
-                            : null;
+                        onValueChange={(bar) => {
+                          const next = drawings.anchorAtBar(bar, anchor.price);
                           if (next)
                             update({
                               anchors: draft.anchors.map((point, i) =>
@@ -800,7 +645,6 @@ function DrawingSettings({
                               ),
                             });
                         }}
-                        className={cn(inputClass, "w-28")}
                       />
                     </div>
                   </div>
@@ -808,27 +652,22 @@ function DrawingSettings({
               {draft.kind === "channel" ? (
                 <label className="flex items-center gap-3 text-sm">
                   <span className="w-28">Price offset</span>
-                  <input
-                    aria-label="Price offset"
-                    type="number"
+                  <DrawingNumberField
+                    label="Price offset"
                     step="any"
                     disabled={channelOffset === null}
-                    value={channelOffset === null ? "" : drawings.coordinatePrice(channelOffset)}
-                    onChange={(event) => {
-                      const offset = event.target.valueAsNumber;
-                      const anchors = Number.isFinite(offset)
-                        ? drawings.channelAnchorsAtOffset(draft, offset)
-                        : null;
+                    value={channelOffset === null ? null : drawings.coordinatePrice(channelOffset)}
+                    onValueChange={(offset) => {
+                      const anchors = drawings.channelAnchorsAtOffset(draft, offset);
                       if (anchors) update({ anchors });
                     }}
-                    className={cn(inputClass, "w-28 disabled:opacity-40")}
                   />
                 </label>
               ) : null}
               {!canSave ? (
                 <p className="text-xs text-red-400">Choose distinct points for this drawing.</p>
               ) : null}
-            </>
+            </div>
           ) : null}
         </div>
         <div className="flex shrink-0 justify-end gap-3 border-t border-white/10 px-5 py-4 max-sm:gap-2 max-sm:px-3">
@@ -851,7 +690,7 @@ function DrawingSettings({
           <button
             type="button"
             onClick={drawings.closeSettings}
-            className="rounded border border-white/20 px-5 py-2 text-sm hover:bg-white/5 max-sm:px-3"
+            className="h-[34px] rounded border border-white/20 px-[11px] text-base font-normal hover:bg-white/5"
           >
             Cancel
           </button>
@@ -859,7 +698,7 @@ function DrawingSettings({
             type="button"
             disabled={!canSave}
             onClick={save}
-            className="rounded bg-zinc-100 px-5 py-2 text-sm font-medium text-zinc-900 hover:bg-white disabled:opacity-40 max-sm:px-3"
+            className="h-[34px] rounded bg-zinc-100 px-[11px] text-base font-normal text-zinc-900 hover:bg-white disabled:opacity-40"
           >
             OK
           </button>

@@ -89,7 +89,7 @@ const colors = [
   "#880e4f",
 ];
 export const inputClass =
-  "h-9 rounded border border-white/15 bg-transparent px-2.5 text-[13px] text-zinc-200 outline-none focus:border-blue-500";
+  "h-[34px] rounded border border-white/15 bg-transparent px-2.5 text-sm leading-[18px] text-zinc-200 outline-none focus:border-blue-500";
 export function ColorPicker({
   value,
   onChange,
@@ -98,12 +98,14 @@ export function ColorPicker({
   icon,
   opacity,
   onOpacityChange,
+  variant = "default",
 }: {
   value: string;
   onChange: (color: string) => void;
   label?: string;
   mixed?: boolean;
   icon?: "pencil" | "letter-t";
+  variant?: "default" | "settings";
   opacity?: number | undefined;
   onOpacityChange?: (opacity: number) => void;
 }) {
@@ -111,7 +113,10 @@ export function ColorPicker({
     <Popover>
       <PopoverTrigger
         aria-label={label}
-        className="flex size-8 items-center justify-center rounded hover:bg-white/10"
+        className={cn(
+          "flex shrink-0 items-center justify-center rounded hover:bg-white/10",
+          variant === "settings" ? "size-[34px] border border-white/15" : "size-8",
+        )}
       >
         {icon ? (
           <span className="relative flex size-6 items-center justify-center pb-1">
@@ -123,7 +128,10 @@ export function ColorPicker({
           </span>
         ) : (
           <span
-            className="size-4 rounded-sm border border-white/20"
+            className={cn(
+              "rounded-sm border border-white/20",
+              variant === "settings" ? "size-6" : "size-4",
+            )}
             style={{
               background: mixed
                 ? "conic-gradient(#f23645 0 25%, #2962ff 0 50%, #4caf50 0 75%, #ff9800 0)"
@@ -365,7 +373,7 @@ export function MarkerPicker({
     <Popover>
       <PopoverTrigger
         aria-label={side === "start" ? "Start marker" : "End marker"}
-        className="flex size-8 items-center justify-center rounded border border-white/20 hover:bg-white/10"
+        className="flex size-[34px] shrink-0 items-center justify-center rounded border border-white/20 hover:bg-white/10"
       >
         {glyph(value)}
       </PopoverTrigger>
@@ -409,9 +417,9 @@ export function LineAppearancePicker({
     <Popover>
       <PopoverTrigger
         aria-label={label}
-        className="flex h-8 items-center gap-2 rounded border border-white/20 px-1.5 hover:bg-white/10"
+        className="flex h-[34px] w-[75px] shrink-0 items-center gap-1 rounded border border-white/20 p-1 hover:bg-white/10"
       >
-        <span className="size-5 rounded" style={{ background: drawing.color }} />
+        <span className="size-6 shrink-0 rounded" style={{ background: drawing.color }} />
         <svg width="28" height="16" aria-hidden="true">
           <path
             d="M0 8H28"
@@ -465,12 +473,12 @@ export function Check({
   onChange: (value: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center gap-3 text-[14px] text-zinc-200">
+    <label className="flex cursor-pointer items-center gap-2 text-sm leading-[18px] text-zinc-200">
       <input
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
-        className="size-4 accent-[#2962ff]"
+        className="size-[18px] shrink-0 accent-[#2962ff]"
       />
       {label}
     </label>
@@ -483,7 +491,7 @@ export function DrawingSelect({ className, ...props }: ComponentProps<typeof Tra
       {...props}
       className={cn(
         inputClass,
-        "min-h-9 shadow-none before:hidden dark:bg-transparent sm:min-h-9 sm:text-[13px] focus-visible:ring-1",
+        "min-h-[34px] shadow-none before:hidden dark:bg-transparent sm:min-h-[34px] sm:text-sm focus-visible:ring-1",
         className,
       )}
     />
