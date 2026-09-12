@@ -4,6 +4,8 @@ import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popov
 import type { ChartDrawing } from "./drawingGeometry";
 import type { DrawingPatch } from "./useChartDrawings";
 import { cn } from "../../lib/utils";
+import type { ComponentProps } from "react";
+import { TradingSelect } from "./TradingSelect";
 const colors = [
   "#ffffff",
   "#dbdbdb",
@@ -475,4 +477,15 @@ export function Check({
   );
 }
 
-export { TradingSelect as DrawingSelect } from "./TradingSelect";
+export function DrawingSelect({ className, ...props }: ComponentProps<typeof TradingSelect>) {
+  return (
+    <TradingSelect
+      {...props}
+      className={cn(
+        inputClass,
+        "min-h-9 shadow-none before:hidden dark:bg-transparent sm:min-h-9 sm:text-[13px] focus-visible:ring-1",
+        className,
+      )}
+    />
+  );
+}

@@ -205,6 +205,200 @@ describe("direct drawing placement", () => {
   });
 });
 
+describe("modifier-drag cloning", () => {
+  it("keeps the original unchanged while previewing a styled clone, then commits one undoable copy", () => {
+    const f = fixture("clone-drag-commit"),
+      session = f.open();
+    session.setTool("rectangle");
+    f.click(100, 100);
+    f.click(200, 200);
+    session.updateSelected({
+      name: "Opening range",
+      color: "#123456",
+      background: true,
+      backgroundOpacity: 0.3,
+    });
+    const before = f.saved(),
+      original = JSON.parse(before!)[0],
+      writes = f.writes();
+    const defaults = f.controls.get(DRAWING_DEFAULTS_KEY);
+    expect(session.beginDrag({ x: 150, y: 100 }, { clone: true })).toBe(true);
+    session.dragTo({ x: 200, y: 125 });
+    session.dragTo({ x: 250, y: 150 });
+    expect(f.saved()).toBe(before);
+    expect(f.writes()).toBe(writes);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        count: 2,
+        objects: [
+          original,
+          expect.objectContaining({
+            name: "Opening range copy",
+            color: "#123456",
+            backgroundOpacity: 0.3,
+          }),
+        ],
+      }),
+    );
+    session.endDrag();
+    expect(f.writes()).toBe(writes + 1);
+    const after = f.saved(),
+      [unchanged, clone] = JSON.parse(after!);
+    expect(unchanged).toEqual(original);
+    expect(clone.id).not.toBe(original.id);
+    expect(clone.anchors).toEqual([
+      { time: 200, price: 4850 },
+      { time: 300, price: 4750 },
+    ]);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: expect.objectContaining({ id: clone.id }) }),
+    );
+    expect(f.controls.get(DRAWING_DEFAULTS_KEY)).toBe(defaults);
+    session.undo();
+    expect(f.saved()).toBe(before);
+    session.redo();
+    expect(f.saved()).toBe(after);
+    session.dispose();
+    const reopened = f.open();
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ count: 2 }));
+    reopened.dispose();
+  });
+
+  it.each(["pointercancel", "escape", "undo", "tool", "return", "dispose"])(
+    "abandons a clone on %s without storing it or changing the source",
+    (action) => {
+      const f = fixture(`clone-drag-cancel-${action}`),
+        session = f.open();
+      session.setTool("rectangle");
+      f.click(100, 100);
+      f.click(200, 200);
+      const before = f.saved(),
+        writes = f.writes();
+      session.beginDrag({ x: 150, y: 100 }, { clone: true });
+      session.dragTo({ x: 250, y: 150 });
+      if (action === "pointercancel") session.endDrag(false);
+      else if (action === "escape") session.cancel();
+      else if (action === "undo") session.undo();
+      else if (action === "tool") session.setTool("trend");
+      else if (action === "return") {
+        session.dragTo({ x: 150, y: 100 });
+        session.endDrag();
+      } else session.dispose();
+      expect(f.saved()).toBe(before);
+      expect(f.writes()).toBe(writes);
+      if (action !== "dispose") {
+        expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ count: 1 }));
+        session.undo();
+        expect(JSON.parse(f.saved()!)).toEqual([]);
+      }
+      session.dispose();
+    },
+  );
+
+  it("does not clone on a click or pointer jitter, and modifier endpoint drags still resize", () => {
+    const f = fixture("clone-drag-click"),
+      session = f.open();
+    session.setTool("rectangle");
+    f.click(100, 100);
+    f.click(200, 200);
+    const before = f.saved(),
+      writes = f.writes();
+    session.beginDrag({ x: 150, y: 100 }, { clone: true });
+    session.dragTo({ x: 151, y: 101 });
+    session.endDrag();
+    expect(f.saved()).toBe(before);
+    expect(f.writes()).toBe(writes);
+    session.beginDrag({ x: 100, y: 100 }, { clone: true });
+    session.dragTo({ x: 120, y: 120 });
+    session.endDrag();
+    const result = JSON.parse(f.saved()!);
+    expect(result).toHaveLength(1);
+    expect(result[0].anchors).toEqual([
+      { time: 120, price: 4880 },
+      { time: 200, price: 4800 },
+    ]);
+    session.dispose();
+  });
+
+  it("snaps a clone using one reference point while preserving both original anchors and clone shape", () => {
+    const f = fixture("clone-drag-magnet", null, [
+      { time: 200 as UTCTimestamp, open: 4890, high: 4940, low: 4840, close: 4870 },
+    ]);
+    const session = f.open();
+    session.setTool("rectangle");
+    f.click(100, 100);
+    f.click(200, 200);
+    const original = JSON.parse(f.saved()!)[0];
+    session.toggleMagnet();
+    session.beginDrag({ x: 150, y: 100 }, { clone: true });
+    session.dragTo({ x: 254, y: 115 });
+    session.endDrag();
+    const [source, clone] = JSON.parse(f.saved()!);
+    expect(source).toEqual(original);
+    expect(clone.anchors).toEqual([
+      { time: 200, price: 4890 },
+      { time: 300, price: 4790 },
+    ]);
+    session.dispose();
+  });
+
+  it("rejects cloning locked drawings and refuses to evict an existing drawing at capacity", () => {
+    const f = fixture("clone-drag-locked"),
+      session = f.open();
+    session.setTool("horizontal");
+    f.click(100, 100);
+    session.updateSelected({ locked: true });
+    const before = f.saved(),
+      writes = f.writes();
+    expect(session.beginDrag({ x: 400, y: 100 }, { clone: true })).toBe(false);
+    session.dragTo({ x: 500, y: 150 });
+    session.endDrag();
+    expect(f.saved()).toBe(before);
+    expect(f.writes()).toBe(writes);
+    session.dispose();
+    const full = JSON.stringify(
+      Array.from({ length: 100 }, (_, i) => ({
+        ...JSON.parse(before!)[0],
+        id: `full-${i}`,
+        locked: false,
+      })),
+    );
+    const capacity = fixture("clone-drag-capacity", full),
+      bounded = capacity.open();
+    expect(bounded.beginDrag({ x: 400, y: 100 }, { clone: true })).toBe(false);
+    bounded.dragTo({ x: 500, y: 150 });
+    bounded.endDrag();
+    expect(capacity.saved()).toBe(full);
+    expect(capacity.writes()).toBe(0);
+    bounded.dispose();
+  });
+
+  it("removes horizontal clone previews on cancellation and preserves an existing redo branch", () => {
+    const f = fixture("clone-drag-redo"),
+      session = f.open();
+    session.setTool("horizontal");
+    f.click(100, 100);
+    session.setTool("horizontal");
+    f.click(200, 200);
+    const twoLines = f.saved();
+    session.undo();
+    const oneLine = f.saved(),
+      writes = f.writes();
+    session.beginDrag({ x: 400, y: 100 }, { clone: true });
+    session.dragTo({ x: 500, y: 150 });
+    expect(f.priceLines).toMatchObject([{ price: 4900 }, { price: 4850 }]);
+    session.endDrag(false);
+    expect(f.priceLines).toMatchObject([{ price: 4900 }]);
+    expect(f.priceLines).toHaveLength(1);
+    expect(f.saved()).toBe(oneLine);
+    expect(f.writes()).toBe(writes);
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ canRedo: true }));
+    session.redo();
+    expect(f.saved()).toBe(twoLines);
+    session.dispose();
+  });
+});
+
 describe("bulk drawing controls", () => {
   it("locks mixed drawings together, preserves individual state on one undo, and restores locks", () => {
     const f = fixture("bulk-lock"),

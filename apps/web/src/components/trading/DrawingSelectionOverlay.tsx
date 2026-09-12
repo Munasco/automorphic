@@ -126,6 +126,69 @@ function IconButton({
     </Tooltip>
   );
 }
+function DrawingSettingsTitle({
+  drawing,
+  onChange,
+}: {
+  drawing: ChartDrawing;
+  onChange: (patch: DrawingPatch) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const nameBeforeEdit = useRef(drawing.name ?? "");
+  const restoreFocus = useRef(false);
+  return (
+    <DialogTitle className="flex min-h-16 items-center gap-2 px-5 pb-4 pr-12 pt-5 text-xl font-medium">
+      {editing ? (
+        <input
+          ref={(node) => {
+            if (node && document.activeElement !== node) {
+              node.focus();
+              node.select();
+            }
+          }}
+          aria-label="Drawing name"
+          placeholder={titleFor(drawing)}
+          maxLength={80}
+          value={drawing.name ?? ""}
+          onChange={(event) => onChange({ name: event.target.value })}
+          onBlur={() => setEditing(false)}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.nativeEvent.isComposing) return;
+            if (event.key === "Enter" || event.key === "Escape") {
+              event.preventDefault();
+              if (event.key === "Escape") onChange({ name: nameBeforeEdit.current });
+              restoreFocus.current = true;
+              setEditing(false);
+            }
+          }}
+          className="h-8 min-w-0 flex-1 rounded border border-blue-500 bg-transparent px-2 text-base outline-none"
+        />
+      ) : (
+        <>
+          <span className="min-w-0 truncate">{drawing.name?.trim() || titleFor(drawing)}</span>
+          <button
+            ref={(node) => {
+              if (node && restoreFocus.current) {
+                restoreFocus.current = false;
+                node.focus();
+              }
+            }}
+            type="button"
+            aria-label="Rename drawing"
+            onClick={() => {
+              nameBeforeEdit.current = drawing.name ?? "";
+              setEditing(true);
+            }}
+            className="flex size-6 shrink-0 items-center justify-center rounded text-zinc-300 hover:bg-white/10 focus-visible:outline-blue-500"
+          >
+            <DrawingToolIcon name="pencil" className="size-4" />
+          </button>
+        </>
+      )}
+    </DialogTitle>
+  );
+}
 function DrawingSettings({
   drawing,
   drawings,
@@ -213,7 +276,7 @@ function DrawingSettings({
             : {}),
         }}
       >
-        <DialogTitle className="px-5 pb-5 pt-5 text-xl font-medium">{titleFor(draft)}</DialogTitle>
+        <DrawingSettingsTitle drawing={draft} onChange={update} />
         <div
           role="tablist"
           aria-label="Drawing settings"
@@ -244,7 +307,7 @@ function DrawingSettings({
               }}
               onClick={() => setTab(name)}
               className={cn(
-                "mr-5 border-b-2 border-transparent pb-3 text-sm text-zinc-400 hover:text-white",
+                "mr-6 border-b-2 border-transparent pb-3 text-base font-medium text-zinc-400 hover:text-white",
                 tab === name && "border-white text-white",
               )}
             >
@@ -277,7 +340,7 @@ function DrawingSettings({
           draft.kind !== "regression-trend" ? (
             <>
               <div className="flex items-center gap-2">
-                <span className="w-24 shrink-0 text-sm">{line ? "Line" : "Stroke"}</span>
+                <span className="w-[100px] shrink-0 text-sm">{line ? "Line" : "Stroke"}</span>
                 <LineAppearancePicker drawing={draft} onChange={update} />
                 {supportsLineMarkers(draft.kind) ? (
                   <>
@@ -295,8 +358,8 @@ function DrawingSettings({
                 ) : null}
               </div>
               {extendable ? (
-                <label className="flex items-center justify-between gap-3 text-sm">
-                  Extend
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="w-[100px] shrink-0">Extend</span>
                   <DrawingSelect
                     label="Extend line"
                     value={
@@ -320,7 +383,7 @@ function DrawingSettings({
                       ["right", "Extend right"],
                       ["both", "Extend both"],
                     ]}
-                    className="w-44"
+                    className="w-45"
                   />
                 </label>
               ) : null}
@@ -360,11 +423,11 @@ function DrawingSettings({
               {supportsLineStatistics(draft.kind) ? (
                 <>
                   <div className="text-[11px] text-zinc-500">INFO</div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span>Stats</span>
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="w-[100px] shrink-0">Stats</span>
                     <Popover>
                       <PopoverTrigger
-                        className={cn(inputClass, "flex w-44 items-center justify-between")}
+                        className={cn(inputClass, "flex w-45 items-center justify-between")}
                       >
                         {selectedStats.length ? `${selectedStats.length} selected` : "Hidden"}
                         <ChartIcon name="chevron-down" className="size-4" />
@@ -403,8 +466,8 @@ function DrawingSettings({
                       </PopoverPopup>
                     </Popover>
                   </div>
-                  <label className="flex items-center justify-between text-sm">
-                    Stats position
+                  <label className="flex items-center gap-2 text-sm">
+                    <span className="w-[100px] shrink-0">Stats position</span>
                     <DrawingSelect
                       label="Stats position"
                       value={draft.statsPosition ?? "right"}
@@ -418,7 +481,7 @@ function DrawingSettings({
                         ["center", "Center"],
                         ["right", "Right"],
                       ]}
-                      className="w-44"
+                      className="w-45"
                     />
                   </label>
                   <Check

@@ -161,6 +161,8 @@ export function createChartDrawingSession(
     handle: number;
     handlePoint: DrawingPoint | undefined;
     moved: boolean;
+    clone: boolean;
+    cloneId: string | null;
   } | null = null;
   const history: ChartDrawing[][] = [];
   const future: ChartDrawing[][] = [];
@@ -334,8 +336,9 @@ export function createChartDrawingSession(
     hoveredId = next;
     emit();
   };
-  const beginDrag = (point: DrawingPoint) => {
+  const beginDrag = (point: DrawingPoint, options?: { clone?: boolean }) => {
     if (disposed || hidden) return false;
+    if (drag) endDrag(false);
     if (discardSettings()) emit();
     if (tool !== "cursor" && isFreehandDrawingTool(tool)) {
       const anchor = drawingProjection(chart, series).unproject(point);
@@ -355,6 +358,8 @@ export function createChartDrawingSession(
     hoveredId = null;
     emit();
     if (drawing.locked) return false;
+    const clone = options?.clone === true && handle < 0;
+    if (clone && drawings.length >= 100) return false;
     const points = drawing.anchors.map((anchor) =>
       drawingProjection(chart, series).project(anchor),
     );
@@ -366,6 +371,8 @@ export function createChartDrawingSession(
       handle,
       handlePoint: target?.handlePoint,
       moved: false,
+      clone,
+      cloneId: null,
     };
     return true;
   };
@@ -490,9 +497,24 @@ export function createChartDrawingSession(
       !validDrawingAnchors(drag.drawing.kind, moved as DrawingAnchor[])
     )
       return;
-    const next = { ...drag.drawing, anchors: moved as DrawingAnchor[] };
-    drawings = drawings.map((item) => (item.id === next.id ? next : item));
     drag.moved = !moved.every((anchor, index) => sameAnchor(drag!.drawing.anchors[index], anchor!));
+    const next = { ...drag.drawing, anchors: moved as DrawingAnchor[] };
+    if (drag.clone) {
+      if (!drag.moved && !drag.cloneId) return;
+      const cloneId = drag.cloneId ?? randomUUID();
+      const copy = {
+        ...next,
+        id: cloneId,
+        name: `${next.name || next.text || next.kind} copy`.slice(0, 80),
+        locked: false,
+        hidden: false,
+      };
+      drawings = drag.cloneId
+        ? drawings.map((item) => (item.id === cloneId ? copy : item))
+        : [...drawings, copy];
+      drag.cloneId = cloneId;
+      selectedId = cloneId;
+    } else drawings = drawings.map((item) => (item.id === next.id ? next : item));
     if (drag.drawing.kind === "horizontal") render();
     emit();
   };
@@ -511,14 +533,17 @@ export function createChartDrawingSession(
     if (original.moved && commit) {
       future.length = 0;
       history.push(
-        drawings.map((item) => (item.id === original.drawing.id ? original.drawing : item)),
+        original.clone
+          ? drawings.filter((item) => item.id !== original.cloneId)
+          : drawings.map((item) => (item.id === original.drawing.id ? original.drawing : item)),
       );
       if (history.length > 50) history.shift();
       persist();
     } else {
-      drawings = drawings.map((item) =>
-        item.id === original.drawing.id ? original.drawing : item,
-      );
+      drawings = original.clone
+        ? drawings.filter((item) => item.id !== original.cloneId)
+        : drawings.map((item) => (item.id === original.drawing.id ? original.drawing : item));
+      if (original.clone) selectedId = original.drawing.id;
     }
     render();
     emit();
@@ -1201,7 +1226,11 @@ export function useChartDrawings(
       clickOrigin = point;
       dragged = false;
       element.focus({ preventScroll: true });
-      if (!current.beginDrag(point) && !current.blocksChartPan(point)) return;
+      if (
+        !current.beginDrag(point, { clone: event.metaKey || event.ctrlKey }) &&
+        !current.blocksChartPan(point)
+      )
+        return;
       pointerId = event.pointerId;
       element.setPointerCapture(pointerId);
       event.preventDefault();
@@ -1280,6 +1309,23 @@ export function useChartDrawings(
     element.addEventListener("lostpointercapture", finish, true);
     element.addEventListener("touchstart", stopTouchPan, { capture: true, passive: false });
     element.addEventListener("touchmove", stopTouchPan, { capture: true, passive: false });
+    const cancelPointerGesture = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || pointerId === null) return;
+      const capturedPointer = pointerId;
+      // Clear the native gesture before releasing capture: lostpointercapture and
+      // a subsequent mouseup must not recommit the cancelled clone or freehand stroke.
+      pointerId = null;
+      clickOrigin = null;
+      dragged = true;
+      current.cancel();
+      if (element.hasPointerCapture(capturedPointer))
+        element.releasePointerCapture(capturedPointer);
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    // Popup Escape handlers can stop propagation before the normal window shortcut.
+    // Intercept only our active captured gesture; editors and idle menus keep Escape.
+    window.addEventListener("keydown", cancelPointerGesture, true);
     const keyboard = (event: KeyboardEvent) => {
       const target = event.target;
       if (
@@ -1302,6 +1348,7 @@ export function useChartDrawings(
     };
     window.addEventListener("keydown", keyboard);
     return () => {
+      window.removeEventListener("keydown", cancelPointerGesture, true);
       window.removeEventListener("keydown", keyboard);
       element.removeEventListener("pointerleave", leave);
       element.removeEventListener("click", place, true);
