@@ -3,6 +3,7 @@ import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import {
   chartMarketQueryOptions,
   subscribeChartMarket,
+  emptyChartMarket,
   type ChartMarketSnapshot,
 } from "./chartMarketQuery";
 import type { openTradingStream } from "./tradingTransport";
@@ -39,6 +40,99 @@ const batch = (bars: unknown[], snapshot = false) => ({
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 describe("shared chart market history", () => {
+  it("ignores invalid nonempty snapshots without erasing cached or pending bars, but accepts authoritative empty history", async () => {
+    const t = transport(),
+      emit = vi.fn<(snapshot: ChartMarketSnapshot) => void>();
+    const stop = subscribeChartMarket(
+      "NQU6",
+      interval,
+      emit,
+      {
+        ...emptyChartMarket(),
+        bars: [bar(100)],
+        revision: 1,
+        failure: { kind: "http", status: 502 },
+      },
+      t.open,
+    );
+    t.send(0, {
+      type: "status",
+      state: "connected",
+      intervalKey: "minute:5",
+      message: "Tradovate connected",
+    });
+    t.send(0, batch([{ time: "invalid" }, { ...bar(200), high: -1 }], true));
+    await vi.advanceTimersByTimeAsync(16);
+    expect(emit.mock.lastCall![0]).toMatchObject({
+      bars: [bar(100)],
+      revision: 1,
+      awaitingHistory: true,
+      failure: { kind: "http", status: 502 },
+    });
+    t.send(0, batch([bar(200)]));
+    t.send(0, batch([{ time: "invalid" }], true));
+    await vi.advanceTimersByTimeAsync(16);
+    expect(emit.mock.lastCall![0]).toMatchObject({
+      bars: [bar(100), bar(200)],
+      updates: [bar(200)],
+      revision: 2,
+      replace: false,
+    });
+    t.send(0, batch([], true));
+    await vi.advanceTimersByTimeAsync(16);
+    expect(emit.mock.lastCall![0]).toMatchObject({
+      bars: [],
+      updates: [],
+      revision: 3,
+      replace: true,
+      awaitingHistory: false,
+      failure: null,
+    });
+    stop();
+  });
+  it("retains cached bars and typed failure until fresh history arrives after reconnect", async () => {
+    const t = transport(),
+      emit = vi.fn<(snapshot: ChartMarketSnapshot) => void>();
+    const stop = subscribeChartMarket(
+      "NQU6",
+      interval,
+      emit,
+      { ...emptyChartMarket(), bars: [bar(100)], revision: 1, awaitingHistory: false },
+      t.open,
+    );
+    t.subscriptions[0]!.events.onError({ kind: "http", status: 502 });
+    await vi.advanceTimersByTimeAsync(16);
+    expect(emit.mock.lastCall![0]).toMatchObject({
+      bars: [bar(100)],
+      failure: { kind: "http", status: 502 },
+      awaitingHistory: true,
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    t.send(1, {
+      type: "status",
+      state: "connected",
+      intervalKey: "minute:5",
+      message: "Tradovate connected",
+    });
+    await vi.advanceTimersByTimeAsync(16);
+    expect(emit.mock.lastCall![0]).toMatchObject({
+      bars: [bar(100)],
+      failure: { kind: "http", status: 502 },
+      awaitingHistory: true,
+    });
+    t.send(1, batch([{ time: "invalid" }]));
+    await vi.advanceTimersByTimeAsync(16);
+    expect(emit.mock.lastCall![0].awaitingHistory).toBe(true);
+    t.send(1, batch([bar(200)], true));
+    await vi.advanceTimersByTimeAsync(16);
+    expect(emit.mock.lastCall![0]).toMatchObject({
+      bars: [bar(200)],
+      failure: null,
+      awaitingHistory: false,
+      status: "Tradovate connected",
+    });
+    stop();
+  });
   it("bounds cached history and replacement deltas together", async () => {
     const t = transport(),
       emit = vi.fn<(snapshot: ChartMarketSnapshot) => void>();

@@ -195,10 +195,21 @@ export function ChartTechnicals({
   error?: string | null;
   onRetry?: () => void;
 }) {
-  const ratings = useMemo(
-    () => calculateTechnicalRatings(loading || error ? [] : candles),
-    [candles, loading, error],
-  );
+  // Candles come only from the current symbol/timeframe cache; retain them visibly as stale
+  // during outages rather than replacing valid cached calculations with empty gauges.
+  const ratings = useMemo(() => calculateTechnicalRatings(candles), [candles]);
+  const stale = candles.length > 0 && (loading || !!error);
+  const lastCached = stale ? candles.at(-1) : undefined;
+  const cachedTime = lastCached
+    ? (lastCached.actualEndTime ?? lastCached.actualTime ?? lastCached.time)
+    : null;
+  const cachedDate = cachedTime === null ? null : new Date(cachedTime * 1000);
+  const cachedLabel =
+    cachedDate && Number.isFinite(cachedDate.getTime())
+      ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
+          cachedDate,
+        )
+      : null;
   const key = chartIntervalKey(interval);
   const more = moreIntervals.find((option) => chartIntervalKey(option.interval) === key);
   const available = ratings.summary.buy + ratings.summary.neutral + ratings.summary.sell;
@@ -275,15 +286,28 @@ export function ChartTechnicals({
         {loading || error || available < 26 ? (
           <div
             role="status"
-            className="mb-5 flex items-center justify-center gap-2 text-center text-xs text-zinc-500"
+            className={cn(
+              "mb-5 flex flex-wrap items-center justify-center gap-2 text-center text-xs",
+              stale ? "text-amber-300" : "text-zinc-400",
+            )}
           >
-            {loading
-              ? "Loading technicals…"
-              : error
-                ? "Couldn’t load technicals."
-                : available === 0
-                  ? "Not enough history for this timeframe."
-                  : `${available} of 26 indicators ready`}
+            <span>
+              {error
+                ? error
+                : loading
+                  ? stale
+                    ? "Refreshing broker market data…"
+                    : "Loading technicals…"
+                  : available === 0
+                    ? "Not enough history for this timeframe."
+                    : `${available} of 26 indicators ready`}
+            </span>
+            {stale ? (
+              <span className="basis-full font-medium">
+                Cached ratings — not current. {symbol} · {formatChartInterval(interval)}
+                {cachedLabel ? ` · Last cached bar: ${cachedLabel}` : ""}
+              </span>
+            ) : null}
             {error && onRetry ? (
               <button
                 type="button"

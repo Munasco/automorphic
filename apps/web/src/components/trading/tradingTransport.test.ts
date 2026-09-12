@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { __resetDesktopPrimaryAuthForTests } from "../../environments/primary/desktopAuth";
 import { createTradingWorkspaceStorage } from "./workspaceStorage";
-import { openTradingStream, tradingFetch } from "./tradingTransport";
+import { openTradingStream, tradingFetch, type TradingStreamFailure } from "./tradingTransport";
 
 function desktop() {
   vi.stubGlobal("window", {
@@ -120,6 +120,38 @@ describe("trading transport", () => {
     expect(request.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
   });
 
+  it.each([401, 403, 502, 503, 504])(
+    "reports HTTP %i without forwarding broker HTML or response details",
+    async (status) => {
+      const request = vi.fn<typeof fetch>().mockResolvedValue(
+        new Response("<html>Temporary error: internal upstream detail</html>", {
+          status,
+          headers: { "Content-Type": "text/html" },
+        }),
+      );
+      const onMessage = vi.fn();
+      let stream: ReturnType<typeof openTradingStream>;
+      const failure = await new Promise<TradingStreamFailure | undefined>((resolve) => {
+        stream = openTradingStream("/api/trading/stream", { onMessage, onError: resolve }, request);
+      });
+      expect(failure).toEqual({ kind: "http", status });
+      expect(onMessage).not.toHaveBeenCalled();
+      stream!.close();
+    },
+  );
+  it("distinguishes a network failure without exposing the thrown request detail", async () => {
+    const request = vi.fn<typeof fetch>().mockRejectedValue(new Error("private request detail"));
+    let stream: ReturnType<typeof openTradingStream>;
+    const failure = await new Promise<TradingStreamFailure | undefined>((resolve) => {
+      stream = openTradingStream(
+        "/api/trading/stream",
+        { onMessage: vi.fn(), onError: resolve },
+        request,
+      );
+    });
+    expect(failure).toEqual({ kind: "network" });
+    stream!.close();
+  });
   it("reports stream HTTP failures so the existing chart reconnect loop can retry", async () => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 401 }));
     const onError = vi.fn();

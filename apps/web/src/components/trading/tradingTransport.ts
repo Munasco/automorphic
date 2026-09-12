@@ -21,10 +21,17 @@ export const tradingFetch: typeof fetch = async (input, init) => {
   });
 };
 
+export type TradingStreamFailure =
+  | { kind: "http"; status: number }
+  | { kind: "network" | "closed" | "invalid-response" };
+
 /** Fetch-based SSE supports the desktop bearer header, unlike browser EventSource. */
 export function openTradingStream(
   endpoint: string,
-  callbacks: { onMessage: (data: string) => void; onError: () => void },
+  callbacks: {
+    onMessage: (data: string) => void;
+    onError: (failure?: TradingStreamFailure) => void;
+  },
   request: typeof fetch = tradingFetch,
 ) {
   const abort = new AbortController();
@@ -34,7 +41,16 @@ export function openTradingStream(
         headers: { Accept: "text/event-stream" },
         signal: abort.signal,
       });
-      if (!response.ok || !response.body) throw Error("Trading stream unavailable.");
+      if (!response.ok) {
+        // Preserve status only: broker/proxy HTML can contain internal details and is not UI data.
+        await response.body?.cancel().catch(() => undefined);
+        if (!abort.signal.aborted) callbacks.onError({ kind: "http", status: response.status });
+        return;
+      }
+      if (!response.body) {
+        if (!abort.signal.aborted) callbacks.onError({ kind: "invalid-response" });
+        return;
+      }
       const reader = response.body.getReader();
       const cancelReader = () => void reader.cancel().catch(() => undefined);
       abort.signal.addEventListener("abort", cancelReader, { once: true });
@@ -67,9 +83,9 @@ export function openTradingStream(
         await reader.cancel().catch(() => undefined);
         reader.releaseLock();
       }
-      if (!abort.signal.aborted) callbacks.onError();
+      if (!abort.signal.aborted) callbacks.onError({ kind: "closed" });
     } catch {
-      if (!abort.signal.aborted) callbacks.onError();
+      if (!abort.signal.aborted) callbacks.onError({ kind: "network" });
     }
   })();
   return { close: () => abort.abort() };

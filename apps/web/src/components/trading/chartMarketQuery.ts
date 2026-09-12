@@ -2,7 +2,7 @@ import { experimental_streamedQuery, queryOptions } from "@tanstack/react-query"
 import type { Candle } from "./chartIndicators";
 import type { MarketQuote } from "./InstrumentHeader";
 import { chartIntervalKey, chartIntervalQuery, type ChartInterval } from "./tradingIntervals";
-import { openTradingStream } from "./tradingTransport";
+import { openTradingStream, type TradingStreamFailure } from "./tradingTransport";
 import { readChartCandle, readTickHistoryQuality, type TickHistoryQuality } from "./tickChartData";
 import { tradingStreamIterable } from "./tradingStreamIterable";
 
@@ -12,6 +12,8 @@ export type ChartMarketSnapshot = {
   revision: number;
   replace: boolean;
   status: string;
+  failure?: TradingStreamFailure | null;
+  awaitingHistory?: boolean;
   quote: MarketQuote | null;
   tickHistory: TickHistoryQuality | null;
 };
@@ -21,6 +23,8 @@ export const emptyChartMarket = (): ChartMarketSnapshot => ({
   revision: 0,
   replace: true,
   status: "Connecting to Tradovate…",
+  failure: null,
+  awaitingHistory: true,
   quote: null,
   tickHistory: null,
 });
@@ -37,7 +41,12 @@ export function subscribeChartMarket(
   let source: ReturnType<typeof openTradingStream> | undefined;
   let retry: ReturnType<typeof setTimeout> | undefined;
   let notification: ReturnType<typeof setTimeout> | undefined;
-  let current: ChartMarketSnapshot = { ...seed, quote: null, status: "Connecting to Tradovate…" };
+  let current: ChartMarketSnapshot = {
+    ...seed,
+    quote: null,
+    status: "Connecting to Tradovate…",
+    awaitingHistory: true,
+  };
   const bars = new Map(seed.bars.map((bar) => [bar.time, bar]));
   const pending = new Map<number, Candle>();
   let replace = false;
@@ -104,6 +113,10 @@ export function subscribeChartMarket(
             current = {
               ...current,
               status: typeof message.message === "string" ? message.message : current.status,
+              awaitingHistory:
+                message.state === "disconnected" || message.state === "connecting"
+                  ? true
+                  : (current.awaitingHistory ?? true),
               quote:
                 message.state === "disconnected" || message.state === "connecting"
                   ? null
@@ -118,24 +131,49 @@ export function subscribeChartMarket(
             (message.symbol && message.symbol !== symbol)
           )
             return;
+          const received = message.bars.flatMap((item: unknown) => {
+            const bar = readChartCandle(item);
+            return bar ? [bar] : [];
+          });
+          // Invalid nonempty replacements are not authoritative empty history. Preserve both
+          // the cached bars and any valid updates waiting for the next notification.
+          if (message.bars.length > 0 && received.length === 0) return;
           if (message.snapshot === true) {
             bars.clear();
             pending.clear();
             replace = true;
           }
-          for (const item of message.bars) {
-            const bar = readChartCandle(item);
-            if (!bar) continue;
+          for (const bar of received) {
             bars.set(bar.time, bar);
             pending.set(bar.time, bar);
           }
-          current = { ...current, status: "Tradovate connected" };
+          if (received.length > 0 || (message.snapshot === true && message.bars.length === 0))
+            current = {
+              ...current,
+              status: "Tradovate connected",
+              failure: null,
+              awaitingHistory: false,
+            };
           publish();
         },
-        onError() {
+        onError(failure) {
           if (disposed) return;
           source?.close();
-          current = { ...current, quote: null, status: "Reconnecting to Tradovate…" };
+          const serverReason = ![
+            "Connecting to Tradovate…",
+            "Tradovate connected",
+            "Reconnecting to Tradovate…",
+          ].includes(current.status);
+          current = {
+            ...current,
+            quote: null,
+            status: serverReason ? current.status : "Reconnecting to Tradovate…",
+            failure:
+              failure?.kind === "closed"
+                ? (current.failure ?? failure)
+                : (failure ?? { kind: "network" }),
+            awaitingHistory: true,
+          };
           publish();
           clearTimeout(retry);
           retry = setTimeout(connect, 5000);
@@ -174,7 +212,12 @@ export function chartMarketQueryOptions(
       reducer: (_previous, next) => next,
       streamFn: ({ signal, client }) => {
         const seed = client.getQueryData<ChartMarketSnapshot>(queryKey) ?? emptyChartMarket();
-        const initial = { ...seed, quote: null, status: "Connecting to Tradovate…" };
+        const initial = {
+          ...seed,
+          quote: null,
+          status: "Connecting to Tradovate…",
+          awaitingHistory: true,
+        };
         return tradingStreamIterable<ChartMarketSnapshot>(
           signal,
           (emit) => subscribeChartMarket(symbol, interval, emit, initial, open),
