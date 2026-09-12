@@ -109,7 +109,6 @@ export const supportsInlineDrawingText = (kind: DrawingKind) =>
     "horizontal",
     "horizontal-ray",
     "vertical",
-    "crossline",
   ].includes(kind);
 
 /** The same placement used by canvas text, suitable for positioning an inline text editor. */
