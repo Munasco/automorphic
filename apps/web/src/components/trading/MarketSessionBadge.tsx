@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { MarketStatusIcon } from "./MarketStatusIcon";
 import { getFuturesSession } from "./marketSession";
 
 export function MarketSessionBadge({ root }: { root: "MGC" | "NQ" }) {
@@ -19,9 +20,9 @@ export function MarketSessionBadge({ root }: { root: "MGC" | "NQ" }) {
     <Tooltip>
       <TooltipTrigger
         aria-label={isOpen ? "Market open, regular schedule" : session.label}
-        className={`shrink-0 rounded px-1.5 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring ${isOpen ? "text-emerald-400" : "text-zinc-400"}`}
+        className={`inline-flex size-7 shrink-0 items-center justify-center rounded text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring ${isOpen ? "text-emerald-400" : "text-zinc-400"}`}
       >
-        {isOpen ? "Open" : "Closed"}
+        <MarketStatusIcon open={isOpen} />
       </TooltipTrigger>
       <TooltipPopup className="max-w-72">
         <p className="font-semibold">{session.label}</p>

@@ -200,7 +200,9 @@ function NewsItem({
           <TooltipTrigger
             aria-label={
               rated
-                ? `${direction}, ${rated.strength} impact on ${root}`
+                ? direction === "neutral"
+                  ? `Neutral impact on ${root}`
+                  : `${direction}, ${rated.strength} impact on ${root}`
                 : analysis?.status === "pending"
                   ? "Analyzing headline"
                   : "Unrated headline"
@@ -215,6 +217,7 @@ function NewsItem({
               {rated ? direction : analysis?.status === "pending" ? "Analyzing" : "Unrated"}
             </span>
             {rated ? (
+              direction !== "neutral" &&
               [1, 2, 3].map((level) => (
                 <span
                   key={level}
@@ -232,7 +235,8 @@ function NewsItem({
             {rated ? (
               <>
                 <span className="capitalize">
-                  {direction} · {rated.strength}
+                  {direction}
+                  {direction !== "neutral" ? ` · ${rated.strength}` : ""}
                 </span>
                 <p className="mt-1">
                   {root}: {rated.reason}
