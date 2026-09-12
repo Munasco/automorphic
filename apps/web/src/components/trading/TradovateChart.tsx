@@ -1,3 +1,4 @@
+import { openTradingStream } from "./tradingTransport";
 import { ChartIcon } from "./ChartIcon";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
@@ -276,7 +277,7 @@ export function TradovateChart({
       if (volumeData && "value" in volumeData) values.volume = volumeData.value;
       setHoverReadings(values);
     });
-    let source: EventSource | undefined;
+    let source: ReturnType<typeof openTradingStream> | undefined;
     let retry: ReturnType<typeof setTimeout>;
     let render: number | undefined;
     let fitted = false;
@@ -341,48 +342,52 @@ export function TradovateChart({
     };
     const connect = () => {
       if (state.disposed) return;
-      source = new EventSource(
+      source = openTradingStream(
         `/api/trading/stream?${new URLSearchParams({ symbol, interval: String(interval) })}`,
-      );
-      source.addEventListener("message", (event) => {
-        let message;
-        try {
-          message = JSON.parse(event.data);
-        } catch {
-          return;
-        }
-        if (message.type === "status") {
-          setStatus(message.message);
-          return;
-        }
-        if (
-          message.type === "quote" &&
-          message.quote?.symbol === symbol &&
-          Number.isFinite(message.quote.last)
-        ) {
-          receivedQuote = true;
-          onQuote?.(message.quote);
-          return;
-        }
-        if (message.type === "bars" && Array.isArray(message.bars)) {
-          for (const bar of message.bars)
-            if (
-              [bar.time, bar.open, bar.high, bar.low, bar.close, bar.volume].every(Number.isFinite)
-            ) {
-              bars.set(bar.time, bar);
-              pending.set(bar.time, bar);
+        {
+          onMessage: (data) => {
+            let message;
+            try {
+              message = JSON.parse(data);
+            } catch {
+              return;
             }
-          setStatus("Tradovate connected");
-          if (render === undefined) render = requestAnimationFrame(renderBars);
-        }
-      });
-      source.addEventListener("error", () => {
-        source?.close();
-        if (!state.disposed) {
-          setStatus("Reconnecting to Tradovate…");
-          retry = setTimeout(connect, 5000);
-        }
-      });
+            if (message.type === "status") {
+              setStatus(message.message);
+              return;
+            }
+            if (
+              message.type === "quote" &&
+              message.quote?.symbol === symbol &&
+              Number.isFinite(message.quote.last)
+            ) {
+              receivedQuote = true;
+              onQuote?.(message.quote);
+              return;
+            }
+            if (message.type === "bars" && Array.isArray(message.bars)) {
+              for (const bar of message.bars)
+                if (
+                  [bar.time, bar.open, bar.high, bar.low, bar.close, bar.volume].every(
+                    Number.isFinite,
+                  )
+                ) {
+                  bars.set(bar.time, bar);
+                  pending.set(bar.time, bar);
+                }
+              setStatus("Tradovate connected");
+              if (render === undefined) render = requestAnimationFrame(renderBars);
+            }
+          },
+          onError: () => {
+            source?.close();
+            if (!state.disposed) {
+              setStatus("Reconnecting to Tradovate…");
+              retry = setTimeout(connect, 5000);
+            }
+          },
+        },
+      );
     };
     connect();
     return () => {

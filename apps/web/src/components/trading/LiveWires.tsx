@@ -1,3 +1,4 @@
+import { tradingFetch } from "./tradingTransport";
 import { useEffect, useState } from "react";
 import { ArrowDownRight, ArrowUpRight, Minus, RefreshCw } from "lucide-react";
 import { selectBreakingNews } from "./breakingNews";
@@ -50,7 +51,7 @@ export function LiveWires({
     const load = async () => {
       let delay = 60_000;
       try {
-        const response = await fetch(
+        const response = await tradingFetch(
           `/api/trading/news?root=${root}${projectId ? `&projectId=${encodeURIComponent(projectId)}` : ""}`,
           {
             signal: abort.signal,

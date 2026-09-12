@@ -1,3 +1,4 @@
+import { tradingFetch } from "./tradingTransport";
 import * as Schema from "effect/Schema";
 import { TradingAccountSnapshot } from "@t3tools/contracts";
 
@@ -6,7 +7,7 @@ export const ACCOUNT_POLL_MS = 30_000;
 
 /** Short-lived, account-scoped UI cache. Only a visible dock requests updates. */
 export function createTradingAccountCache(
-  request: typeof fetch = (...args) => fetch(...args),
+  request: typeof fetch = tradingFetch,
   now: () => number = () => Date.now(),
 ) {
   const values = new Map<number | null, { data: TradingAccountSnapshot; receivedAt: number }>();

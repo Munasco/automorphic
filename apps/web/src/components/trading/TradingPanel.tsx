@@ -1,3 +1,4 @@
+import { tradingFetch } from "./tradingTransport";
 import { ChartIcon } from "./ChartIcon";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
@@ -34,7 +35,7 @@ function ReadyTradingPanel({
   const loadContracts = useCallback(async (signal: AbortSignal) => {
     const results = await Promise.allSettled(
       (["MGC", "NQ"] as const).map(async (root) => {
-        const response = await fetch(`/api/trading/contracts?root=${root}`, {
+        const response = await tradingFetch(`/api/trading/contracts?root=${root}`, {
           signal,
           credentials: "same-origin",
         });

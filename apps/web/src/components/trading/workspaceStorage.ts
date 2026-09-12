@@ -1,3 +1,4 @@
+import { tradingFetch } from "./tradingTransport";
 import { useEffect, useSyncExternalStore } from "react";
 
 const endpoint = "/api/trading/workspace";
@@ -44,7 +45,7 @@ function parseWorkspace(value: unknown): Workspace {
 
 /** Server-owned preferences; legacy browser values are imported only into missing server keys. */
 export function createTradingWorkspaceStorage(
-  request: typeof fetch = (...args) => fetch(...args),
+  request: typeof fetch = tradingFetch,
   legacy: () => Storage | undefined = () => {
     try {
       return globalThis.localStorage;
@@ -200,7 +201,7 @@ export function createTradingWorkspaceStorage(
 }
 
 /** One request queue per project; changing the visible project never retargets an in-flight save. */
-export function createTradingWorkspaceRouter(request: typeof fetch = (...args) => fetch(...args)) {
+export function createTradingWorkspaceRouter(request: typeof fetch = tradingFetch) {
   const stores = new Map<string | null, ReturnType<typeof createTradingWorkspaceStorage>>();
   const listeners = new Set<() => void>();
   const hydrators = new Set<() => void | Promise<void>>();

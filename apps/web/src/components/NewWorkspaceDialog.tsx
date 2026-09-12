@@ -1,3 +1,4 @@
+import { tradingFetch } from "./trading/tradingTransport";
 import { useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -32,7 +33,7 @@ export function NewWorkspaceDialog({ onClose }: { onClose: () => void }) {
     try {
       let threadId = createdThread;
       if (!threadId) {
-        const response = await fetch("/api/trading/workspaces", {
+        const response = await tradingFetch("/api/trading/workspaces", {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
