@@ -98,6 +98,7 @@ export type DrawingSettings = {
   extendLeft?: boolean;
   extendRight?: boolean;
   showPriceLabel?: boolean;
+  showTimeLabel?: boolean;
   priceLabelColor?: string;
   priceLabelFontSize?: number;
   priceLabelBold?: boolean;
@@ -540,6 +541,22 @@ export const supportsDrawingPriceLabels = (kind: DrawingKind) =>
     "channel",
   ].includes(kind);
 
+export const supportsDrawingTimeLabels = (kind: DrawingKind) =>
+  kind === "vertical" || kind === "crossline";
+export const drawingPriceLabelVisible = (drawing: Pick<ChartDrawing, "kind" | "showPriceLabel">) =>
+  supportsDrawingPriceLabels(drawing.kind) &&
+  (drawing.showPriceLabel ?? ["horizontal", "horizontal-ray", "crossline"].includes(drawing.kind));
+export const drawingTimeLabelVisible = (drawing: Pick<ChartDrawing, "kind" | "showTimeLabel">) =>
+  supportsDrawingTimeLabels(drawing.kind) && drawing.showTimeLabel !== false;
+export function defaultDrawingAxisLabelSettings(kind: DrawingKind): DrawingSettings {
+  return {
+    ...(["horizontal", "horizontal-ray", "crossline"].includes(kind)
+      ? { showPriceLabel: true }
+      : {}),
+    ...(supportsDrawingTimeLabels(kind) ? { showTimeLabel: true } : {}),
+  };
+}
+
 /** Persist only supported, finite settings; invalid stored options fall back to existing behavior. */
 export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
   if (!value || typeof value !== "object") return {};
@@ -694,6 +711,7 @@ export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
     "extendLeft",
     "extendRight",
     "showPriceLabel",
+    "showTimeLabel",
     "priceLabelBold",
     "priceLabelItalic",
     "textBold",

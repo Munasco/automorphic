@@ -134,6 +134,121 @@ describe("native drawing primitive", () => {
     expect(plugin.primitive.timeAxisViews!()).toEqual([]);
   });
 
+  it.each(["vertical", "crossline"] as const)(
+    "keeps %s time labels visible independently of an offscreen or unavailable anchor price",
+    (kind) => {
+      const { chart, series } = fixture();
+      const drawing: ChartDrawing = {
+        id: "axis-line",
+        kind,
+        anchors: [{ time: 100 as Time, price: 1000 }],
+        color: "#ff0000",
+        width: 2,
+      };
+      const plugin = createDrawingPrimitive(chart, series, () => ({
+        drawings: [drawing],
+        selected: null,
+      }));
+      const views = plugin.primitive.timeAxisViews!();
+      expect(views).toHaveLength(1);
+      expect(views[0]!.coordinate()).toBe(100);
+      expect(views[0]!.visible!()).toBe(true);
+      expect(views[0]!.backColor()).toBe(drawing.color);
+      vi.spyOn(series, "priceToCoordinate").mockReturnValue(null);
+      expect(views[0]!.visible!()).toBe(true);
+      drawing.anchors[0]!.time = 1100 as Time;
+      expect(plugin.primitive.timeAxisViews!()[0]!.visible!()).toBe(false);
+      drawing.showTimeLabel = false;
+      expect(plugin.primitive.timeAxisViews!()).toEqual([]);
+    },
+  );
+
+  it.each(["horizontal-ray", "crossline"] as const)(
+    "shows %s price labels by default even when anchor time is offscreen or unavailable",
+    (kind) => {
+      const { chart, series } = fixture();
+      const drawing: ChartDrawing = {
+        id: "axis-line",
+        kind,
+        anchors: [{ time: 1100 as Time, price: 300 }],
+        color: "#ff0000",
+        width: 2,
+      };
+      const plugin = createDrawingPrimitive(chart, series, () => ({
+        drawings: [drawing],
+        selected: null,
+      }));
+      const views = plugin.primitive.priceAxisViews!();
+      expect(views).toHaveLength(1);
+      expect(views[0]!.text()).toBe("300.00");
+      expect(views[0]!.coordinate()).toBe(200);
+      expect(views[0]!.visible!()).toBe(true);
+      const scale = chart.timeScale();
+      vi.spyOn(scale, "timeToCoordinate").mockReturnValue(null);
+      vi.spyOn(chart, "timeScale").mockReturnValue(scale);
+      expect(views[0]!.visible!()).toBe(true);
+      drawing.anchors[0]!.price = 1000;
+      expect(plugin.primitive.priceAxisViews!()[0]!.visible!()).toBe(false);
+      drawing.showPriceLabel = false;
+      expect(plugin.primitive.priceAxisViews!()).toEqual([]);
+    },
+  );
+
+  it("keeps selected axis highlights separate from persistent crossline labels and hides both with the drawing", () => {
+    const { chart, series } = fixture();
+    const drawing: ChartDrawing = {
+      id: "cross",
+      kind: "crossline",
+      anchors: [{ time: 100 as Time, price: 300 }],
+      color: "#ff0000",
+      width: 2,
+      showTimeLabel: false,
+      showPriceLabel: false,
+    };
+    let selected: string | null = drawing.id;
+    let hidden = false;
+    const plugin = createDrawingPrimitive(chart, series, () => ({
+      drawings: [drawing],
+      selected,
+      hidden,
+    }));
+    for (const views of [plugin.primitive.priceAxisViews!(), plugin.primitive.timeAxisViews!()]) {
+      expect(views).toHaveLength(1);
+      expect(views[0]!.backColor()).toBe("#2962ff");
+    }
+    selected = null;
+    expect(plugin.primitive.priceAxisViews!()).toEqual([]);
+    expect(plugin.primitive.timeAxisViews!()).toEqual([]);
+    drawing.showTimeLabel = true;
+    drawing.showPriceLabel = true;
+    expect(plugin.primitive.timeAxisViews!()[0]!.backColor()).toBe(drawing.color);
+    expect(plugin.primitive.priceAxisViews!()[0]!.backColor()).toBe(drawing.color);
+    drawing.hidden = true;
+    expect(plugin.primitive.timeAxisViews!()).toEqual([]);
+    expect(plugin.primitive.priceAxisViews!()).toEqual([]);
+    drawing.hidden = false;
+    hidden = true;
+    expect(plugin.primitive.timeAxisViews!()).toEqual([]);
+    expect(plugin.primitive.priceAxisViews!()).toEqual([]);
+  });
+
+  it("does not duplicate a horizontal line's native persistent price label", () => {
+    const { chart, series } = fixture();
+    const drawing: ChartDrawing = {
+      id: "horizontal",
+      kind: "horizontal",
+      anchors: [{ time: 100 as Time, price: 300 }],
+      color: "#ff0000",
+      width: 2,
+    };
+    const plugin = createDrawingPrimitive(chart, series, () => ({
+      drawings: [drawing],
+      selected: null,
+    }));
+    expect(plugin.primitive.priceAxisViews!()).toEqual([]);
+    expect(plugin.primitive.timeAxisViews!()).toEqual([]);
+  });
+
   it("renders midpoint and real stats on selection, retains always-visible stats, and honors their position", () => {
     const { chart, series } = fixture();
     const drawing: ChartDrawing = {

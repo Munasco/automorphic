@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import {
   DRAWING_ANCHORS,
   defaultChannelDrawingSettings,
+  defaultDrawingAxisLabelSettings,
   defaultDrawingLevelSettings,
   defaultRegressionDrawingSettings,
   sanitizeDrawingSettings,
@@ -30,6 +31,7 @@ export function defaultDrawingTemplateSettings(kind: DrawingKind): DrawingTempla
     lineStyle: "solid",
     lineOpacity: 1,
     textOpacity: 1,
+    ...defaultDrawingAxisLabelSettings(kind),
     ...defaultDrawingLevelSettings(kind),
     ...defaultChannelDrawingSettings(kind),
     ...defaultRegressionDrawingSettings(kind),

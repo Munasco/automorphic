@@ -15,7 +15,8 @@ import {
   hitDrawingHandle,
   defaultDrawingStats,
   supportsLineStatistics,
-  supportsDrawingPriceLabels,
+  drawingPriceLabelVisible,
+  drawingTimeLabelVisible,
   isSpecialChannelDrawing,
   isFibTimeDrawing,
   type ChartDrawing,
@@ -531,11 +532,11 @@ export function createDrawingPrimitive(
           if (drawing.hidden) return [];
           const selected = drawing.id === state.selected;
           const persistent =
-            axis === "price" &&
-            drawing.showPriceLabel === true &&
-            drawing.kind !== "horizontal" &&
-            !isSpecialChannelDrawing(drawing.kind) &&
-            supportsDrawingPriceLabels(drawing.kind);
+            axis === "price"
+              ? drawingPriceLabelVisible(drawing) &&
+                drawing.kind !== "horizontal" &&
+                !isSpecialChannelDrawing(drawing.kind)
+              : drawingTimeLabelVisible(drawing);
           if (!selected && !persistent) return [];
           const projection = drawingProjection(chart, series);
           const selectedAnchors =
@@ -582,7 +583,7 @@ export function createDrawingPrimitive(
         coordinate: () =>
           axis === "price"
             ? (series.priceToCoordinate(anchor.price) ?? -10000)
-            : (drawingProjection(chart, series).project(anchor)?.x ?? -10000),
+            : (drawingTimeCoordinate(chart, series, anchor.time) ?? -10000),
         text: () => {
           if (axis === "price") return series.priceFormatter().format(anchor.price);
           const formatter = chart.options().localization?.timeFormatter;
@@ -599,14 +600,17 @@ export function createDrawingPrimitive(
         textColor: () => "#ffffff",
         backColor: () => color,
         visible: () => {
-          const projection = drawingProjection(chart, series);
-          const point = projection.project(anchor);
+          const coordinate =
+            axis === "price"
+              ? series.priceToCoordinate(anchor.price)
+              : drawingTimeCoordinate(chart, series, anchor.time);
+          const extent =
+            axis === "price" ? series.getPane().getHeight() : chart.timeScale().width();
           return (
-            point !== null &&
-            point.x >= 0 &&
-            point.x <= projection.width &&
-            point.y >= 0 &&
-            point.y <= projection.height
+            coordinate !== null &&
+            Number.isFinite(coordinate) &&
+            coordinate >= 0 &&
+            coordinate <= extent
           );
         },
         tickVisible: () => true,

@@ -244,6 +244,7 @@ describe("native drawing geometry", () => {
       extendLeft: false,
       extendRight: true,
       showPriceLabel: true,
+      showTimeLabel: false,
       startMarker: "arrow",
       endMarker: "normal",
       text: "Supply",
@@ -266,6 +267,7 @@ describe("native drawing geometry", () => {
       sanitizeDrawingSettings({
         extendLeft: "yes",
         showPriceLabel: 1,
+        showTimeLabel: "true",
         startMarker: "triangle",
         endMarker: "arrow",
         textColor: "red",

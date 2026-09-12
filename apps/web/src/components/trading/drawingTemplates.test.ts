@@ -44,6 +44,33 @@ beforeEach(() => {
 });
 
 describe("drawing templates", () => {
+  it.each(["horizontal", "horizontal-ray", "vertical", "crossline"] as const)(
+    "restores %s factory axis labels and preserves explicit disabled labels in saved templates",
+    (kind) => {
+      const target: ChartDrawing = {
+        ...drawing,
+        kind,
+        anchors: [drawing.anchors[0]!],
+        showPriceLabel: false,
+        showTimeLabel: false,
+      };
+      const saved = saveDrawingTemplate([], target, "No axis labels")!;
+      const reloaded = normalizeDrawingTemplates(JSON.parse(JSON.stringify(saved)));
+      const applied = applyDrawingTemplate(
+        { ...target, showPriceLabel: true, showTimeLabel: true },
+        reloaded[0]!.settings,
+      );
+      expect(applied.showPriceLabel).toBe(false);
+      expect(applied.showTimeLabel).toBe(false);
+      expect(applied.id).toBe(target.id);
+      expect(applied.anchors).toBe(target.anchors);
+      const reset = applyDrawingTemplate(applied, defaultDrawingTemplateSettings(kind));
+      expect(reset.showPriceLabel).toBe(kind === "vertical" ? undefined : true);
+      expect(reset.showTimeLabel).toBe(
+        kind === "vertical" || kind === "crossline" ? true : undefined,
+      );
+    },
+  );
   it("resets factory appearance and clears custom text while preserving object identity and placement", () => {
     const target: ChartDrawing = {
       ...drawing,

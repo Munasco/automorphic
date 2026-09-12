@@ -55,6 +55,9 @@ import {
   DEFAULT_SHAPE_BACKGROUND_OPACITY,
   supportsLineMarkers,
   supportsDrawingPriceLabels,
+  supportsDrawingTimeLabels,
+  drawingPriceLabelVisible,
+  drawingTimeLabelVisible,
   supportsLineStatistics,
   defaultDrawingStats,
   supportsDrawingLevels,
@@ -262,6 +265,7 @@ function DrawingSettings({
   };
   const line =
     lineKinds.has(draft.kind) || supportsLineStatistics(draft.kind) || draft.kind === "crossline";
+  const axisLine = ["horizontal", "horizontal-ray", "vertical", "crossline"].includes(draft.kind);
   const coordinateHasPrice = draft.kind !== "vertical" && draft.kind !== "regression-trend";
   const coordinateHasBar = draft.kind !== "horizontal";
   const coordinateLabel = coordinateHasPrice ? (coordinateHasBar ? "price, bar" : "price") : "bar";
@@ -430,7 +434,9 @@ function DrawingSettings({
                 ? "space-y-0"
                 : tab === "Style" && supportsLineStatistics(draft.kind)
                   ? "pb-8 [&>div]:min-h-[50px] [&>label]:min-h-[50px]"
-                  : "space-y-6",
+                  : tab === "Style" && axisLine
+                    ? "min-h-[145px] [&>div]:min-h-[50px] [&>label]:min-h-[50px]"
+                    : "space-y-6",
           )}
         >
           {draft.kind === "regression-trend" && (tab === "Style" || tab === "Inputs") ? (
@@ -451,10 +457,12 @@ function DrawingSettings({
           draft.kind !== "channel" &&
           draft.kind !== "regression-trend" ? (
             <>
-              <div className="flex items-center gap-2">
-                <span className="w-[100px] shrink-0 text-sm">{line ? "Line" : "Stroke"}</span>
+              <div className={cn("flex items-center", axisLine ? "gap-5" : "gap-2")}>
+                <span className={cn("shrink-0 text-sm", !axisLine && "w-[100px]")}>
+                  {line ? "Line" : "Stroke"}
+                </span>
                 <LineAppearancePicker drawing={draft} onChange={update} />
-                {supportsLineMarkers(draft.kind) ? (
+                {supportsLineMarkers(draft.kind) && !axisLine ? (
                   <>
                     <MarkerPicker
                       side="start"
@@ -527,9 +535,16 @@ function DrawingSettings({
               ) : null}
               {supportsDrawingPriceLabels(draft.kind) && !isSpecialChannelDrawing(draft.kind) ? (
                 <Check
-                  label="Price labels"
-                  checked={draft.showPriceLabel ?? draft.kind === "horizontal"}
+                  label={axisLine ? "Price label" : "Price labels"}
+                  checked={drawingPriceLabelVisible(draft)}
                   onChange={(showPriceLabel) => update({ showPriceLabel })}
+                />
+              ) : null}
+              {supportsDrawingTimeLabels(draft.kind) ? (
+                <Check
+                  label="Time label"
+                  checked={drawingTimeLabelVisible(draft)}
+                  onChange={(showTimeLabel) => update({ showTimeLabel })}
                 />
               ) : null}
               {supportsLineStatistics(draft.kind) ? (
