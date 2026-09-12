@@ -20,8 +20,8 @@ Aeonik trial files are local evaluation assets, excluded from the repository and
 
 ## Tabler Icons
 
-The chart control icons in `src/components/trading/ChartIcon.tsx` use Tabler Icons
-paths retrieved through the Iconify API, with stroke weight adapted to 1.5.
+The chart control icons in `src/components/trading/ChartIcon.tsx` and
+`src/components/trading/DrawingToolIcon.tsx` use Tabler Icons paths retrieved through the Iconify API, with stroke weight adapted to 1.5.
 
 Source: https://github.com/tabler/tabler-icons
 Icon API: https://api.iconify.design/tabler.json

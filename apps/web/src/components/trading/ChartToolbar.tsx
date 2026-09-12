@@ -1,13 +1,28 @@
 import { ChartIcon } from "./ChartIcon";
-import { useId, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { cn } from "../../lib/utils";
+import { Dialog, DialogPopup, DialogTitle, DialogTrigger } from "../ui/dialog";
+import { CheckIcon, PlusIcon } from "lucide-react";
 import { Checkbox } from "../ui/checkbox";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
-export type ChartStyle = "candles" | "bars" | "line" | "area";
-export type IndicatorKey = "sma" | "ema" | "vwap" | "rsi" | "volume";
-export type ChartIndicators = Record<IndicatorKey, boolean>;
+import {
+  INDICATOR_CATALOG,
+  INDICATOR_CATEGORIES,
+  INITIAL_BALANCE_TIME_ZONES,
+  findIndicators,
+  type ChartStyle,
+  type IndicatorKey,
+  type ChartIndicators,
+  type InitialBalanceSettings,
+} from "./indicatorCatalog";
+export type {
+  ChartStyle,
+  IndicatorKey,
+  ChartIndicators,
+  InitialBalanceSettings,
+} from "./indicatorCatalog";
 export type ChartToolbarProps = {
   symbol: string;
   onSelectSymbol: () => void;
@@ -17,6 +32,8 @@ export type ChartToolbarProps = {
   onStyleChange: (value: ChartStyle) => void;
   indicators: ChartIndicators;
   onToggleIndicator: (key: IndicatorKey) => void;
+  initialBalance: InitialBalanceSettings;
+  onInitialBalanceChange: (settings: InitialBalanceSettings) => void;
   showGrid: boolean;
   onToggleGrid: () => void;
   logScale: boolean;
@@ -24,15 +41,8 @@ export type ChartToolbarProps = {
   onScreenshot: () => void;
   panelActions?: ReactNode;
 };
-const INDICATORS: ReadonlyArray<{ key: IndicatorKey; label: string; detail: string }> = [
-  { key: "sma", label: "SMA 20", detail: "Simple moving average" },
-  { key: "ema", label: "EMA 20", detail: "Exponential moving average" },
-  { key: "vwap", label: "Session VWAP", detail: "Volume-weighted average price" },
-  { key: "rsi", label: "RSI 14", detail: "Relative strength index" },
-  { key: "volume", label: "Volume", detail: "Traded volume per bar" },
-];
 const control =
-  "inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded px-2 text-xs text-zinc-400 outline-none hover:bg-white/5 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-blue-400/70 data-popup-open:bg-white/5 data-popup-open:text-zinc-100";
+  "inline-flex h-8 shrink-0 items-center justify-center gap-2 rounded px-2.5 text-[13px] text-zinc-400 outline-none hover:bg-white/5 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-blue-400/70 data-popup-open:bg-white/5 data-popup-open:text-zinc-100";
 const select =
   "h-8 appearance-none rounded border-0 bg-transparent pr-6 text-xs text-zinc-300 outline-none hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-blue-400/70 [&>option]:bg-zinc-900 [&>option]:text-zinc-200";
 
@@ -45,6 +55,8 @@ export function ChartToolbar({
   onStyleChange,
   indicators,
   onToggleIndicator,
+  initialBalance,
+  onInitialBalanceChange,
   showGrid,
   onToggleGrid,
   logScale,
@@ -53,7 +65,12 @@ export function ChartToolbar({
   panelActions,
 }: ChartToolbarProps) {
   const id = useId();
-  const activeCount = INDICATORS.filter((indicator) => indicators[indicator.key]).length;
+  const [indicatorSearch, setIndicatorSearch] = useState("");
+  const [indicatorCategory, setIndicatorCategory] = useState<string>("All");
+  const matchingIndicators = findIndicators(indicatorSearch).filter(
+    (item) => indicatorCategory === "All" || item.category === indicatorCategory,
+  );
+  const activeCount = INDICATOR_CATALOG.filter((indicator) => indicators[indicator.key]).length;
   return (
     <div
       role="group"
@@ -116,11 +133,11 @@ export function ChartToolbar({
           />
         </div>
         <span className="mx-1 h-4 w-px shrink-0 bg-white/10" aria-hidden="true" />
-        <Popover>
+        <Dialog>
           <Tooltip>
             <TooltipTrigger
               render={
-                <PopoverTrigger
+                <DialogTrigger
                   className={control}
                   aria-label={`Indicators, ${activeCount} active`}
                 />
@@ -134,34 +151,174 @@ export function ChartToolbar({
                 </span>
               )}
             </TooltipTrigger>
-            <TooltipPopup>Add or remove chart indicators</TooltipPopup>
+            <TooltipPopup>Add chart indicators</TooltipPopup>
           </Tooltip>
-          <PopoverPopup align="start" className="w-64" viewportClassName="px-3 py-3">
-            <PopoverTitle className="px-1 pb-2 text-xs">Indicators</PopoverTitle>
-            <div className="space-y-0.5">
-              {INDICATORS.map((indicator) => (
-                <label
-                  key={indicator.key}
-                  htmlFor={`${id}-${indicator.key}`}
-                  className="flex cursor-pointer items-center gap-3 rounded px-2 py-2 hover:bg-white/5"
-                >
-                  <Checkbox
-                    id={`${id}-${indicator.key}`}
-                    checked={indicators[indicator.key]}
-                    onCheckedChange={() => onToggleIndicator(indicator.key)}
-                    aria-label={indicator.label}
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-xs text-foreground">{indicator.label}</span>
-                    <span className="block pt-0.5 text-[10px] text-muted-foreground">
-                      {indicator.detail}
-                    </span>
-                  </span>
-                </label>
-              ))}
+          <DialogPopup className="trading-surface flex h-[min(36rem,85vh)] w-[min(48rem,calc(100vw-2rem))] max-w-3xl flex-col overflow-hidden p-0">
+            <DialogTitle className="px-6 py-5 text-xl">Indicators</DialogTitle>
+            <div className="relative border-y border-border px-4">
+              <ChartIcon
+                name="search"
+                className="pointer-events-none absolute left-6 top-3.5 size-4 text-muted-foreground"
+              />
+              <input
+                aria-label="Search indicators"
+                type="search"
+                value={indicatorSearch}
+                onChange={(event) => setIndicatorSearch(event.target.value)}
+                placeholder="Search indicators"
+                className="h-11 w-full bg-transparent pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
             </div>
-          </PopoverPopup>
-        </Popover>
+            <div className="flex min-h-0 flex-1 max-sm:flex-col">
+              <nav
+                aria-label="Indicator categories"
+                className="flex w-40 shrink-0 flex-col gap-1 border-r border-border p-3 max-sm:w-full max-sm:flex-row max-sm:overflow-x-auto max-sm:border-r-0 max-sm:border-b"
+              >
+                {["All", ...INDICATOR_CATEGORIES].map((category) => (
+                  <button
+                    key={category}
+                    type="button"
+                    aria-pressed={indicatorCategory === category}
+                    onClick={() => setIndicatorCategory(category)}
+                    className={cn(
+                      "rounded-md px-3 py-2.5 text-left text-sm",
+                      indicatorCategory === category
+                        ? "bg-accent font-medium text-foreground"
+                        : "text-muted-foreground hover:bg-accent/50",
+                    )}
+                  >
+                    {category === "All" ? "All indicators" : category}
+                  </button>
+                ))}
+              </nav>
+              <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-3">
+                {INDICATOR_CATEGORIES.map((category) => {
+                  const entries = matchingIndicators.filter((item) => item.category === category);
+                  if (!entries.length) return null;
+                  return (
+                    <section key={category} aria-label={category} className="mb-3 last:mb-0">
+                      <h3 className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {category}
+                      </h3>
+                      {entries.map((indicator) => (
+                        <div key={indicator.key}>
+                          <button
+                            type="button"
+                            disabled={indicators[indicator.key]}
+                            onClick={() => onToggleIndicator(indicator.key)}
+                            aria-label={`${indicators[indicator.key] ? "Added" : "Add"} ${indicator.label}`}
+                            className="flex w-full items-center gap-3 rounded-md px-3 py-3 text-left hover:bg-accent/60 disabled:cursor-default disabled:hover:bg-transparent"
+                          >
+                            <ChartIcon
+                              name="sum"
+                              className="size-4 shrink-0 text-muted-foreground"
+                              aria-hidden="true"
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-sm font-medium leading-5 text-foreground">
+                                {indicator.label}
+                              </span>
+                              <span className="block pt-1 text-xs text-muted-foreground">
+                                {indicator.detail}
+                              </span>
+                            </span>
+                            {indicators[indicator.key] ? (
+                              <CheckIcon className="size-4 text-blue-400" aria-hidden="true" />
+                            ) : (
+                              <PlusIcon
+                                className="size-4 text-muted-foreground"
+                                aria-hidden="true"
+                              />
+                            )}
+                          </button>
+                          {indicator.key === "ib" && indicators.ib ? (
+                            <fieldset className="mb-2 ml-8 space-y-2 rounded border border-border p-2">
+                              <legend className="px-1 text-[11px] text-muted-foreground">
+                                Session window
+                              </legend>
+                              <div className="flex items-center justify-between gap-3">
+                                <label htmlFor={`${id}-ib-start`} className="text-[11px]">
+                                  Start
+                                </label>
+                                <input
+                                  id={`${id}-ib-start`}
+                                  type="time"
+                                  value={initialBalance.startTime}
+                                  onChange={(event) =>
+                                    onInitialBalanceChange({
+                                      ...initialBalance,
+                                      startTime: event.target.value,
+                                    })
+                                  }
+                                  className="h-7 rounded border border-border bg-background px-1.5 text-xs"
+                                />
+                              </div>
+                              <div className="flex items-center justify-between gap-3">
+                                <label htmlFor={`${id}-ib-zone`} className="text-[11px]">
+                                  Time zone
+                                </label>
+                                <select
+                                  id={`${id}-ib-zone`}
+                                  value={initialBalance.timeZone}
+                                  onChange={(event) =>
+                                    onInitialBalanceChange({
+                                      ...initialBalance,
+                                      timeZone: event.target
+                                        .value as InitialBalanceSettings["timeZone"],
+                                    })
+                                  }
+                                  className="h-7 min-w-0 rounded border border-border bg-background px-1.5 text-xs"
+                                >
+                                  {INITIAL_BALANCE_TIME_ZONES.map((zone) => (
+                                    <option key={zone} value={zone}>
+                                      {zone === "America/New_York"
+                                        ? "New York"
+                                        : zone === "America/Chicago"
+                                          ? "Chicago"
+                                          : "UTC"}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="flex items-center justify-between gap-3">
+                                <label htmlFor={`${id}-ib-duration`} className="text-[11px]">
+                                  Minutes
+                                </label>
+                                <input
+                                  id={`${id}-ib-duration`}
+                                  type="number"
+                                  min={1}
+                                  max={240}
+                                  step={1}
+                                  value={initialBalance.durationMinutes}
+                                  onChange={(event) =>
+                                    onInitialBalanceChange({
+                                      ...initialBalance,
+                                      durationMinutes: Number(event.target.value),
+                                    })
+                                  }
+                                  className="h-7 w-20 rounded border border-border bg-background px-1.5 text-xs"
+                                />
+                              </div>
+                              <p className="text-[11px] text-muted-foreground">
+                                Weekdays · based on loaded bars
+                              </p>
+                            </fieldset>
+                          ) : null}
+                        </div>
+                      ))}
+                    </section>
+                  );
+                })}
+                {!matchingIndicators.length ? (
+                  <p className="px-2 py-5 text-center text-xs text-muted-foreground">
+                    No matching indicators.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </DialogPopup>
+        </Dialog>
         <Popover>
           <Tooltip>
             <TooltipTrigger

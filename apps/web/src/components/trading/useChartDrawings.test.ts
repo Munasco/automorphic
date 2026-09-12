@@ -16,8 +16,12 @@ function fixture(symbol: string, initial: string | null = null) {
   const lines: Array<{ options: Record<string, unknown>; data: unknown[] }> = [];
   const series = {
     coordinateToPrice: (y: number) => 5000 - y,
+    priceToCoordinate: (price: number) => 5000 - price,
+    attachPrimitive: vi.fn(),
+    detachPrimitive: vi.fn(),
+    data: () => [],
     options: () => ({ priceScaleId: "right" }),
-    getPane: () => ({ paneIndex: () => 0 }),
+    getPane: () => ({ paneIndex: () => 0, getHeight: () => 500 }),
     createPriceLine: (options: unknown) => {
       priceLines.push(options);
       return options;
@@ -27,6 +31,7 @@ function fixture(symbol: string, initial: string | null = null) {
     },
   } as unknown as ISeriesApi<SeriesType>;
   const chart = {
+    timeScale: () => ({ width: () => 1000, timeToCoordinate: (time: number) => time }),
     subscribeClick: (callback: typeof listener) => {
       listener = callback;
     },
@@ -57,10 +62,10 @@ function fixture(symbol: string, initial: string | null = null) {
   };
   const change = vi.fn();
   const open = () => createChartDrawingSession(chart, series, symbol, change, storage);
-  const click = (time: number | undefined, y = 100, paneIndex = 0) =>
+  const click = (time: number | undefined, y = 100, paneIndex = 0, x = 50) =>
     listener?.({
       ...(time === undefined ? {} : { time: time as UTCTimestamp }),
-      point: { x: 50 as Coordinate, y: y as Coordinate },
+      point: { x: x as Coordinate, y: y as Coordinate },
       paneIndex,
       seriesData: new Map(),
     });
@@ -74,7 +79,9 @@ describe("native chart drawing lifecycle", () => {
     first.setTool("horizontal");
     f.click(undefined, 125);
     expect(f.priceLines).toMatchObject([{ price: 4875 }]);
-    expect(f.change).toHaveBeenLastCalledWith({ tool: "cursor", count: 1, pending: false });
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tool: "cursor", count: 1, pending: false }),
+    );
     first.dispose();
     expect(f.priceLines).toEqual([]);
     expect(f.listener()).toBeUndefined();
@@ -90,7 +97,9 @@ describe("native chart drawing lifecycle", () => {
       session = f.open();
     session.setTool("trend");
     f.click(200, 100);
-    expect(f.change).toHaveBeenLastCalledWith({ tool: "trend", count: 0, pending: true });
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tool: "trend", count: 0, pending: true }),
+    );
     f.click(200, 130);
     expect(f.lines).toHaveLength(0);
     f.click(100, 150);
@@ -114,7 +123,9 @@ describe("native chart drawing lifecycle", () => {
     f.click(100);
     session.undo();
     expect(f.priceLines).toHaveLength(1);
-    expect(f.change).toHaveBeenLastCalledWith({ tool: "cursor", count: 1, pending: false });
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tool: "cursor", count: 1, pending: false }),
+    );
     session.undo();
     expect(f.priceLines).toHaveLength(0);
     expect(JSON.parse(f.saved()!)).toEqual([]);
@@ -127,7 +138,9 @@ describe("native chart drawing lifecycle", () => {
     session.setTool("trend");
     f.click(undefined);
     f.click(100, 100, 1);
-    expect(f.change).toHaveBeenLastCalledWith({ tool: "trend", count: 0, pending: false });
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tool: "trend", count: 0, pending: false }),
+    );
     f.click(100);
     session.cancel();
     f.click(200);
@@ -156,5 +169,91 @@ describe("native chart drawing lifecycle", () => {
     session.dispose();
     session.dispose();
     expect(f.listener()).toBeUndefined();
+  });
+  it("creates every new tool with the right anchor count and restores it after recreation", () => {
+    const f = fixture("drawing-tools"),
+      session = f.open();
+    for (const kind of [
+      "ray",
+      "horizontal-ray",
+      "vertical",
+      "rectangle",
+      "fib",
+      "channel",
+      "text",
+    ] as const) {
+      session.setTool(kind);
+      f.click(100, 100);
+      if (["ray", "rectangle", "fib", "channel"].includes(kind)) f.click(200, 200);
+      if (kind === "channel") {
+        expect(f.change).toHaveBeenLastCalledWith(
+          expect.objectContaining({ tool: "channel", pending: true }),
+        );
+        f.click(150, 250);
+      }
+    }
+    expect(JSON.parse(f.saved()!).map((item: { kind: string }) => item.kind)).toEqual([
+      "ray",
+      "horizontal-ray",
+      "vertical",
+      "rectangle",
+      "fib",
+      "channel",
+      "text",
+    ]);
+    session.dispose();
+    const restored = f.open();
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ count: 7 }));
+    restored.dispose();
+  });
+
+  it("selects a drawing, persists edits and repositioning, and supports delete/undo/clear/undo", () => {
+    const f = fixture("drawing-edits"),
+      session = f.open();
+    session.setTool("rectangle");
+    f.click(100, 100);
+    f.click(200, 200);
+    f.click(400, 400, 0, 400);
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ selected: null }));
+    f.click(150, 100, 0, 150);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: expect.objectContaining({ kind: "rectangle" }) }),
+    );
+    session.updateSelected({ color: "#ff0000", width: 3 });
+    const before = JSON.parse(f.saved()!)[0];
+    session.redrawSelected();
+    f.click(300, 120);
+    expect(JSON.parse(f.saved()!)[0].anchors[0].time).toBe(100);
+    f.click(500, 220);
+    expect(JSON.parse(f.saved()!)[0]).toMatchObject({
+      id: before.id,
+      color: "#ff0000",
+      width: 3,
+      anchors: [{ time: 300 }, { time: 500 }],
+    });
+    session.deleteSelected();
+    expect(JSON.parse(f.saved()!)).toEqual([]);
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toHaveLength(1);
+    session.clear();
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ count: 0, canUndo: true }));
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toHaveLength(1);
+    session.dispose();
+  });
+
+  it("persists text annotations and ignores degenerate ray clicks", () => {
+    const f = fixture("drawing-text"),
+      session = f.open();
+    session.setTool("ray");
+    f.click(100, 100);
+    f.click(100, 100);
+    expect(f.saved()).toBeNull();
+    session.cancel();
+    session.setTool("text");
+    f.click(100, 100);
+    session.updateSelected({ text: "Buy only above range" });
+    expect(JSON.parse(f.saved()!)[0].text).toBe("Buy only above range");
+    session.dispose();
   });
 });

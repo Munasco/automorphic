@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { randomUUID } from "../../lib/utils";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
 import {
   LineSeries,
@@ -9,70 +10,37 @@ import {
   type SeriesType,
   type Time,
 } from "lightweight-charts";
-
-export type ChartDrawingTool = "cursor" | "horizontal" | "trend";
-type Anchor = { time: Time; price: number };
-type Drawing = { kind: "horizontal"; price: number } | { kind: "trend"; from: Anchor; to: Anchor };
-type DrawingState = { tool: ChartDrawingTool; count: number; pending: boolean };
+import {
+  DRAWING_ANCHORS,
+  buildDrawingGeometry,
+  drawingTimeValue,
+  hitDrawingGeometry,
+  parseChartDrawings,
+  type ChartDrawing,
+  type DrawingAnchor,
+  type DrawingKind,
+} from "./drawingGeometry";
+import { createDrawingPrimitive, drawingProjection } from "./drawingPrimitive";
+export type ChartDrawingTool = "cursor" | DrawingKind;
+export type DrawingState = {
+  tool: ChartDrawingTool;
+  count: number;
+  pending: boolean;
+  canUndo: boolean;
+  selected: ChartDrawing | null;
+  instruction: string;
+};
 type DrawingStorage = Pick<Storage, "getItem" | "setItem">;
-const MAX_DRAWINGS = 100;
+const EMPTY: DrawingState = {
+  tool: "cursor",
+  count: 0,
+  pending: false,
+  canUndo: false,
+  selected: null,
+  instruction: "",
+};
 
-function timeValue(time: unknown): number | null {
-  if (typeof time === "number") return Number.isFinite(time) ? time : null;
-  if (typeof time === "string") {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(time)) return null;
-    const value = Date.parse(`${time}T00:00:00Z`);
-    return Number.isFinite(value) && new Date(value).toISOString().slice(0, 10) === time
-      ? value / 1000
-      : null;
-  }
-  if (time && typeof time === "object" && "year" in time && "month" in time && "day" in time) {
-    const { year, month, day } = time;
-    if (![year, month, day].every((part) => typeof part === "number" && Number.isInteger(part)))
-      return null;
-    return timeValue(
-      `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
-    );
-  }
-  return null;
-}
-
-function isAnchor(value: unknown): value is Anchor {
-  return (
-    !!value &&
-    typeof value === "object" &&
-    "time" in value &&
-    timeValue(value.time) !== null &&
-    "price" in value &&
-    typeof value.price === "number" &&
-    Number.isFinite(value.price)
-  );
-}
-
-function parseDrawings(value: string | null): Drawing[] {
-  if (!value) return [];
-  try {
-    const decoded: unknown = JSON.parse(value);
-    if (!Array.isArray(decoded)) return [];
-    return decoded
-      .filter((drawing): drawing is Drawing => {
-        if (!drawing || typeof drawing !== "object") return false;
-        if (drawing.kind === "horizontal")
-          return typeof drawing.price === "number" && Number.isFinite(drawing.price);
-        return (
-          drawing.kind === "trend" &&
-          isAnchor(drawing.from) &&
-          isAnchor(drawing.to) &&
-          timeValue(drawing.from.time) !== timeValue(drawing.to.time)
-        );
-      })
-      .slice(-MAX_DRAWINGS);
-  } catch {
-    return [];
-  }
-}
-
-/** One chart lifecycle. Records survive replacement; chart objects and event handlers never do. */
+/** Each session binds to the workspace-scoped storage and the selected contract. */
 export function createChartDrawingSession(
   chart: IChartApi,
   series: ISeriesApi<SeriesType>,
@@ -81,167 +49,282 @@ export function createChartDrawingSession(
   storage: DrawingStorage | undefined = tradingWorkspaceStorage,
 ) {
   const key = `automorphic:chart-drawings:v1:${encodeURIComponent(symbol)}`;
-  let drawings: Drawing[] = [];
+  let drawings: ChartDrawing[] = [];
   try {
-    const saved = storage?.getItem(key);
-    if (saved !== undefined && saved !== null) drawings = parseDrawings(saved);
+    drawings = parseChartDrawings(storage?.getItem(key) ?? null);
   } catch {
-    /* Keep this session usable when browser storage is unavailable. */
+    /* Storage may be unavailable. */
   }
-  drawings = [...drawings];
   let tool: ChartDrawingTool = "cursor";
-  let first: Anchor | null = null;
+  let anchors: DrawingAnchor[] = [];
+  let selectedId: string | null = null;
+  let replacingId: string | null = null;
   let disposed = false;
+  const history: ChartDrawing[][] = [];
   const removers: Array<() => void> = [];
-  const emit = () => onChange({ tool, count: drawings.length, pending: first !== null });
+  const primitive = createDrawingPrimitive(chart, series, () => ({
+    drawings,
+    selected: selectedId,
+  }));
+  series.attachPrimitive(primitive.primitive);
+  const emit = () => {
+    const selected = drawings.find((drawing) => drawing.id === selectedId) ?? null;
+    const remaining = tool === "cursor" ? 0 : DRAWING_ANCHORS[tool] - anchors.length;
+    const instruction =
+      tool === "cursor"
+        ? ""
+        : remaining === 1
+          ? tool === "channel"
+            ? "Set channel width · Esc to cancel"
+            : "Place point · Esc to cancel"
+          : `Place ${anchors.length ? "next" : "first"} point · Esc to cancel`;
+    onChange({
+      tool,
+      count: drawings.length,
+      pending: anchors.length > 0,
+      canUndo: !!(anchors.length || history.length || drawings.length || replacingId),
+      selected,
+      instruction,
+    });
+    primitive.redraw();
+  };
   const persist = () => {
     try {
       storage?.setItem(key, JSON.stringify(drawings));
     } catch {
-      /* Memory remains available. */
+      /* Keep local edits usable. */
     }
   };
-  const removeLast = () => {
-    const remove = removers.pop();
-    // Parent components may remove the entire chart before this hook's cleanup runs.
-    try {
-      remove?.();
-    } catch {
-      /* Chart already disposed. */
+  const remember = () => {
+    history.push(drawings.slice());
+    if (history.length > 50) history.shift();
+  };
+  const removeAll = () => {
+    while (removers.length) {
+      try {
+        removers.pop()?.();
+      } catch {
+        /* Parent chart may already be disposed. */
+      }
     }
   };
-  const render = (drawing: Drawing) => {
-    if (drawing.kind === "horizontal") {
-      const line = series.createPriceLine({
-        price: drawing.price,
-        color: "#729bff",
-        lineWidth: 1,
-        lineStyle: LineStyle.Solid,
-        axisLabelVisible: true,
-        title: "",
-      });
-      removers.push(() => series.removePriceLine(line));
-    } else {
-      const line = chart.addSeries(
-        LineSeries,
-        {
-          color: "#729bff",
-          lineWidth: 2,
-          lastValueVisible: false,
-          priceLineVisible: false,
-          crosshairMarkerVisible: false,
-          autoscaleInfoProvider: () => null,
-          priceScaleId: series.options().priceScaleId ?? "right",
-        },
-        series.getPane().paneIndex(),
-      );
-      const anchors = [drawing.from, drawing.to].sort(
-        (a, b) => timeValue(a.time)! - timeValue(b.time)!,
-      );
-      line.setData(anchors.map(({ time, price }) => ({ time, value: price })));
-      removers.push(() => chart.removeSeries(line));
+  const render = () => {
+    removeAll();
+    for (const drawing of drawings) {
+      if (drawing.kind === "horizontal") {
+        const line = series.createPriceLine({
+          price: drawing.anchors[0]!.price,
+          color: drawing.color,
+          lineWidth: drawing.width as 1 | 2 | 3 | 4,
+          lineStyle: LineStyle.Solid,
+          axisLabelVisible: true,
+          title: "",
+        });
+        removers.push(() => series.removePriceLine(line));
+      } else if (drawing.kind === "trend") {
+        const line = chart.addSeries(
+          LineSeries,
+          {
+            color: drawing.color,
+            lineWidth: drawing.width as 1 | 2 | 3 | 4,
+            lastValueVisible: false,
+            priceLineVisible: false,
+            crosshairMarkerVisible: false,
+            autoscaleInfoProvider: () => null,
+            priceScaleId: series.options().priceScaleId ?? "right",
+          },
+          series.getPane().paneIndex(),
+        );
+        line.setData(
+          [...drawing.anchors]
+            .sort((a, b) => drawingTimeValue(a.time)! - drawingTimeValue(b.time)!)
+            .map(({ time, price }) => ({ time, value: price })),
+        );
+        removers.push(() => chart.removeSeries(line));
+      }
     }
+    primitive.redraw();
   };
   const setTool = (next: ChartDrawingTool) => {
     if (disposed) return;
     tool = next;
-    first = null;
+    anchors = [];
+    replacingId = null;
     emit();
   };
-  const commit = (drawing: Drawing) => {
-    if (drawings.length === MAX_DRAWINGS) {
-      const remove = removers.shift();
-      remove?.();
-      drawings.shift();
-    }
-    render(drawing);
-    drawings.push(drawing);
+  const changed = () => {
     persist();
-    setTool("cursor");
+    render();
+    emit();
   };
   const click = (event: MouseEventParams<Time>) => {
     if (
       disposed ||
-      tool === "cursor" ||
       !event.point ||
       (event.paneIndex !== undefined && event.paneIndex !== series.getPane().paneIndex())
     )
       return;
-    const price = series.coordinateToPrice(event.point.y);
-    if (price === null || !Number.isFinite(price)) return;
-    if (tool === "horizontal") {
-      commit({ kind: "horizontal", price });
-      return;
-    }
-    if (event.time === undefined || timeValue(event.time) === null) return;
-    const anchor = { time: event.time, price };
-    if (first === null) {
-      first = anchor;
+    if (tool === "cursor") {
+      const projection = drawingProjection(chart, series);
+      selectedId =
+        drawings
+          .toReversed()
+          .find((drawing) =>
+            hitDrawingGeometry(
+              buildDrawingGeometry(
+                drawing,
+                projection.project,
+                projection.priceY,
+                projection.width,
+                projection.height,
+              ),
+              event.point!,
+            ),
+          )?.id ?? null;
       emit();
       return;
     }
-    // Two anchors on the same candle cannot form a time-series line. Keep the first anchor.
-    if (timeValue(first.time) === timeValue(anchor.time)) return;
-    commit({ kind: "trend", from: first, to: anchor });
+    const price = series.coordinateToPrice(event.point.y);
+    if (price === null || !Number.isFinite(price)) return;
+    if (
+      tool !== "horizontal" &&
+      (event.time === undefined || drawingTimeValue(event.time) === null)
+    )
+      return;
+    const anchor = { time: event.time ?? (0 as Time), price };
+    if (
+      anchors.length === 1 &&
+      ["trend", "rectangle", "fib", "channel"].includes(tool) &&
+      drawingTimeValue(anchors[0]!.time) === drawingTimeValue(anchor.time)
+    )
+      return;
+    if (
+      tool === "ray" &&
+      anchors.length === 1 &&
+      drawingTimeValue(anchors[0]!.time) === drawingTimeValue(anchor.time) &&
+      anchors[0]!.price === anchor.price
+    )
+      return;
+    anchors.push(anchor);
+    if (anchors.length < DRAWING_ANCHORS[tool]) {
+      emit();
+      return;
+    }
+    remember();
+    const previous = drawings.find((drawing) => drawing.id === replacingId);
+    const drawing: ChartDrawing = {
+      id: previous?.id ?? randomUUID(),
+      kind: tool,
+      anchors,
+      color: previous?.color ?? "#729bff",
+      width: previous?.width ?? 2,
+      ...(tool === "text" ? { text: previous?.text ?? "Text" } : {}),
+    };
+    drawings = replacingId
+      ? drawings.map((item) => (item.id === replacingId ? drawing : item))
+      : [...drawings, drawing].slice(-100);
+    selectedId = drawing.id;
+    anchors = [];
+    tool = "cursor";
+    replacingId = null;
+    changed();
   };
-  for (const drawing of drawings) render(drawing);
   chart.subscribeClick(click);
+  render();
   emit();
   return {
     setTool,
     cancel: () => setTool("cursor"),
     undo: () => {
       if (disposed) return;
-      if (first !== null) {
+      if (anchors.length || replacingId) {
         setTool("cursor");
         return;
       }
-      if (drawings.length === 0) return;
-      drawings.pop();
-      removeLast();
-      persist();
-      emit();
+      if (!drawings.length && !history.length) return;
+      drawings = history.pop() ?? drawings.slice(0, -1);
+      selectedId = null;
+      changed();
     },
     clear: () => {
       if (disposed) return;
-      while (removers.length) removeLast();
+      remember();
       drawings = [];
-      first = null;
+      anchors = [];
+      selectedId = null;
+      replacingId = null;
       tool = "cursor";
-      persist();
+      changed();
+    },
+    deleteSelected: () => {
+      if (disposed || !selectedId) return;
+      remember();
+      drawings = drawings.filter((drawing) => drawing.id !== selectedId);
+      selectedId = null;
+      changed();
+    },
+    redrawSelected: () => {
+      const selected = drawings.find((drawing) => drawing.id === selectedId);
+      if (!selected || disposed) return;
+      tool = selected.kind;
+      replacingId = selected.id;
+      anchors = [];
       emit();
+    },
+    updateSelected: (patch: { color?: string; width?: number; text?: string }) => {
+      if (disposed || !selectedId) return;
+      if (patch.color !== undefined && !/^#[a-f\d]{6}$/i.test(patch.color)) return;
+      if (patch.width !== undefined && ![1, 2, 3, 4].includes(patch.width)) return;
+      remember();
+      drawings = drawings.map((drawing) =>
+        drawing.id === selectedId
+          ? {
+              ...drawing,
+              ...patch,
+              ...(patch.text !== undefined ? { text: patch.text.slice(0, 140) } : {}),
+            }
+          : drawing,
+      );
+      changed();
     },
     dispose: () => {
       if (disposed) return;
       disposed = true;
       try {
         chart.unsubscribeClick(click);
+        series.detachPrimitive(primitive.primitive);
       } catch {
         /* Chart already disposed. */
       }
-      while (removers.length) removeLast();
-      first = null;
+      removeAll();
+      anchors = [];
     },
   };
 }
-
 export function useChartDrawings(
   chart: IChartApi | null,
   series: ISeriesApi<SeriesType> | null,
   symbol: string,
 ) {
-  const [state, setState] = useState<DrawingState>({ tool: "cursor", count: 0, pending: false });
+  const [state, setState] = useState<DrawingState>(EMPTY);
   const session = useRef<ReturnType<typeof createChartDrawingSession> | null>(null);
   useEffect(() => {
     if (!chart || !series || !symbol) return;
     const current = createChartDrawingSession(chart, series, symbol, setState);
     session.current = current;
-    const escape = (event: KeyboardEvent) => {
+    const keyboard = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
+      )
+        return;
       if (event.key === "Escape") current.cancel();
+      if (event.key === "Delete" || event.key === "Backspace") current.deleteSelected();
     };
-    window.addEventListener("keydown", escape);
+    window.addEventListener("keydown", keyboard);
     return () => {
-      window.removeEventListener("keydown", escape);
+      window.removeEventListener("keydown", keyboard);
       current.dispose();
       if (session.current === current) session.current = null;
     };
@@ -249,5 +332,13 @@ export function useChartDrawings(
   const setTool = useCallback((tool: ChartDrawingTool) => session.current?.setTool(tool), []);
   const undo = useCallback(() => session.current?.undo(), []);
   const clear = useCallback(() => session.current?.clear(), []);
-  return { ...state, setTool, undo, clear };
+  const deleteSelected = useCallback(() => session.current?.deleteSelected(), []);
+  const redrawSelected = useCallback(() => session.current?.redrawSelected(), []);
+  const updateSelected = useCallback(
+    (patch: { color?: string; width?: number; text?: string }) =>
+      session.current?.updateSelected(patch),
+    [],
+  );
+  return { ...state, setTool, undo, clear, deleteSelected, redrawSelected, updateSelected };
 }
+export type ChartDrawingsController = ReturnType<typeof useChartDrawings>;

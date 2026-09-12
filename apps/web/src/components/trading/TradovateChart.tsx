@@ -1,5 +1,5 @@
 import { ChartIcon } from "./ChartIcon";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   createChart,
   CandlestickSeries,
@@ -17,15 +17,18 @@ import {
 import type { MarketQuote } from "./InstrumentHeader";
 import { INSTRUMENTS } from "./InstrumentHeader";
 import { ChartToolbar } from "./ChartToolbar";
-import { useChartPreferences, type ChartStyle, type IndicatorKey } from "./chartPreferences";
 import {
-  calculateSMA,
-  calculateEMA,
-  calculateVWAP,
-  calculateRSI,
-  type Candle,
-} from "./chartIndicators";
+  useChartPreferences,
+  type ChartStyle,
+  type IndicatorKey,
+  type ChartIndicators,
+} from "./chartPreferences";
+import type { Candle } from "./chartIndicators";
+import { INDICATOR_CATALOG } from "./indicatorCatalog";
+import { createIndicatorRenderer, oscillatorPaneCount } from "./chartIndicatorRenderer";
 import { useChartDrawings } from "./useChartDrawings";
+import { IndicatorLegend } from "./IndicatorLegend";
+import { DrawingTools } from "./DrawingTools";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 
@@ -35,20 +38,11 @@ type ChartEngine = {
   chart: IChartApi;
   prices: Record<ChartStyle, ISeriesApi<SeriesType>>;
   volume: ISeriesApi<"Histogram">;
-  overlays: Record<"sma" | "ema" | "vwap", ISeriesApi<"Line">>;
-  rsi: ISeriesApi<"Line"> | null;
+  indicators: ReturnType<typeof createIndicatorRenderer>;
   bars: Map<number, Candle>;
   refreshIndicators: () => void;
   disposed: boolean;
 };
-const INDICATOR_LABELS = {
-  sma: "SMA 20",
-  ema: "EMA 20",
-  vwap: "Session VWAP",
-  rsi: "RSI 14",
-  volume: "Volume",
-};
-const INDICATOR_COLORS = { sma: "#eab676", ema: "#67a6ef", vwap: "#c084fc" };
 
 function ChartAction({
   label,
@@ -108,7 +102,22 @@ export function TradovateChart({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const settings = useChartPreferences();
-  const indicatorSettings = useRef(settings.indicators);
+  const visibleIndicators = useMemo(
+    () =>
+      Object.fromEntries(
+        INDICATOR_CATALOG.map(({ key }) => [
+          key,
+          settings.indicators[key] && !settings.hiddenIndicators[key],
+        ]),
+      ) as ChartIndicators,
+    [settings.indicators, settings.hiddenIndicators],
+  );
+  const indicatorSettings = useRef(visibleIndicators);
+  const appearanceSettings = useRef(settings.appearance);
+  const volumeColors = useRef(settings.volumeColors);
+  const initialBalanceSettings = useRef(settings.initialBalance);
+  const [initialBalanceStatus, setInitialBalanceStatus] = useState("");
+  const paneCount = oscillatorPaneCount(visibleIndicators);
   const [engine, setEngine] = useState<ChartEngine | null>(null);
   const [status, setStatus] = useState("Connecting to Tradovate…");
   const [last, setLast] = useState<Candle | null>(null);
@@ -128,9 +137,18 @@ export function TradovateChart({
   const shown = hovered ?? last;
 
   useEffect(() => {
-    indicatorSettings.current = settings.indicators;
+    indicatorSettings.current = visibleIndicators;
+    appearanceSettings.current = settings.appearance;
+    volumeColors.current = settings.volumeColors;
+    initialBalanceSettings.current = settings.initialBalance;
     if (engine && !engine.disposed) engine.refreshIndicators();
-  }, [engine, settings.indicators]);
+  }, [
+    engine,
+    visibleIndicators,
+    settings.initialBalance,
+    settings.appearance,
+    settings.volumeColors,
+  ]);
 
   useEffect(() => {
     if (!host.current || !symbol) return;
@@ -142,7 +160,7 @@ export function TradovateChart({
         background: { type: ColorType.Solid, color: "#0b0d12" },
         textColor: "#9299a7",
         fontFamily: getComputedStyle(host.current).fontFamily,
-        fontSize: 11,
+        fontSize: 12,
         panes: { separatorColor: "#242730", separatorHoverColor: "#454b59", enableResize: true },
       },
       grid: { vertLines: { color: "#171a23" }, horzLines: { color: "#171a23" } },
@@ -197,95 +215,42 @@ export function TradovateChart({
       priceLineVisible: false,
     });
     volume.priceScale().applyOptions({ scaleMargins: { top: 0.86, bottom: 0 } });
-    const overlay = (name: "sma" | "ema" | "vwap") =>
-      chart.addSeries(LineSeries, {
-        color: INDICATOR_COLORS[name],
-        lineWidth: 1,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        visible: false,
-        priceFormat,
-      });
     const bars = new Map<number, Candle>();
+    const indicators = createIndicatorRenderer(chart, priceFormat.minMove);
+    let appliedVolumeColors = "";
     const state: ChartEngine = {
       symbol,
       interval,
       chart,
       prices,
       volume,
-      overlays: { sma: overlay("sma"), ema: overlay("ema"), vwap: overlay("vwap") },
-      rsi: null,
+      indicators,
       bars,
       disposed: false,
       refreshIndicators: () => {
         if (state.disposed) return;
         const sorted = [...bars.values()].sort((a, b) => a.time - b.time);
         const enabled = indicatorSettings.current;
-        const values: Partial<Record<IndicatorKey, number>> = {};
+        const result = indicators.update(
+          sorted,
+          enabled,
+          initialBalanceSettings.current,
+          interval,
+          appearanceSettings.current,
+        );
         const latestVolume = sorted.at(-1)?.volume;
-        if (latestVolume !== undefined) values.volume = latestVolume;
-        for (const key of ["sma", "ema", "vwap"] as const) {
-          state.overlays[key].applyOptions({ visible: enabled[key] });
-          if (enabled[key]) {
-            const result =
-              key === "sma"
-                ? calculateSMA(sorted, 20)
-                : key === "ema"
-                  ? calculateEMA(sorted, 20)
-                  : calculateVWAP(sorted);
-            const lastValue = result.at(-1)?.value;
-            if (lastValue !== undefined) values[key] = lastValue;
-            state.overlays[key].setData(
-              result.map((point) => ({ ...point, time: point.time as UTCTimestamp })),
-            );
-          }
-        }
+        if (latestVolume !== undefined) result.readings.volume = latestVolume;
         volume.applyOptions({ visible: enabled.volume });
+        const colorSignature = `${volumeColors.current.up}:${volumeColors.current.down}`;
+        if (colorSignature !== appliedVolumeColors) {
+          volume.setData(sorted.map(volumePoint));
+          appliedVolumeColors = colorSignature;
+        }
         chart
           .priceScale("right", 0)
           .applyOptions({ scaleMargins: { top: 0.08, bottom: enabled.volume ? 0.2 : 0.06 } });
-        if (enabled.rsi && !state.rsi) {
-          state.rsi = chart.addSeries(
-            LineSeries,
-            {
-              color: "#c084fc",
-              lineWidth: 1,
-              priceLineVisible: false,
-              priceFormat: { type: "price", precision: 1, minMove: 0.1 },
-              autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }),
-            },
-            1,
-          );
-          state.rsi.createPriceLine({
-            price: 70,
-            color: "#646779",
-            lineWidth: 1,
-            lineStyle: 2,
-            axisLabelVisible: true,
-            title: "",
-          });
-          state.rsi.createPriceLine({
-            price: 30,
-            color: "#646779",
-            lineWidth: 1,
-            lineStyle: 2,
-            axisLabelVisible: true,
-            title: "",
-          });
-          chart.panes()[1]?.setHeight(110);
-        } else if (!enabled.rsi && state.rsi) {
-          chart.removeSeries(state.rsi);
-          state.rsi = null;
-        }
-        if (state.rsi) {
-          const result = calculateRSI(sorted, 14);
-          state.rsi.setData(
-            result.map((point) => ({ ...point, time: point.time as UTCTimestamp })),
-          );
-          const value = result.at(-1)?.value;
-          if (value !== undefined) values.rsi = value;
-        }
-        setReadings(values);
+        setReadings(result.readings);
+        setInitialBalanceStatus(result.initialBalanceStatus);
       },
     };
     // The imperative chart lifetime is scoped to this mounted contract/interval.
@@ -306,13 +271,9 @@ export function TradovateChart({
         setHoverReadings(null);
         return;
       }
-      const values: Partial<Record<IndicatorKey, number>> = {};
-      const sources = { ...state.overlays, volume, rsi: state.rsi };
-      for (const key of Object.keys(sources) as IndicatorKey[]) {
-        const series = sources[key];
-        const point = series ? event.seriesData.get(series) : undefined;
-        if (point && "value" in point && typeof point.value === "number") values[key] = point.value;
-      }
+      const values = indicators.readCrosshair(event);
+      const volumeData = event.seriesData.get(volume);
+      if (volumeData && "value" in volumeData) values.volume = volumeData.value;
       setHoverReadings(values);
     });
     let source: EventSource | undefined;
@@ -325,7 +286,7 @@ export function TradovateChart({
     const volumePoint = (b: Candle) => ({
       time: b.time as UTCTimestamp,
       value: b.volume,
-      color: b.close >= b.open ? "#26a69a45" : "#ef535045",
+      color: `${b.close >= b.open ? volumeColors.current.up : volumeColors.current.down}45`,
     });
     const renderBars = () => {
       render = undefined;
@@ -499,6 +460,8 @@ export function TradovateChart({
         onStyleChange={settings.setStyle}
         indicators={settings.indicators}
         onToggleIndicator={settings.toggleIndicator}
+        initialBalance={settings.initialBalance}
+        onInitialBalanceChange={settings.setInitialBalance}
         showGrid={settings.showGrid}
         onToggleGrid={settings.toggleGrid}
         logScale={settings.logScale}
@@ -512,42 +475,7 @@ export function TradovateChart({
           aria-label="Drawing tools"
           className="flex w-10 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-white/10 py-1"
         >
-          <ChartAction
-            label="Crosshair"
-            active={drawings.tool === "cursor"}
-            onClick={() => drawings.setTool("cursor")}
-          >
-            <ChartIcon name="crosshair" className="size-[18px]" />
-          </ChartAction>
-          <ChartAction
-            label="Horizontal line"
-            active={drawings.tool === "horizontal"}
-            onClick={() => drawings.setTool("horizontal")}
-          >
-            <ChartIcon name="minus" className="size-[18px]" />
-          </ChartAction>
-          <ChartAction
-            label="Trend line"
-            active={drawings.tool === "trend"}
-            onClick={() => drawings.setTool("trend")}
-          >
-            <ChartIcon name="line" className="size-[18px]" />
-          </ChartAction>
-          <div className="my-1 w-5 border-t border-white/10" />
-          <ChartAction
-            label="Undo drawing"
-            disabled={!drawings.count && !drawings.pending}
-            onClick={drawings.undo}
-          >
-            <ChartIcon name="arrow-back-up" className="size-[18px]" />
-          </ChartAction>
-          <ChartAction
-            label="Remove drawings"
-            disabled={!drawings.count && !drawings.pending}
-            onClick={drawings.clear}
-          >
-            <ChartIcon name="trash" className="size-[18px]" />
-          </ChartAction>
+          <DrawingTools drawings={drawings} />
           <div className="my-1 w-5 border-t border-white/10" />
           <ChartAction label="Zoom in" onClick={() => zoom(0.7)}>
             <ChartIcon name="zoom-in" className="size-[18px]" />
@@ -586,7 +514,7 @@ export function TradovateChart({
             {shown ? (
               <div
                 className={cn(
-                  "mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] tabular-nums",
+                  "mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs tabular-nums",
                   shown.close >= shown.open ? "text-emerald-400" : "text-red-400",
                 )}
                 aria-label="Candle values"
@@ -600,61 +528,26 @@ export function TradovateChart({
                 </span>
               </div>
             ) : null}
-            <div className="flex flex-wrap gap-x-2 text-[11px] text-zinc-400">
-              {(Object.keys(settings.indicators) as IndicatorKey[])
-                .filter((key) => settings.indicators[key])
-                .map((key) => (
-                  <Tooltip key={key}>
-                    <TooltipTrigger
-                      render={
-                        <button
-                          type="button"
-                          aria-label={`Remove ${INDICATOR_LABELS[key]}`}
-                          onClick={() => settings.toggleIndicator(key)}
-                          className="mt-1 rounded hover:text-white"
-                          style={
-                            key === "sma" || key === "ema" || key === "vwap"
-                              ? { color: INDICATOR_COLORS[key] }
-                              : undefined
-                          }
-                        />
-                      }
-                    >
-                      {INDICATOR_LABELS[key]}{" "}
-                      {(hoverReadings ?? readings)[key]?.toLocaleString(
-                        "en-US",
-                        key === "volume"
-                          ? { notation: "compact", maximumFractionDigits: 2 }
-                          : { minimumFractionDigits: 2, maximumFractionDigits: 2 },
-                      )}{" "}
-                      <span className="text-zinc-600">×</span>
-                    </TooltipTrigger>
-                    <TooltipPopup>
-                      {key === "vwap"
-                        ? "VWAP uses loaded bars, reset at 5 p.m. Chicago time. Click to remove."
-                        : `Remove ${INDICATOR_LABELS[key]}`}
-                    </TooltipPopup>
-                  </Tooltip>
-                ))}
-            </div>
+            <IndicatorLegend
+              settings={settings}
+              readings={hoverReadings ?? readings}
+              initialBalanceStatus={initialBalanceStatus}
+            />
           </div>
-          <div className="relative min-h-0 min-w-0 flex-1">
-            <div ref={host} className="absolute inset-0" />
-            {!last ? (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center text-xs text-zinc-400">
-                {symbol ? status : "Select a contract to load its chart."}
-              </div>
-            ) : null}
-            {drawings.tool !== "cursor" ? (
-              <div className="pointer-events-none absolute bottom-9 left-2 rounded bg-zinc-900/95 px-2 py-1 text-xs text-zinc-200">
-                {drawings.tool === "horizontal"
-                  ? "Click a price level"
-                  : drawings.pending
-                    ? "Click the second point"
-                    : "Click the first point"}{" "}
-                · Esc to cancel
-              </div>
-            ) : null}
+          <div className="relative min-h-0 min-w-0 flex-1 overflow-y-auto">
+            <div className="relative h-full" style={{ minHeight: 240 + paneCount * 110 }}>
+              <div ref={host} className="absolute inset-0" />
+              {!last ? (
+                <div className="pointer-events-none absolute inset-x-0 top-12 flex items-center justify-center p-6 text-center text-xs text-zinc-400">
+                  {symbol ? status : "Select a contract to load its chart."}
+                </div>
+              ) : null}
+              {drawings.instruction ? (
+                <div className="pointer-events-none absolute bottom-9 left-2 rounded bg-zinc-900/95 px-2 py-1 text-xs text-zinc-200">
+                  {drawings.instruction}
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
@@ -676,8 +569,17 @@ export function TradovateChart({
           </Tooltip>
         ))}
         <Tooltip>
-          <TooltipTrigger className="ml-auto text-[11px] text-zinc-400">
-            {status === "Tradovate connected" ? "Tradovate" : status}
+          <TooltipTrigger
+            aria-label={status}
+            className="ml-auto inline-flex size-6 items-center justify-center rounded hover:bg-white/5"
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                "size-1.5 rounded-full",
+                status === "Tradovate connected" ? "bg-emerald-400" : "bg-amber-400",
+              )}
+            />
           </TooltipTrigger>
           <TooltipPopup>
             {last ? `${status} · Last bar ${new Date(last.time * 1000).toLocaleString()}` : status}
