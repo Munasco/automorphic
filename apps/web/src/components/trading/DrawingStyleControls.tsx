@@ -550,6 +550,7 @@ export function MarkerPicker({
   value: "normal" | "arrow";
   onChange: (value: "normal" | "arrow") => void;
 }) {
+  const [open, setOpen] = useState(false);
   const glyph = (marker: "normal" | "arrow") => (
     <svg
       width="24"
@@ -566,7 +567,7 @@ export function MarkerPicker({
     </svg>
   );
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         aria-label={side === "start" ? "Start marker" : "End marker"}
         className="flex size-[34px] shrink-0 items-center justify-center rounded border border-white/20 hover:bg-white/10"
@@ -585,7 +586,10 @@ export function MarkerPicker({
             key={marker}
             type="button"
             aria-pressed={value === marker}
-            onClick={() => onChange(marker)}
+            onClick={() => {
+              onChange(marker);
+              setOpen(false);
+            }}
             className="flex w-full items-center gap-3 rounded px-3 py-2 text-sm capitalize hover:bg-white/10 aria-pressed:bg-white/15"
           >
             {glyph(marker)}
