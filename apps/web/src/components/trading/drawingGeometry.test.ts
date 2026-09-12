@@ -37,6 +37,40 @@ const geometry = (shape: ChartDrawing) =>
   );
 
 describe("native drawing geometry", () => {
+  it.each(["rectangle", "circle", "ellipse", "triangle", "rotated-rectangle"] as const)(
+    "%s retains its border and handles when independent background settings change",
+    (kind) => {
+      const anchors: Array<[number, number]> = [
+        [100, 400],
+        [300, 300],
+      ];
+      if (kind === "triangle" || kind === "rotated-rectangle") anchors.push([200, 200]);
+      const original = drawing(kind, anchors),
+        initial = geometry(original);
+      const fills = (shape: ReturnType<typeof geometry>) =>
+        shape.rectangleFill ? [shape.rectangleFill] : (shape.polygons ?? []);
+      expect(fills(initial)).toMatchObject([{ color: original.color, opacity: 0.12 }]);
+      const edited = {
+        ...original,
+        background: true,
+        backgroundColor: "#00ff00",
+        backgroundOpacity: 1,
+        lineOpacity: 0.2,
+      };
+      const painted = geometry(edited);
+      expect(fills(painted)).toMatchObject([{ color: "#00ff00", opacity: 1 }]);
+      expect(painted.polygons?.some((fill) => fill.lineFill)).not.toBe(true);
+      const restored = parseChartDrawings(JSON.stringify([edited]))[0]!;
+      expect(geometry(restored)).toEqual(painted);
+      const hidden = geometry({ ...edited, background: false });
+      expect(fills(hidden)).toEqual([]);
+      expect(hidden.lines).toEqual(initial.lines);
+      expect(hidden.handles).toEqual(initial.handles);
+      const transparent = geometry({ ...edited, backgroundOpacity: 0 });
+      expect(fills(transparent)).toMatchObject([{ opacity: 0 }]);
+    },
+  );
+
   it("extends lines independently toward earlier/later time while retaining original drag handles", () => {
     const line = drawing("trend", [
       [100, 400],

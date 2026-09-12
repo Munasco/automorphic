@@ -310,11 +310,11 @@ export function createDrawingPrimitive(
           ctx.setLineDash(
             drawing.lineStyle === "dashed" ? [8, 5] : drawing.lineStyle === "dotted" ? [2, 4] : [],
           );
-          if (geometry.rectangle) {
+          if (geometry.rectangle && geometry.rectangleFill) {
             const rect = geometry.rectangle;
-            ctx.globalAlpha = 0.12;
+            ctx.globalAlpha = geometry.rectangleFill.opacity;
+            ctx.fillStyle = geometry.rectangleFill.color;
             ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
-            ctx.globalAlpha = 1;
           }
           for (const polygon of geometry.polygons ?? []) {
             if (!polygon.points.length) continue;

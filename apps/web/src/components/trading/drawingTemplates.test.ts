@@ -116,6 +116,35 @@ describe("drawing templates", () => {
     expect(reset("regression-trend")).not.toHaveProperty("levels");
   });
 
+  it("preserves a saved shape fill and resets it through the existing sparse default template", () => {
+    const shape: ChartDrawing = {
+      ...drawing,
+      kind: "rectangle",
+      background: true,
+      backgroundColor: "#00ff00",
+      backgroundOpacity: 0.42,
+    };
+    const saved = saveDrawingTemplate([], shape, "Green fill")!;
+    const restored = normalizeDrawingTemplates(JSON.parse(JSON.stringify(saved)))[0]!;
+    const applied = applyDrawingTemplate(
+      { ...shape, background: false, backgroundColor: "#ff0000" },
+      restored.settings,
+    );
+    expect(applied).toMatchObject({
+      id: shape.id,
+      anchors: shape.anchors,
+      locked: true,
+      background: true,
+      backgroundColor: "#00ff00",
+      backgroundOpacity: 0.42,
+    });
+    const reset = applyDrawingTemplate(applied, defaultDrawingTemplateSettings("rectangle"));
+    expect(reset).not.toHaveProperty("background");
+    expect(reset).not.toHaveProperty("backgroundColor");
+    expect(reset).not.toHaveProperty("backgroundOpacity");
+    expect(reset).toMatchObject({ id: shape.id, anchors: shape.anchors, locked: true });
+  });
+
   it("captures validated settings without copying identity, anchors, object names or locks", () => {
     const saved = saveDrawingTemplate([], drawing, "  My levels  ")!;
     expect(saved).toEqual([
