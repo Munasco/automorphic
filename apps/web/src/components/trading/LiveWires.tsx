@@ -86,14 +86,26 @@ export function LiveWires({ root = "MGC" }: { root?: "MGC" | "NQ" }) {
             {root}
           </span>
         </div>
-        <button
-          type="button"
-          aria-label="Refresh news"
-          onClick={() => setRefresh((value) => value + 1)}
-          className="rounded p-1 text-zinc-500 hover:text-zinc-200"
-        >
-          <RefreshCw className="size-3.5" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                aria-label="Refresh news"
+                onClick={() => setRefresh((value) => value + 1)}
+                className="rounded p-1 text-zinc-500 hover:text-zinc-200"
+              />
+            }
+          >
+            <RefreshCw className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipPopup>
+            Refresh news
+            {feed.updated
+              ? ` · Updated ${new Date(feed.updated).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`
+              : ""}
+          </TooltipPopup>
+        </Tooltip>
       </header>
       <nav
         aria-label="News impact filters"
@@ -135,15 +147,6 @@ export function LiveWires({ root = "MGC" }: { root?: "MGC" | "NQ" }) {
           <NewsItem key={item.id} item={item} root={root} />
         ))}
       </div>
-      <footer className="space-y-1 border-t border-white/5 px-4 py-2 text-[11px] leading-relaxed text-zinc-600">
-        <p>AI headline interpretation for {root} · Potential impact, not a price forecast</p>
-        <p>
-          News updates every minute
-          {feed.updated
-            ? ` · ${new Date(feed.updated).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`
-            : ""}
-        </p>
-      </footer>
     </section>
   );
 }
@@ -164,27 +167,23 @@ function NewsItem({ item, root }: { item: Wire; root: "MGC" | "NQ" }) {
   return (
     <article className="px-1 py-4">
       <div className="mb-2.5 flex flex-wrap items-center gap-2 text-[11px]">
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-medium uppercase tracking-wide",
-            tone,
-            direction === "bullish"
-              ? "border-emerald-500/10 bg-emerald-500/5"
-              : direction === "bearish"
-                ? "border-rose-500/10 bg-rose-500/5"
-                : "border-white/5 bg-white/[0.03]",
-          )}
-        >
-          <Icon className="size-3" />
-          {rated ? direction : analysis?.status === "pending" ? "Analyzing" : "Unrated"}
-        </span>
-        {rated && (
-          <Tooltip>
-            <TooltipTrigger
-              className={cn("inline-flex items-center gap-1", tone)}
-              aria-label={`${rated.strength} potential impact`}
-            >
-              {[1, 2, 3].map((level) => (
+        <Tooltip>
+          <TooltipTrigger
+            aria-label={
+              rated
+                ? `${direction}, ${rated.strength} impact on ${root}`
+                : analysis?.status === "pending"
+                  ? "Analyzing headline"
+                  : "Unrated headline"
+            }
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-white/5",
+              tone,
+            )}
+          >
+            <Icon className="size-3.5" />
+            {rated ? (
+              [1, 2, 3].map((level) => (
                 <span
                   key={level}
                   className={cn(
@@ -192,14 +191,26 @@ function NewsItem({ item, root }: { item: Wire; root: "MGC" | "NQ" }) {
                     strength >= level ? "bg-current" : "bg-zinc-800",
                   )}
                 />
-              ))}
-              <span className="ml-1 capitalize text-zinc-500">{rated.strength}</span>
-            </TooltipTrigger>
-            <TooltipPopup>
-              {Math.round(rated.confidence * 100)}% model confidence in interpretation
-            </TooltipPopup>
-          </Tooltip>
-        )}
+              ))
+            ) : (
+              <span aria-hidden="true">{analysis?.status === "pending" ? "…" : "?"}</span>
+            )}
+          </TooltipTrigger>
+          <TooltipPopup className="max-w-72">
+            {rated ? (
+              <>
+                <span className="capitalize">
+                  {direction} · {rated.strength}
+                </span>
+                <p className="mt-1">
+                  {root}: {rated.reason}
+                </p>
+              </>
+            ) : (
+              (analysis?.reason ?? "Analysis unavailable")
+            )}
+          </TooltipPopup>
+        </Tooltip>
         <time
           dateTime={item.publishedAt}
           aria-label={new Date(item.publishedAt).toLocaleString()}
@@ -216,32 +227,21 @@ function NewsItem({ item, root }: { item: Wire; root: "MGC" | "NQ" }) {
           })}
         </time>
       </div>
-      <a
-        href={item.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="block text-[13px] font-medium leading-relaxed text-zinc-200 hover:text-white"
-      >
-        {item.title}
-      </a>
-      <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
-        {rated ? (
-          <>
-            <span className="text-zinc-400">{root} · </span>
-            {rated.reason}
-          </>
-        ) : (
-          (analysis?.reason ?? "AI analysis is unavailable for this headline.")
-        )}
-      </p>
-      <a
-        href={item.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mt-2 inline-block text-[11px] text-zinc-600 hover:text-zinc-400"
-      >
-        {item.source} ↗
-      </a>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <a
+              href={item.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-[13px] font-medium leading-relaxed text-zinc-200 hover:text-white"
+            />
+          }
+        >
+          {item.title}
+        </TooltipTrigger>
+        <TooltipPopup>Read on {item.source}</TooltipPopup>
+      </Tooltip>
     </article>
   );
 }
