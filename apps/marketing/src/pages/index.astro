@@ -11,11 +11,11 @@ const signupUrl = "/waitlist";
     <ReactGrab />
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Your charts, supercharged with AI. Automorphic brings charts and macro context together, with plain-language backtests, custom indicators, and alerts in development." />
+    <meta name="description" content="Charts, AI conversations, and macro context in one trading research workspace. Explore the market with Automorphic." />
     <link rel="preload" href="/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
     <meta name="theme-color" content="#080b12" />
     <meta property="og:title" content="Automorphic — A clearer view of the markets." />
-    <meta property="og:description" content="An AI trading workspace for backtesting in your own words, custom indicators, and macro-aware alerts. Explore the early preview of charts and AI news." />
+    <meta property="og:description" content="A trading research workspace with live charts, configurable indicators, AI macros, and local price alerts." />
     <link rel="icon" href="/automorphic-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Automorphic — A clearer view of the markets.</title>
@@ -24,8 +24,8 @@ const signupUrl = "/waitlist";
     <a class="skip-link" href="#main">Skip to content</a>
     <header>
       <a class="brand" href="/" aria-label="Automorphic home"><img src="/automorphic-mark.svg" width="34" height="34" alt="" />Automorphic</a>
-      <nav aria-label="Main navigation"><a href="#workspace">Workspace</a><a href="#approach">Approach</a></nav>
-      <a class="nav-cta" href={signupUrl}>Sign up for an early preview<span aria-hidden="true">↗</span></a>
+      <nav aria-label="Main navigation"><a href="#workspace">Workspace</a><a href="#approach">Approach</a><a href="#faq">FAQ</a></nav>
+      <a class="nav-cta" href={signupUrl}>Sign up<span aria-hidden="true">↗</span></a>
     </header>
     <main id="main">
       <section class="hero" aria-labelledby="hero-title">
@@ -34,37 +34,70 @@ const signupUrl = "/waitlist";
           <p class="eyebrow"><span></span> AI-powered trading research</p>
           <h1 id="hero-title">A clearer view<br />of the markets.</h1>
           <p class="lede">Your own trading assistant, to prevent your next tilt.</p>
-          <p class="description">Explore the market with AI. Test ideas in your own words. See the macro picture.</p>
-          <div class="hero-actions"><a class="primary" href={signupUrl}>Sign up for an early preview <span aria-hidden="true">↗</span></a><a class="text-link" href="#workspace">Inside the workspace <span aria-hidden="true">↓</span></a></div>
-          <p class="preview-note">Early preview · Charts and AI news live. Backtests and custom alerts coming next.</p>
+          <p class="description">Explore the market with AI. Think through ideas in your own words. See the macro picture.</p>
+          <div class="hero-actions"><a class="primary" href={signupUrl}>Sign up <span aria-hidden="true">↗</span></a><a class="text-link" href="#workspace">Inside the workspace <span aria-hidden="true">↓</span></a></div>
         </div>
       </section>
       <section class="workspace content" id="workspace" aria-labelledby="workspace-title">
         <div class="section-intro"><p class="eyebrow">01 / The workspace</p><h2 id="workspace-title">Familiar charts.<br />A new way to work.</h2><p>Your charts, AI conversations, and macro news. One workspace.</p></div>
         <figure class="workspace-preview">
           <a href="/workspace-snapshot.jpg" target="_blank" rel="noopener noreferrer" aria-label="View the full-size Automorphic workspace screenshot">
-            <img class="workspace-snapshot" src="/workspace-snapshot.jpg" width="1280" height="720" loading="lazy" decoding="async" alt="Automorphic workspace with its sidebar, an NQ futures chart, and the Live Wires macro news panel." />
+            <img class="workspace-snapshot" src="/workspace-snapshot.jpg" width="1258" height="938" loading="lazy" decoding="async" alt="Automorphic workspace with its sidebar, an NQ futures chart, and the Live Wires macro news panel." />
           </a>
           <figcaption>Current workspace · NQ chart and macro context</figcaption>
         </figure>
       </section>
       <section class="research-lenses content" aria-label="What Automorphic is building">
-        <article><p class="eyebrow">Plain-language backtests · In development</p><h3>Ask for the backtest.</h3><p>Describe your strategy. Test it against history. Understand what worked.</p></article>
-        <article><p class="eyebrow">AI indicators &amp; alerts · In development</p><h3>Make the chart follow your rules.</h3><p>Turn your trading ideas into indicators and alerts.</p></article>
-        <article><p class="eyebrow">AI macro context · Available in preview</p><h3>When the macro picture disagrees.</h3><p>See how breaking news could support—or challenge—your trade.</p></article>
+        <article><p class="eyebrow">Plain-language backtests</p><h3>Ask for the backtest.</h3><p>What if testing a strategy were as simple as describing it?</p></article>
+        <article><p class="eyebrow">AI indicators &amp; alerts</p><h3>Make the chart follow your rules.</h3><p>Shape your chart around the way you trade.</p></article>
+        <article><p class="eyebrow">AI macros</p><h3>When the macro picture disagrees.</h3><p>See how breaking news could support—or challenge—your trade.</p></article>
       </section>
       <section class="approach content" id="approach" aria-labelledby="approach-title">
-        <div><p class="eyebrow">02 / The workflow we’re building</p><h2 id="approach-title">Have more confidence in your setup.<br />Test your edge.</h2><p class="approach-lede">From a trading idea to a testable strategy, in your own words.</p></div>
+        <div><p class="eyebrow">02 / Our vision</p><h2 id="approach-title">Have more confidence in your setup.<br />Test your edge.</h2><p class="approach-lede">From a trading idea to a testable strategy, in your own words.</p>
+          <div class="research-example">
+            <p class="eyebrow">Imagine asking</p>
+            <blockquote>“I’m new to silver. Give three agents four hours to research and backtest a technical edge targeting a 60% win rate.”</blockquote>
+          </div>
+        </div>
         <div class="principles">
           <article><span>01</span><div><h3>Describe the setup</h3><p>“How often do double bottoms reach the prior high? Do 2 p.m. shorts work after a strongly bullish open?”</p></div></article>
           <article><span>02</span><div><h3>Refine the rules</h3><p>Adjust your entries, exits, and risk.</p></div></article>
-          <article><span>03</span><div><h3>Put it through a backtest <span class="coming-label">Coming next</span></h3><p>Inspect the trades, costs, and drawdowns.</p></div></article>
+          <article><span>03</span><div><h3>Put it through a backtest</h3><p>Inspect the trades, costs, and drawdowns.</p></div></article>
           <article><span>04</span><div><h3>Watch the setup in context</h3><p>Follow your setup alongside the news that could change it.</p></div></article>
         </div>
       </section>
-      <section class="closing content" id="waitlist"><img src="/automorphic-mark.svg" width="64" height="64" alt="" /><h2>Time to experiment with<br />your craziest trading ideas.</h2><p class="closing-copy">AI beside the market. Your reasoning at the center.</p><a class="primary" href={signupUrl}>Sign up for an early preview <span aria-hidden="true">↗</span></a></section>
+      <section class="faq content" id="faq" aria-labelledby="faq-title">
+        <div class="faq-intro">
+          <p class="eyebrow">03 / A few questions</p>
+          <h2 id="faq-title">Before you<br />get started.</h2>
+          <p>The ideas behind Automorphic, and how it can fit your research.</p>
+        </div>
+        <div class="faq-list">
+          <details open>
+            <summary>What’s the vision for Automorphic?</summary>
+            <p>A workspace where a trading question can become a research plan, a testable strategy, and a result you can inspect. We’re building toward delegating research to AI agents, with you setting the scope and reviewing the evidence.</p>
+          </details>
+          <details>
+            <summary>What can it help me with?</summary>
+            <p>Explore price action, adjust indicators, annotate your chart, and consider the macro news around a setup. Use an AI assistant in your local workspace to discuss ideas and organize your research.</p>
+          </details>
+          <details>
+            <summary>Why use this instead of TradingView?</summary>
+            <p>Automorphic is for traders who want charts, AI conversations, and macro context together in a research workspace. Try it if that fits how you think through a trade. Pine scripts aren’t supported, and the broker dock is read-only.</p>
+          </details>
+          <details>
+            <summary>Can it guarantee profits or a 60% win rate?</summary>
+            <p>No. A win-rate target is a question to investigate, not a promised outcome. A backtest can fail that target, and historical results don’t guarantee future performance. Win rate alone also leaves out trade size, costs, and drawdowns.</p>
+          </details>
+          <details>
+            <summary>What can I use today?</summary>
+            <p>Live charts with 19 built-in studies, configurable indicator inputs, drawing tools, AI macro headlines, and a local assistant workspace. Local price alerts run while the chart is open. The broker dock is read-only.</p>
+          </details>
+        </div>
+      </section>
+      <section class="closing content" id="waitlist"><img src="/automorphic-mark.svg" width="64" height="64" alt="" /><h2>Time to experiment with<br />your craziest trading ideas.</h2><p class="closing-copy">AI beside the market. Your reasoning at the center.</p><a class="primary" href={signupUrl}>Sign up <span aria-hidden="true">↗</span></a></section>
     </main>
 
-    <footer><a class="brand" href="/"><img src="/automorphic-mark.svg" width="25" height="25" alt="" />Automorphic</a><span>AI-powered trading research</span><span>Early preview · {new Date().getFullYear()}</span></footer>
+    <footer><a class="brand" href="/"><img src="/automorphic-mark.svg" width="25" height="25" alt="" />Automorphic</a><span>AI-powered trading research</span><span>{new Date().getFullYear()}</span></footer>
   </body>
 </html>
