@@ -54,7 +54,6 @@ export function DrawingTextSettings({
       <textarea
         aria-label="Drawing text"
         placeholder="Add text"
-        maxLength={140}
         value={drawing.text ?? ""}
         onChange={(event) => onChange({ text: event.target.value })}
         className={cn(

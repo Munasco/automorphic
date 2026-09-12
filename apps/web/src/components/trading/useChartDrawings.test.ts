@@ -2804,6 +2804,79 @@ describe("inline drawing text transactions", () => {
     },
   );
 
+  it("preserves long multiline Unicode edits through preview, commit, cancel, undo and reload", () => {
+    const text = `${"x".repeat(139)}📈\n${"确认回踩 e\u0301 — wait for confirmation.\n".repeat(20)}`;
+    const f = fixture("inline-long-text"),
+      session = f.open();
+    session.setTool("horizontal-ray");
+    f.click(100, 100);
+    const before = f.saved(),
+      writes = f.writes();
+    expect(session.beginTextEdit()).toBe(true);
+    expect(session.previewText(text)).toBe(true);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: expect.objectContaining({ text }) }),
+    );
+    expect(f.saved()).toBe(before);
+    expect(session.commitText()).toBe(true);
+    expect(f.writes()).toBe(writes + 1);
+    expect(session.getCommittedDrawings()![0]!.text).toBe(text);
+    const after = f.saved();
+    expect(session.beginTextEdit()).toBe(true);
+    expect(session.previewText(`${text}Discard this revision`)).toBe(true);
+    session.cancelTextEdit();
+    expect(session.getCommittedDrawings()![0]!.text).toBe(text);
+    expect(f.saved()).toBe(after);
+    expect(f.writes()).toBe(writes + 1);
+    session.undo();
+    expect(f.saved()).toBe(before);
+    session.redo();
+    expect(f.saved()).toBe(after);
+    session.dispose();
+    const restored = fixture("inline-long-text", after).open();
+    expect(restored.getCommittedDrawings()![0]!.text).toBe(text);
+    restored.dispose();
+  });
+
+  it("keeps complete text in direct updates, settings drafts and explicit text commits", () => {
+    const text = `${"Trading plan 📊\n".repeat(30)}Wait for the retest.`,
+      revised = `${text}\n风险 first; conviction second.`;
+    const f = fixture("settings-long-text"),
+      session = f.open();
+    session.setTool("horizontal-ray");
+    f.click(100, 100);
+    const id = session.getCommittedDrawings()![0]!.id;
+    session.updateDrawing(id, { text });
+    const before = f.saved(),
+      writes = f.writes();
+    expect(session.getCommittedDrawings()![0]!.text).toBe(text);
+    expect(session.openSettings()).toBe(true);
+    expect(session.previewSettings({ text: revised })).toBe(true);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: expect.objectContaining({ text: revised }) }),
+    );
+    session.closeSettings();
+    expect(f.saved()).toBe(before);
+    expect(f.writes()).toBe(writes);
+    expect(session.openSettings()).toBe(true);
+    expect(session.applySettings({ text: revised })).toBe(true);
+    expect(session.getCommittedDrawings()![0]!.text).toBe(revised);
+    expect(f.writes()).toBe(writes + 1);
+    session.undo();
+    expect(f.saved()).toBe(before);
+    session.redo();
+    expect(session.getCommittedDrawings()![0]!.text).toBe(revised);
+    session.selectDrawing(id);
+    expect(session.beginTextEdit()).toBe(true);
+    expect(session.commitText(text, id)).toBe(true);
+    expect(session.getCommittedDrawings()![0]!.text).toBe(text);
+    const after = f.saved();
+    session.dispose();
+    const restored = fixture("settings-long-text", after).open();
+    expect(restored.getCommittedDrawings()![0]!.text).toBe(text);
+    restored.dispose();
+  });
+
   it("does not create an empty-text history entry and rejects commits from another drawing", () => {
     const f = fixture("inline-text-empty"),
       session = f.open();
@@ -2820,7 +2893,7 @@ describe("inline drawing text transactions", () => {
     session.previewText("x".repeat(200));
     expect(session.commitText("wrong", "other-id")).toBe(false);
     expect(session.commitText()).toBe(true);
-    expect(JSON.parse(f.saved()!)[0].text).toHaveLength(140);
+    expect(JSON.parse(f.saved()!)[0].text).toBe("x".repeat(200));
     session.undo();
     expect(f.saved()).toBe(before);
     session.undo();

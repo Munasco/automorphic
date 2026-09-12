@@ -746,7 +746,7 @@ export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
     source.priceLabelFontSize <= 48
   )
     result.priceLabelFontSize = source.priceLabelFontSize;
-  if (typeof source.text === "string") result.text = source.text.slice(0, 140);
+  if (typeof source.text === "string") result.text = source.text;
   if (typeof source.textColor === "string" && /^#[a-f\d]{6}$/i.test(source.textColor))
     result.textColor = source.textColor;
   if (

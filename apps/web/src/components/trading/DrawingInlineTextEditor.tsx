@@ -64,7 +64,6 @@ function TextInput({
       ref={input}
       aria-label="Drawing text"
       placeholder="Add text"
-      maxLength={140}
       rows={rows.length}
       value={value}
       onChange={(event) => {

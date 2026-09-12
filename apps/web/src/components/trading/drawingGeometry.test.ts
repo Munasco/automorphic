@@ -278,9 +278,19 @@ describe("native drawing geometry", () => {
         textItalic: true,
       }),
     ).toEqual({ endMarker: "arrow", textItalic: true });
-    expect(sanitizeDrawingSettings({ text: "x".repeat(200), textFontSize: 7 }).text).toHaveLength(
-      140,
+    expect(sanitizeDrawingSettings({ text: "x".repeat(200), textFontSize: 7 }).text).toBe(
+      "x".repeat(200),
     );
+  });
+
+  it("preserves long multiline Unicode drawing text through settings and stored drawing reloads", () => {
+    const text = `${"x".repeat(139)}📈\n${"确认回踩 e\u0301 — wait for confirmation.\n".repeat(20)}`;
+    const line = { ...drawing("horizontal-ray", [[100, 400]]), text };
+    expect(sanitizeDrawingSettings({ text })).toEqual({ text });
+    const reloaded = parseChartDrawings(JSON.stringify([line]));
+    expect(reloaded).toEqual([line]);
+    expect(geometry(reloaded[0]!).text?.value).toBe(text);
+    expect(sanitizeDrawingSettings({ text: 123 })).toEqual({});
   });
 
   it("renders freehand, highlighter, polyline and arrow-ended paths with editable anchor indices", () => {

@@ -762,7 +762,7 @@ export function createChartDrawingSession(
       ...(patch.lineStyle !== undefined ? { lineStyle: patch.lineStyle } : {}),
       ...(patch.locked !== undefined ? { locked: patch.locked } : {}),
       ...(patch.hidden !== undefined ? { hidden: patch.hidden } : {}),
-      ...(patch.text !== undefined ? { text: patch.text.slice(0, 140) } : {}),
+      ...(patch.text !== undefined ? { text: patch.text } : {}),
       ...(patch.name !== undefined ? { name: patch.name.trim().slice(0, 80) } : {}),
     };
   };
@@ -909,7 +909,7 @@ export function createChartDrawingSession(
   };
   const previewText = (text: string) => {
     if (disposed || !textEditing || !settingsDraft || typeof text !== "string") return false;
-    settingsDraft.drawing = { ...settingsDraft.drawing, text: text.slice(0, 140) };
+    settingsDraft.drawing = { ...settingsDraft.drawing, text };
     render();
     emit();
     return true;
@@ -925,7 +925,7 @@ export function createChartDrawingSession(
       return false;
     const next = {
       ...settingsDraft.drawing,
-      text: (text ?? settingsDraft.drawing.text ?? "").slice(0, 140),
+      text: text ?? settingsDraft.drawing.text ?? "",
     };
     if (!next.text && settingsDraft.original.text === undefined) delete (next as ChartDrawing).text;
     return finishSettingsDraft(next);
