@@ -11,6 +11,7 @@ import {
 } from "./DrawingStyleControls";
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { Slider } from "@base-ui/react/slider";
+import { ContextMenu } from "@base-ui/react/context-menu";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -826,7 +827,7 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
         />
       ) : null}
       {drawings.contextPoint ? (
-        <Menu
+        <ContextMenu.Root
           open
           onOpenChange={(open) => {
             if (!open) drawings.closeContextMenu();
@@ -869,7 +870,7 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
               </MenuItem>
             ))}
           </MenuPopup>
-        </Menu>
+        </ContextMenu.Root>
       ) : null}
     </>
   );
