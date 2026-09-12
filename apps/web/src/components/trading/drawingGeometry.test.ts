@@ -195,9 +195,13 @@ describe("native drawing geometry", () => {
       endMarker: "arrow",
       extendRight: true,
     });
-    expect(arrows.polygons?.map((polygon) => polygon.points[0])).toEqual([
-      { x: 100, y: 100 },
-      { x: 1000, y: 100 },
+    expect(arrows.polygons).toBeUndefined();
+    expect(arrows.lines).toEqual([
+      { from: { x: 100, y: 100 }, to: { x: 1000, y: 100 } },
+      { from: { x: 110, y: 90 }, to: { x: 100, y: 100 } },
+      { from: { x: 100, y: 100 }, to: { x: 110, y: 110 } },
+      { from: { x: 290, y: 110 }, to: { x: 300, y: 100 } },
+      { from: { x: 300, y: 100 }, to: { x: 290, y: 90 } },
     ]);
     expect(arrows.handles).toHaveLength(2);
     expect(geometry({ ...line, kind: "arrow", endMarker: "normal" }).polygons).toBeUndefined();
@@ -210,6 +214,187 @@ describe("native drawing geometry", () => {
       extendLeft: true,
     });
     expect(channel.lines.map((part) => part.from.x)).toEqual([0, 0, 0]);
+  });
+
+  it.each([1, 2, 4] as const)(
+    "uses 45-degree marker wings scaled to a %spx stroke even on short segments",
+    (width) => {
+      for (const length of [200, 1]) {
+        const shape = geometry({
+          ...drawing("trend", [
+            [100, 400],
+            [100 + length, 400],
+          ]),
+          width,
+          startMarker: "arrow",
+          endMarker: "arrow",
+        });
+        const depth = 5 * width;
+        expect(shape.lines.slice(1)).toEqual([
+          { from: { x: 100 + depth, y: 100 - depth }, to: { x: 100, y: 100 } },
+          { from: { x: 100, y: 100 }, to: { x: 100 + depth, y: 100 + depth } },
+          { from: { x: 100 + length - depth, y: 100 + depth }, to: { x: 100 + length, y: 100 } },
+          { from: { x: 100 + length, y: 100 }, to: { x: 100 + length - depth, y: 100 - depth } },
+        ]);
+        expect(shape.polygons).toBeUndefined();
+        expect(shape.handles).toEqual([
+          { x: 100, y: 100 },
+          { x: 100 + length, y: 100 },
+        ]);
+      }
+      const zero = geometry({
+        ...drawing("trend", [
+          [100, 400],
+          [100, 400],
+        ]),
+        width,
+        endMarker: "arrow",
+      });
+      expect(zero.lines).toHaveLength(1);
+      expect(zero.polygons).toBeUndefined();
+    },
+  );
+
+  it.each([
+    { reversed: false, extendLeft: true, extendRight: false },
+    { reversed: false, extendLeft: false, extendRight: true },
+    { reversed: true, extendLeft: true, extendRight: true },
+  ])("keeps open markers at original anchors when extensions change: %j", (settings) => {
+    const source = drawing("trend", [
+      [100, 400],
+      [300, 400],
+    ]);
+    const anchors = settings.reversed ? source.anchors.toReversed() : source.anchors;
+    const shape = geometry({
+      ...source,
+      ...settings,
+      anchors,
+      startMarker: "arrow",
+      endMarker: "arrow",
+    });
+    const first = { x: Number(anchors[0]!.time), y: 100 };
+    const second = { x: Number(anchors[1]!.time), y: 100 };
+    expect(shape.handles).toEqual([first, second]);
+    expect(shape.lines).toHaveLength(5);
+    expect(shape.lines[1]!.to).toEqual(first);
+    expect(shape.lines[2]!.from).toEqual(first);
+    expect(shape.lines[3]!.to).toEqual(second);
+    expect(shape.lines[4]!.from).toEqual(second);
+    expect(shape.polygons).toBeUndefined();
+    expect(hitDrawingHandle(shape, first)).toBe(0);
+    expect(hitDrawingHandle(shape, second)).toBe(1);
+  });
+
+  it.each([false, true])(
+    "does not relocate offscreen marker tips to clipped viewport edges, reversed=%s",
+    (reversed) => {
+      const source = drawing("trend", [
+        [-100, 400],
+        [1100, 400],
+      ]);
+      const anchors = reversed ? source.anchors.toReversed() : source.anchors;
+      const shape = geometry({
+        ...source,
+        anchors,
+        extendLeft: true,
+        extendRight: true,
+        startMarker: "arrow",
+        endMarker: "arrow",
+      });
+      expect(shape.lines[0]).toEqual(
+        reversed
+          ? { from: { x: 1000, y: 100 }, to: { x: 0, y: 100 } }
+          : { from: { x: 0, y: 100 }, to: { x: 1000, y: 100 } },
+      );
+      expect(
+        shape.lines
+          .slice(1)
+          .flatMap((part) => [part.from.x, part.to.x])
+          .every((x) => x < 0 || x > 1000),
+      ).toBe(true);
+      expect(shape.handles).toEqual(anchors.map((anchor) => ({ x: Number(anchor.time), y: 100 })));
+      expect(shape.polygons).toBeUndefined();
+    },
+  );
+
+  it("uses a ray's original second anchor for its marker while retaining the extended body", () => {
+    const shape = geometry({
+      ...drawing("ray", [
+        [100, 400],
+        [300, 400],
+      ]),
+      endMarker: "arrow",
+    });
+    expect(shape.lines[0]!.to).toEqual({ x: 1000, y: 100 });
+    expect(shape.lines[1]!.to).toEqual({ x: 300, y: 100 });
+    expect(shape.lines[2]!.from).toEqual({ x: 300, y: 100 });
+    expect(shape.handles).toEqual([
+      { x: 100, y: 100 },
+      { x: 300, y: 100 },
+    ]);
+  });
+
+  it.each(["horizontal", "horizontal-ray", "vertical"] as const)(
+    "retains the %s body's direction for one-anchor endpoint markers",
+    (kind) => {
+      const shape = geometry({
+        ...drawing(kind, [[100, 400]]),
+        startMarker: "arrow",
+        endMarker: "arrow",
+      });
+      const first =
+        kind === "horizontal"
+          ? { x: 0, y: 100 }
+          : kind === "vertical"
+            ? { x: 100, y: 0 }
+            : { x: 100, y: 100 };
+      const last = kind === "vertical" ? { x: 100, y: 500 } : { x: 1000, y: 100 };
+      expect(shape.lines[1]!.to).toEqual(first);
+      expect(shape.lines[2]!.from).toEqual(first);
+      expect(shape.lines[3]!.to).toEqual(last);
+      expect(shape.lines[4]!.from).toEqual(last);
+      expect(
+        shape.lines
+          .slice(1)
+          .every((part) => Math.hypot(part.to.x - part.from.x, part.to.y - part.from.y) > 0),
+      ).toBe(true);
+      expect(shape.handles).toEqual([{ x: 100, y: 100 }]);
+    },
+  );
+
+  it("keeps extended-line markers at their original endpoints with default two-sided extension", () => {
+    const shape = geometry({
+      ...drawing("extended-line", [
+        [100, 400],
+        [300, 400],
+      ]),
+      startMarker: "arrow",
+      endMarker: "arrow",
+    });
+    expect(shape.lines[0]).toEqual({ from: { x: 0, y: 100 }, to: { x: 1000, y: 100 } });
+    expect(shape.lines[1]!.to).toEqual({ x: 100, y: 100 });
+    expect(shape.lines[3]!.to).toEqual({ x: 300, y: 100 });
+  });
+
+  it("preserves special-channel boundary markers pending separate reference validation", () => {
+    const source = drawing("flat-channel", [
+      [100, 400],
+      [300, 300],
+      [100, 300],
+    ]);
+    const body = geometry({ ...source, extendRight: true });
+    const marked = geometry({
+      ...source,
+      extendRight: true,
+      startMarker: "arrow",
+      endMarker: "arrow",
+    });
+    const markers = marked.polygons?.filter((polygon) => polygon.lineFill);
+    expect(markers).toHaveLength(4);
+    expect(markers?.map((polygon) => polygon.points[0])).toEqual(
+      body.lines.slice(0, 2).flatMap((boundary) => [boundary.from, boundary.to]),
+    );
+    expect(marked.handles).toEqual(body.handles);
   });
 
   it("places multiline text relative to line anchors and hit-tests its chosen size/alignment", () => {
@@ -315,7 +500,9 @@ describe("native drawing geometry", () => {
     expect(highlight.opacity).toBe(0.25);
     expect(hitDrawingGeometry(highlight, { x: 150, y: 110 })).toBe(true);
     expect(hitDrawingGeometry(highlight, { x: 150, y: 130 })).toBe(false);
-    expect(geometry(drawing("path", points)).polygons?.[0]?.points[0]).toEqual({ x: 200, y: 100 });
+    const path = geometry(drawing("path", points));
+    expect(path.polygons).toBeUndefined();
+    expect(path.lines.at(-1)?.from).toEqual({ x: 200, y: 100 });
     expect(geometry(drawing("polyline", points)).polygons).toBeUndefined();
   });
 
@@ -327,7 +514,8 @@ describe("native drawing geometry", () => {
     const arrow = geometry(drawing("arrow", anchors));
     const marker = geometry(drawing("arrow-marker", anchors));
     expect(arrow.lines[0]).toEqual({ from: { x: 100, y: 100 }, to: { x: 200, y: 100 } });
-    expect(arrow.polygons?.[0]?.points).toHaveLength(3);
+    expect(arrow.polygons).toBeUndefined();
+    expect(arrow.lines).toHaveLength(3);
     expect(marker.polygons?.[0]?.points).toHaveLength(7);
     expect(hitDrawingGeometry(marker, { x: 150, y: 100 })).toBe(true);
     const up = geometry(drawing("arrow-up", [[100, 400]]));
@@ -762,11 +950,13 @@ describe("additional line tools", () => {
         [300, 300],
       ]);
       expect(drawingLineMarkers(shape)).toEqual({ start: "normal", end: "arrow" });
-      expect(geometry(shape).polygons).toHaveLength(1);
+      expect(geometry(shape).polygons).toBeUndefined();
+      expect(geometry(shape).lines).toHaveLength(3);
       const removed = { ...shape, endMarker: "normal" as const };
       expect(drawingLineMarkers(removed).end).toBe("normal");
       expect(geometry(removed).polygons).toBeUndefined();
-      expect(geometry({ ...removed, startMarker: "arrow" }).polygons).toHaveLength(1);
+      expect(geometry(removed).lines).toHaveLength(1);
+      expect(geometry({ ...removed, startMarker: "arrow" }).lines).toHaveLength(3);
     },
   );
   it("reports the same extension direction for reversed rays as the rendered line", () => {
@@ -909,7 +1099,9 @@ describe("additional line tools", () => {
       endMarker: "arrow",
     });
     expect(info.lines[0]?.to).toEqual({ x: 500, y: 500 });
-    expect(info.polygons?.[0]?.points[0]).toEqual({ x: 500, y: 500 });
+    expect(info.polygons).toBeUndefined();
+    expect(info.lines[1]?.to).toEqual({ x: 200, y: 200 });
+    expect(info.lines[2]?.from).toEqual({ x: 200, y: 200 });
   });
 });
 

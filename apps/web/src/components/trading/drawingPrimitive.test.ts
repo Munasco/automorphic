@@ -429,7 +429,7 @@ describe("native drawing primitive", () => {
     expect(ctx.lineTo).toHaveBeenCalledWith(1000, 100);
   });
 
-  it("paints a continuous translucent highlighter and opaque arrow fill without leaking stroke style", () => {
+  it("paints a continuous translucent highlighter and open arrow without leaking stroke style", () => {
     const { chart, series } = fixture();
     const strokes: Array<{ alpha: number; width: number }> = [];
     const fills: number[] = [];
@@ -492,7 +492,9 @@ describe("native drawing primitive", () => {
       [100, 100],
       [200, 100],
     ]);
-    expect(fills).toEqual([1, 1, 1]);
+    expect(fills).toEqual([1, 1]);
+    expect(ctx.lineTo).toHaveBeenCalledWith(200, 100);
+    expect(ctx.lineTo).toHaveBeenCalledWith(190, 90);
   });
 
   it("paints rectangle, fib and text geometry and stops requesting updates when detached", () => {
@@ -990,7 +992,7 @@ describe("additional line primitive behavior", () => {
     },
   );
 
-  it("keeps endpoint arrow fills at line opacity without dimming independent annotation text", () => {
+  it("keeps open endpoint arrows at line opacity without dimming independent annotation text", () => {
     const drawing: ChartDrawing = {
       ...line("trend"),
       endMarker: "arrow",
@@ -998,8 +1000,12 @@ describe("additional line primitive behavior", () => {
       text: "Visible",
     };
     const f = renderFixture(drawing),
+      strokes: number[] = [],
       fills: number[] = [],
       texts: number[] = [];
+    f.ctx.stroke.mockImplementation(() => {
+      strokes.push((f.ctx as unknown as CanvasRenderingContext2D).globalAlpha);
+    });
     f.ctx.fill.mockImplementation(() => {
       fills.push((f.ctx as unknown as CanvasRenderingContext2D).globalAlpha);
     });
@@ -1007,7 +1013,9 @@ describe("additional line primitive behavior", () => {
       texts.push((f.ctx as unknown as CanvasRenderingContext2D).globalAlpha);
     });
     f.draw();
-    expect(fills).toEqual([0]);
+    expect(strokes).toEqual([0]);
+    expect(fills).toEqual([]);
+    expect(f.ctx.lineTo).toHaveBeenCalledTimes(3);
     expect(texts).toEqual([1]);
   });
 
