@@ -42,6 +42,12 @@ export function useDrawingAlerts({
     tradingWorkspaceStorage.getSnapshot,
   );
   const sound = useRef<AudioContext | null>(null);
+  const prepareSound = useCallback(async () => {
+    if (!sound.current || sound.current.state === "closed") sound.current = new AudioContext();
+    const context = sound.current;
+    if (context.state !== "running") await context.resume();
+    return context.state === "running";
+  }, []);
   const intervalKey = chartIntervalKey(interval);
   const identity = useMemo(
     () => ({
@@ -164,8 +170,9 @@ export function useDrawingAlerts({
   }, [active, logScale]);
   useEffect(
     () => () => {
-      void sound.current?.close();
+      const context = sound.current;
       sound.current = null;
+      if (context && context.state !== "closed") void context.close().catch(() => {});
     },
     [],
   );
@@ -174,6 +181,24 @@ export function useDrawingAlerts({
     active?.session.getSnapshot ?? emptySnapshot,
     emptySnapshot,
   );
+  const hasSoundAlerts = state.alerts.some(
+    (alert) =>
+      alert.symbol === symbol && alert.intervalKey === intervalKey && alert.notifications?.sound,
+  );
+  useEffect(() => {
+    if (!active || !hasSoundAlerts) return;
+    // Saved alerts survive reloads, AudioContexts do not. Resume on an ordinary
+    // user gesture as well as Create, including after the browser suspends audio.
+    const activate = () => {
+      void prepareSound().catch(() => {});
+    };
+    document.addEventListener("pointerdown", activate, true);
+    document.addEventListener("keydown", activate, true);
+    return () => {
+      document.removeEventListener("pointerdown", activate, true);
+      document.removeEventListener("keydown", activate, true);
+    };
+  }, [active, hasSoundAlerts, prepareSound]);
   useEffect(() => {
     if (!active) return;
     const next = state.alerts
@@ -225,10 +250,7 @@ export function useDrawingAlerts({
         }
         if (input.notifications?.sound) {
           try {
-            if (!sound.current || sound.current.state === "closed")
-              sound.current = new AudioContext();
-            await sound.current.resume();
-            if (sound.current.state !== "running")
+            if (!(await prepareSound()))
               return "Sound couldn't start. Turn sound off or try again.";
           } catch {
             return "Sound isn't available here. Turn sound off to create the alert.";
@@ -257,7 +279,7 @@ export function useDrawingAlerts({
       },
       reset: () => active?.feed.reset(),
     }),
-    [active, state, symbol, intervalKey, getCommittedDrawings],
+    [active, state, symbol, intervalKey, getCommittedDrawings, prepareSound],
   );
 }
 export type DrawingAlertsController = ReturnType<typeof useDrawingAlerts>;
