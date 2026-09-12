@@ -1,3 +1,4 @@
+import { TradingSelect } from "./TradingSelect";
 import { useId, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Tabs } from "@base-ui/react/tabs";
 import { Dialog, DialogPopup, DialogTitle, DialogDescription } from "../ui/dialog";
@@ -387,16 +388,18 @@ export function ChartAlerts({
             <div className="grid grid-cols-2 gap-3">
               <label htmlFor={`${formId}-condition`} className="text-sm text-zinc-400">
                 Condition
-                <select
+                <TradingSelect
                   id={`${formId}-condition`}
-                  className={fieldClass}
+                  label="Condition"
+                  className="mt-1 w-full"
                   value={condition}
-                  onChange={(event) => setCondition(event.target.value as AlertCondition)}
-                >
-                  <option value="crossing">Crossing</option>
-                  <option value="above">Above</option>
-                  <option value="below">Below</option>
-                </select>
+                  onChange={(value) => setCondition(value as AlertCondition)}
+                  options={[
+                    ["crossing", "Crossing"],
+                    ["above", "Above"],
+                    ["below", "Below"],
+                  ]}
+                />
               </label>
               <label htmlFor={`${formId}-price`} className="text-sm text-zinc-400">
                 Price
@@ -423,29 +426,33 @@ export function ChartAlerts({
             ) : null}
             <label htmlFor={`${formId}-repeat`} className="block text-sm text-zinc-400">
               Frequency
-              <select
+              <TradingSelect
                 id={`${formId}-repeat`}
-                className={fieldClass}
+                label="Frequency"
+                className="mt-1 w-full"
                 value={repeat ? "repeat" : "once"}
-                onChange={(event) => setRepeat(event.target.value === "repeat")}
-              >
-                <option value="once">Only once</option>
-                <option value="repeat">Repeating</option>
-              </select>
+                onChange={(value) => setRepeat(value === "repeat")}
+                options={[
+                  ["once", "Only once"],
+                  ["repeat", "Repeating"],
+                ]}
+              />
             </label>
             {repeat ? (
               <label htmlFor={`${formId}-cooldown`} className="block text-sm text-zinc-400">
                 Time between alerts
-                <select
+                <TradingSelect
                   id={`${formId}-cooldown`}
-                  className={fieldClass}
-                  value={cooldownMs}
-                  onChange={(event) => setCooldownMs(Number(event.target.value))}
-                >
-                  <option value={60_000}>1 minute</option>
-                  <option value={300_000}>5 minutes</option>
-                  <option value={900_000}>15 minutes</option>
-                </select>
+                  label="Time between alerts"
+                  className="mt-1 w-full"
+                  value={String(cooldownMs)}
+                  onChange={(value) => setCooldownMs(Number(value))}
+                  options={[
+                    ["60000", "1 minute"],
+                    ["300000", "5 minutes"],
+                    ["900000", "15 minutes"],
+                  ]}
+                />
               </label>
             ) : null}
             {error ? (

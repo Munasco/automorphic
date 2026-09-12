@@ -1,3 +1,4 @@
+import { TradingSelect } from "./TradingSelect";
 import { ChartIcon } from "./ChartIcon";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
@@ -173,18 +174,14 @@ export function TradingViewEmbedPanel({
         <label className="sr-only" htmlFor="trading-market">
           Market
         </label>
-        <select
+        <TradingSelect
           id="trading-market"
+          label="Market"
           value={selectedSymbol}
-          onChange={(event) => setSymbol(event.target.value)}
-          className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {MARKETS.map((market) => (
-            <option key={market.symbol} value={market.symbol}>
-              {market.label}
-            </option>
-          ))}
-        </select>
+          onChange={setSymbol}
+          options={MARKETS.map((market) => [market.symbol, market.label] as const)}
+          className="min-w-0 flex-1"
+        />
         {panelActions}
         {onToggleExpand ? (
           <Button

@@ -3,7 +3,6 @@ import { DrawingToolIcon } from "./DrawingToolIcon";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import type { ChartDrawing } from "./drawingGeometry";
 import type { DrawingPatch } from "./useChartDrawings";
-import { Select, SelectTrigger, SelectValue, SelectPopup, SelectItem } from "../ui/select";
 import { cn } from "../../lib/utils";
 const colors = [
   "#ffffff",
@@ -476,54 +475,4 @@ export function Check({
   );
 }
 
-export function DrawingSelect({
-  label,
-  value,
-  options,
-  onChange,
-  disabled,
-  className,
-}: {
-  label: string;
-  value: string;
-  options: readonly (readonly [string, string])[];
-  onChange: (value: string) => void;
-  disabled?: boolean;
-  className?: string;
-}) {
-  return (
-    <Select
-      value={value}
-      disabled={disabled}
-      onValueChange={(next) => {
-        if (next !== null) onChange(next);
-      }}
-    >
-      <SelectTrigger
-        aria-label={label}
-        className={cn(
-          "h-[34px] min-h-0 min-w-0 rounded border-white/15 bg-[#202020] px-2 text-[13px] text-zinc-200 shadow-none dark:bg-[#202020]",
-          className,
-        )}
-      >
-        <SelectValue>{options.find(([key]) => key === value)?.[1] ?? value}</SelectValue>
-      </SelectTrigger>
-      <SelectPopup
-        alignItemWithTrigger={false}
-        sideOffset={4}
-        popupClassName="!bg-[#202020] !backdrop-filter-none border border-white/10"
-        className="p-1"
-      >
-        {options.map(([key, text]) => (
-          <SelectItem
-            key={key}
-            value={key}
-            className="min-h-8 rounded px-3 text-[13px] text-zinc-200 data-selected:bg-zinc-100 data-selected:text-zinc-950 data-highlighted:bg-white/10 data-highlighted:text-white"
-          >
-            {text}
-          </SelectItem>
-        ))}
-      </SelectPopup>
-    </Select>
-  );
-}
+export { TradingSelect as DrawingSelect } from "./TradingSelect";

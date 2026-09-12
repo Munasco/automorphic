@@ -4,6 +4,7 @@ import {
   tradingWorkspaceStorage,
   useTradingWorkspace,
 } from "../components/trading/workspaceStorage";
+import { TradingSelect } from "../components/trading/TradingSelect";
 import { Switch } from "../components/ui/switch";
 import { useTradingPreferences } from "../components/trading/tradingPreferences";
 function TradingSettings() {
@@ -52,17 +53,19 @@ function TradingSettings() {
               Clean up expired news and cached data. Saved charts, drawings and preferences stay.
             </p>
           </div>
-          <select
+          <TradingSelect
             id="trading-retention"
-            value={workspace.retentionHours}
-            onChange={(event) =>
-              tradingWorkspaceStorage.setRetentionHours(event.target.value === "24" ? 24 : 168)
+            label="Temporary data"
+            value={String(workspace.retentionHours)}
+            onChange={(value) =>
+              tradingWorkspaceStorage.setRetentionHours(value === "24" ? 24 : 168)
             }
-            className="h-8 shrink-0 rounded-md border border-border bg-background px-2 text-xs"
-          >
-            <option value={24}>24 hours</option>
-            <option value={168}>7 days</option>
-          </select>
+            options={[
+              ["24", "24 hours"],
+              ["168", "7 days"],
+            ]}
+            className="w-32 shrink-0"
+          />
         </div>
         <div
           id="trading-live-wires"
@@ -74,7 +77,7 @@ function TradingSettings() {
             </label>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
               Show the news rail when the panel is wide enough. News is always available from the
-              Live Wires tab.
+              News view.
             </p>
           </div>
           <Switch

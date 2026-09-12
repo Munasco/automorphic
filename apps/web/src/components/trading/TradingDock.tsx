@@ -1,3 +1,4 @@
+import { TradingSelect } from "./TradingSelect";
 import { useEffect, useId, useState } from "react";
 import type { TradingAccountRow, TradingAccountSnapshot } from "@t3tools/contracts";
 import { PanelBottomIcon, RefreshCw, XIcon } from "lucide-react";
@@ -187,20 +188,18 @@ export function TradingDock({ onClose, height }: { onClose?: () => void; height?
               </TooltipPopup>
             </Tooltip>
           ) : null}
-          <select
-            aria-label="Trading account"
-            value={currentAccount}
+          <TradingSelect
+            label="Trading account"
+            value={String(currentAccount)}
             disabled={!accounts.length}
-            onChange={(event) => setAccountId(Number(event.target.value))}
-            className="h-7 max-w-36 min-w-0 rounded border border-border bg-background px-1.5 text-xs"
-          >
-            {!accounts.length ? <option value="">Account</option> : null}
-            {accounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.name}
-              </option>
-            ))}
-          </select>
+            onChange={(value) => setAccountId(Number(value))}
+            options={
+              accounts.length
+                ? accounts.map((account) => [String(account.id), account.name] as const)
+                : [["", "Account"]]
+            }
+            className="h-7 max-w-36"
+          />
           <Tooltip>
             <TooltipTrigger
               render={
