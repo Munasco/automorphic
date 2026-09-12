@@ -1,5 +1,6 @@
 import { Select, SelectTrigger, SelectValue, SelectPopup, SelectItem } from "../ui/select";
 import { cn } from "../../lib/utils";
+import type { ComponentProps } from "react";
 
 /** The same control used by Appearance settings, sized by its surrounding layout. */
 export function TradingSelect({
@@ -11,6 +12,8 @@ export function TradingSelect({
   disabled,
   className,
   popupClassName,
+  popupProps,
+  itemClassName,
   variant,
 }: {
   id?: string;
@@ -21,6 +24,11 @@ export function TradingSelect({
   disabled?: boolean;
   className?: string;
   popupClassName?: string;
+  popupProps?: Pick<
+    ComponentProps<typeof SelectPopup>,
+    "align" | "sideOffset" | "className" | "popupClassName"
+  >;
+  itemClassName?: string;
   variant?: "default" | "ghost";
 }) {
   return (
@@ -46,9 +54,10 @@ export function TradingSelect({
         sideOffset={8}
         className={popupClassName}
         popupClassName={popupClassName ?? ""}
+        {...popupProps}
       >
         {options.map(([key, text]) => (
-          <SelectItem hideIndicator key={key} value={key}>
+          <SelectItem hideIndicator key={key} value={key} className={itemClassName}>
             {text}
           </SelectItem>
         ))}

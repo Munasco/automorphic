@@ -3,7 +3,7 @@ import { ColorPicker, DrawingSelect, inputClass } from "./DrawingStyleControls";
 import type { ChartDrawing } from "./drawingGeometry";
 import type { DrawingPatch } from "./useChartDrawings";
 
-const textSizes = [8, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 40, 48].map(
+const textSizes = [8, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 40].map(
   (size) => [String(size), String(size)] as const,
 );
 

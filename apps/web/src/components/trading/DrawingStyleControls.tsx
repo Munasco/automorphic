@@ -683,9 +683,17 @@ export function DrawingSelect({ className, ...props }: ComponentProps<typeof Tra
   return (
     <TradingSelect
       {...props}
+      popupProps={{
+        align: "start",
+        sideOffset: 0,
+        className: "p-[6px]",
+        popupClassName:
+          "rounded-[10px] border-0! bg-popover! backdrop-filter-none! shadow-[0_2px_4px_0_rgb(0_0_0/20%)] dark:shadow-[0_2px_4px_0_rgb(0_0_0/20%)]",
+      }}
+      itemClassName="min-h-8 rounded-[4px] px-1 py-0.5 text-sm sm:min-h-8 data-selected:bg-foreground data-selected:text-background"
       className={cn(
         inputClass,
-        "min-h-[34px] shadow-none before:hidden dark:bg-transparent sm:min-h-[34px] sm:text-sm focus-visible:ring-1",
+        "min-h-[34px] shadow-none before:hidden dark:bg-transparent sm:min-h-[34px] sm:text-sm focus-visible:ring-1 [&[aria-expanded=true]_[data-slot=select-icon]]:rotate-180",
         className,
       )}
     />
