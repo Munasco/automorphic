@@ -163,7 +163,7 @@ function DrawingToolGroup({
   const shown = activeTool ?? lastTool;
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <div className="group/tool relative flex h-9 w-10 shrink-0 items-center rounded hover:bg-white/5 focus-within:bg-white/5">
+      <div className="group/tool relative flex h-9 w-10 shrink-0 items-center justify-center rounded hover:bg-white/5 focus-within:bg-white/5">
         <Tooltip>
           <TooltipTrigger
             render={
@@ -186,8 +186,7 @@ function DrawingToolGroup({
         <PopoverTrigger
           aria-label={`${label} options`}
           className={cn(
-            "absolute right-0 top-1/2 flex h-7 w-2.5 -translate-y-1/2 items-center justify-center rounded-sm text-zinc-400 opacity-0 hover:bg-white/10 hover:text-white group-hover/tool:opacity-100 group-focus-within/tool:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400 [@media(hover:none)]:opacity-100",
-            (activeTool || open) && "opacity-100",
+            "absolute right-0 top-1/2 flex h-7 w-2.5 -translate-y-1/2 items-center justify-center rounded-sm text-zinc-400 opacity-0 hover:bg-white/10 hover:text-white group-hover/tool:opacity-100 group-has-[:focus-visible]/tool:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400 [@media(hover:none)]:opacity-100",
           )}
         >
           <ChartIcon name="chevron-down" className="size-2.5 -rotate-90" />
@@ -416,15 +415,14 @@ export function DrawingTools({
       </Popover>
       <div className="my-1 w-5 border-t border-white/10" />
       <Popover open={magnetOpen} onOpenChange={setMagnetOpen}>
-        <div className="group/tool relative flex h-9 w-10 shrink-0 items-center rounded hover:bg-white/5 focus-within:bg-white/5">
+        <div className="group/tool relative flex h-9 w-10 shrink-0 items-center justify-center rounded hover:bg-white/5 focus-within:bg-white/5">
           <Action label="Magnet" active={drawings.magnet} onClick={drawings.toggleMagnet}>
             <DrawingToolIcon name="magnet" className="size-[22px]" />
           </Action>
           <PopoverTrigger
             aria-label="Magnet options"
             className={cn(
-              "absolute right-0 top-1/2 flex h-7 w-2.5 -translate-y-1/2 items-center justify-center rounded-sm text-zinc-400 opacity-0 hover:bg-white/10 group-hover/tool:opacity-100 group-focus-within/tool:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400 [@media(hover:none)]:opacity-100",
-              (drawings.magnet || magnetOpen) && "opacity-100",
+              "absolute right-0 top-1/2 flex h-7 w-2.5 -translate-y-1/2 items-center justify-center rounded-sm text-zinc-400 opacity-0 hover:bg-white/10 group-hover/tool:opacity-100 group-has-[:focus-visible]/tool:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400 [@media(hover:none)]:opacity-100",
             )}
           >
             <ChartIcon name="chevron-down" className="size-2.5 -rotate-90" />
@@ -490,7 +488,7 @@ export function DrawingTools({
         <DrawingToolIcon name={drawings.allLocked ? "lock" : "lock-open"} className="size-[22px]" />
       </Action>
       <Popover open={hideOpen} onOpenChange={setHideOpen}>
-        <div className="group/tool relative flex h-9 w-10 shrink-0 items-center rounded hover:bg-white/5 focus-within:bg-white/5">
+        <div className="group/tool relative flex h-9 w-10 shrink-0 items-center justify-center rounded hover:bg-white/5 focus-within:bg-white/5">
           <Action
             label={drawings.hidden ? "Show drawings" : "Hide drawings"}
             active={drawings.hidden}
@@ -502,8 +500,7 @@ export function DrawingTools({
           <PopoverTrigger
             aria-label="Visibility options"
             className={cn(
-              "absolute right-0 top-1/2 flex h-7 w-2.5 -translate-y-1/2 items-center justify-center rounded-sm text-zinc-400 opacity-0 hover:bg-white/10 group-hover/tool:opacity-100 group-focus-within/tool:opacity-100 [@media(hover:none)]:opacity-100",
-              hideOpen && "opacity-100",
+              "absolute right-0 top-1/2 flex h-7 w-2.5 -translate-y-1/2 items-center justify-center rounded-sm text-zinc-400 opacity-0 hover:bg-white/10 group-hover/tool:opacity-100 group-has-[:focus-visible]/tool:opacity-100 [@media(hover:none)]:opacity-100",
             )}
           >
             <ChartIcon name="chevron-down" className="size-2.5 -rotate-90" />
