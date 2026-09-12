@@ -1,6 +1,7 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { normalizeWaitlistEmail, allowedWaitlistOrigin } from "./waitlistValidation";
 
 async function matchesSecret(candidate: string, expected: string) {
   const encode = new TextEncoder();
@@ -39,4 +40,42 @@ http.route({
     );
   }),
 });
+const waitlistHandler = httpAction(async (ctx, request) => {
+  const origin = allowedWaitlistOrigin(
+    request.headers.get("Origin"),
+    process.env.WAITLIST_ALLOWED_ORIGINS ?? "",
+  );
+  if (!origin) return new Response(null, { status: 403 });
+  const headers = {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Cache-Control": "no-store",
+    "Content-Type": "application/json",
+    Vary: "Origin",
+  };
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
+  const reply = (body: object, status: number) =>
+    new Response(JSON.stringify(body), { status, headers });
+  let body: unknown;
+  try {
+    const text = await request.text();
+    if (text.length > 2048) return reply({ error: "Request too large" }, 413);
+    body = JSON.parse(text);
+  } catch {
+    return reply({ error: "Enter a valid email address." }, 400);
+  }
+  const email = normalizeWaitlistEmail(
+    body && typeof body === "object" && "email" in body ? body.email : null,
+  );
+  if (!email) return reply({ error: "Enter a valid email address." }, 400);
+  try {
+    await ctx.runMutation(internal.waitlist.join, { email });
+    return reply({ success: true }, 200);
+  } catch {
+    return reply({ error: "Could not save your email. Please try again." }, 503);
+  }
+});
+http.route({ path: "/waitlist", method: "POST", handler: waitlistHandler });
+http.route({ path: "/waitlist", method: "OPTIONS", handler: waitlistHandler });
 export default http;

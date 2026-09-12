@@ -33,7 +33,9 @@ Market-data and headline analysis connections require server-side configuration.
 vp run --filter @t3tools/marketing dev
 ```
 
-Set `PUBLIC_APP_URL` when deploying the site. Refresh the workspace image with:
+Set `PUBLIC_CONVEX_SITE_URL` in the marketing `.env` and Vercel environments for email signup. Set `WAITLIST_ALLOWED_ORIGINS` in Convex to the comma-separated site origins. The `/waitlist` page saves normalized, deduplicated email addresses; it does not send confirmation emails.
+
+Refresh the workspace image with:
 
 ```sh
 vp run --filter @t3tools/marketing snapshot:update /path/to/workspace-screenshot.png

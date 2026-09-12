@@ -11,6 +11,8 @@
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as tradovate from "../tradovate.js";
+import type * as waitlist from "../waitlist.js";
+import type * as waitlistValidation from "../waitlistValidation.js";
 
 import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server";
 
@@ -18,6 +20,8 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   http: typeof http;
   tradovate: typeof tradovate;
+  waitlist: typeof waitlist;
+  waitlistValidation: typeof waitlistValidation;
 }>;
 
 /**
