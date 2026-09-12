@@ -16,7 +16,9 @@ html {
 }
 body {
   margin: 0;
-  font-family: "Inter", system-ui, sans-serif;
+  font-family: "Inter", "Helvetica Neue", sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
 a {
@@ -59,7 +61,7 @@ header {
 nav {
   display: flex;
   gap: 32px;
-  font-size: 13px;
+  font-size: 14px;
   color: #afb7c8;
 }
 .nav-cta {
@@ -161,43 +163,43 @@ h1 {
   text-wrap: balance;
 }
 .lede {
-  font-size: 19px;
-  line-height: 1.5;
+  font-size: 20px;
+  line-height: 1.6;
   color: #e0e7f5;
-  margin: 28px 0 12px;
+  margin: 32px 0 20px;
 }
 .description {
-  font-size: 14px;
+  font-size: 18px;
   color: #b4c1d8;
-  line-height: 1.7;
-  max-width: 420px;
+  line-height: 1.6;
+  max-width: 480px;
   margin: 0;
 }
 .hero-actions {
   display: flex;
   align-items: center;
   gap: 28px;
-  margin-top: 32px;
+  margin-top: 36px;
 }
 .primary {
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
   gap: 34px;
-  padding: 15px 19px;
+  padding: 15px 22px;
   background: #dce8ff19;
   border: 1px solid #dce8ff35;
-  font-size: 13px;
+  font-size: 14px;
   transition: background 0.15s;
 }
 .text-link {
-  font-size: 12px;
+  font-size: 14px;
   color: #c7d4ea;
   display: flex;
   gap: 12px;
 }
 .preview-note {
-  font-size: 10px;
+  font-size: 12px;
   color: #8593ab;
   margin-top: 17px;
   line-height: 1.6;
@@ -222,9 +224,9 @@ h1 {
   letter-spacing: 0.13em;
 }
 .content {
-  max-width: 1280px;
+  max-width: 1328px;
   margin: auto;
-  padding: 110px 64px;
+  padding: clamp(100px, 9vw, 140px) 64px;
 }
 .workspace {
   border-top: 1px solid #ffffff10;
@@ -243,14 +245,14 @@ h2 {
   font-size: clamp(38px, 4vw, 60px);
 }
 .section-intro > p:last-child {
-  font-size: 15px;
-  line-height: 1.8;
+  font-size: 18px;
+  line-height: 1.6;
   color: #939fb5;
-  max-width: 400px;
+  max-width: 460px;
   margin: 0 0 4px;
 }
 .workspace-preview {
-  margin: 58px 0 0;
+  margin: 64px 0 0;
   border: 1px solid #a8badd25;
   border-radius: 10px;
   overflow: hidden;
@@ -266,8 +268,8 @@ h2 {
 .principles article {
   display: flex;
   gap: 24px;
-  padding: 0 0 28px;
-  margin-bottom: 28px;
+  padding: 0 0 36px;
+  margin-bottom: 36px;
   border-bottom: 1px solid #ffffff10;
 }
 .principles article:last-child {
@@ -282,20 +284,20 @@ h2 {
 }
 .principles h3 {
   font-weight: 400;
-  font-size: 18px;
-  margin: 0 0 12px;
+  font-size: 20px;
+  margin: 0 0 16px;
 }
 .principles p {
   margin: 0;
-  font-size: 13px;
-  line-height: 1.85;
+  font-size: 16px;
+  line-height: 1.65;
   color: #929eb3;
 }
 .closing {
   text-align: center;
   border-top: 1px solid #ffffff10;
-  padding-top: 85px;
-  padding-bottom: 100px;
+  padding-top: 120px;
+  padding-bottom: 140px;
   background: radial-gradient(ellipse at 50% 100%, #233c6725, transparent 65%);
 }
 .closing > img {
@@ -368,7 +370,7 @@ nav a:hover {
     width: 100%;
     margin-left: 0;
   }
-  .chart-heading .closing {
+  .closing {
     padding-top: 70px;
     padding-bottom: 70px;
   }
@@ -400,10 +402,11 @@ nav a:hover {
     font-size: 8px;
   }
   .description {
-    max-width: 330px;
+    font-size: 17px;
+    max-width: 410px;
   }
   .preview-note {
-    max-width: 290px;
+    max-width: 360px;
   }
   .content {
     padding: 64px 24px;
@@ -439,9 +442,9 @@ nav a:hover {
 .research-lenses {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 46px;
+  gap: 56px;
   padding-top: 0;
-  padding-bottom: 100px;
+  padding-bottom: 124px;
 }
 .research-lenses .eyebrow {
   margin-bottom: 18px;
@@ -457,12 +460,12 @@ nav a:hover {
 .research-lenses article > p:last-child,
 .approach-lede {
   color: #929eb3;
-  font-size: 13px;
-  line-height: 1.85;
+  font-size: 16px;
+  line-height: 1.65;
   margin: 0;
 }
 .approach-lede {
-  max-width: 320px;
+  max-width: 400px;
   margin-top: 28px;
 }
 .coming-label {
@@ -471,7 +474,7 @@ nav a:hover {
   vertical-align: middle;
   border: 1px solid #a4baff24;
   padding: 3px 6px;
-  font-family: "Inter", system-ui, sans-serif;
+  font-family: "Inter", "Helvetica Neue", sans-serif;
   font-size: 8px;
   line-height: 1.2;
   text-transform: uppercase;
@@ -481,8 +484,9 @@ nav a:hover {
 }
 .closing-copy {
   color: #929eb3;
-  font-size: 14px;
-  margin: -10px 0 30px;
+  font-size: 18px;
+  line-height: 1.6;
+  margin: -6px 0 36px;
 }
 @media (max-width: 800px) {
   .research-lenses {
@@ -503,7 +507,7 @@ nav a:hover {
 .workspace-preview figcaption {
   padding: 14px 18px;
   border-top: 1px solid #ffffff0d;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.6;
   color: #8896ad;
 }

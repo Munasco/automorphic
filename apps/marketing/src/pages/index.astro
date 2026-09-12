@@ -13,6 +13,7 @@ const workspaceLabel = appUrl.startsWith("#") ? "Explore workspace" : "Open work
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="Your charts, supercharged with AI. Automorphic brings charts and macro context together, with plain-language backtests, custom indicators, and alerts in development." />
+    <link rel="preload" href="/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
     <meta name="theme-color" content="#080b12" />
     <meta property="og:title" content="Automorphic — A clearer view of the markets." />
     <meta property="og:description" content="An AI trading workspace for backtesting in your own words, custom indicators, and macro-aware alerts. Explore the early preview of charts and AI news." />
@@ -34,14 +35,14 @@ const workspaceLabel = appUrl.startsWith("#") ? "Explore workspace" : "Open work
           <p class="eyebrow"><span></span> AI-powered trading research</p>
           <h1 id="hero-title">A clearer view<br />of the markets.</h1>
           <p class="lede">Your own trading assistant, to prevent your next tilt.</p>
-          <p class="description">An AI trading workspace for turning plain-language ideas into backtests, custom indicators, and alerts — with the macro picture beside the chart.</p>
+          <p class="description">Explore the market with AI. Test ideas in your own words. See the macro picture.</p>
           <div class="hero-actions"><a class="primary" href={appUrl}>Explore Automorphic <span aria-hidden="true">↗</span></a><a class="text-link" href="#workspace">Inside the workspace <span aria-hidden="true">↓</span></a></div>
-          <p class="preview-note">Early preview · Charts and AI news available. Backtests, indicators, and alerts in development.</p>
+          <p class="preview-note">Early preview · Charts and AI news live. Backtests and custom alerts coming next.</p>
         </div>
         <div class="hero-bottom"><span>MGC / MICRO GOLD</span><span>NQ / NASDAQ-100</span><span class="edition">AUTOMORPHIC / EARLY PREVIEW</span></div>
       </section>
       <section class="workspace content" id="workspace" aria-labelledby="workspace-title">
-        <div class="section-intro"><p class="eyebrow">01 / The workspace</p><h2 id="workspace-title">Familiar charts.<br />A new way to work.</h2><p>Start with a chart or a conversation. Explore MGC and NQ with AI beside the market, interactive charts, and instrument-specific news in the same workspace.</p></div>
+        <div class="section-intro"><p class="eyebrow">01 / The workspace</p><h2 id="workspace-title">Familiar charts.<br />A new way to work.</h2><p>Your charts, AI conversations, and macro news. One workspace.</p></div>
         <figure class="workspace-preview">
           <a href="/workspace-snapshot.jpg" target="_blank" rel="noopener noreferrer" aria-label="View the full-size Automorphic workspace screenshot">
             <img class="workspace-snapshot" src="/workspace-snapshot.jpg" width="1280" height="720" loading="lazy" decoding="async" alt="Automorphic workspace with its sidebar, an NQ futures chart, and the Live Wires macro news panel." />
@@ -50,17 +51,17 @@ const workspaceLabel = appUrl.startsWith("#") ? "Explore workspace" : "Open work
         </figure>
       </section>
       <section class="research-lenses content" aria-label="What Automorphic is building">
-        <article><p class="eyebrow">Plain-language backtests · In development</p><h3>Ask for the backtest.</h3><p>Describe your entry, exit, and risk rules in your own words. The goal: review what AI understood, test it against history, and inspect the results without a copy-paste-and-debug loop.</p></article>
-        <article><p class="eyebrow">AI indicators &amp; alerts · In development</p><h3>Make the chart follow your rules.</h3><p>Turn a setup into a custom indicator or alert. Refine one condition without rewriting the rest, and see exactly which rules produce a signal.</p></article>
-        <article><p class="eyebrow">AI macro context · Available in preview</p><h3>When the macro picture disagrees.</h3><p>A bullish setup can face bearish news. AI explains a headline’s potential direction, strength, and relevance for your instrument, so you can weigh the setup against the wider picture.</p></article>
+        <article><p class="eyebrow">Plain-language backtests · In development</p><h3>Ask for the backtest.</h3><p>Describe your strategy. Test it against history. Understand what worked.</p></article>
+        <article><p class="eyebrow">AI indicators &amp; alerts · In development</p><h3>Make the chart follow your rules.</h3><p>Turn your trading ideas into indicators and alerts.</p></article>
+        <article><p class="eyebrow">AI macro context · Available in preview</p><h3>When the macro picture disagrees.</h3><p>See how breaking news could support—or challenge—your trade.</p></article>
       </section>
       <section class="approach content" id="approach" aria-labelledby="approach-title">
-        <div><p class="eyebrow">02 / The workflow we’re building</p><h2 id="approach-title">Less debugging.<br />More testing.</h2><p class="approach-lede">From the idea in your head to rules you can inspect — then a backtest you can question. Keep the chart, the logic, and the market context together.</p></div>
+        <div><p class="eyebrow">02 / The workflow we’re building</p><h2 id="approach-title">Less debugging.<br />More testing.</h2><p class="approach-lede">From a trading idea to a testable strategy, in your own words.</p></div>
         <div class="principles">
-          <article><span>01</span><div><h3>Describe the setup</h3><p>“Test an NQ opening-range breakout. Skip CPI mornings and exit before the close.” Start in your own words, then make the assumptions explicit.</p></div></article>
-          <article><span>02</span><div><h3>Check what AI understood</h3><p>Review each entry, exit, and filter before a test runs. Change one rule while keeping the others intact.</p></div></article>
-          <article><span>03</span><div><h3>Put it through a backtest <span class="coming-label">Coming next</span></h3><p>Test against historical data with fees and slippage made explicit. Inspect trades and out-of-sample periods, not just an attractive equity curve.</p></div></article>
-          <article><span>04</span><div><h3>Watch the setup in context</h3><p>Bring the rules back to the chart. The next step is macro-aware alerts that flag when incoming events conflict with the trade you’re watching.</p></div></article>
+          <article><span>01</span><div><h3>Describe the setup</h3><p>“Test an NQ opening-range breakout. Skip CPI mornings.”</p></div></article>
+          <article><span>02</span><div><h3>Check what AI understood</h3><p>Review the rules. Refine anything AI missed.</p></div></article>
+          <article><span>03</span><div><h3>Put it through a backtest <span class="coming-label">Coming next</span></h3><p>Inspect the trades, costs, and drawdowns.</p></div></article>
+          <article><span>04</span><div><h3>Watch the setup in context</h3><p>Follow your setup alongside the news that could change it.</p></div></article>
         </div>
       </section>
       <section class="closing content"><img src="/automorphic-mark.svg" width="64" height="64" alt="" /><h2>Time to experiment with<br />your craziest trading ideas.</h2><p class="closing-copy">AI beside the market. Your reasoning at the center.</p><a class="primary" href={appUrl}>{workspaceLabel} <span aria-hidden="true">↗</span></a></section>
