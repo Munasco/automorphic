@@ -5,9 +5,19 @@ import { resolveTradingEnvironmentFile, synchronizeTradingSession } from "./runt
 import * as NodeUtil from "node:util";
 import * as NodeStreamWeb from "node:stream/web";
 import { resolveChartInterval } from "./chartInterval.ts";
+import { createTickSeries, tickHistoryRequestLimit, type TickBarSize } from "./tickSeries.ts";
+import { createNativeTickSeries, type NativeTickSize } from "./nativeTickSeries.ts";
 
 export type Candle = {
   time: number;
+  actualTime?: number;
+  actualEndTime?: number;
+  firstTradeId?: number;
+  lastTradeId?: number;
+  barId?: string;
+  tradeDate?: number;
+  tradeCount?: number;
+  complete?: boolean;
   open: number;
   high: number;
   low: number;
@@ -157,6 +167,8 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
     throw new Error("Choose a valid MGC, MNQ, GC or NQ contract.");
   }
   const { chartDescription, ...intervalMetadata } = resolveChartInterval(interval, intervalUnit);
+  const tickSize = intervalMetadata.intervalUnit === "tick" ? (interval as TickBarSize) : undefined;
+  const historyLimit = tickSize === 1 ? tickHistoryRequestLimit(1) : 500;
   const session = await credentials();
   // https://api.tradovate.com/: contract/find binds the requested expiry to its ID.
   const contractResponse = await fetch(
@@ -195,12 +207,15 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
       let realtimeId: number | undefined;
       let finishedHistory = false;
       let receivedBars = false;
+      // Never aggregate the vendor's sampled raw history into larger count bars.
+      const rawTicks = tickSize === 1 ? createTickSeries(1) : null;
+      let nativeTicks: ReturnType<typeof createNativeTickSeries> | undefined;
       const send = (data: object) => {
         if (!ended) controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
       };
       const finish = (message?: string) => {
         if (ended) return;
-        if (message) send({ type: "status", state: "disconnected", message });
+        if (message) send({ type: "status", state: "disconnected", message, ...intervalMetadata });
         ended = true;
         clearInterval(heartbeat);
         clearTimeout(timeout);
@@ -254,7 +269,7 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
               return;
             }
             ws.send(
-              `md/getChart\n2\n\n${JSON.stringify({ symbol, chartDescription, timeRange: { asMuchAsElements: 500 } })}`,
+              `md/getChart\n2\n\n${JSON.stringify({ symbol, chartDescription, timeRange: { asMuchAsElements: historyLimit } })}`,
             );
             ws.send(`md/subscribeQuote\n4\n\n${JSON.stringify({ symbol })}`);
           } else if (message.i === 2) {
@@ -264,6 +279,17 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
             }
             historicalId = message.d?.historicalId;
             realtimeId = message.d?.realtimeId;
+            if (tickSize && tickSize > 1) {
+              if (!Number.isSafeInteger(historicalId) || !Number.isSafeInteger(realtimeId)) {
+                finish("Tradovate did not provide valid tick chart subscription IDs.");
+                return;
+              }
+              nativeTicks = createNativeTickSeries(tickSize as NativeTickSize, {
+                historicalId: historicalId!,
+                realtimeId: realtimeId!,
+                historyLimit,
+              });
+            }
             send({
               type: "status",
               state: "connected",
@@ -280,6 +306,38 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
             for (const chart of message.d.charts) {
               if (!chart || !Number.isSafeInteger(chart.id)) continue;
               if (chart.id !== historicalId && chart.id !== realtimeId) continue;
+              if (rawTicks || nativeTicks) {
+                const result = nativeTicks
+                  ? nativeTicks.accept(chart)
+                  : rawTicks!.accept(chart, chart.id === historicalId && chart.eoh === true);
+                if ("resetRequired" in result) {
+                  send({
+                    type: "status",
+                    state: "disconnected",
+                    resetRequired: true,
+                    message: result.resetRequired,
+                    tickHistory: result.metadata,
+                    ...intervalMetadata,
+                  });
+                  finish();
+                  return;
+                }
+                if (result.bars.length || result.snapshot) {
+                  receivedBars ||= result.bars.length > 0;
+                  if (receivedBars) clearTimeout(timeout);
+                  send({
+                    type: "bars",
+                    bars: result.bars,
+                    historical: result.historical,
+                    snapshot: result.snapshot,
+                    tickHistory: result.metadata,
+                    symbol,
+                    ...intervalMetadata,
+                  });
+                }
+                if (chart.id === historicalId && chart.eoh) finishedHistory = true;
+                continue;
+              }
               const bars = normalizeBars(chart.bars);
               if (bars.length) {
                 receivedBars = true;

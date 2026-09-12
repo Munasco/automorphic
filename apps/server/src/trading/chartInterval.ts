@@ -4,22 +4,17 @@ export class ChartIntervalError extends Error {}
 const sizes: Record<ChartIntervalUnit, readonly number[]> = {
   minute: [1, 2, 3, 5, 10, 15, 30, 45, 60, 120, 180, 240],
   second: [1, 5, 10, 15, 30, 45],
-  tick: [10, 100, 1000],
+  tick: [1, 10, 100, 1000],
 };
 
 export function resolveChartInterval(value: number, unit = "minute") {
   if (unit !== "minute" && unit !== "second" && unit !== "tick") {
     throw new ChartIntervalError("Choose a minute, second or tick chart interval.");
   }
-  if (unit === "tick" && value === 1) {
-    throw new ChartIntervalError(
-      "1-tick charts require trade-ID support to preserve distinct trades with the same timestamp. Choose 10, 100 or 1000 ticks until that support is available.",
-    );
-  }
   if (!sizes[unit].includes(value)) {
     throw new ChartIntervalError(`Choose a supported ${unit} interval: ${sizes[unit].join(", ")}.`);
   }
-  // Seconds and multi-tick bars are aggregated by the vendor, not reconstructed from minute OHLC.
+  // Seconds and aggregated count bars use vendor OHLC. One tick uses raw trade IDs.
   // https://community.tradovate.com/t/how-can-i-sub-a-secondbar-chart/4379
   return {
     interval: value,

@@ -98,12 +98,12 @@ describe("selected Tradovate contract", () => {
     vi.unstubAllEnvs();
   });
 
-  it("rejects invalid units and 1-tick requests before opening a connection or reading market data", async () => {
+  it("rejects invalid units and unsupported tick counts before opening a connection or reading market data", async () => {
     const fetch = vi.fn(),
       socket = vi.fn();
     vi.stubGlobal("fetch", fetch);
     vi.stubGlobal("WebSocket", socket);
-    await expect(chartStream("MNQU6", 1, "tick")).rejects.toThrow("trade-ID support");
+    await expect(chartStream("MNQU6", 2, "tick")).rejects.toThrow("supported tick interval");
     await expect(chartStream("MNQU6", 5, "unknown")).rejects.toThrow("minute, second or tick");
     await expect(chartStream("MNQU6", 0.5, "minute")).rejects.toThrow("supported minute interval");
     expect(fetch).not.toHaveBeenCalled();
@@ -189,6 +189,7 @@ describe("selected Tradovate contract", () => {
     ["MNQU6", 15, "second"],
     ["MNQU6", 30, "second"],
     ["MNQU6", 45, "second"],
+    ["MNQU6", 1, "tick"],
     ["MNQU6", 10, "tick"],
     ["MNQU6", 100, "tick"],
     ["MNQU6", 1000, "tick"],
@@ -266,23 +267,82 @@ describe("selected Tradovate contract", () => {
           `a${JSON.stringify([{ e: "chart", d: { charts: [{ bars: [{ ...bar, open: 77777 }] }] } }])}`,
         );
         socket.receive('a[{"i":2,"s":200,"d":{"historicalId":31,"realtimeId":32}}]');
-        socket.receive(
-          `a${JSON.stringify([
-            {
-              e: "chart",
-              d: {
-                charts: [
-                  { id: 999, bars: [{ ...bar, open: 88888 }] },
-                  { id: 31, bars: [bar], eoh: true },
-                  { id: 32, bars: [{ ...bar, close: 102 }] },
-                ],
+        if (intervalUnit === "tick" && interval === 1) {
+          const raw = { bt: Date.parse(bar.timestamp), bp: 400, ts: 0.25, td: 20260911 };
+          socket.receive(
+            `a${JSON.stringify([
+              {
+                e: "chart",
+                d: {
+                  charts: [
+                    { id: 999, ...raw, tks: [{ id: 9000, t: 0, p: 88888, s: 1 }] },
+                    {
+                      id: 31,
+                      ...raw,
+                      tks: Array.from({ length: interval + 1 }, (_, index) => ({
+                        id: index + 1,
+                        t: 0,
+                        p: 0,
+                        s: 1,
+                      })),
+                    },
+                    { id: 31, eoh: true },
+                    { id: 32, ...raw, tks: [{ id: interval + 2, t: 0, p: 1, s: 1 }] },
+                    { id: 32, ...raw, tks: [{ id: interval + 2, t: 0, p: 1, s: 1 }] },
+                  ],
+                },
               },
-            },
-          ])}`,
-        );
+            ])}`,
+          );
+        } else if (intervalUnit === "tick") {
+          socket.receive(
+            `a${JSON.stringify([
+              {
+                e: "chart",
+                d: {
+                  charts: [
+                    { id: 999, bars: [{ ...bar, open: 88888 }] },
+                    {
+                      id: 31,
+                      bars: [
+                        { ...bar, upTicks: interval, downTicks: 0 },
+                        { ...bar, upTicks: 2, downTicks: 0 },
+                      ],
+                      eoh: true,
+                    },
+                    { id: 32, bars: [{ ...bar, upTicks: interval, downTicks: 0, upVolume: 8 }] },
+                  ],
+                },
+              },
+            ])}`,
+          );
+        } else {
+          socket.receive(
+            `a${JSON.stringify([
+              {
+                e: "chart",
+                d: {
+                  charts: [
+                    { id: 999, bars: [{ ...bar, open: 88888 }] },
+                    { id: 31, bars: [bar], eoh: true },
+                    { id: 32, bars: [{ ...bar, close: 102 }] },
+                  ],
+                },
+              },
+            ])}`,
+          );
+        }
         socket.receive(
           'a[{"e":"md","d":{"quotes":[{"contractId":987654,"entries":{"Trade":{"price":20000},"OpeningPrice":{"price":19000}}},{"contractId":123456,"entries":{"Trade":{"price":4356.3},"OpeningPrice":{"price":4325.2},"HighPrice":{"price":4410.8},"LowPrice":{"price":4300.1}}}]}}]',
         );
+        if (intervalUnit === "tick" && interval === 1)
+          socket.receive(
+            `a${JSON.stringify([{ e: "chart", d: { charts: [{ id: 32, bt: Date.parse(bar.timestamp), bp: 400, ts: 0.25, td: 20260911, tks: [{ id: 0, t: 0, p: 1, s: 1 }] }] } }])}`,
+          );
+        if (intervalUnit === "tick" && interval > 1)
+          socket.receive(
+            `a${JSON.stringify([{ e: "chart", d: { charts: [{ id: 32, bars: [{ ...bar, upTicks: interval, downTicks: 0, upVolume: 8 }] }] } }])}`,
+          );
         socket.receive('a[{"i":1,"s":401}]'); // End the stream after the supplied batch.
         const output = await response.text();
         const messages = output
@@ -295,11 +355,45 @@ describe("selected Tradovate contract", () => {
           intervalUnit: intervalUnit ?? "minute",
           intervalKey: `${intervalUnit ?? "minute"}:${interval}`,
         });
-        expect(
-          messages
-            .filter((message) => message.type === "bars")
-            .map((message) => message.bars[0].volume),
-        ).toEqual([18, 18]);
+        if (intervalUnit !== "tick")
+          expect(messages.at(-1)).toMatchObject({
+            type: "status",
+            state: "disconnected",
+            message: "Tradovate rejected market-data authorization.",
+            interval,
+            intervalUnit: intervalUnit ?? "minute",
+            intervalKey: `${intervalUnit ?? "minute"}:${interval}`,
+          });
+        const barMessages = messages.filter((message) => message.type === "bars");
+        expect(barMessages.map((message) => message.bars[0].volume)).toEqual(
+          intervalUnit === "tick" ? (interval === 1 ? [1, 1] : [18, 19]) : [18, 18],
+        );
+        if (intervalUnit === "tick") {
+          expect(messages).toContainEqual(
+            expect.objectContaining({ type: "status", state: "disconnected", resetRequired: true }),
+          );
+          expect(barMessages[0]).toMatchObject({
+            snapshot: true,
+            tickHistory:
+              interval === 1
+                ? {
+                    rawHistoryReceived: 2,
+                    historyCoverage: "limited-sampled-vendor-history",
+                    historyComplete: false,
+                    groupingOrigin: "oldest-loaded-trade",
+                  }
+                : {
+                    source: "native-tick-bars",
+                    historyCoverage: "native-vendor-bars",
+                    historyBarsReceived: 2,
+                    historicalTimestampCollisions: 1,
+                  },
+          });
+          expect(barMessages[0].bars).toHaveLength(2);
+          expect(barMessages[0].bars[0].actualTime).toBe(barMessages[0].bars[1].actualTime);
+          expect(barMessages[0].bars[0].time).toBeLessThan(barMessages[0].bars[1].time);
+          expect(barMessages[0].bars[0].barId).not.toBe(barMessages[0].bars[1].barId);
+        }
         expect(output).toContain('"open":4325.2');
         expect(output).toContain('"high":4410.8');
         expect(output).toContain('"low":4300.1');

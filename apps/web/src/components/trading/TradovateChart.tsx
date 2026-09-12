@@ -1,3 +1,10 @@
+import {
+  applyChartBarBatch,
+  createChartTimeFormatters,
+  readTickHistoryQuality,
+  tickHistoryNotice,
+  type TickHistoryQuality,
+} from "./tickChartData";
 import { useInitialBalanceHistory } from "./useInitialBalanceHistory";
 import {
   chartIntervalKey,
@@ -148,6 +155,9 @@ export function TradovateChart({
   const paneCount = oscillatorPaneCount(visibleIndicators);
   const [engine, setEngine] = useState<ChartEngine | null>(null);
   const [status, setStatus] = useState("Connecting to Tradovate…");
+  const [tickHistory, setTickHistory] = useState<TickHistoryQuality | null>(null);
+  const historyNotice =
+    interval.unit === "tick" && tickHistory ? tickHistoryNotice(tickHistory) : null;
   const [last, setLast] = useState<Candle | null>(null);
   const [hovered, setHovered] = useState<Candle | null>(null);
   const [notice, setNotice] = useState("");
@@ -199,7 +209,10 @@ export function TradovateChart({
   useEffect(() => {
     if (!host.current || !symbol) return;
     onQuote?.(null);
+    setTickHistory(null);
     let receivedQuote = false;
+    const bars = new Map<number, Candle>();
+    const timeFormatters = createChartTimeFormatters((time) => bars.get(time));
     const chart = createChart(host.current, {
       autoSize: true,
       layout: {
@@ -210,7 +223,13 @@ export function TradovateChart({
         panes: { separatorColor: "#242730", separatorHoverColor: "#454b59", enableResize: true },
       },
       grid: { vertLines: { color: "#171a23" }, horzLines: { color: "#171a23" } },
+      ...(interval.unit === "tick"
+        ? { localization: { timeFormatter: timeFormatters.timeFormatter } }
+        : {}),
       timeScale: {
+        ...(interval.unit === "tick"
+          ? { tickMarkFormatter: timeFormatters.tickMarkFormatter }
+          : {}),
         timeVisible: true,
         secondsVisible: interval.unit !== "minute",
         borderColor: "#242730",
@@ -261,7 +280,6 @@ export function TradovateChart({
       priceLineVisible: false,
     });
     volume.priceScale().applyOptions({ scaleMargins: { top: 0.86, bottom: 0 } });
-    const bars = new Map<number, Candle>();
     const indicators = createIndicatorRenderer(chart, priceFormat.minMove);
     let appliedVolumeColors = "";
     const state: ChartEngine = {
@@ -344,6 +362,13 @@ export function TradovateChart({
       pending.clear();
       if (replaceHistory || changes.some((b) => b.time < renderedTime) || bars.size > 1300) {
         const sorted = [...bars.values()].sort((a, b) => a.time - b.time).slice(-1200);
+        if (replaceHistory && interval.unit === "tick") {
+          const formatters = createChartTimeFormatters((time) => bars.get(time));
+          chart.applyOptions({
+            localization: { timeFormatter: formatters.timeFormatter },
+            timeScale: { tickMarkFormatter: formatters.tickMarkFormatter },
+          });
+        }
         bars.clear();
         for (const bar of sorted) bars.set(bar.time, bar);
         const ohlc = sorted.map((b) => ({ ...b, time: b.time as UTCTimestamp }));
@@ -407,6 +432,16 @@ export function TradovateChart({
               message.intervalKey !== chartIntervalKey(interval)
             )
               return;
+            if (
+              interval.unit === "tick" &&
+              (message.type === "bars" || message.type === "status")
+            ) {
+              const quality = readTickHistoryQuality(message.tickHistory);
+              if (quality || message.snapshot === true)
+                setTickHistory((previous) =>
+                  JSON.stringify(previous) === JSON.stringify(quality) ? previous : quality,
+                );
+            }
             if (message.type === "status") {
               setStatus(message.message);
               if (message.state === "disconnected" || message.state === "connecting")
@@ -423,15 +458,15 @@ export function TradovateChart({
               return;
             }
             if (message.type === "bars" && Array.isArray(message.bars)) {
-              for (const bar of message.bars)
-                if (
-                  [bar.time, bar.open, bar.high, bar.low, bar.close, bar.volume].every(
-                    Number.isFinite,
-                  )
-                ) {
-                  bars.set(bar.time, bar);
-                  pending.set(bar.time, bar);
-                }
+              // A raw-trade reconnect can have a different grouping origin and display keys.
+              // Replace its snapshot instead of retaining bars from the previous subscription.
+              if (message.snapshot === true) {
+                replaceHistory = true;
+                renderedTime = -Infinity;
+                setHovered(null);
+                setHoverReadings(null);
+              }
+              applyChartBarBatch(bars, pending, message.bars, message.snapshot === true);
               setStatus("Tradovate connected");
               if (render === undefined) render = requestAnimationFrame(renderBars);
             }
@@ -667,6 +702,18 @@ export function TradovateChart({
             <TooltipPopup>Range within loaded history</TooltipPopup>
           </Tooltip>
         ))}
+        {historyNotice ? (
+          <Tooltip>
+            <TooltipTrigger
+              type="button"
+              aria-label={historyNotice.label}
+              className="rounded px-2 py-1 text-[10px] text-zinc-400 hover:bg-white/5 hover:text-white"
+            >
+              {historyNotice.label}
+            </TooltipTrigger>
+            <TooltipPopup className="max-w-72">{historyNotice.description}</TooltipPopup>
+          </Tooltip>
+        ) : null}
         <Tooltip>
           <TooltipTrigger
             aria-label={status}

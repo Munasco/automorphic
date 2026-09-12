@@ -29,7 +29,7 @@ describe("chart interval requests", () => {
       expect(resolveChartInterval(value).interval).toBe(value);
     for (const value of [1, 5, 10, 15, 30, 45])
       expect(resolveChartInterval(value, "second").intervalUnit).toBe("second");
-    for (const value of [10, 100, 1000])
+    for (const value of [1, 10, 100, 1000])
       expect(resolveChartInterval(value, "tick").intervalUnit).toBe("tick");
     for (const [value, unit] of [
       [0, "minute"],
@@ -44,8 +44,17 @@ describe("chart interval requests", () => {
       expect(() => resolveChartInterval(value, unit)).toThrow(ChartIntervalError);
   });
 
-  it("rejects 1-tick requests explicitly instead of losing distinct trades with equal timestamps", () => {
-    expect(() => resolveChartInterval(1, "tick")).toThrow("trade-ID support");
+  it("requests the exact native count size; only one tick returns raw trade IDs", () => {
+    for (const value of [1, 10, 100, 1000]) {
+      expect(resolveChartInterval(value, "tick")).toMatchObject({
+        interval: value,
+        chartDescription: {
+          underlyingType: "Tick",
+          elementSize: value,
+          elementSizeUnit: "UnderlyingUnits",
+        },
+      });
+    }
     expect(resolveChartInterval(1, "second").chartDescription.elementSizeUnit).toBe("Seconds");
     expect(resolveChartInterval(1).chartDescription.underlyingType).toBe("MinuteBar");
   });
