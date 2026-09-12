@@ -28,6 +28,51 @@ const drawing: ChartDrawing = {
 };
 
 describe("last-used drawing appearance", () => {
+  it.each([
+    "pitchfork",
+    "schiff-pitchfork",
+    "modified-schiff-pitchfork",
+    "inside-pitchfork",
+  ] as const)("uses factory %s colors only when no remembered appearance exists", (kind) => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        values.set(key, value);
+      },
+    };
+    const defaults = createDrawingDefaults(storage);
+    expect(defaults.get(kind)).toMatchObject({ color: "#f23645", backgroundOpacity: 0.2 });
+    expect(defaults.get(kind).levels?.filter((level) => level.visible)).toEqual([
+      { value: 0.5, visible: true, color: "#089981" },
+      { value: 1, visible: true, color: "#2962ff" },
+    ]);
+
+    const legacy: ChartDrawing = { ...drawing, kind, backgroundOpacity: 0.12 };
+    expect(defaults.remember(legacy)).toBe(true);
+    const remembered = createDrawingDefaults(storage).get(kind);
+    expect(remembered).toMatchObject({ color: drawing.color, backgroundOpacity: 0.12 });
+    expect(remembered).not.toHaveProperty("levels");
+    expect(drawingAppearanceChanged(legacy, { ...legacy, anchors: [] })).toBe(false);
+
+    const custom: ChartDrawing = {
+      ...legacy,
+      levels: [
+        {
+          value: 0.25,
+          visible: true,
+          color: "#123456",
+          opacity: 0.3,
+          width: 4,
+          lineStyle: "dotted",
+        },
+      ],
+    };
+    expect(defaults.remember(custom)).toBe(true);
+    expect(createDrawingDefaults(storage).get(kind).levels).toEqual(custom.levels);
+    values.clear();
+    expect(defaults.get(kind)).toMatchObject({ color: "#f23645", backgroundOpacity: 0.2 });
+  });
   it("persists only validated appearance per tool and keeps factory reset independent", () => {
     const values = new Map<string, string>();
     const storage = {

@@ -7,6 +7,7 @@ import {
   defaultVerticalLineSettings,
   defaultDrawingLevelSettings,
   defaultRegressionDrawingSettings,
+  isPitchforkDrawingTool,
   sanitizeDrawingSettings,
   type ChartDrawing,
   type DrawingKind,
@@ -37,6 +38,30 @@ export function defaultDrawingTemplateSettings(kind: DrawingKind): DrawingTempla
     ...defaultDrawingLevelSettings(kind),
     ...defaultChannelDrawingSettings(kind),
     ...defaultRegressionDrawingSettings(kind),
+    // Factory-only values: sparse saved pitchforks retain their historical fallback palette.
+    ...(isPitchforkDrawingTool(kind)
+      ? {
+          color: "#f23645",
+          backgroundOpacity: 0.2,
+          levels: (
+            [
+              [0.25, "#ffb74d"],
+              [0.382, "#81c784"],
+              [0.5, "#089981"],
+              [0.618, "#089981"],
+              [0.75, "#00bcd4"],
+              [1, "#2962ff"],
+              [1.5, "#9c27b0"],
+              [1.75, "#e91e63"],
+              [2, "#f77c80"],
+            ] as const
+          ).map(([value, color]) => ({
+            value,
+            color,
+            visible: value === 0.5 || value === 1,
+          })),
+        }
+      : {}),
   };
 }
 

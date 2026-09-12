@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Time } from "lightweight-charts";
-import type { ChartDrawing } from "./drawingGeometry";
+import { defaultDrawingLevels, parseChartDrawings, type ChartDrawing } from "./drawingGeometry";
 
 vi.mock("./workspaceStorage", () => ({
   tradingWorkspaceStorage: {
@@ -44,6 +44,67 @@ beforeEach(() => {
 });
 
 describe("drawing templates", () => {
+  it.each([
+    "pitchfork",
+    "schiff-pitchfork",
+    "modified-schiff-pitchfork",
+    "inside-pitchfork",
+  ] as const)(
+    "resets %s to its factory palette without changing saved or legacy appearance",
+    (kind) => {
+      const target: ChartDrawing = {
+        ...drawing,
+        kind,
+        anchors: [...drawing.anchors, { time: 300 as Time, price: 15 }],
+        backgroundOpacity: 0.65,
+        levels: [{ value: 0.75, visible: true, color: "#abcdef", width: 4, opacity: 0.4 }],
+      };
+      const saved = saveDrawingTemplate([], target, "Custom fork")!;
+      const restored = normalizeDrawingTemplates(JSON.parse(JSON.stringify(saved)))[0]!;
+      const applied = applyDrawingTemplate(target, restored.settings);
+      expect(applied).toEqual(target);
+
+      const reset = applyDrawingTemplate(applied, defaultDrawingTemplateSettings(kind));
+      expect(reset).toMatchObject({
+        id: target.id,
+        kind,
+        anchors: target.anchors,
+        name: target.name,
+        locked: true,
+        hidden: true,
+        color: "#f23645",
+        width: 2,
+        lineStyle: "solid",
+        lineOpacity: 1,
+        background: true,
+        backgroundOpacity: 0.2,
+      });
+      expect(reset.levels?.map(({ value, color, visible }) => [value, color, visible])).toEqual([
+        [0.25, "#ffb74d", false],
+        [0.382, "#81c784", false],
+        [0.5, "#089981", true],
+        [0.618, "#089981", false],
+        [0.75, "#00bcd4", false],
+        [1, "#2962ff", true],
+        [1.5, "#9c27b0", false],
+        [1.75, "#e91e63", false],
+        [2, "#f77c80", false],
+      ]);
+      expect(parseChartDrawings(JSON.stringify([reset]))).toEqual([reset]);
+
+      const { levels: _levels, ...legacy } = target;
+      const legacyTemplate = saveDrawingTemplate([], legacy, "Legacy fork")!;
+      const legacySettings = normalizeDrawingTemplates(
+        JSON.parse(JSON.stringify(legacyTemplate)),
+      )[0]!.settings;
+      expect(applyDrawingTemplate(reset, legacySettings)).toEqual(legacy);
+      expect(parseChartDrawings(JSON.stringify([legacy]))).toEqual([legacy]);
+      expect(defaultDrawingLevels(kind).filter((level) => level.visible)).toEqual([
+        { value: 0.5, visible: true, color: "#4caf50" },
+        { value: 1, visible: true, color: "#2962ff" },
+      ]);
+    },
+  );
   it.each(["horizontal", "horizontal-ray", "vertical", "crossline"] as const)(
     "restores %s factory axis labels and preserves explicit disabled labels in saved templates",
     (kind) => {

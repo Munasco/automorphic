@@ -109,7 +109,7 @@ export function ColorPicker({
   value: string;
   onChange: (color: string) => void;
   label?: string;
-  mixed?: boolean;
+  mixed?: boolean | "diagonal";
   icon?: "pencil" | "letter-t";
   variant?: "default" | "settings" | "toolbar";
   opacity?: number | undefined;
@@ -144,9 +144,12 @@ export function ColorPicker({
               variant === "settings" ? "size-6" : "size-4",
             )}
             style={{
-              background: mixed
-                ? "conic-gradient(#f23645 0 25%, #2962ff 0 50%, #4caf50 0 75%, #ff9800 0)"
-                : value,
+              background:
+                mixed === "diagonal"
+                  ? "linear-gradient(45deg, #f7525f 50%, #22ab94 50%)"
+                  : mixed
+                    ? "conic-gradient(#f23645 0 25%, #2962ff 0 50%, #4caf50 0 75%, #ff9800 0)"
+                    : value,
             }}
           />
         )}

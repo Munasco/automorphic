@@ -1399,6 +1399,68 @@ describe("pitchfork style settings", () => {
     "schiff-pitchfork",
     "modified-schiff-pitchfork",
     "inside-pitchfork",
+  ] as const)(
+    "%s shades symmetric bands from B–C without filling back to the median anchor",
+    (kind) => {
+      for (const reverseTime of [false, true]) {
+        const x = (value: number) => (reverseTime ? 1000 - value : value);
+        const fork: ChartDrawing = {
+          ...drawing(kind, [
+            [x(100), 100],
+            [x(300), 300],
+            [x(500), 200],
+          ]),
+          ...defaultDrawingTemplateSettings(kind),
+          lineOpacity: 0,
+        };
+        const shape = geometry(fork);
+        expect(shape.polygons?.map(({ color, opacity }) => ({ color, opacity }))).toEqual([
+          { color: "#2962ff", opacity: 0.2 },
+          { color: "#089981", opacity: 0.2 },
+          { color: "#089981", opacity: 0.2 },
+          { color: "#2962ff", opacity: 0.2 },
+        ]);
+        expect(shape.polygons?.map(({ points }) => [points[0], points[3]])).toEqual([
+          [
+            { x: x(300), y: 200 },
+            { x: x(350), y: 225 },
+          ],
+          [
+            { x: x(350), y: 225 },
+            { x: x(400), y: 250 },
+          ],
+          [
+            { x: x(400), y: 250 },
+            { x: x(450), y: 275 },
+          ],
+          [
+            { x: x(450), y: 275 },
+            { x: x(500), y: 300 },
+          ],
+        ]);
+        expect(geometry(parseChartDrawings(JSON.stringify([fork]))[0]!).polygons).toEqual(
+          shape.polygons,
+        );
+        expect(
+          geometry({ ...fork, useOneColor: true }).polygons?.every((p) => p.color === fork.color),
+        ).toBe(true);
+        expect(geometry({ ...fork, levels: [] }).polygons).toBeUndefined();
+        expect(geometry({ ...fork, background: false }).polygons).toBeUndefined();
+        const extended = geometry({ ...fork, extendLines: true });
+        expect(
+          extended.polygons?.every(
+            (p) =>
+              p.points.some((point) => point.x < 0) && p.points.some((point) => point.x > 1000),
+          ),
+        ).toBe(true);
+      }
+    },
+  );
+  it.each([
+    "pitchfork",
+    "schiff-pitchfork",
+    "modified-schiff-pitchfork",
+    "inside-pitchfork",
   ] as const)("%s keeps zero-level rails and accepts signed symmetric ratios", (kind) => {
     const fork = drawing(kind, [
       [100, 100],

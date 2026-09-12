@@ -85,6 +85,9 @@ export function DrawingPitchforkSettings({
           label="Use one color"
           variant="settings"
           value={drawing.color}
+          mixed={
+            effectiveLevels.some((level) => level.color !== drawing.color) ? "diagonal" : false
+          }
           onChange={(color) =>
             onChange({
               color,
@@ -105,17 +108,29 @@ export function DrawingPitchforkSettings({
         <Slider.Root
           min={0}
           max={100}
+          thumbAlignment="edge"
           disabled={!background}
           value={Math.round((drawing.backgroundOpacity ?? 0.12) * 100)}
           onValueChange={(value) => onChange({ backgroundOpacity: Number(value) / 100 })}
           className={cn("w-[148px]", !background && "opacity-40")}
         >
           <Slider.Control className="relative flex h-[34px] w-full touch-none items-center">
-            <Slider.Track className="relative h-[10px] w-full rounded border border-white bg-transparent">
-              <Slider.Indicator className="rounded bg-zinc-200" />
+            <Slider.Track
+              className="relative h-[10px] w-full rounded-[5px] bg-white"
+              style={{
+                backgroundImage:
+                  "repeating-conic-gradient(rgba(42,46,57,.4) 0 25%, transparent 0 50%)",
+                backgroundSize: "8px 8px",
+                backgroundPosition: "1px center",
+              }}
+            >
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded border border-[#2962ff] bg-gradient-to-r from-transparent to-[#2962ff]"
+              />
               <Slider.Thumb
                 getAriaLabel={() => "Background opacity"}
-                className="size-3 rounded-full border-2 border-white bg-[#202020] outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="size-3 rounded-full border-2 border-white bg-[#202020] shadow-[0_1px_2px_rgb(0_0_0/0.5)] outline-none transition-[inset-inline-start,top] duration-100 ease-[ease] data-[dragging]:duration-0 focus-visible:ring-2 focus-visible:ring-blue-500"
               />
             </Slider.Track>
           </Slider.Control>

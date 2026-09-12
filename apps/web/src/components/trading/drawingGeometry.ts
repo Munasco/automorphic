@@ -1189,6 +1189,7 @@ function buildLevelDrawingGeometry(
     level: DrawingLevel,
     defaults: { left: boolean; right: boolean },
     price?: number,
+    backgroundSource = source,
   ) => {
     if (!level.visible) return;
     const forkExtensions =
@@ -1208,16 +1209,16 @@ function buildLevelDrawingGeometry(
         drawing.color);
     const clipped = extendDrawingLine(source, width, height, left, right);
     // Use unclipped, finite boundaries for background fills even when one level is outside the pane.
-    const dx = source.to.x - source.from.x,
-      dy = source.to.y - source.from.y;
+    const dx = backgroundSource.to.x - backgroundSource.from.x,
+      dy = backgroundSource.to.y - backgroundSource.from.y;
     const length = Math.hypot(dx, dy);
     if (length > 0 && Number.isFinite(length)) {
       const reach =
         (2 * (width + height) +
-          Math.abs(source.from.x) +
-          Math.abs(source.from.y) +
-          Math.abs(source.to.x) +
-          Math.abs(source.to.y)) /
+          Math.abs(backgroundSource.from.x) +
+          Math.abs(backgroundSource.from.y) +
+          Math.abs(backgroundSource.to.x) +
+          Math.abs(backgroundSource.to.y)) /
         length;
       const start = (dx >= 0 ? left : right) ? -reach : 0;
       const end = (dx >= 0 ? right : left) ? 1 + reach : 1;
@@ -1225,8 +1226,11 @@ function buildLevelDrawingGeometry(
         value: level.value,
         color,
         line: {
-          from: { x: source.from.x + dx * start, y: source.from.y + dy * start },
-          to: { x: source.from.x + dx * end, y: source.from.y + dy * end },
+          from: {
+            x: backgroundSource.from.x + dx * start,
+            y: backgroundSource.from.y + dy * start,
+          },
+          to: { x: backgroundSource.from.x + dx * end, y: backgroundSource.from.y + dy * end },
         },
       });
     }
@@ -1340,13 +1344,16 @@ function buildLevelDrawingGeometry(
     const direction = { x: target.x - adjusted.x, y: target.y - adjusted.y };
     if (!direction.x && !direction.y) return result;
     const defaults = { left: direction.x < 0, right: direction.x >= 0 };
-    const ray = (point: DrawingPoint, level: DrawingLevel) =>
+    const ray = (point: DrawingPoint, level: DrawingLevel, fillOrigin = point) =>
       addLevel(
         { from: point, to: { x: point.x + direction.x, y: point.y + direction.y } },
         level,
         defaults,
+        undefined,
+        { from: fillOrigin, to: { x: fillOrigin.x + direction.x, y: fillOrigin.y + direction.y } },
       );
-    ray(origin, { value: 0, visible: true, color: drawing.color });
+    // Shading begins on B–C, even when the median starts farther back at A.
+    ray(origin, { value: 0, visible: true, color: drawing.color }, center);
     for (const level of levels) {
       if (!level.visible) continue;
       for (const sign of [-1, 1]) {
@@ -1372,7 +1379,10 @@ function buildLevelDrawingGeometry(
         b = boundaries[index]!;
       (result.polygons ??= []).push({
         points: [a.line.from, a.line.to, b.line.to, b.line.from],
-        color: b.color,
+        color:
+          isPitchforkDrawingTool(drawing.kind) && Math.abs(a.value) > Math.abs(b.value)
+            ? a.color
+            : b.color,
         opacity: drawing.backgroundOpacity ?? 0.12,
       });
     }
