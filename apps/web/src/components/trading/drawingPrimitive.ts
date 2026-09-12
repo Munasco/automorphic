@@ -11,6 +11,8 @@ import type {
 import {
   buildDrawingGeometry,
   drawingTimeValue,
+  defaultDrawingStats,
+  supportsLineStatistics,
   supportsDrawingPriceLabels,
   type ChartDrawing,
   type DrawingAnchor,
@@ -162,7 +164,7 @@ export function createDrawingPrimitive(
               );
             }
           }
-          if (drawing.kind === "trend" && drawing.anchors.length >= 2) {
+          if (supportsLineStatistics(drawing.kind) && drawing.anchors.length >= 2) {
             const a = project(drawing.anchors[0]!);
             const b = project(drawing.anchors[1]!);
             if (a && b) {
@@ -175,9 +177,11 @@ export function createDrawingPrimitive(
                 ctx.arc((a.x + b.x) / 2, (a.y + b.y) / 2, 3, 0, Math.PI * 2);
                 ctx.fill();
               }
+              const statKinds = drawing.stats ?? defaultDrawingStats(drawing.kind);
               if (
-                drawing.stats?.length &&
-                (drawing.id === state.selected || drawing.alwaysShowStats)
+                statKinds.length &&
+                (drawing.id === state.selected ||
+                  (drawing.alwaysShowStats ?? drawing.kind === "info-line"))
               ) {
                 const scale = chart.timeScale();
                 const priceFormat = series.options().priceFormat;
@@ -190,7 +194,7 @@ export function createDrawingPrimitive(
                       ? 1 / priceFormat.base
                       : priceFormat.minMove,
                 });
-                const rows = formatDrawingStats(stats, drawing.stats, (price) =>
+                const rows = formatDrawingStats(stats, statKinds, (price) =>
                   series.priceFormatter().format(price),
                 );
                 const left = a.x <= b.x ? a : b;

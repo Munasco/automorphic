@@ -49,14 +49,18 @@ function Action({
 type DrawingTool = { kind: ChartDrawingTool; label: string; section?: string };
 const tools: DrawingTool[] = [
   { kind: "cursor", label: "Select drawing / crosshair" },
-  { kind: "trend", label: "Trend line" },
-  { kind: "horizontal", label: "Horizontal line" },
-  { kind: "ray", label: "Ray" },
-  { kind: "horizontal-ray", label: "Horizontal ray" },
-  { kind: "vertical", label: "Vertical line" },
+  { kind: "trend", label: "Trend line", section: "Lines" },
+  { kind: "horizontal", label: "Horizontal line", section: "Lines" },
+  { kind: "ray", label: "Ray", section: "Lines" },
+  { kind: "horizontal-ray", label: "Horizontal ray", section: "Lines" },
+  { kind: "vertical", label: "Vertical line", section: "Lines" },
+  { kind: "info-line", label: "Info line", section: "Lines" },
+  { kind: "extended-line", label: "Extended line", section: "Lines" },
+  { kind: "trend-angle", label: "Trend angle", section: "Lines" },
+  { kind: "crossline", label: "Crossline", section: "Lines" },
   { kind: "fib", label: "Fibonacci retracement" },
   { kind: "rectangle", label: "Rectangle", section: "Shapes" },
-  { kind: "channel", label: "Parallel channel · three points" },
+  { kind: "channel", label: "Parallel channel", section: "Channels" },
   { kind: "brush", label: "Brush", section: "Brushes" },
   { kind: "highlighter", label: "Highlighter", section: "Brushes" },
   { kind: "arrow-marker", label: "Arrow marker", section: "Arrows" },
@@ -78,7 +82,18 @@ const toolGroups: Array<{ label: string; kinds: ChartDrawingTool[] }> = [
   { label: "Cursors", kinds: ["cursor"] },
   {
     label: "Lines and channels",
-    kinds: ["trend", "horizontal", "ray", "horizontal-ray", "vertical", "channel"],
+    kinds: [
+      "trend",
+      "ray",
+      "info-line",
+      "extended-line",
+      "trend-angle",
+      "horizontal",
+      "horizontal-ray",
+      "vertical",
+      "crossline",
+      "channel",
+    ],
   },
   { label: "Fibonacci tools", kinds: ["fib"] },
   {
@@ -155,10 +170,10 @@ function DrawingToolGroup({
         </PopoverTrigger>
       </div>
       <PopoverPopup
-        style={{ background: "#17191f", backdropFilter: "none" }}
+        style={{ background: "#1f1f1f", backdropFilter: "none" }}
         side="right"
         align="start"
-        className="w-64 max-w-[calc(100vw-4rem)]"
+        className="w-[285px] max-w-[calc(100vw-4rem)]"
         viewportClassName="max-h-[calc(100dvh-4rem)] overflow-y-auto p-1.5"
       >
         <PopoverTitle
@@ -190,14 +205,14 @@ function DrawingToolGroup({
                   setOpen(false);
                 }}
                 className={cn(
-                  "flex w-full items-center gap-3 rounded px-2 py-2 text-left text-[13px] text-zinc-300 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/70",
-                  currentTool === entry.kind && "bg-blue-600 text-white hover:bg-blue-600",
+                  "flex h-10 w-full items-center gap-3 rounded px-2 text-left text-[14px] text-zinc-300 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/70",
+                  currentTool === entry.kind && "bg-zinc-100 text-zinc-950 hover:bg-white",
                 )}
               >
                 <ChartDrawingGlyph tool={entry.kind} />
                 <span className="flex-1">{entry.label}</span>
                 {currentTool === entry.kind ? (
-                  <span aria-hidden="true" className="size-1.5 rounded-full bg-blue-300" />
+                  <span aria-hidden="true" className="size-1.5 rounded-full bg-zinc-700" />
                 ) : null}
               </button>
             </Fragment>
@@ -208,10 +223,25 @@ function DrawingToolGroup({
   );
 }
 
-export function DrawingTools({ drawings }: { drawings: ChartDrawingsController }) {
+export function DrawingTools({
+  drawings,
+  indicatorControls,
+}: {
+  drawings: ChartDrawingsController;
+  indicatorControls: {
+    count: number;
+    hidden: boolean;
+    setHidden: (hidden: boolean) => void;
+    remove: () => void;
+  };
+}) {
   const selected = drawings.selected;
   const [removeOpen, setRemoveOpen] = useState(false);
   const [magnetOpen, setMagnetOpen] = useState(false);
+  const [hideOpen, setHideOpen] = useState(false);
+  const removableCount = drawings.objects.filter(
+    (drawing) => drawings.alwaysRemoveLocked || !drawing.locked,
+  ).length;
   return (
     <>
       {toolGroups.map((group) => (
@@ -238,7 +268,7 @@ export function DrawingTools({ drawings }: { drawings: ChartDrawingsController }
           <TooltipPopup side="right">Drawing objects</TooltipPopup>
         </Tooltip>
         <PopoverPopup
-          style={{ background: "#17191f", backdropFilter: "none" }}
+          style={{ background: "#1f1f1f", backdropFilter: "none" }}
           side="right"
           className="w-80 max-w-[calc(100vw-4rem)] space-y-3 p-3"
         >
@@ -354,7 +384,7 @@ export function DrawingTools({ drawings }: { drawings: ChartDrawingsController }
           </PopoverTrigger>
         </div>
         <PopoverPopup
-          style={{ background: "#17191f", backdropFilter: "none" }}
+          style={{ background: "#1f1f1f", backdropFilter: "none" }}
           side="right"
           align="start"
           className="w-56"
@@ -404,21 +434,76 @@ export function DrawingTools({ drawings }: { drawings: ChartDrawingsController }
         <DrawingToolIcon name="arrow-forward-up" className="size-[18px]" />
       </Action>
       <Action
-        label={selected?.locked ? "Unlock selected drawing" : "Lock selected drawing"}
-        active={selected?.locked ?? false}
-        disabled={!selected}
-        onClick={() => drawings.updateSelected({ locked: !selected?.locked })}
-      >
-        <DrawingToolIcon name={selected?.locked ? "lock" : "lock-open"} className="size-[18px]" />
-      </Action>
-      <Action
-        label={drawings.hidden ? "Show drawings" : "Hide drawings"}
-        active={drawings.hidden}
+        label={drawings.allLocked ? "Unlock drawings" : "Lock drawings"}
+        active={drawings.allLocked}
         disabled={!drawings.count}
-        onClick={drawings.toggleHidden}
+        onClick={drawings.toggleLocked}
       >
-        <DrawingToolIcon name={drawings.hidden ? "eye-off" : "eye"} className="size-[18px]" />
+        <DrawingToolIcon name={drawings.allLocked ? "lock" : "lock-open"} className="size-[22px]" />
       </Action>
+      <Popover open={hideOpen} onOpenChange={setHideOpen}>
+        <div className="group/tool relative flex h-9 w-10 shrink-0 items-center rounded hover:bg-white/5 focus-within:bg-white/5">
+          <Action
+            label={drawings.hidden ? "Show drawings" : "Hide drawings"}
+            active={drawings.hidden}
+            disabled={!drawings.count}
+            onClick={drawings.toggleHidden}
+          >
+            <DrawingToolIcon name={drawings.hidden ? "eye-off" : "eye"} className="size-[22px]" />
+          </Action>
+          <PopoverTrigger
+            aria-label="Visibility options"
+            className={cn(
+              "absolute right-0 top-1/2 flex h-7 w-2.5 -translate-y-1/2 items-center justify-center rounded-sm text-zinc-400 opacity-0 hover:bg-white/10 group-hover/tool:opacity-100 group-focus-within/tool:opacity-100 [@media(hover:none)]:opacity-100",
+              hideOpen && "opacity-100",
+            )}
+          >
+            <ChartIcon name="chevron-down" className="size-2.5 -rotate-90" />
+          </PopoverTrigger>
+        </div>
+        <PopoverPopup
+          style={{ background: "#1f1f1f", backdropFilter: "none" }}
+          side="right"
+          align="start"
+          className="w-[285px]"
+          viewportClassName="p-1.5"
+        >
+          <PopoverTitle className="sr-only">Visibility options</PopoverTitle>
+          <button
+            type="button"
+            onClick={() => {
+              drawings.toggleHidden();
+              setHideOpen(false);
+            }}
+            className="flex h-8 w-full items-center rounded px-2 text-left text-sm hover:bg-white/10"
+          >
+            {drawings.hidden ? "Show drawings" : "Hide drawings"}
+          </button>
+          <button
+            type="button"
+            disabled={!indicatorControls.count}
+            onClick={() => {
+              indicatorControls.setHidden(!indicatorControls.hidden);
+              setHideOpen(false);
+            }}
+            className="flex h-8 w-full items-center rounded px-2 text-left text-sm hover:bg-white/10 disabled:opacity-30"
+          >
+            {indicatorControls.hidden ? "Show indicators" : "Hide indicators"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const next = !(drawings.hidden && indicatorControls.hidden);
+              if (drawings.hidden !== next) drawings.toggleHidden();
+              indicatorControls.setHidden(next);
+              setHideOpen(false);
+            }}
+            className="flex h-8 w-full items-center rounded px-2 text-left text-sm hover:bg-white/10"
+          >
+            {drawings.hidden && indicatorControls.hidden ? "Show all" : "Hide all"}
+          </button>
+        </PopoverPopup>
+      </Popover>
       <Popover open={removeOpen} onOpenChange={setRemoveOpen}>
         <Tooltip>
           <TooltipTrigger
@@ -434,35 +519,56 @@ export function DrawingTools({ drawings }: { drawings: ChartDrawingsController }
           <TooltipPopup side="right">Remove drawings</TooltipPopup>
         </Tooltip>
         <PopoverPopup
-          style={{ background: "#17191f", backdropFilter: "none" }}
+          style={{ background: "#1f1f1f", backdropFilter: "none" }}
           side="right"
           align="start"
-          className="w-56"
+          className="w-[285px]"
           viewportClassName="p-1.5"
         >
-          <PopoverTitle className="px-2 py-2 text-xs text-zinc-400">Remove drawings</PopoverTitle>
+          <PopoverTitle className="sr-only">Remove drawings and indicators</PopoverTitle>
           <button
             type="button"
-            disabled={!selected}
+            disabled={!removableCount}
             onClick={() => {
-              drawings.deleteSelected();
+              drawings.removeDrawings(drawings.alwaysRemoveLocked);
               setRemoveOpen(false);
             }}
-            className="w-full rounded px-2 py-2 text-left text-[13px] text-zinc-300 hover:bg-white/10 disabled:opacity-30"
+            className="flex h-8 w-full items-center rounded px-2 text-left text-sm hover:bg-white/10 disabled:opacity-30"
           >
-            Delete selected drawing
+            Remove {removableCount} drawings
           </button>
           <button
             type="button"
-            disabled={!drawings.count && !drawings.pending}
+            disabled={!indicatorControls.count}
             onClick={() => {
-              drawings.clear();
+              indicatorControls.remove();
               setRemoveOpen(false);
             }}
-            className="w-full rounded px-2 py-2 text-left text-xs text-red-400 hover:bg-white/10 disabled:opacity-30"
+            className="flex h-8 w-full items-center rounded px-2 text-left text-sm hover:bg-white/10 disabled:opacity-30"
           >
-            Clear all drawings
+            Remove {indicatorControls.count} indicators
           </button>
+          <button
+            type="button"
+            disabled={!removableCount && !indicatorControls.count}
+            onClick={() => {
+              drawings.removeDrawings(drawings.alwaysRemoveLocked);
+              indicatorControls.remove();
+              setRemoveOpen(false);
+            }}
+            className="flex h-8 w-full items-center rounded px-2 text-left text-sm hover:bg-white/10 disabled:opacity-30"
+          >
+            Remove drawings & indicators
+          </button>
+          <label className="mt-1 flex items-center gap-3 border-t border-white/10 px-2 py-3 text-[13px]">
+            <input
+              type="checkbox"
+              checked={drawings.alwaysRemoveLocked}
+              onChange={(event) => drawings.setAlwaysRemoveLocked(event.target.checked)}
+              className="size-4 accent-white"
+            />
+            Always remove locked drawings
+          </label>
         </PopoverPopup>
       </Popover>
     </>

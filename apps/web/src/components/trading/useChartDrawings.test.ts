@@ -94,10 +94,144 @@ function fixture(symbol: string, initial: string | null = null, candles: Candles
     lines,
     change,
     saved: () => saved,
+    controls,
     writes: () => savedWrites,
     listener: () => listener,
   };
 }
+
+describe("bulk drawing controls", () => {
+  it("locks mixed drawings together, preserves individual state on one undo, and restores locks", () => {
+    const f = fixture("bulk-lock"),
+      session = f.open();
+    session.setTool("horizontal");
+    f.click(100, 100);
+    session.setTool("horizontal");
+    f.click(200, 200);
+    const [first, second] = JSON.parse(f.saved()!);
+    session.updateDrawing(first.id, { locked: true });
+    const original = f.saved();
+    const writes = f.writes();
+    session.toggleLocked();
+    expect(f.writes()).toBe(writes + 1);
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ allLocked: true }));
+    expect(JSON.parse(f.saved()!).map((item: { locked: boolean }) => item.locked)).toEqual([
+      true,
+      true,
+    ]);
+    session.undo();
+    expect(f.saved()).toBe(original);
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ allLocked: false }));
+    session.redo();
+    session.dispose();
+    const restored = f.open();
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ allLocked: true }));
+    restored.toggleLocked();
+    expect(JSON.parse(f.saved()!).map((item: { locked: boolean }) => item.locked)).toEqual([
+      false,
+      false,
+    ]);
+    restored.selectDrawing(second.id);
+    expect(restored.beginDrag({ x: 50, y: 200 })).toBe(true);
+    restored.endDrag(false);
+    restored.dispose();
+  });
+
+  it("removes only unlocked drawings by default, keeps a locked selection, and permits explicit removal", () => {
+    const f = fixture("bulk-remove"),
+      session = f.open();
+    session.setTool("horizontal");
+    f.click(100, 100);
+    session.setTool("horizontal");
+    f.click(200, 200);
+    const [first] = JSON.parse(f.saved()!);
+    session.updateDrawing(first.id, { locked: true });
+    session.selectDrawing(first.id);
+    const original = f.saved();
+    const writes = f.writes();
+    session.removeDrawings();
+    expect(f.writes()).toBe(writes + 1);
+    expect(JSON.parse(f.saved()!)).toHaveLength(1);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        selected: expect.objectContaining({ id: first.id }),
+        allLocked: true,
+      }),
+    );
+    session.removeDrawings();
+    expect(f.writes()).toBe(writes + 1);
+    session.undo();
+    expect(f.saved()).toBe(original);
+    session.removeDrawings(true);
+    expect(f.saved()).toBe("[]");
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: null, allLocked: false }),
+    );
+    session.undo();
+    expect(f.saved()).toBe(original);
+    session.clear();
+    expect(f.saved()).toBe("[]");
+    session.dispose();
+  });
+
+  it("discards uncommitted settings before bulk decisions and preserves the canonical values in undo", () => {
+    for (const action of ["lock", "remove"] as const) {
+      const f = fixture(`bulk-draft-${action}`),
+        session = f.open();
+      session.setTool("horizontal");
+      f.click(100, 100);
+      const original = f.saved();
+      session.openSettings();
+      session.previewSettings({ locked: true, color: "#ff0000" });
+      if (action === "lock") session.toggleLocked();
+      else session.removeDrawings();
+      expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ settingsOpen: false }));
+      if (action === "lock")
+        expect(JSON.parse(f.saved()!)[0]).toMatchObject({
+          color: JSON.parse(original!)[0].color,
+          locked: true,
+        });
+      else expect(f.saved()).toBe("[]");
+      session.undo();
+      expect(f.saved()).toBe(original);
+      session.dispose();
+    }
+  });
+
+  it("persists the removal preference alongside magnet and keep-drawing settings with safe legacy defaults", () => {
+    const key = "automorphic:drawing-controls:v1";
+    const f = fixture("bulk-controls");
+    f.controls.set(
+      key,
+      JSON.stringify({ magnetMode: "strong", keepDrawing: true, alwaysRemoveLocked: "true" }),
+    );
+    const session = f.open();
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        alwaysRemoveLocked: false,
+        magnetMode: "strong",
+        keepDrawing: true,
+      }),
+    );
+    session.setAlwaysRemoveLocked(true);
+    session.toggleMagnet();
+    session.dispose();
+    const restored = f.open();
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ alwaysRemoveLocked: true, magnetMode: "off", keepDrawing: true }),
+    );
+    restored.toggleMagnet();
+    restored.setAlwaysRemoveLocked(false);
+    expect(JSON.parse(f.controls.get(key)!)).toEqual({
+      magnetMode: "strong",
+      lastMagnetMode: "strong",
+      keepDrawing: true,
+      alwaysRemoveLocked: false,
+    });
+    expect(f.writes()).toBe(0);
+    restored.dispose();
+  });
+});
 
 describe("native chart drawing lifecycle", () => {
   it("places a horizontal line at the clicked price and restores it after chart recreation", () => {

@@ -21,6 +21,34 @@ export function ChartDrawingGlyph({ tool }: { tool: ChartDrawingTool }) {
           <circle cx="20" cy="4" r="2" />
         </>
       ) : null}
+      {tool === "info-line" ? (
+        <>
+          <path d="m4 19 14-13" />
+          <circle cx="4" cy="19" r="1.7" />
+          <circle cx="18" cy="6" r="1.7" />
+          <path d="M14 19h6m-3-5v5m0-8v.2" />
+        </>
+      ) : null}
+      {tool === "extended-line" ? (
+        <>
+          <path d="M2 22 22 2" />
+          <circle cx="8" cy="16" r="1.5" />
+          <circle cx="16" cy="8" r="1.5" />
+        </>
+      ) : null}
+      {tool === "trend-angle" ? (
+        <>
+          <path d="M3 20h19M3 20 20 4M11 20a8 8 0 0 0-2.4-5.7" />
+          <circle cx="3" cy="20" r="1.5" />
+          <circle cx="20" cy="4" r="1.5" />
+        </>
+      ) : null}
+      {tool === "crossline" ? (
+        <>
+          <path d="M12 2v8m0 4v8M2 12h8m4 0h8" />
+          <circle cx="12" cy="12" r="2" />
+        </>
+      ) : null}
       {tool === "ray" ? (
         <>
           <path d="m5.5 18.5 16-16" />

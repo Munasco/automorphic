@@ -18,6 +18,8 @@ import {
   supportsLineExtensions,
   supportsLineMarkers,
   supportsDrawingPriceLabels,
+  supportsLineStatistics,
+  defaultDrawingStats,
 } from "./drawingGeometry";
 import { cn } from "../../lib/utils";
 
@@ -390,7 +392,9 @@ function DrawingSettings({
     setDraft((current) => ({ ...current, ...patch }));
     drawings.previewSettings(patch);
   };
-  const line = lineKinds.has(draft.kind);
+  const line =
+    lineKinds.has(draft.kind) || supportsLineStatistics(draft.kind) || draft.kind === "crossline";
+  const selectedStats = draft.stats ?? defaultDrawingStats(draft.kind);
   const extendable = supportsLineExtensions(draft.kind);
   const [dialogPosition, setDialogPosition] = useState<{ left: number; top: number } | null>(null);
   const measureDialog = useCallback((node: HTMLDivElement | null) => {
@@ -405,6 +409,8 @@ function DrawingSettings({
     );
   }, []);
   const visibility = sanitizeDrawingVisibility(draft.visibility);
+  const extendLeft = draft.extendLeft ?? draft.kind === "extended-line";
+  const extendRight = draft.extendRight ?? ["ray", "extended-line"].includes(draft.kind);
   const canSave = validDrawingAnchors(draft.kind, draft.anchors);
   return (
     <Dialog
@@ -506,12 +512,11 @@ function DrawingSettings({
                   <select
                     aria-label="Extend line"
                     value={
-                      draft.extendLeft && draft.extendRight
+                      extendLeft && extendRight
                         ? "both"
-                        : draft.extendLeft
+                        : extendLeft
                           ? "left"
-                          : draft.extendRight ||
-                              (draft.kind === "ray" && draft.extendRight === undefined)
+                          : extendRight
                             ? "right"
                             : "none"
                     }
@@ -530,7 +535,7 @@ function DrawingSettings({
                   </select>
                 </label>
               ) : null}
-              {draft.kind === "trend" ? (
+              {supportsLineStatistics(draft.kind) ? (
                 <Check
                   label="Middle point"
                   checked={draft.showMiddlePoint ?? false}
@@ -544,7 +549,7 @@ function DrawingSettings({
                   onChange={(showPriceLabel) => update({ showPriceLabel })}
                 />
               ) : null}
-              {draft.kind === "trend" ? (
+              {supportsLineStatistics(draft.kind) ? (
                 <>
                   <div className="text-[11px] text-zinc-500">INFO</div>
                   <div className="flex items-center justify-between text-sm">
@@ -553,7 +558,7 @@ function DrawingSettings({
                       <PopoverTrigger
                         className={cn(inputClass, "flex w-44 items-center justify-between")}
                       >
-                        {draft.stats?.length ? `${draft.stats.length} selected` : "Hidden"}
+                        {selectedStats.length ? `${selectedStats.length} selected` : "Hidden"}
                         <ChartIcon name="chevron-down" className="size-4" />
                       </PopoverTrigger>
                       <PopoverPopup
@@ -576,12 +581,12 @@ function DrawingSettings({
                           <Check
                             key={key}
                             label={label}
-                            checked={draft.stats?.includes(key) ?? false}
+                            checked={selectedStats.includes(key)}
                             onChange={(checked) =>
                               update({
                                 stats: checked
-                                  ? [...(draft.stats ?? []), key]
-                                  : (draft.stats ?? []).filter((stat) => stat !== key),
+                                  ? [...selectedStats, key]
+                                  : selectedStats.filter((stat) => stat !== key),
                               })
                             }
                           />
@@ -612,7 +617,7 @@ function DrawingSettings({
                   </label>
                   <Check
                     label="Always show stats"
-                    checked={draft.alwaysShowStats ?? false}
+                    checked={draft.alwaysShowStats ?? draft.kind === "info-line"}
                     onChange={(alwaysShowStats) => update({ alwaysShowStats })}
                   />
                 </>

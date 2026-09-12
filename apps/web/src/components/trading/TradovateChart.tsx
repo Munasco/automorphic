@@ -493,7 +493,17 @@ export function TradovateChart({
           aria-label="Drawing tools"
           className="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-white/10 py-1"
         >
-          <DrawingTools drawings={drawings} />
+          <DrawingTools
+            drawings={drawings}
+            indicatorControls={{
+              count: INDICATOR_CATALOG.filter(({ key }) => settings.indicators[key]).length,
+              hidden: INDICATOR_CATALOG.filter(({ key }) => settings.indicators[key]).every(
+                ({ key }) => settings.hiddenIndicators[key],
+              ),
+              setHidden: settings.setIndicatorsHidden,
+              remove: settings.removeAllIndicators,
+            }}
+          />
           <div className="my-1 w-5 border-t border-white/10" />
           <ChartAction label="Zoom in" onClick={() => zoom(0.7)}>
             <ChartIcon name="zoom-in" className="size-[18px]" />

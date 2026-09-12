@@ -381,3 +381,117 @@ describe("native drawing primitive", () => {
     expect(update).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("additional line primitive behavior", () => {
+  function renderFixture(drawing: ChartDrawing) {
+    const { chart, series } = fixture();
+    let selected: string | null = null;
+    const plugin = createDrawingPrimitive(chart, series, () => ({ drawings: [drawing], selected }));
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      clip: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      fillText: vi.fn(),
+      arc: vi.fn(),
+      fill: vi.fn(),
+      setLineDash: vi.fn(),
+    };
+    const renderer = plugin.primitive.paneViews!()[0]!.renderer()!;
+    const draw = () => {
+      ctx.fillText.mockClear();
+      renderer.draw({
+        useMediaCoordinateSpace: (callback: (scope: { context: typeof ctx }) => void) =>
+          callback({ context: ctx }),
+      } as unknown as Parameters<typeof renderer.draw>[0]);
+    };
+    return {
+      draw,
+      ctx,
+      plugin,
+      series,
+      select: () => {
+        selected = drawing.id;
+      },
+    };
+  }
+  const line = (kind: ChartDrawing["kind"]): ChartDrawing => ({
+    id: "measurement",
+    kind,
+    color: "#729bff",
+    width: 2,
+    anchors: [
+      { time: 100 as Time, price: 400 },
+      { time: 200 as Time, price: 300 },
+    ],
+  });
+
+  it("shows actual Info line price, percentage, chart bars and elapsed time by default", () => {
+    const drawing = line("info-line");
+    const f = renderFixture(drawing);
+    f.draw();
+    expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual([
+      "-100.00",
+      "-25%",
+      "1 bars",
+      "1m 40s",
+    ]);
+    drawing.anchors[1] = { time: 200 as Time, price: 450 };
+    f.draw();
+    expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual([
+      "50.00",
+      "12.5%",
+      "1 bars",
+      "1m 40s",
+    ]);
+    drawing.alwaysShowStats = false;
+    f.draw();
+    expect(f.ctx.fillText).not.toHaveBeenCalled();
+    f.select();
+    f.draw();
+    expect(f.ctx.fillText).toHaveBeenCalledTimes(4);
+    drawing.stats = ["ticks"];
+    f.draw();
+    expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual(["200 ticks"]);
+    drawing.stats = [];
+    f.draw();
+    expect(f.ctx.fillText).not.toHaveBeenCalled();
+  });
+
+  it("recalculates the trend angle after scale changes and retains an independent text label", () => {
+    const drawing = { ...line("trend-angle"), text: "Slope" };
+    const f = renderFixture(drawing);
+    f.draw();
+    expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual(["-45°", "Slope"]);
+    vi.spyOn(f.series, "priceToCoordinate").mockImplementation(
+      (price) => ((500 - price) * 2) as ReturnType<typeof f.series.priceToCoordinate>,
+    );
+    f.draw();
+    expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual(["-63.43°", "Slope"]);
+  });
+
+  it("paints both crossline arms and exposes its enabled price label without selection", () => {
+    const drawing = {
+      ...line("crossline"),
+      anchors: line("crossline").anchors.slice(0, 1),
+      showPriceLabel: true,
+    };
+    const f = renderFixture(drawing);
+    f.draw();
+    expect(f.ctx.moveTo.mock.calls).toEqual([
+      [0, 100],
+      [100, 0],
+    ]);
+    expect(f.ctx.lineTo.mock.calls).toEqual([
+      [1000, 100],
+      [100, 500],
+    ]);
+    expect(f.plugin.primitive.priceAxisViews!().map((view) => view.text())).toEqual(["400.00"]);
+    drawing.showPriceLabel = false;
+    expect(f.plugin.primitive.priceAxisViews!()).toEqual([]);
+  });
+});

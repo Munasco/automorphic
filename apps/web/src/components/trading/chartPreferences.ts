@@ -99,6 +99,8 @@ export const useChartPreferences = create<{
   setStyle: (style: ChartStyle) => void;
   toggleIndicator: (key: IndicatorKey) => void;
   toggleIndicatorVisibility: (key: IndicatorKey) => void;
+  setIndicatorsHidden: (hidden: boolean) => void;
+  removeAllIndicators: () => void;
   setIndicatorAppearance: (key: IndicatorKey, patch: IndicatorAppearance) => void;
   resetIndicatorAppearance: (key: IndicatorKey) => void;
   setIndicatorInputs: (key: IndicatorKey, patch: IndicatorInputValues) => void;
@@ -132,6 +134,15 @@ export const useChartPreferences = create<{
         set((state) => ({
           hiddenIndicators: { ...state.hiddenIndicators, [key]: !state.hiddenIndicators[key] },
         })),
+      setIndicatorsHidden: (hidden) =>
+        set((state) => {
+          const hiddenIndicators = { ...state.hiddenIndicators };
+          for (const { key } of INDICATOR_CATALOG)
+            if (state.indicators[key]) hiddenIndicators[key] = hidden;
+          return { hiddenIndicators };
+        }),
+      removeAllIndicators: () =>
+        set({ indicators: hiddenDefaults(), hiddenIndicators: hiddenDefaults() }),
       setIndicatorAppearance: (key, patch) =>
         set((state) => {
           const previous = state.appearance[key] ?? {};

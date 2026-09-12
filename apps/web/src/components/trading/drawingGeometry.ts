@@ -3,6 +3,10 @@ import type { Time } from "lightweight-charts";
 export type DrawingKind =
   | "horizontal"
   | "trend"
+  | "info-line"
+  | "extended-line"
+  | "trend-angle"
+  | "crossline"
   | "ray"
   | "horizontal-ray"
   | "vertical"
@@ -78,6 +82,10 @@ export type DrawingGeometry = {
 export const DRAWING_ANCHORS: Record<DrawingKind, number> = {
   horizontal: 1,
   trend: 2,
+  "info-line": 2,
+  "extended-line": 2,
+  "trend-angle": 2,
+  crossline: 1,
   ray: 2,
   "horizontal-ray": 1,
   vertical: 1,
@@ -140,11 +148,18 @@ function isAnchor(value: unknown): value is DrawingAnchor {
     Number.isFinite(value.price)
   );
 }
+export const supportsLineStatistics = (kind: DrawingKind) =>
+  ["trend", "info-line", "extended-line", "trend-angle"].includes(kind);
+export const defaultDrawingStats = (kind: DrawingKind): NonNullable<DrawingSettings["stats"]> =>
+  kind === "info-line" ? ["price", "percent", "bars", "datetime"] : [];
 export const supportsLineExtensions = (kind: DrawingKind) =>
-  ["trend", "ray", "arrow", "channel"].includes(kind);
+  ["trend", "info-line", "extended-line", "trend-angle", "ray", "arrow", "channel"].includes(kind);
 export const supportsLineMarkers = (kind: DrawingKind) =>
   [
     "trend",
+    "info-line",
+    "extended-line",
+    "trend-angle",
     "ray",
     "horizontal",
     "horizontal-ray",
@@ -157,7 +172,18 @@ export const supportsLineMarkers = (kind: DrawingKind) =>
     "arc",
   ].includes(kind);
 export const supportsDrawingPriceLabels = (kind: DrawingKind) =>
-  ["horizontal", "horizontal-ray", "trend", "ray", "arrow", "channel"].includes(kind);
+  [
+    "horizontal",
+    "horizontal-ray",
+    "crossline",
+    "trend",
+    "info-line",
+    "extended-line",
+    "trend-angle",
+    "ray",
+    "arrow",
+    "channel",
+  ].includes(kind);
 
 /** Persist only supported, finite settings; invalid stored options fall back to existing behavior. */
 export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
@@ -320,6 +346,11 @@ function buildBaseDrawingGeometry(
       result.strokeWidth = drawing.width * 8;
       result.opacity = 0.25;
     }
+    return result;
+  }
+  if (drawing.kind === "crossline") {
+    line({ x: 0, y: ay }, { x: width, y: ay });
+    line({ x: first.x, y: 0 }, { x: first.x, y: height });
     return result;
   }
   if (drawing.kind === "horizontal") {
@@ -562,14 +593,18 @@ export function buildDrawingGeometry(
   if (drawing.hidden || !result.handles.length) return result;
   if (
     supportsLineExtensions(drawing.kind) &&
-    (drawing.extendLeft !== undefined || drawing.extendRight !== undefined)
+    (drawing.kind === "extended-line" ||
+      drawing.extendLeft !== undefined ||
+      drawing.extendRight !== undefined)
   ) {
     const first = result.handles[0],
       second = result.handles[1];
     if (first && second) {
       if (drawing.kind === "ray") result.lines = [{ from: first, to: second }];
-      const defaultLeft = drawing.kind === "ray" && second.x < first.x;
-      const defaultRight = drawing.kind === "ray" && second.x >= first.x;
+      const defaultLeft =
+        drawing.kind === "extended-line" || (drawing.kind === "ray" && second.x < first.x);
+      const defaultRight =
+        drawing.kind === "extended-line" || (drawing.kind === "ray" && second.x >= first.x);
       result.lines = result.lines.flatMap((line) => {
         const extended = extendDrawingLine(
           line,
@@ -649,6 +684,37 @@ export function buildDrawingGeometry(
         : drawing.textPosition === "below"
           ? "top"
           : "bottom";
+  }
+  if (drawing.kind === "trend-angle") {
+    const [first, second] = result.handles;
+    if (first && second) {
+      const dx = second.x - first.x,
+        dy = second.y - first.y;
+      const length = Math.hypot(dx, dy);
+      if (length > 0) {
+        // The angle reflects the current chart projection, including zoom and price-scale changes.
+        const radians = Math.atan2(dy, dx);
+        const radius = Math.min(36, length / 3);
+        result.lines.push({ from: first, to: { x: first.x + radius + 12, y: first.y } });
+        const samples = Math.max(1, Math.ceil(Math.abs(radians) * 12));
+        let previous = { x: first.x + radius, y: first.y };
+        for (let index = 1; index <= samples; index++) {
+          const angle = (radians * index) / samples;
+          const next = {
+            x: first.x + Math.cos(angle) * radius,
+            y: first.y + Math.sin(angle) * radius,
+          };
+          result.lines.push({
+            from: previous,
+            to: next,
+            ...(index === samples
+              ? { label: `${Number(((-radians * 180) / Math.PI).toFixed(2))}°` }
+              : {}),
+          });
+          previous = next;
+        }
+      }
+    }
   }
   return result;
 }

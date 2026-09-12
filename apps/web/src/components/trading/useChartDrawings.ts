@@ -42,6 +42,8 @@ export type DrawingState = {
   magnet: boolean;
   magnetMode: DrawingMagnetMode;
   keepDrawing: boolean;
+  allLocked: boolean;
+  alwaysRemoveLocked: boolean;
   selected: ChartDrawing | null;
   instruction: string;
   settingsOpen: boolean;
@@ -60,6 +62,8 @@ const EMPTY: DrawingState = {
   magnet: false,
   magnetMode: "off",
   keepDrawing: false,
+  allLocked: false,
+  alwaysRemoveLocked: false,
   selected: null,
   instruction: "",
   settingsOpen: false,
@@ -95,6 +99,7 @@ export function createChartDrawingSession(
   let magnetMode: DrawingMagnetMode = "off";
   let lastMagnetMode: Exclude<DrawingMagnetMode, "off"> = "weak";
   let keepDrawing = false;
+  let alwaysRemoveLocked = false;
   try {
     const settings: unknown = JSON.parse(storage?.getItem(controlSettingsKey) ?? "null");
     if (settings && typeof settings === "object") {
@@ -110,6 +115,7 @@ export function createChartDrawingSession(
         lastMagnetMode = settings.lastMagnetMode;
       if (magnetMode !== "off") lastMagnetMode = magnetMode;
       keepDrawing = "keepDrawing" in settings && settings.keepDrawing === true;
+      alwaysRemoveLocked = "alwaysRemoveLocked" in settings && settings.alwaysRemoveLocked === true;
     }
   } catch {
     /* Ignore unavailable storage or invalid preferences. */
@@ -118,7 +124,7 @@ export function createChartDrawingSession(
     try {
       storage?.setItem(
         controlSettingsKey,
-        JSON.stringify({ magnetMode, lastMagnetMode, keepDrawing }),
+        JSON.stringify({ magnetMode, lastMagnetMode, keepDrawing, alwaysRemoveLocked }),
       );
     } catch {
       /* Keep controls usable without storage. */
@@ -183,6 +189,8 @@ export function createChartDrawingSession(
       magnet: magnetMode !== "off",
       magnetMode,
       keepDrawing,
+      allLocked: drawings.length > 0 && drawings.every((drawing) => drawing.locked === true),
+      alwaysRemoveLocked,
       selected,
       instruction,
       settingsOpen: settingsOpen && !!selected,
@@ -737,6 +745,33 @@ export function createChartDrawingSession(
       persistControls();
       emit();
     },
+    setAlwaysRemoveLocked: (enabled: boolean) => {
+      if (disposed || typeof enabled !== "boolean") return;
+      alwaysRemoveLocked = enabled;
+      persistControls();
+      emit();
+    },
+    toggleLocked: () => {
+      if (disposed) return;
+      setTool("cursor");
+      if (!drawings.length) return;
+      const locked = drawings.some((drawing) => !drawing.locked);
+      remember();
+      drawings = drawings.map((drawing) =>
+        drawing.locked === locked ? drawing : { ...drawing, locked },
+      );
+      changed();
+    },
+    removeDrawings: (includeLocked = false) => {
+      if (disposed) return;
+      setTool("cursor");
+      const remaining = includeLocked ? [] : drawings.filter((drawing) => drawing.locked);
+      if (remaining.length === drawings.length) return;
+      remember();
+      drawings = remaining;
+      if (!drawings.some((drawing) => drawing.id === selectedId)) selectedId = null;
+      changed();
+    },
     toggleHidden: () => {
       if (disposed) return;
       endDrag(false);
@@ -970,6 +1005,15 @@ export function useChartDrawings(
   );
   const toggleMagnet = useCallback(() => session.current?.toggleMagnet(), []);
   const toggleHidden = useCallback(() => session.current?.toggleHidden(), []);
+  const toggleLocked = useCallback(() => session.current?.toggleLocked(), []);
+  const removeDrawings = useCallback(
+    (includeLocked = false) => session.current?.removeDrawings(includeLocked),
+    [],
+  );
+  const setAlwaysRemoveLocked = useCallback(
+    (enabled: boolean) => session.current?.setAlwaysRemoveLocked(enabled),
+    [],
+  );
   const clear = useCallback(() => session.current?.clear(), []);
   const deleteSelected = useCallback(() => session.current?.deleteSelected(), []);
   const redrawSelected = useCallback(() => session.current?.redrawSelected(), []);
@@ -1030,10 +1074,13 @@ export function useChartDrawings(
     finishDrawing,
     setMagnetMode,
     setKeepDrawing,
+    setAlwaysRemoveLocked,
     undo,
     redo,
     toggleMagnet,
     toggleHidden,
+    toggleLocked,
+    removeDrawings,
     clear,
     deleteSelected,
     redrawSelected,

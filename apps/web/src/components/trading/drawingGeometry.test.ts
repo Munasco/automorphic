@@ -485,3 +485,126 @@ describe("native drawing geometry", () => {
     ).toEqual([]);
   });
 });
+
+describe("additional line tools", () => {
+  it("extends both directions by default, honors overrides and keeps original handles", () => {
+    const line = drawing("extended-line", [
+      [100, 400],
+      [300, 300],
+    ]);
+    const extended = geometry(line);
+    expect(extended.lines).toEqual([{ from: { x: 0, y: 50 }, to: { x: 900, y: 500 } }]);
+    expect(extended.handles).toEqual([
+      { x: 100, y: 100 },
+      { x: 300, y: 200 },
+    ]);
+    expect(hitDrawingGeometry(extended, { x: 800, y: 450 })).toBe(true);
+    expect(hitDrawingHandle(extended, { x: 300, y: 200 })).toBe(1);
+    expect(geometry({ ...line, extendLeft: false }).lines[0]?.from).toEqual({ x: 100, y: 100 });
+    expect(geometry({ ...line, extendRight: false }).lines[0]?.to).toEqual({ x: 300, y: 200 });
+    expect(geometry({ ...line, anchors: line.anchors.toReversed() }).lines).toEqual([
+      { from: { x: 900, y: 500 }, to: { x: 0, y: 50 } },
+    ]);
+    const vertical = geometry(
+      drawing("extended-line", [
+        [100, 400],
+        [100, 300],
+      ]),
+    );
+    expect(vertical.lines).toEqual([{ from: { x: 100, y: 0 }, to: { x: 100, y: 500 } }]);
+  });
+
+  it("draws a one-anchor crossline across both axes and hit-tests either arm", () => {
+    const cross = geometry(drawing("crossline", [[200, 300]]));
+    expect(cross.lines).toEqual([
+      { from: { x: 0, y: 200 }, to: { x: 1000, y: 200 } },
+      { from: { x: 200, y: 0 }, to: { x: 200, y: 500 } },
+    ]);
+    expect(cross.handles).toEqual([{ x: 200, y: 200 }]);
+    expect(hitDrawingGeometry(cross, { x: 950, y: 200 })).toBe(true);
+    expect(hitDrawingGeometry(cross, { x: 200, y: 490 })).toBe(true);
+    expect(hitDrawingGeometry(cross, { x: 250, y: 250 })).toBe(false);
+  });
+
+  it("builds a signed angle arc from projected points without replacing custom text", () => {
+    const shape = drawing("trend-angle", [
+      [100, 300],
+      [200, 400],
+    ]);
+    const angle = geometry({ ...shape, text: "Momentum", endMarker: "arrow" });
+    expect(angle.lines.find((line) => line.label)?.label).toBe("45°");
+    expect(angle.text?.value).toBe("Momentum");
+    expect(angle.polygons?.[0]?.points[0]).toEqual({ x: 200, y: 100 });
+    expect(angle.handles).toHaveLength(2);
+    const arcPoint = { x: 100 + 36 * Math.cos(Math.PI / 8), y: 200 - 36 * Math.sin(Math.PI / 8) };
+    expect(hitDrawingGeometry(angle, arcPoint, 1)).toBe(true);
+    const rescaled = buildDrawingGeometry(
+      shape,
+      ({ time, price }) => ({ x: Number(time), y: (500 - price) * 2 }),
+      (price) => (500 - price) * 2,
+      1000,
+      1000,
+    );
+    expect(rescaled.lines.find((line) => line.label)?.label).toBe("63.43°");
+    const down = geometry(
+      drawing("trend-angle", [
+        [100, 400],
+        [200, 300],
+      ]),
+    );
+    expect(down.lines.find((line) => line.label)?.label).toBe("-45°");
+    const vertical = geometry(
+      drawing("trend-angle", [
+        [100, 300],
+        [100, 400],
+      ]),
+    );
+    expect(vertical.lines.find((line) => line.label)?.label).toBe("90°");
+  });
+
+  it("validates and round-trips new kinds and their existing settings", () => {
+    const kinds: DrawingKind[] = ["info-line", "extended-line", "trend-angle", "crossline"];
+    for (const kind of kinds) {
+      const shape = {
+        ...drawing(
+          kind,
+          [
+            [100, 400],
+            [200, 300],
+          ].slice(0, DRAWING_ANCHORS[kind]) as Array<[number, number]>,
+        ),
+        extendLeft: false,
+        showPriceLabel: true,
+        text: "Note",
+        textBold: true,
+      };
+      expect(validDrawingAnchors(kind, shape.anchors)).toBe(true);
+      expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+      expect(validDrawingAnchors(kind, [])).toBe(false);
+      expect(
+        parseChartDrawings(
+          JSON.stringify([{ ...shape, anchors: [...shape.anchors, shape.anchors[0]] }]),
+        ),
+      ).toEqual([]);
+      if (kind !== "crossline") {
+        expect(validDrawingAnchors(kind, [shape.anchors[0]!, shape.anchors[0]!])).toBe(false);
+        expect(
+          validDrawingAnchors(kind, [
+            { time: 100 as Time, price: 400 },
+            { time: 100 as Time, price: 300 },
+          ]),
+        ).toBe(true);
+      }
+    }
+    const info = geometry({
+      ...drawing("info-line", [
+        [100, 400],
+        [200, 300],
+      ]),
+      extendRight: true,
+      endMarker: "arrow",
+    });
+    expect(info.lines[0]?.to).toEqual({ x: 500, y: 500 });
+    expect(info.polygons?.[0]?.points[0]).toEqual({ x: 500, y: 500 });
+  });
+});
