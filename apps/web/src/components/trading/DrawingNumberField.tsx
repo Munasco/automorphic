@@ -1,6 +1,7 @@
 import { NumberField } from "@base-ui/react/number-field";
 import { cn } from "../../lib/utils";
 import { ChartIcon } from "./ChartIcon";
+import { acceptsDrawingIntegerInsertion, isDrawingIntegerDraft } from "./drawingIntegerInput";
 
 const numberFormat: Intl.NumberFormatOptions = {
   useGrouping: false,
@@ -17,6 +18,7 @@ export function DrawingNumberField({
   disabled = false,
   readOnly = false,
   showSteppers = true,
+  integerOnly = false,
   className,
 }: {
   label: string;
@@ -28,6 +30,7 @@ export function DrawingNumberField({
   disabled?: boolean;
   readOnly?: boolean;
   showSteppers?: boolean;
+  integerOnly?: boolean;
   className?: string;
 }) {
   return (
@@ -36,7 +39,13 @@ export function DrawingNumberField({
       onValueChange={(next) => {
         // Base UI owns the editable string, including empty/sign-only/decimal drafts.
         // Chart previews continue to receive only complete finite numbers.
-        if (next !== null && Number.isFinite(next) && next !== value) onValueChange(next);
+        if (
+          next !== null &&
+          Number.isFinite(next) &&
+          (!integerOnly || Number.isInteger(next)) &&
+          next !== value
+        )
+          onValueChange(next);
       }}
       step={step}
       min={min}
@@ -52,8 +61,35 @@ export function DrawingNumberField({
     >
       <NumberField.Input
         aria-label={label}
+        onChange={(event) => {
+          // Covers paste, drop and replacement input without rewriting the field or its selection.
+          if (integerOnly && !isDrawingIntegerDraft(event.currentTarget.value))
+            event.preventBaseUIHandler();
+        }}
+        onPaste={(event) => {
+          if (
+            integerOnly &&
+            !acceptsDrawingIntegerInsertion(
+              event.currentTarget,
+              event.clipboardData.getData("text"),
+            )
+          )
+            event.preventDefault();
+        }}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
+          if (
+            integerOnly &&
+            event.key.length === 1 &&
+            !event.metaKey &&
+            !event.ctrlKey &&
+            !event.altKey &&
+            !acceptsDrawingIntegerInsertion(event.currentTarget, event.key)
+          ) {
+            event.preventDefault();
+            event.preventBaseUIHandler();
+            return;
+          }
           if (event.key === "Enter") {
             event.preventDefault();
             event.preventBaseUIHandler();

@@ -716,6 +716,7 @@ function DrawingSettings({
                       {coordinateHasBar ? (
                         <DrawingNumberField
                           label={`Point ${index + 1} bar`}
+                          integerOnly
                           step={1}
                           value={Math.round(drawings.anchorBar(anchor) ?? 0)}
                           onValueChange={(bar) => {
