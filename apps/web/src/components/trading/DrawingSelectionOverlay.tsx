@@ -698,10 +698,13 @@ function DrawingSettings({
                       {coordinateHasPrice ? (
                         <DrawingNumberField
                           label={`Point ${index + 1} price`}
-                          step="any"
+                          step={drawings.coordinatePriceStep()}
                           value={drawings.coordinatePrice(anchor.price)}
                           onValueChange={(price) => {
-                            const next = { ...anchor, price };
+                            const next = {
+                              ...anchor,
+                              price: drawings.normalizeCoordinatePrice(price),
+                            };
                             const anchors =
                               draft.kind === "trend-angle"
                                 ? drawings.anchorsAtOrigin(draft, next)
@@ -713,7 +716,6 @@ function DrawingSettings({
                       {coordinateHasBar ? (
                         <DrawingNumberField
                           label={`Point ${index + 1} bar`}
-                          showSteppers={false}
                           step={1}
                           value={Math.round(drawings.anchorBar(anchor) ?? 0)}
                           onValueChange={(bar) => {
@@ -736,7 +738,6 @@ function DrawingSettings({
                   <span className="w-[113px] shrink-0 pr-5 text-zinc-400">Angle</span>
                   <DrawingNumberField
                     label="Angle"
-                    showSteppers={false}
                     step="any"
                     value={angle === null ? null : Number(angle.toFixed(2))}
                     onValueChange={(angle) => {
@@ -751,11 +752,14 @@ function DrawingSettings({
                   <span className="w-28">Price offset</span>
                   <DrawingNumberField
                     label="Price offset"
-                    step="any"
+                    step={drawings.coordinatePriceStep()}
                     disabled={channelOffset === null}
                     value={channelOffset === null ? null : drawings.coordinatePrice(channelOffset)}
                     onValueChange={(offset) => {
-                      const anchors = drawings.channelAnchorsAtOffset(draft, offset);
+                      const anchors = drawings.channelAnchorsAtOffset(
+                        draft,
+                        drawings.normalizeCoordinatePrice(offset),
+                      );
                       if (anchors) update({ anchors });
                     }}
                   />

@@ -170,6 +170,29 @@ export function createChartDrawingSession(
   const history: ChartDrawing[][] = [];
   const future: ChartDrawing[][] = [];
   const removers: Array<() => void> = [];
+  const coordinatePriceStep = () => {
+    const format = series.options().priceFormat;
+    if (format && Number.isFinite(format.minMove) && format.minMove > 0) return format.minMove;
+    const precision = format && "precision" in format ? format.precision : 2;
+    return (
+      10 ** -Math.max(0, Math.min(10, Number.isFinite(precision) ? Math.trunc(precision!) : 2))
+    );
+  };
+  const normalizeCoordinatePrice = (price: number): number => {
+    if (!Number.isFinite(price)) return price;
+    const step = coordinatePriceStep();
+    const units = price / step;
+    if (!Number.isFinite(units) || Math.abs(units) > Number.MAX_SAFE_INTEGER) return price;
+    const [coefficient = "", exponent = "0"] = step.toString().split("e");
+    const decimals = Math.max(0, (coefficient.split(".")[1]?.length ?? 0) - Number(exponent));
+    const rounded = Math.round(units + Number.EPSILON * Math.abs(units)) * step;
+    const normalized = Number(rounded.toFixed(Math.min(100, decimals)));
+    return normalized === 0 ? 0 : normalized;
+  };
+  const quantizePointerAnchor = (anchor: DrawingAnchor) => {
+    const price = normalizeCoordinatePrice(anchor.price);
+    return price === anchor.price ? anchor : { ...anchor, price };
+  };
   const displayedDrawings = () =>
     settingsDraft
       ? settingsDraft.created
@@ -401,6 +424,7 @@ export function createChartDrawingSession(
     return true;
   };
   const snapAnchor = (anchor: DrawingAnchor, point: DrawingPoint): DrawingAnchor => {
+    anchor = quantizePointerAnchor(anchor);
     if (magnetMode === "off") return anchor;
     const logical = chart.timeScale().coordinateToLogical(point.x);
     if (logical === null) return anchor;
@@ -414,7 +438,7 @@ export function createChartDrawingSession(
       const delta = Math.abs(point.y - y);
       if (delta <= distance) {
         distance = delta;
-        snapped = { time: candle.time, price };
+        snapped = quantizePointerAnchor({ time: candle.time, price });
       }
     }
     return snapped;
@@ -462,65 +486,71 @@ export function createChartDrawingSession(
         }
       }
     }
-    const moved = activeDrag.drawing.anchors.map((anchor, index) => {
-      if (vertical) {
-        const time = drawingPaneTimeAtCoordinate(chart, series, activeDrag.points[index]!.x + dx);
-        return time === null ? null : { ...anchor, time: Math.abs(dx) < 1 ? anchor.time : time };
-      }
-      if (regression) {
-        if (activeDrag.handle >= 0 && index !== activeDrag.handle) return anchor;
-        const time = projection.unproject({
-          x: activeDrag.points[index]!.x + dx,
-          y: activeDrag.points[index]!.y,
-        })?.time;
-        return time === undefined
-          ? null
-          : { ...anchor, time: Math.abs(dx) < 1 ? anchor.time : time };
-      }
-      if (disjoint && activeDrag.handle >= 0) {
-        const handle = activeDrag.handle;
-        const old = activeDrag.points[index]!;
-        if ((handle === 3 && index === 0) || handle === index) {
-          const moved = projection.unproject({
-            x: old.x + (handle === 2 ? 0 : dx),
-            y: old.y + (handle === 3 ? -dy : dy),
-          });
-          return moved && (Math.abs(dx) < 1 || handle === 2)
-            ? { ...moved, time: anchor.time }
-            : moved;
+    const moved = activeDrag.drawing.anchors
+      .map((anchor, index) => {
+        if (vertical) {
+          const time = drawingPaneTimeAtCoordinate(chart, series, activeDrag.points[index]!.x + dx);
+          return time === null ? null : { ...anchor, time: Math.abs(dx) < 1 ? anchor.time : time };
         }
-        // Moving the upper-right corner mirrors the opposite right price so the left pair stays fixed.
-        if (handle === 1 && index === 2) {
-          const price = series.coordinateToPrice(old.y - dy);
-          return price === null ? null : { ...anchor, price };
-        }
-        return anchor;
-      }
-      if (isSpecialChannelDrawing(activeDrag.drawing.kind) && activeDrag.handle >= 2) {
-        // Flat opposite corners resize the matching timestamp and move the third price.
-        const timeAnchor = activeDrag.handle === 2 ? 1 : 0;
-        if (index === timeAnchor) {
-          const moved = projection.unproject({
+        if (regression) {
+          if (activeDrag.handle >= 0 && index !== activeDrag.handle) return anchor;
+          const time = projection.unproject({
             x: activeDrag.points[index]!.x + dx,
             y: activeDrag.points[index]!.y,
-          });
-          return moved ? { ...anchor, time: Math.abs(dx) < 1 ? anchor.time : moved.time } : null;
+          })?.time;
+          return time === undefined
+            ? null
+            : { ...anchor, time: Math.abs(dx) < 1 ? anchor.time : time };
         }
-        if (index === 2) {
-          const price = series.coordinateToPrice(activeDrag.points[2]!.y + dy);
+        if (disjoint && activeDrag.handle >= 0) {
+          const handle = activeDrag.handle;
+          const old = activeDrag.points[index]!;
+          if ((handle === 3 && index === 0) || handle === index) {
+            const moved = projection.unproject({
+              x: old.x + (handle === 2 ? 0 : dx),
+              y: old.y + (handle === 3 ? -dy : dy),
+            });
+            return moved && (Math.abs(dx) < 1 || handle === 2)
+              ? { ...moved, time: anchor.time }
+              : moved;
+          }
+          // Moving the upper-right corner mirrors the opposite right price so the left pair stays fixed.
+          if (handle === 1 && index === 2) {
+            const price = series.coordinateToPrice(old.y - dy);
+            return price === null ? null : { ...anchor, price };
+          }
+          return anchor;
+        }
+        if (isSpecialChannelDrawing(activeDrag.drawing.kind) && activeDrag.handle >= 2) {
+          // Flat opposite corners resize the matching timestamp and move the third price.
+          const timeAnchor = activeDrag.handle === 2 ? 1 : 0;
+          if (index === timeAnchor) {
+            const moved = projection.unproject({
+              x: activeDrag.points[index]!.x + dx,
+              y: activeDrag.points[index]!.y,
+            });
+            return moved ? { ...anchor, time: Math.abs(dx) < 1 ? anchor.time : moved.time } : null;
+          }
+          if (index === 2) {
+            const price = series.coordinateToPrice(activeDrag.points[2]!.y + dy);
+            return price === null ? null : { ...anchor, price };
+          }
+          return anchor;
+        }
+        if (activeDrag.handle >= 0 && index !== activeDrag.handle) return anchor;
+        const old = activeDrag.points[index]!;
+        if (activeDrag.drawing.kind === "horizontal") {
+          const price = series.coordinateToPrice(old.y + dy);
           return price === null ? null : { ...anchor, price };
         }
-        return anchor;
-      }
-      if (activeDrag.handle >= 0 && index !== activeDrag.handle) return anchor;
-      const old = activeDrag.points[index]!;
-      if (activeDrag.drawing.kind === "horizontal") {
-        const price = series.coordinateToPrice(old.y + dy);
-        return price === null ? null : { ...anchor, price };
-      }
-      const moved = projection.unproject({ x: old.x + dx, y: old.y + dy });
-      return moved && Math.abs(dx) < 1 ? { ...moved, time: anchor.time } : moved;
-    });
+        const moved = projection.unproject({ x: old.x + dx, y: old.y + dy });
+        return moved && Math.abs(dx) < 1 ? { ...moved, time: anchor.time } : moved;
+      })
+      .map((anchor, index) =>
+        anchor && !vertical && !regression && anchor !== activeDrag.drawing.anchors[index]
+          ? quantizePointerAnchor(anchor)
+          : anchor,
+      );
     if (
       moved.some((anchor) => anchor === null) ||
       !validDrawingAnchors(drag.drawing.kind, moved as DrawingAnchor[])
@@ -1151,19 +1181,37 @@ export function createChartDrawingSession(
     drawingAngle,
     anchorsAtAngle,
     anchorsAtOrigin,
+    coordinatePriceStep,
+    normalizeCoordinatePrice,
     coordinatePrice: (price: number) => {
       const format = series.options().priceFormat;
       const precision = format && "precision" in format ? format.precision : 2;
       return Number(price.toFixed(Math.max(0, Math.min(10, precision ?? 2))));
     },
     anchorBar: (anchor: DrawingAnchor) => {
-      const point = drawingProjection(chart, series).project(anchor);
-      return point ? chart.timeScale().coordinateToLogical(point.x) : null;
+      if (disposed) return null;
+      try {
+        const x = drawingTimeCoordinate(chart, series, anchor.time);
+        if (x === null || !Number.isFinite(x)) return null;
+        const bar = chart.timeScale().coordinateToLogical(x);
+        return bar !== null && Number.isFinite(bar) ? (bar === 0 ? 0 : bar) : null;
+      } catch {
+        return null;
+      }
     },
     anchorAtBar: (bar: number, price: number) => {
-      const x = chart.timeScale().logicalToCoordinate(bar as Logical);
-      const y = series.priceToCoordinate(price);
-      return x !== null && y !== null ? drawingProjection(chart, series).unproject({ x, y }) : null;
+      const index = Math.round(bar);
+      if (disposed || !Number.isSafeInteger(index) || !Number.isFinite(price)) return null;
+      try {
+        // LWC returns screen coordinate zero for fractional logical indices.
+        // Coordinates edits select the nearest bar before entering that API.
+        const x = chart.timeScale().logicalToCoordinate(index as Logical);
+        if (x === null || !Number.isFinite(x)) return null;
+        const time = drawingPaneTimeAtCoordinate(chart, series, x);
+        return time !== null && drawingTimeValue(time) !== null ? { time, price } : null;
+      } catch {
+        return null;
+      }
     },
     openSettings: (point?: DrawingPoint, paneIndex?: number) => {
       if (disposed || tool !== "cursor") return false;
@@ -1678,6 +1726,11 @@ export function useChartDrawings(
     (price: number) => session.current?.coordinatePrice(price) ?? price,
     [],
   );
+  const coordinatePriceStep = useCallback(() => session.current?.coordinatePriceStep() ?? 0.01, []);
+  const normalizeCoordinatePrice = useCallback(
+    (price: number) => session.current?.normalizeCoordinatePrice(price) ?? price,
+    [],
+  );
   const anchorBar = useCallback(
     (anchor: DrawingAnchor) => session.current?.anchorBar(anchor) ?? null,
     [],
@@ -1734,6 +1787,8 @@ export function useChartDrawings(
     drawingAngle,
     anchorsAtAngle,
     anchorsAtOrigin,
+    coordinatePriceStep,
+    normalizeCoordinatePrice,
     coordinatePrice,
     anchorBar,
     anchorAtBar,

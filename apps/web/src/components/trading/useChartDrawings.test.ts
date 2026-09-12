@@ -8,6 +8,7 @@ import type {
   IChartApi,
   IPaneApi,
   IPanePrimitive,
+  Logical,
   ISeriesApi,
   MouseEventParams,
   SeriesType,
@@ -121,6 +122,203 @@ function fixture(symbol: string, initial: string | null = null, candles: Candles
     listener: () => listener,
   };
 }
+
+describe("drawing bar coordinate inputs", () => {
+  it("rounds fractional bar inputs before the native integer-only projection and keeps price unchanged", () => {
+    const start = 1_700_000_000;
+    const candles = Array.from({ length: 50 }, (_, index) => ({
+      time: (start + index * 300) as UTCTimestamp,
+      open: 32000,
+      high: 33000,
+      low: 31000,
+      close: 32000,
+    }));
+    const f = fixture("fractional-coordinate-bars", null, candles);
+    const scale = f.chart.timeScale();
+    const logicalToCoordinate = vi.fn(
+      (index: number) => (Number.isInteger(index) ? index * 10 : 0) as Coordinate,
+    );
+    vi.spyOn(f.chart, "timeScale").mockReturnValue({
+      ...scale,
+      logicalToCoordinate,
+      coordinateToLogical: (x: number) => (x === 0 ? -0 : Math.round(x / 10)) as Logical,
+      coordinateToTime: (x: number) => candles[Math.round(x / 10)]?.time ?? null,
+      timeToCoordinate: (time: Time) => {
+        const index = candles.findIndex((candle) => candle.time === time);
+        return index < 0 ? null : ((index * 10) as Coordinate);
+      },
+    });
+    // Bar coordinates are independent of whether the anchor price is projectable.
+    vi.spyOn(f.series, "priceToCoordinate").mockReturnValue(null);
+    const session = f.open();
+    expect(session.anchorAtBar(12.6, 31852.83)).toEqual({
+      time: start + 13 * 300,
+      price: 31852.83,
+    });
+    expect(logicalToCoordinate).toHaveBeenLastCalledWith(13);
+    expect(session.anchorAtBar(12.4, 31852.83)).toEqual({
+      time: start + 12 * 300,
+      price: 31852.83,
+    });
+    expect(session.anchorAtBar(12, 31852.83)).toEqual({ time: start + 12 * 300, price: 31852.83 });
+    for (const [input, expected] of [
+      [52.4, 52],
+      [-2.6, -3],
+      [0, 0],
+    ] as const) {
+      const anchor = session.anchorAtBar(input, 31852.83)!;
+      expect(anchor).toEqual({ time: start + expected * 300, price: 31852.83 });
+      expect(session.anchorBar(anchor)).toBe(expected);
+    }
+    expect(f.writes()).toBe(0);
+    const calls = logicalToCoordinate.mock.calls.length;
+    expect(session.anchorAtBar(NaN, 100)).toBeNull();
+    expect(session.anchorAtBar(Infinity, 100)).toBeNull();
+    expect(session.anchorAtBar(Number.MAX_SAFE_INTEGER + 1, 100)).toBeNull();
+    expect(session.anchorAtBar(12, NaN)).toBeNull();
+    expect(logicalToCoordinate).toHaveBeenCalledTimes(calls);
+    session.dispose();
+    expect(session.anchorAtBar(12, 100)).toBeNull();
+    expect(session.anchorBar({ time: start as Time, price: 100 })).toBeNull();
+  });
+
+  it("declines unavailable or nonfinite bar projection instead of coercing to the first bar", () => {
+    const f = fixture("bar-coordinate-unavailable");
+    const scale = f.chart.timeScale();
+    const logicalToCoordinate = vi.fn((): Coordinate | null => null);
+    vi.spyOn(f.chart, "timeScale").mockReturnValue({ ...scale, logicalToCoordinate });
+    const session = f.open();
+    expect(session.anchorAtBar(12.6, 100)).toBeNull();
+    logicalToCoordinate.mockReturnValue(NaN as Coordinate);
+    expect(session.anchorAtBar(12.6, 100)).toBeNull();
+    logicalToCoordinate.mockImplementation(() => {
+      throw Error("Disposed scale");
+    });
+    expect(session.anchorAtBar(12.6, 100)).toBeNull();
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+});
+
+describe("drawing price ticks", () => {
+  const tickOptions = (f: ReturnType<typeof fixture>, minMove: number, precision = 2) => {
+    vi.spyOn(f.series, "options").mockReturnValue({
+      ...f.series.options(),
+      priceFormat: { type: "price", minMove, precision },
+    });
+  };
+  it("separates decimal display from committed tick normalization and exposes the instrument step", () => {
+    const f = fixture("tick-coordinates");
+    tickOptions(f, 0.25);
+    const session = f.open();
+    expect(session.coordinatePriceStep()).toBe(0.25);
+    expect(session.coordinatePrice(31852.83)).toBe(31852.83);
+    expect(session.normalizeCoordinatePrice(31852.83)).toBe(31852.75);
+    expect(session.normalizeCoordinatePrice(31852.9)).toBe(31853);
+    expect(session.normalizeCoordinatePrice(31852.75 + session.coordinatePriceStep())).toBe(31853);
+    tickOptions(f, 0.05);
+    expect(session.normalizeCoordinatePrice(0.1 + 0.2)).toBe(0.3);
+    expect(session.normalizeCoordinatePrice(-10.08)).toBe(-10.1);
+    tickOptions(f, 0.00001, 5);
+    expect(session.coordinatePriceStep()).toBe(0.00001);
+    expect(session.normalizeCoordinatePrice(1.2345678)).toBe(1.23457);
+    tickOptions(f, NaN, 3);
+    expect(session.coordinatePriceStep()).toBe(0.001);
+    expect(session.normalizeCoordinatePrice(1.23456)).toBe(1.235);
+    expect(session.normalizeCoordinatePrice(NaN)).toBeNaN();
+    expect(session.normalizeCoordinatePrice(Infinity)).toBe(Infinity);
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+
+  it("quantizes pointer placement and freehand anchors even with magnet disabled", () => {
+    const f = fixture("tick-placement");
+    tickOptions(f, 0.25);
+    vi.spyOn(f.series, "coordinateToPrice").mockImplementation((y) => (32000 - y) as BarPrice);
+    vi.spyOn(f.series, "priceToCoordinate").mockImplementation(
+      (price) => (32000 - price) as Coordinate,
+    );
+    const session = f.open();
+    session.setTool("horizontal");
+    f.click(100, 147.17);
+    expect(session.getCommittedDrawings()![0]!.anchors[0]!.price).toBe(31852.75);
+    session.setTool("brush");
+    expect(session.beginDrag({ x: 100, y: 147.1 })).toBe(true);
+    session.dragTo({ x: 110, y: 151.08 });
+    session.endDrag(true);
+    expect(session.getCommittedDrawings()![1]!.anchors.map((anchor) => anchor.price)).toEqual([
+      31853, 31849,
+    ]);
+    session.dispose();
+  });
+
+  it("quantizes body translation with one common price delta and changes only the dragged endpoint on handle edits", () => {
+    const drawing: ChartDrawing = {
+      id: "line",
+      kind: "trend",
+      color: "#2962ff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 31852.75 },
+        { time: 300 as Time, price: 33030.25 },
+      ],
+    };
+    const f = fixture("tick-drag", JSON.stringify([drawing]));
+    tickOptions(f, 0.25);
+    const pricePerPixel = 54.25 / 3;
+    vi.spyOn(f.series, "coordinateToPrice").mockImplementation(
+      (y) => (34000 - y * pricePerPixel) as BarPrice,
+    );
+    vi.spyOn(f.series, "priceToCoordinate").mockImplementation(
+      (price) => ((34000 - price) / pricePerPixel) as Coordinate,
+    );
+    const session = f.open();
+    const y = ((34000 - 31852.75) / pricePerPixel + (34000 - 33030.25) / pricePerPixel) / 2;
+    expect(session.beginDrag({ x: 200, y })).toBe(true);
+    session.dragTo({ x: 216, y: y + 3 });
+    session.endDrag(true);
+    const moved = session.getCommittedDrawings()![0]!;
+    expect(moved.anchors.map((anchor) => anchor.price)).toEqual([31798.5, 32976]);
+    expect(
+      moved.anchors.map((anchor, index) => anchor.price - drawing.anchors[index]!.price),
+    ).toEqual([-54.25, -54.25]);
+    session.undo();
+    const firstY = (34000 - drawing.anchors[0]!.price) / pricePerPixel;
+    expect(session.beginDrag({ x: 100, y: firstY })).toBe(true);
+    session.dragTo({ x: 120, y: firstY + 3.01 });
+    session.endDrag(true);
+    const edited = session.getCommittedDrawings()![0]!;
+    expect(edited.anchors[0]!.price).toBe(31798.25);
+    expect(edited.anchors[1]).toEqual(drawing.anchors[1]);
+    session.undo();
+    expect(session.getCommittedDrawings()).toEqual([drawing]);
+    session.dispose();
+  });
+
+  it("preserves stored and duplicated precision and keeps angle-coordinate transforms continuous", () => {
+    const drawing: ChartDrawing = {
+      id: "angle",
+      kind: "trend-angle",
+      color: "#2962ff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 4800.13 },
+        { time: 300 as Time, price: 4900.17 },
+      ],
+    };
+    const f = fixture("tick-angle", JSON.stringify([drawing]));
+    tickOptions(f, 0.25);
+    const session = f.open();
+    expect(session.getCommittedDrawings()).toEqual([drawing]);
+    session.duplicateDrawing(drawing.id);
+    expect(session.getCommittedDrawings()![1]!.anchors).toEqual(drawing.anchors);
+    const anchors = session.anchorsAtAngle(drawing, 30)!;
+    expect(anchors[0]).toEqual(drawing.anchors[0]);
+    expect(anchors[1]!.price).not.toBe(session.normalizeCoordinatePrice(anchors[1]!.price));
+    expect(session.drawingAngle({ ...drawing, anchors })).toBeCloseTo(30, 8);
+    session.dispose();
+  });
+});
 
 describe("vertical extensions through indicator panes", () => {
   it("selects, opens settings/context and drags an extended line in time only with undo and cancellation", () => {
