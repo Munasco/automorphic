@@ -916,9 +916,25 @@ export function createChartDrawingSession(
     if (!original) return false;
     // A drag preview does not consume a committed-object slot.
     if (drawings.length - (drag?.cloneId ? 1 : 0) >= 100) return false;
+    const pastedAnchors: DrawingAnchor[] = [];
+    try {
+      // Each paste offsets the clipboard source by 40 CSS pixels, including on log scales.
+      // Never infer a price delta or change times when the chart cannot project an anchor.
+      for (const anchor of original.anchors) {
+        const y = series.priceToCoordinate(anchor.price);
+        if (y === null || !Number.isFinite(y)) return false;
+        const price = series.coordinateToPrice(y - 40);
+        if (price === null || !Number.isFinite(price)) return false;
+        pastedAnchors.push({ ...anchor, price });
+      }
+    } catch {
+      return false;
+    }
+    if (!validDrawingAnchors(original.kind, pastedAnchors)) return false;
     setTool("cursor");
     const copy: ChartDrawing = {
       ...original,
+      anchors: pastedAnchors,
       id: randomUUID(),
       name: `${original.name || original.text || original.kind} copy`.slice(0, 80),
       locked: false,

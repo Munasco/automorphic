@@ -64,7 +64,7 @@ export function ChartContextMenu({
           description:
             drawings.count >= 100
               ? "Remove a drawing before adding another."
-              : "Copy a chart drawing first.",
+              : "Copy a drawing and wait for chart data to load, then try again.",
         });
       }
     } catch {

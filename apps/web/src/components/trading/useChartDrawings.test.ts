@@ -154,6 +154,7 @@ describe("drawing copy and paste", () => {
     expect(objects[0]).toEqual(original);
     expect(objects[1]).toEqual({
       ...original,
+      anchors: original.anchors.map((anchor) => ({ ...anchor, price: anchor.price + 40 })),
       id: expect.any(String),
       name: "Research copy",
       locked: false,
@@ -174,11 +175,89 @@ describe("drawing copy and paste", () => {
     const state = f.change.mock.calls.at(-1)![0];
     expect(new Set(state.objects.map((drawing: ChartDrawing) => drawing.id)).size).toBe(3);
     expect(state.objects[1].anchors).not.toBe(state.objects[2].anchors);
+    expect(state.objects[2].anchors).toEqual(state.objects[1].anchors);
     expect(state.objects[1].levels[0]).not.toBe(state.objects[2].levels[0]);
     session.dispose();
     const reopened = f.open();
     expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ count: 3 }));
     reopened.dispose();
+  });
+
+  it("moves each pasted anchor 40 screen pixels upward on a logarithmic scale without changing times", () => {
+    const source: ChartDrawing = {
+      ...original,
+      anchors: [
+        { time: 100 as Time, price: 100 },
+        { time: 300 as Time, price: 200 },
+      ],
+    };
+    const f = fixture("clipboard-log", JSON.stringify([source]));
+    const project = (price: number) => 500 - Math.log(price) * 100;
+    vi.spyOn(f.series, "priceToCoordinate").mockImplementation(
+      (price) => project(price) as Coordinate,
+    );
+    vi.spyOn(f.series, "coordinateToPrice").mockImplementation(
+      (y) => Math.exp((500 - y) / 100) as BarPrice,
+    );
+    const session = f.open();
+    expect(session.pasteDrawing(serializeDrawingClipboard(source)!)).toBe(true);
+    const [unchanged, pasted] = JSON.parse(f.saved()!) as ChartDrawing[];
+    expect(unchanged).toEqual(source);
+    pasted!.anchors.forEach((anchor, index) => {
+      expect(anchor.time).toBe(source.anchors[index]!.time);
+      expect(project(anchor.price)).toBeCloseTo(project(source.anchors[index]!.price) - 40, 10);
+    });
+    expect(pasted!.anchors[0]!.price - source.anchors[0]!.price).not.toBeCloseTo(
+      pasted!.anchors[1]!.price - source.anchors[1]!.price,
+    );
+    expect(f.writes()).toBe(1);
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toEqual([source]);
+    session.dispose();
+  });
+
+  it.each([
+    "missing-coordinate",
+    "invalid-coordinate",
+    "missing-price",
+    "invalid-price",
+    "throws",
+    "invalid-shape",
+  ])("rejects %s projection atomically while retaining the current edit", (failure) => {
+    const source = { ...original, kind: "ellipse" as const };
+    const f = fixture(`clipboard-projection-${failure}`, JSON.stringify([source])),
+      session = f.open();
+    session.selectDrawing(source.id);
+    session.openSettings();
+    session.previewSettings({ color: "#00ff00" });
+    const before = f.change.mock.calls.length,
+      saved = f.saved(),
+      writes = f.writes();
+    if (failure === "missing-coordinate")
+      vi.spyOn(f.series, "priceToCoordinate")
+        .mockReturnValueOnce(100 as Coordinate)
+        .mockReturnValueOnce(null);
+    if (failure === "invalid-coordinate")
+      vi.spyOn(f.series, "priceToCoordinate").mockReturnValue(Number.NaN as Coordinate);
+    if (failure === "missing-price") vi.spyOn(f.series, "coordinateToPrice").mockReturnValue(null);
+    if (failure === "invalid-price")
+      vi.spyOn(f.series, "coordinateToPrice").mockReturnValue(Number.POSITIVE_INFINITY as BarPrice);
+    if (failure === "throws")
+      vi.spyOn(f.series, "priceToCoordinate").mockImplementation(() => {
+        throw new Error("Chart removed");
+      });
+    if (failure === "invalid-shape")
+      vi.spyOn(f.series, "coordinateToPrice").mockReturnValue(100 as BarPrice);
+    expect(session.pasteDrawing(serializeDrawingClipboard(source)!)).toBe(false);
+    expect(f.change.mock.calls.length).toBe(before);
+    expect(f.saved()).toBe(saved);
+    expect(f.writes()).toBe(writes);
+    vi.restoreAllMocks();
+    session.applySettings({ color: "#00ff00" });
+    expect(JSON.parse(f.saved()!)).toEqual([{ ...source, color: "#00ff00" }]);
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toEqual([source]);
+    session.dispose();
   });
 
   it("uses the clicked drawing for system clipboard writes and reports denied or unavailable access", async () => {
