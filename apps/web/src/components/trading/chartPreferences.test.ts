@@ -39,6 +39,32 @@ function configure() {
   return useChartPreferences.getState();
 }
 
+it("persists independent RSI sources and resets only the selected instance", async () => {
+  const store = useChartPreferences.getState();
+  const base = store.addIndicator("rsi")!;
+  const duplicate = store.addIndicator("rsi")!;
+  store.setIndicatorInstanceInputs(base, { period: 7, source: 1 });
+  store.setIndicatorInstanceInputs(duplicate, { period: 21, source: 5 });
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  const instances = () =>
+    getChartIndicatorInstances(useChartPreferences.getState()).filter((i) => i.key === "rsi");
+  expect(instances().map((i) => i.inputs)).toEqual([
+    { period: 7, source: 1 },
+    { period: 21, source: 5 },
+  ]);
+  vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+  useChartPreferences.getState().setIndicatorInstanceInputs(duplicate, { source: 99 });
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
+  expect(instances().map((i) => i.inputs)).toEqual([
+    { period: 7, source: 1 },
+    { period: 14, source: 0 },
+  ]);
+});
+
 describe("global indicator actions", () => {
   it("hides and shows enabled indicators atomically while retaining disabled states and configuration", () => {
     const original = configure();

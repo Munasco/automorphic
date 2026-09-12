@@ -237,6 +237,33 @@ describe("indicator inputs", () => {
   });
 });
 
+describe("RSI price source inputs", () => {
+  it("uses the selected source in the plotted RSI and defaults older settings to close", () => {
+    const definition = INDICATOR_CATALOG.find((item) => item.key === "rsi")!;
+    const bars = [10, 20, 30].map((close, index) => ({
+      time: index + 1,
+      open: 40 - close,
+      high: 40,
+      low: 0,
+      close,
+      volume: 1,
+    }));
+    const calculate = (source?: number) =>
+      definition.calculate({
+        bars,
+        inputs: getIndicatorInputs("rsi", {
+          rsi: { period: 2, ...(source === undefined ? {} : { source }) },
+        }),
+        interval: 1,
+        session: DEFAULT_INITIAL_BALANCE,
+      }).plots[0]!.points;
+    expect(calculate()).toEqual([{ time: 3, value: 100 }]);
+    expect(calculate(1)).toEqual([{ time: 3, value: 0 }]);
+    expect(calculate(4)).toEqual([{ time: 3, value: 50 }]);
+    expect(calculate(99)).toEqual(calculate());
+  });
+});
+
 describe("moving-average price source inputs", () => {
   it("routes the selected source into both moving-average calculations", () => {
     const bars = [

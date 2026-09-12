@@ -232,10 +232,10 @@ export const INDICATOR_DEFINITIONS = [
     detail: "Relative strength index",
     category: "Oscillators",
     placement: "pane",
-    inputs: [length(14)],
+    inputs: [length(14), priceSource],
     styles: [style("main", "Line", "#c084fc", true)],
     calculate: ({ bars, inputs }) =>
-      single(calculateRSI(bars, inputs.period ?? 14), {
+      single(calculateRSI(bars, inputs.period ?? 14, PRICE_SOURCES[inputs.source ?? 0]), {
         title: "RSI",
         bounds: [0, 100],
         levels: [30, 70],

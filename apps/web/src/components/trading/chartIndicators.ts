@@ -48,10 +48,6 @@ function validPeriod(period: number): boolean {
   return Number.isSafeInteger(period) && period > 0;
 }
 
-function validClose(bar: Candle): boolean {
-  return Number.isFinite(bar.time) && Number.isFinite(bar.close);
-}
-
 /** Invalid selected prices restart the warmup instead of bridging missing data. */
 export function calculateSMA(
   bars: readonly Candle[],
@@ -208,7 +204,11 @@ export function calculateVWAPBands(
 }
 
 /** Wilder RSI: SMA-seeded gains/losses, then alpha = 1 / period; flat series = 50. */
-export function calculateRSI(bars: readonly Candle[], period: number): IndicatorPoint[] {
+export function calculateRSI(
+  bars: readonly Candle[],
+  period: number,
+  source: PriceSource = "close",
+): IndicatorPoint[] {
   if (!validPeriod(period) || bars.length <= period) return [];
   const points: IndicatorPoint[] = [];
   let previous: number | undefined;
@@ -216,7 +216,8 @@ export function calculateRSI(bars: readonly Candle[], period: number): Indicator
   let gain = 0;
   let loss = 0;
   for (const bar of bars) {
-    if (!validClose(bar)) {
+    const price = sourcePrice(bar, source);
+    if (!Number.isFinite(bar.time) || !Number.isFinite(price)) {
       previous = undefined;
       changes = 0;
       gain = 0;
@@ -224,11 +225,11 @@ export function calculateRSI(bars: readonly Candle[], period: number): Indicator
       continue;
     }
     if (previous === undefined) {
-      previous = bar.close;
+      previous = price;
       continue;
     }
-    const delta = bar.close - previous;
-    previous = bar.close;
+    const delta = price - previous;
+    previous = price;
     if (!Number.isFinite(delta)) {
       changes = 0;
       gain = 0;

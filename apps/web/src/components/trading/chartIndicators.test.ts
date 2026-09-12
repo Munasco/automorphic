@@ -138,6 +138,74 @@ describe("chart indicators", () => {
     expect(calculateRSI(input.slice(0, 3), 3)).toEqual([]);
   });
 
+  it.each([
+    { source: "close", expected: [60, 100 / 3, 2300 / 29] },
+    { source: "open", expected: [200 / 3, 800 / 9, 800 / 13] },
+    { source: "high", expected: [100 / 3, 900 / 11, 60] },
+    { source: "low", expected: [75, 87.5, 35] },
+    { source: "hl2", expected: [400 / 7, 1600 / 19, 1600 / 35] },
+    { source: "hlc3", expected: [100, 100, 100] },
+    { source: "ohlc4", expected: [80, 1800 / 19, 1800 / 19] },
+  ] as const)("uses $source changes for RSI gain/loss smoothing", ({ source, expected }) => {
+    const input = bars([12, 10, 13, 11, 16]).map((bar, index) => ({
+      ...bar,
+      open: [10, 12, 11, 14, 13][index]!,
+      high: [15, 16, 14, 18, 17][index]!,
+      low: [5, 8, 7, 9, 6][index]!,
+    }));
+    const original = structuredClone(input);
+    const result = calculateRSI(input, 2, source);
+    expect(result.map((point) => point.time)).toEqual(input.slice(2).map((bar) => bar.time));
+    values(result).forEach((value, index) => expect(value).toBeCloseTo(expected[index]!, 10));
+    if (source === "close") expect(calculateRSI(input, 2)).toEqual(result);
+    expect(input).toEqual(original);
+  });
+
+  it.each([
+    { source: "close", field: "close" },
+    { source: "open", field: "open" },
+    { source: "high", field: "high" },
+    { source: "low", field: "low" },
+    { source: "hl2", field: "high" },
+    { source: "hlc3", field: "close" },
+    { source: "ohlc4", field: "open" },
+  ] as const)(
+    "restarts RSI's price baseline and warmup for an invalid $source component",
+    ({ source, field }) => {
+      for (const invalid of [undefined, NaN, Infinity, -Infinity]) {
+        const input = bars([1, 2, 3, 4, 5, 6, 7, 6]);
+        Object.assign(input[3]!, { [field]: invalid });
+        const result = calculateRSI(input, 2, source);
+        expect(result.map((point) => point.time)).toEqual([
+          input[2]!.time,
+          input[6]!.time,
+          input[7]!.time,
+        ]);
+        values(result).forEach((value, index) =>
+          expect(value).toBeCloseTo([100, 100, 50][index]!, 10),
+        );
+      }
+    },
+  );
+
+  it("resets RSI source warmup for missing chart times while ignoring unused price fields", () => {
+    const input = bars([1, 2, 3, 4, 5, 6, 7]);
+    input[3]!.time = NaN;
+    expect(calculateRSI(input, 2, "open")).toEqual([
+      { time: input[2]!.time, value: 100 },
+      { time: input[6]!.time, value: 100 },
+    ]);
+    for (const { source, unused } of [
+      { source: "open", unused: "close" },
+      { source: "hl2", unused: "close" },
+      { source: "hlc3", unused: "open" },
+      { source: "ohlc4", unused: "volume" },
+    ] as const) {
+      const incomplete = bars([1, 2, 3, 4]).map((bar) => ({ ...bar, [unused]: NaN }));
+      expect(values(calculateRSI(incomplete, 2, source))).toEqual([100, 100]);
+    }
+  });
+
   it("handles rising, falling and unchanged prices without NaN RSI", () => {
     expect(values(calculateRSI(bars([1, 2, 3, 4, 5]), 3))).toEqual([100, 100]);
     expect(values(calculateRSI(bars([5, 4, 3, 2, 1]), 3))).toEqual([0, 0]);
