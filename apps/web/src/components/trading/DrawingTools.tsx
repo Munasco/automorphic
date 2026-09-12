@@ -6,7 +6,6 @@ import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popov
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ChartDrawingsController, ChartDrawingTool } from "./useChartDrawings";
 import { cn } from "../../lib/utils";
-import type { ChartDrawing } from "./drawingGeometry";
 
 function Action({
   label,
@@ -211,7 +210,6 @@ function DrawingToolGroup({
 
 export function DrawingTools({ drawings }: { drawings: ChartDrawingsController }) {
   const selected = drawings.selected;
-  const [editorOpen, setEditorOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [magnetOpen, setMagnetOpen] = useState(false);
   return (
@@ -399,108 +397,6 @@ export function DrawingTools({ drawings }: { drawings: ChartDrawingsController }
       >
         <DrawingToolIcon name="pencil" className="size-[22px]" />
       </Action>
-      <Popover open={editorOpen && !!selected} onOpenChange={setEditorOpen}>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <PopoverTrigger
-                disabled={!selected}
-                className="flex size-8 items-center justify-center rounded text-zinc-400 hover:bg-white/10 disabled:opacity-30"
-                aria-label="Edit selected drawing"
-              />
-            }
-          >
-            <DrawingToolIcon name="pencil" className="size-[18px]" />
-          </TooltipTrigger>
-          <TooltipPopup side="right">Edit selected drawing</TooltipPopup>
-        </Tooltip>
-        <PopoverPopup
-          style={{ background: "#17191f", backdropFilter: "none" }}
-          side="right"
-          className="w-60 space-y-3 p-3"
-        >
-          <PopoverTitle className="text-sm">Drawing</PopoverTitle>
-          {selected ? (
-            <>
-              <label className="flex items-center justify-between text-xs">
-                Color
-                <input
-                  aria-label="Drawing color"
-                  type="color"
-                  value={selected.color}
-                  onChange={(event) => drawings.updateSelected({ color: event.target.value })}
-                  className="h-7 w-10 rounded bg-transparent"
-                />
-              </label>
-              <label className="flex items-center justify-between text-xs">
-                Line style
-                <select
-                  aria-label="Drawing line style"
-                  value={selected.lineStyle ?? "solid"}
-                  onChange={(event) =>
-                    drawings.updateSelected({
-                      lineStyle: event.target.value as NonNullable<ChartDrawing["lineStyle"]>,
-                    })
-                  }
-                  className="rounded border border-white/10 bg-zinc-900 px-2 py-1"
-                >
-                  <option value="solid">Solid</option>
-                  <option value="dashed">Dashed</option>
-                  <option value="dotted">Dotted</option>
-                </select>
-              </label>
-              <label className="flex items-center justify-between text-xs">
-                Width
-                <select
-                  aria-label="Drawing line width"
-                  value={selected.width}
-                  onChange={(event) =>
-                    drawings.updateSelected({ width: Number(event.target.value) })
-                  }
-                  className="rounded border border-white/10 bg-zinc-900 px-2 py-1"
-                >
-                  {[1, 2, 3, 4].map((width) => (
-                    <option key={width} value={width}>
-                      {width}px
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {selected.kind === "text" ? (
-                <input
-                  aria-label="Annotation text"
-                  maxLength={140}
-                  value={selected.text ?? ""}
-                  onChange={(event) => drawings.updateSelected({ text: event.target.value })}
-                  className="w-full rounded border border-white/10 bg-transparent px-2 py-1 text-sm"
-                />
-              ) : null}
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  disabled={selected.locked}
-                  onClick={() => {
-                    setEditorOpen(false);
-                    drawings.redrawSelected();
-                  }}
-                  className="flex flex-1 items-center justify-center gap-1 rounded bg-white/10 px-2 py-1.5 text-xs disabled:opacity-30"
-                >
-                  <DrawingToolIcon name="arrows-move" className="size-4" />
-                  Reposition
-                </button>
-                <button
-                  type="button"
-                  aria-label="Delete selected drawing"
-                  onClick={drawings.deleteSelected}
-                  className="rounded px-2 text-red-400 hover:bg-white/10"
-                >
-                  <ChartIcon name="trash" className="size-4" />
-                </button>
-              </div>
-            </>
-          ) : null}
-        </PopoverPopup>
-      </Popover>
       <Action label="Undo drawing edit" disabled={!drawings.canUndo} onClick={drawings.undo}>
         <ChartIcon name="arrow-back-up" className="size-[18px]" />
       </Action>

@@ -10,6 +10,7 @@ import type {
   UTCTimestamp,
 } from "lightweight-charts";
 import { createChartDrawingSession } from "./useChartDrawings";
+import { sanitizeDrawingVisibility } from "./drawingVisibility";
 
 function fixture(symbol: string, initial: string | null = null, candles: CandlestickData[] = []) {
   let listener: ((event: MouseEventParams<Time>) => void) | undefined;
@@ -63,17 +64,22 @@ function fixture(symbol: string, initial: string | null = null, candles: Candles
     },
   } as unknown as IChartApi;
   let saved = initial;
+  let savedWrites = 0;
   const controls = new Map<string, string>();
   const storage = {
     getItem: (key: string) =>
       key === "automorphic:drawing-controls:v1" ? (controls.get(key) ?? null) : saved,
     setItem: (key: string, value: string) => {
       if (key === "automorphic:drawing-controls:v1") controls.set(key, value);
-      else saved = value;
+      else {
+        saved = value;
+        savedWrites++;
+      }
     },
   };
   const change = vi.fn();
-  const open = () => createChartDrawingSession(chart, series, symbol, change, storage);
+  const open = (intervalMinutes = 1) =>
+    createChartDrawingSession(chart, series, symbol, change, storage, intervalMinutes);
   const click = (time: number | undefined, y = 100, paneIndex = 0, x = 50) =>
     listener?.({
       ...(time === undefined ? {} : { time: time as UTCTimestamp }),
@@ -81,7 +87,16 @@ function fixture(symbol: string, initial: string | null = null, candles: Candles
       paneIndex,
       seriesData: new Map(),
     });
-  return { open, click, priceLines, lines, change, saved: () => saved, listener: () => listener };
+  return {
+    open,
+    click,
+    priceLines,
+    lines,
+    change,
+    saved: () => saved,
+    writes: () => savedWrites,
+    listener: () => listener,
+  };
 }
 
 describe("native chart drawing lifecycle", () => {
@@ -742,5 +757,318 @@ describe("native chart drawing lifecycle", () => {
     );
     expect(f.saved()).toBeNull();
     restored.dispose();
+  });
+});
+
+describe("drawing settings interactions", () => {
+  it("opens settings only on a drawing and selects right-click targets", () => {
+    const f = fixture("settings-hit");
+    const session = f.open();
+    session.setTool("trend");
+    f.click(100, 100);
+    f.click(200, 200);
+    expect(session.openSettings({ x: 150, y: 150 })).toBe(true);
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ settingsOpen: true }));
+    session.closeSettings();
+    expect(session.openSettings({ x: 700, y: 400 })).toBe(false);
+    expect(session.openContextMenu({ x: 150, y: 150 }, { x: 650, y: 450 })).toBe(true);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        contextPoint: { x: 650, y: 450 },
+        selected: expect.objectContaining({ kind: "trend" }),
+      }),
+    );
+    session.closeContextMenu();
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ contextPoint: null }));
+    session.dispose();
+  });
+  it("persists one settings edit, undoes it atomically and rejects invalid coordinates", () => {
+    const f = fixture("settings-save");
+    const session = f.open();
+    session.setTool("trend");
+    f.click(100, 100);
+    f.click(200, 200);
+    const before = JSON.parse(f.saved()!)[0];
+    session.updateSelected({
+      extendLeft: true,
+      endMarker: "arrow",
+      text: "A+ setup",
+      textFontSize: 18,
+      textBold: true,
+      showPriceLabel: true,
+      anchors: [
+        { time: 100 as UTCTimestamp, price: 4900 },
+        { time: 250 as UTCTimestamp, price: 4750 },
+      ],
+    });
+    expect(JSON.parse(f.saved()!)[0]).toMatchObject({
+      extendLeft: true,
+      endMarker: "arrow",
+      text: "A+ setup",
+      textFontSize: 18,
+      anchors: [
+        { time: 100, price: 4900 },
+        { time: 250, price: 4750 },
+      ],
+    });
+    session.undo();
+    expect(JSON.parse(f.saved()!)[0]).toEqual(before);
+    session.redo();
+    session.selectDrawing(before.id);
+    const valid = f.saved();
+    session.updateSelected({ anchors: [{ time: 100 as UTCTimestamp, price: 4900 }] });
+    expect(f.saved()).toBe(valid);
+    session.dispose();
+    const restored = f.open();
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        objects: [
+          expect.objectContaining({ text: "A+ setup", extendLeft: true, endMarker: "arrow" }),
+        ],
+      }),
+    );
+    restored.dispose();
+  });
+  it("respects horizontal price label settings without losing the price line", () => {
+    const f = fixture("settings-price-label");
+    const session = f.open();
+    session.setTool("horizontal");
+    f.click(undefined, 125);
+    session.updateSelected({ showPriceLabel: false });
+    expect(f.priceLines).toMatchObject([{ price: 4875, axisLabelVisible: false }]);
+    session.updateSelected({ showPriceLabel: true });
+    expect(f.priceLines).toMatchObject([{ price: 4875, axisLabelVisible: true }]);
+    session.dispose();
+  });
+});
+
+describe("drawing settings preview transactions", () => {
+  it("previews immediately while keeping persisted drawings and undo history unchanged until OK", () => {
+    const f = fixture("settings-preview-apply");
+    const session = f.open();
+    session.setTool("horizontal");
+    f.click(100, 100);
+    const before = f.saved();
+    const beforeWrites = f.writes();
+    expect(session.openSettings()).toBe(true);
+    expect(
+      session.previewSettings({
+        color: "#ff0000",
+        width: 3,
+        anchors: [{ time: 100 as UTCTimestamp, price: 4800 }],
+      }),
+    ).toBe(true);
+    expect(session.previewSettings({ showPriceLabel: false, text: "Range" })).toBe(true);
+    expect(f.priceLines).toMatchObject([
+      { price: 4800, color: "#ff0000", lineWidth: 3, axisLabelVisible: false },
+    ]);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        selected: expect.objectContaining({ color: "#ff0000" }),
+        objects: [expect.objectContaining({ color: "#729bff" })],
+      }),
+    );
+    expect(f.saved()).toBe(before);
+    expect(f.writes()).toBe(beforeWrites);
+    expect(session.applySettings({ textBold: true })).toBe(true);
+    expect(f.writes()).toBe(beforeWrites + 1);
+    const after = f.saved();
+    expect(JSON.parse(after!)[0]).toMatchObject({
+      color: "#ff0000",
+      width: 3,
+      text: "Range",
+      textBold: true,
+      showPriceLabel: false,
+    });
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ settingsOpen: false }));
+    session.undo();
+    expect(f.saved()).toBe(before);
+    session.redo();
+    expect(f.saved()).toBe(after);
+    expect(session.applySettings({ color: "#00ff00" })).toBe(false);
+    session.dispose();
+  });
+
+  it.each(["close", "escape", "tool", "undo", "drag-miss", "context-miss"])(
+    "discards preview on %s without committing an undo step",
+    (action) => {
+      const f = fixture(`settings-preview-${action}`);
+      const session = f.open();
+      session.setTool("horizontal");
+      f.click(100, 100);
+      const before = f.saved(),
+        beforeWrites = f.writes();
+      session.openSettings();
+      session.previewSettings({ color: "#ff0000", showPriceLabel: false });
+      if (action === "close") session.closeSettings();
+      else if (action === "escape") session.cancel();
+      else if (action === "tool") session.setTool("circle");
+      else if (action === "drag-miss") session.beginDrag({ x: 700, y: 400 });
+      else if (action === "context-miss")
+        session.openContextMenu({ x: 700, y: 400 }, { x: 700, y: 400 });
+      else session.undo();
+      expect(f.saved()).toBe(before);
+      expect(f.writes()).toBe(beforeWrites);
+      expect(f.priceLines).toMatchObject([{ color: "#729bff", axisLabelVisible: true }]);
+      expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ settingsOpen: false }));
+      session.undo();
+      expect(JSON.parse(f.saved()!)).toEqual([]);
+      session.dispose();
+    },
+  );
+
+  it("keeps redo after cancelled previews and avoids a history entry for unchanged OK", () => {
+    const f = fixture("settings-preview-redo");
+    const session = f.open();
+    session.setTool("horizontal");
+    f.click(100, 100);
+    session.updateSelected({ color: "#ff0000" });
+    const edited = f.saved();
+    session.undo();
+    f.click(100, 100);
+    session.openSettings();
+    session.previewSettings({ color: "#00ff00" });
+    session.closeSettings();
+    session.redo();
+    expect(f.saved()).toBe(edited);
+    f.click(100, 100);
+    session.openSettings();
+    const beforeWrites = f.writes();
+    expect(
+      session.applySettings({
+        color: "#ff0000",
+        anchors: [{ time: 100 as UTCTimestamp, price: 4900 }],
+      }),
+    ).toBe(true);
+    expect(f.writes()).toBe(beforeWrites);
+    session.undo();
+    expect(JSON.parse(f.saved()!)[0].color).toBe("#729bff");
+    f.click(100, 100);
+    session.openSettings();
+    session.previewSettings({ color: "#00ff00" });
+    session.applySettings({});
+    const green = f.saved();
+    session.redo();
+    expect(f.saved()).toBe(green);
+    session.dispose();
+  });
+
+  it("rejects invalid coordinates atomically and sanitizes unsupported settings during preview", () => {
+    const f = fixture("settings-preview-invalid");
+    const session = f.open();
+    session.setTool("trend");
+    f.click(100, 100);
+    f.click(200, 200);
+    const before = f.saved();
+    session.openSettings();
+    expect(
+      session.previewSettings({
+        color: "#ff0000",
+        anchors: [{ time: 100 as UTCTimestamp, price: 4900 }],
+      }),
+    ).toBe(false);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: expect.objectContaining({ color: "#729bff" }) }),
+    );
+    expect(session.previewSettings({ color: "#ff0000", textFontSize: 999 })).toBe(true);
+    expect(
+      session.applySettings({
+        anchors: [
+          { time: 100 as UTCTimestamp, price: 4900 },
+          { time: 100 as UTCTimestamp, price: 4800 },
+        ],
+      }),
+    ).toBe(false);
+    expect(f.saved()).toBe(before);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        settingsOpen: true,
+        selected: expect.objectContaining({ color: "#ff0000" }),
+      }),
+    );
+    session.closeSettings();
+    session.dispose();
+    const restored = f.open();
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ objects: [expect.objectContaining({ color: "#729bff" })] }),
+    );
+    restored.dispose();
+  });
+
+  it("never persists a preview through other object actions or session disposal", () => {
+    const f = fixture("settings-preview-exit");
+    const session = f.open();
+    session.setTool("horizontal");
+    f.click(100, 100);
+    const id = JSON.parse(f.saved()!)[0].id as string;
+    session.openSettings();
+    session.previewSettings({ color: "#ff0000" });
+    session.duplicateDrawing(id);
+    expect(JSON.parse(f.saved()!).map((drawing: { color: string }) => drawing.color)).toEqual([
+      "#729bff",
+      "#729bff",
+    ]);
+    session.openSettings();
+    session.previewSettings({ color: "#ff0000" });
+    session.clear();
+    session.undo();
+    expect(JSON.parse(f.saved()!).map((drawing: { color: string }) => drawing.color)).toEqual([
+      "#729bff",
+      "#729bff",
+    ]);
+    session.selectDrawing(id);
+    session.openSettings();
+    session.previewSettings({ color: "#ff0000" });
+    const beforeDispose = f.saved();
+    session.dispose();
+    expect(f.saved()).toBe(beforeDispose);
+    const restored = f.open();
+    expect(f.priceLines.every((line) => (line as { color: string }).color === "#729bff")).toBe(
+      true,
+    );
+    restored.dispose();
+  });
+
+  it("filters interval visibility for rendering and hit selection while retaining saved objects", () => {
+    const visibility = sanitizeDrawingVisibility({
+      minutes: { enabled: true, min: 1, max: 5 },
+      hours: { enabled: false },
+    });
+    const drawing = {
+      id: "range-only",
+      kind: "horizontal",
+      color: "#729bff",
+      width: 2,
+      anchors: [{ time: 100, price: 4900 }],
+      visibility,
+    };
+    const f = fixture("drawing-interval-visibility", JSON.stringify([drawing]));
+    const session = f.open(15);
+    expect(f.priceLines).toEqual([]);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ count: 1, objects: [expect.objectContaining({ id: drawing.id })] }),
+    );
+    f.click(100, 100);
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ selected: null }));
+    expect(session.beginDrag({ x: 200, y: 100 })).toBe(false);
+    session.selectDrawing(drawing.id);
+    session.openSettings();
+    expect(
+      session.previewSettings({
+        visibility: sanitizeDrawingVisibility({
+          minutes: { enabled: true, min: 1, max: 30 },
+          hours: { enabled: false },
+        }),
+      }),
+    ).toBe(true);
+    expect(f.priceLines).toHaveLength(1);
+    session.closeSettings();
+    expect(f.priceLines).toHaveLength(0);
+    expect(JSON.parse(f.saved()!)[0].visibility).toEqual(visibility);
+    session.dispose();
+    const fiveMinute = f.open(5);
+    expect(f.priceLines).toHaveLength(1);
+    expect(fiveMinute.isVisible(JSON.parse(f.saved()!)[0])).toBe(true);
+    fiveMinute.dispose();
   });
 });

@@ -32,6 +32,7 @@ import { IndicatorLegend } from "./IndicatorLegend";
 import { InitialBalanceDashboard } from "./InitialBalanceDashboard";
 import type { InitialBalanceStats } from "./initialBalance";
 import { DrawingTools } from "./DrawingTools";
+import { DrawingSelectionOverlay } from "./DrawingSelectionOverlay";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 
@@ -138,6 +139,7 @@ export function TradovateChart({
     activeEngine?.chart ?? null,
     activeEngine?.prices[settings.style] ?? null,
     symbol,
+    interval,
   );
   const shown = hovered ?? last;
 
@@ -519,6 +521,7 @@ export function TradovateChart({
           <div className="relative min-h-0 min-w-0 flex-1 overflow-y-auto">
             <div className="relative h-full" style={{ minHeight: 240 + paneCount * 110 }}>
               <div ref={host} className="absolute inset-0" />
+              <DrawingSelectionOverlay drawings={drawings} />
               <div
                 aria-label="Chart legend"
                 className="pointer-events-none absolute left-2.5 right-20 top-2 z-10 text-xs"

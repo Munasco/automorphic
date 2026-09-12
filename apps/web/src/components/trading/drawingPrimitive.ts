@@ -4,16 +4,21 @@ import type {
   ISeriesPrimitive,
   IPrimitivePaneView,
   IPrimitivePaneRenderer,
+  ISeriesPrimitiveAxisView,
   SeriesType,
   Time,
 } from "lightweight-charts";
 import {
   buildDrawingGeometry,
   drawingTimeValue,
+  supportsDrawingPriceLabels,
   type ChartDrawing,
   type DrawingAnchor,
   type DrawingPoint,
 } from "./drawingGeometry";
+import { calculateDrawingStats, formatDrawingStats } from "./drawingStats";
+
+const SELECTION_COLOR = "#2962ff";
 
 export function drawingProjection(chart: IChartApi, series: ISeriesApi<SeriesType>) {
   const scale = chart.timeScale();
@@ -92,7 +97,10 @@ export function createDrawingPrimitive(
         ctx.rect(0, 0, width, height);
         ctx.clip();
         for (const drawing of [...state.drawings, ...(state.preview ? [state.preview] : [])]) {
+          if (drawing.hidden) continue;
           const geometry = buildDrawingGeometry(drawing, project, priceY, width, height);
+          ctx.textAlign = "left";
+          ctx.textBaseline = "alphabetic";
           ctx.strokeStyle = drawing.color;
           ctx.fillStyle = drawing.color;
           ctx.lineWidth = geometry.strokeWidth ?? drawing.width;
@@ -103,7 +111,7 @@ export function createDrawingPrimitive(
             drawing.lineStyle === "dashed" ? [8, 5] : drawing.lineStyle === "dotted" ? [2, 4] : [],
           );
           const nativeLine = drawing.kind === "horizontal" && drawing !== state.preview;
-          if (!nativeLine) {
+          if (!nativeLine || geometry.polygons?.length || geometry.text) {
             if (geometry.rectangle) {
               const rect = geometry.rectangle;
               ctx.globalAlpha = 0.12;
@@ -123,18 +131,86 @@ export function createDrawingPrimitive(
             ctx.font = `12px ${chart.options().layout.fontFamily}`;
             ctx.beginPath();
             let previous: DrawingPoint | undefined;
-            for (const line of geometry.lines) {
+            const visibleLines = nativeLine ? geometry.lines.slice(1) : geometry.lines;
+            for (const line of visibleLines) {
               if (!previous || previous.x !== line.from.x || previous.y !== line.from.y)
                 ctx.moveTo(line.from.x, line.from.y);
               ctx.lineTo(line.to.x, line.to.y);
               previous = line.to;
             }
-            if (geometry.lines.length) ctx.stroke();
-            for (const line of geometry.lines)
+            if (visibleLines.length) ctx.stroke();
+            for (const line of visibleLines)
               if (line.label) ctx.fillText(line.label, line.to.x + 4, line.to.y - 3);
             if (geometry.text) {
-              ctx.font = `13px ${chart.options().layout.fontFamily}`;
-              ctx.fillText(geometry.text.value, geometry.text.point.x, geometry.text.point.y);
+              const text = geometry.text;
+              const size = text.fontSize ?? 14;
+              const rows = text.value.split(/\r?\n/);
+              const rowHeight = size * 1.2;
+              ctx.font = `${drawing.textItalic ? "italic " : ""}${drawing.textBold ? "bold " : ""}${size}px ${chart.options().layout.fontFamily}`;
+              ctx.fillStyle = drawing.textColor ?? drawing.color;
+              ctx.textAlign = text.align ?? "left";
+              ctx.textBaseline = "top";
+              const top =
+                text.point.y -
+                (text.baseline === "top"
+                  ? 0
+                  : text.baseline === "middle"
+                    ? (rows.length * rowHeight) / 2
+                    : rows.length * rowHeight);
+              rows.forEach((row, index) =>
+                ctx.fillText(row, text.point.x, top + index * rowHeight),
+              );
+            }
+          }
+          if (drawing.kind === "trend" && drawing.anchors.length >= 2) {
+            const a = project(drawing.anchors[0]!);
+            const b = project(drawing.anchors[1]!);
+            if (a && b) {
+              ctx.setLineDash([]);
+              ctx.globalAlpha = 1;
+              ctx.strokeStyle = drawing.color;
+              ctx.fillStyle = drawing.color;
+              if (drawing.showMiddlePoint) {
+                ctx.beginPath();
+                ctx.arc((a.x + b.x) / 2, (a.y + b.y) / 2, 3, 0, Math.PI * 2);
+                ctx.fill();
+              }
+              if (
+                drawing.stats?.length &&
+                (drawing.id === state.selected || drawing.alwaysShowStats)
+              ) {
+                const scale = chart.timeScale();
+                const priceFormat = series.options().priceFormat;
+                const stats = calculateDrawingStats({
+                  anchors: drawing.anchors,
+                  points: [a, b],
+                  logical: [scale.coordinateToLogical(a.x), scale.coordinateToLogical(b.x)],
+                  minMove:
+                    priceFormat.base && priceFormat.base > 0
+                      ? 1 / priceFormat.base
+                      : priceFormat.minMove,
+                });
+                const rows = formatDrawingStats(stats, drawing.stats, (price) =>
+                  series.priceFormatter().format(price),
+                );
+                const left = a.x <= b.x ? a : b;
+                const right = a.x <= b.x ? b : a;
+                const position = drawing.statsPosition ?? "right";
+                const point =
+                  position === "left"
+                    ? left
+                    : position === "center"
+                      ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+                      : right;
+                ctx.font = `12px ${chart.options().layout.fontFamily}`;
+                ctx.textAlign =
+                  position === "left" ? "right" : position === "center" ? "center" : "left";
+                ctx.textBaseline = "bottom";
+                const x = point.x + (position === "left" ? -8 : position === "right" ? 8 : 0);
+                rows.forEach((row, index) =>
+                  ctx.fillText(row, x, point.y - 8 - (rows.length - index - 1) * 16),
+                );
+              }
             }
           }
           if ((drawing.id === state.selected && !drawing.locked) || drawing === state.preview) {
@@ -148,7 +224,7 @@ export function createDrawingPrimitive(
               ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
               ctx.fillStyle = "#15171a";
               ctx.fill();
-              ctx.strokeStyle = drawing.color;
+              ctx.strokeStyle = drawing.id === state.selected ? SELECTION_COLOR : drawing.color;
               ctx.stroke();
             }
           }
@@ -156,6 +232,83 @@ export function createDrawingPrimitive(
         ctx.restore();
       });
     },
+  };
+  const axisCache = {
+    price: { signature: "", views: [] as ISeriesPrimitiveAxisView[] },
+    time: { signature: "", views: [] as ISeriesPrimitiveAxisView[] },
+  };
+  const drawingAxisViews = (axis: "price" | "time") => {
+    const state = read();
+    const entries = state.hidden
+      ? []
+      : state.drawings.flatMap((drawing) => {
+          if (drawing.hidden) return [];
+          const selected = drawing.id === state.selected;
+          const persistent =
+            axis === "price" &&
+            drawing.showPriceLabel === true &&
+            drawing.kind !== "horizontal" &&
+            supportsDrawingPriceLabels(drawing.kind);
+          if (!selected && !persistent) return [];
+          const anchors = selected
+            ? drawing.anchors.length > 4
+              ? [drawing.anchors[0]!, drawing.anchors.at(-1)!]
+              : drawing.anchors
+            : drawing.anchors.slice(0, 2);
+          return anchors
+            .filter(
+              (anchor, index, anchors) =>
+                anchors.findIndex((other) =>
+                  axis === "price"
+                    ? other.price === anchor.price
+                    : drawingTimeValue(other.time) === drawingTimeValue(anchor.time),
+                ) === index,
+            )
+            .map((anchor) => ({
+              anchor,
+              color: selected ? SELECTION_COLOR : drawing.color,
+              id: drawing.id,
+            }));
+        });
+    const signature = JSON.stringify(entries);
+    const cache = axisCache[axis];
+    if (signature !== cache.signature) {
+      cache.signature = signature;
+      cache.views = entries.map(({ anchor, color }) => ({
+        coordinate: () =>
+          axis === "price"
+            ? (series.priceToCoordinate(anchor.price) ?? -10000)
+            : (drawingProjection(chart, series).project(anchor)?.x ?? -10000),
+        text: () => {
+          if (axis === "price") return series.priceFormatter().format(anchor.price);
+          const formatter = chart.options().localization?.timeFormatter;
+          if (formatter) return formatter(anchor.time);
+          const seconds = drawingTimeValue(anchor.time);
+          if (seconds === null) return "";
+          const date = new Date(seconds * 1000);
+          if (!Number.isFinite(date.getTime())) return "";
+          const iso = date.toISOString();
+          return typeof anchor.time === "number"
+            ? `${iso.slice(0, 10)} ${iso.slice(11, 16)}`
+            : iso.slice(0, 10);
+        },
+        textColor: () => "#ffffff",
+        backColor: () => color,
+        visible: () => {
+          const projection = drawingProjection(chart, series);
+          const point = projection.project(anchor);
+          return (
+            point !== null &&
+            point.x >= 0 &&
+            point.x <= projection.width &&
+            point.y >= 0 &&
+            point.y <= projection.height
+          );
+        },
+        tickVisible: () => true,
+      }));
+    }
+    return cache.views;
   };
   const view: IPrimitivePaneView = { zOrder: () => "top", renderer: () => renderer };
   const primitive: ISeriesPrimitive<Time> = {
@@ -166,6 +319,8 @@ export function createDrawingPrimitive(
       requestUpdate = () => {};
     },
     paneViews: () => [view],
+    priceAxisViews: () => drawingAxisViews("price"),
+    timeAxisViews: () => drawingAxisViews("time"),
   };
   return { primitive, redraw: () => requestUpdate() };
 }

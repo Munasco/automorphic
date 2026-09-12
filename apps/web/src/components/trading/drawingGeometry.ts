@@ -1,3 +1,4 @@
+import { sanitizeDrawingVisibility, type DrawingVisibility } from "./drawingVisibility";
 import type { Time } from "lightweight-charts";
 export type DrawingKind =
   | "horizontal"
@@ -25,7 +26,26 @@ export type DrawingKind =
   | "curve"
   | "double-curve";
 export type DrawingAnchor = { time: Time; price: number };
-export type ChartDrawing = {
+export type DrawingSettings = {
+  visibility?: DrawingVisibility;
+  showMiddlePoint?: boolean;
+  stats?: Array<"price" | "percent" | "ticks" | "bars" | "datetime" | "distance" | "angle">;
+  statsPosition?: "left" | "center" | "right";
+  alwaysShowStats?: boolean;
+  extendLeft?: boolean;
+  extendRight?: boolean;
+  showPriceLabel?: boolean;
+  startMarker?: "normal" | "arrow";
+  endMarker?: "normal" | "arrow";
+  text?: string;
+  textColor?: string;
+  textFontSize?: number;
+  textBold?: boolean;
+  textItalic?: boolean;
+  textPosition?: "above" | "center" | "below";
+  textAlignment?: "left" | "center" | "right";
+};
+export type ChartDrawing = DrawingSettings & {
   id: string;
   kind: DrawingKind;
   anchors: DrawingAnchor[];
@@ -35,14 +55,19 @@ export type ChartDrawing = {
   locked?: boolean;
   hidden?: boolean;
   name?: string;
-  text?: string;
 };
 export type DrawingPoint = { x: number; y: number };
 export type DrawingLine = { from: DrawingPoint; to: DrawingPoint; label?: string };
 export type DrawingGeometry = {
   lines: DrawingLine[];
   rectangle?: { x: number; y: number; width: number; height: number };
-  text?: { point: DrawingPoint; value: string };
+  text?: {
+    point: DrawingPoint;
+    value: string;
+    align?: "left" | "center" | "right";
+    baseline?: "top" | "middle" | "bottom";
+    fontSize?: number;
+  };
   handles: DrawingPoint[];
   /** Original anchor indices for the visible, editable handles of dense freehand strokes. */
   handleIndices?: number[];
@@ -115,6 +140,79 @@ function isAnchor(value: unknown): value is DrawingAnchor {
     Number.isFinite(value.price)
   );
 }
+export const supportsLineExtensions = (kind: DrawingKind) =>
+  ["trend", "ray", "arrow", "channel"].includes(kind);
+export const supportsLineMarkers = (kind: DrawingKind) =>
+  [
+    "trend",
+    "ray",
+    "horizontal",
+    "horizontal-ray",
+    "vertical",
+    "arrow",
+    "path",
+    "polyline",
+    "curve",
+    "double-curve",
+    "arc",
+  ].includes(kind);
+export const supportsDrawingPriceLabels = (kind: DrawingKind) =>
+  ["horizontal", "horizontal-ray", "trend", "ray", "arrow", "channel"].includes(kind);
+
+/** Persist only supported, finite settings; invalid stored options fall back to existing behavior. */
+export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
+  if (!value || typeof value !== "object") return {};
+  const source = value as DrawingSettings;
+  const result: DrawingSettings = {};
+  if (source.visibility !== undefined)
+    result.visibility = sanitizeDrawingVisibility(source.visibility);
+  if (Array.isArray(source.stats))
+    result.stats = [
+      ...new Set(
+        source.stats.filter((stat) =>
+          ["price", "percent", "ticks", "bars", "datetime", "distance", "angle"].includes(stat),
+        ),
+      ),
+    ];
+  if (["left", "center", "right"].includes(source.statsPosition ?? ""))
+    result.statsPosition = source.statsPosition!;
+  for (const key of [
+    "showMiddlePoint",
+    "alwaysShowStats",
+    "extendLeft",
+    "extendRight",
+    "showPriceLabel",
+    "textBold",
+    "textItalic",
+  ] as const)
+    if (typeof source[key] === "boolean") result[key] = source[key];
+  for (const key of ["startMarker", "endMarker"] as const)
+    if (source[key] === "normal" || source[key] === "arrow") result[key] = source[key];
+  if (typeof source.text === "string") result.text = source.text.slice(0, 140);
+  if (typeof source.textColor === "string" && /^#[a-f\d]{6}$/i.test(source.textColor))
+    result.textColor = source.textColor;
+  if (
+    typeof source.textFontSize === "number" &&
+    Number.isInteger(source.textFontSize) &&
+    source.textFontSize >= 8 &&
+    source.textFontSize <= 48
+  )
+    result.textFontSize = source.textFontSize;
+  if (
+    source.textPosition === "above" ||
+    source.textPosition === "center" ||
+    source.textPosition === "below"
+  )
+    result.textPosition = source.textPosition;
+  if (
+    source.textAlignment === "left" ||
+    source.textAlignment === "center" ||
+    source.textAlignment === "right"
+  )
+    result.textAlignment = source.textAlignment;
+  return result;
+}
+
 export function parseChartDrawings(value: string | null): ChartDrawing[] {
   if (!value) return [];
   try {
@@ -146,9 +244,8 @@ export function parseChartDrawings(value: string | null): ChartDrawing[] {
             ...(record.locked === true ? { locked: true } : {}),
             ...(record.hidden === true ? { hidden: true } : {}),
             ...(typeof record.name === "string" ? { name: record.name.trim().slice(0, 80) } : {}),
-            ...(kind === "text"
-              ? { text: typeof record.text === "string" ? record.text.slice(0, 140) : "Text" }
-              : {}),
+            ...sanitizeDrawingSettings(record),
+            ...(kind === "text" && typeof record.text !== "string" ? { text: "Text" } : {}),
           },
         ];
       })
@@ -157,7 +254,7 @@ export function parseChartDrawings(value: string | null): ChartDrawing[] {
     return [];
   }
 }
-export function buildDrawingGeometry(
+function buildBaseDrawingGeometry(
   drawing: ChartDrawing,
   project: (anchor: DrawingAnchor) => DrawingPoint | null,
   priceY: (price: number) => number | null,
@@ -180,22 +277,6 @@ export function buildDrawingGeometry(
     for (let index = 1; index < points.length; index++) line(points[index - 1]!, points[index]!);
     if (closed && points.length > 2) line(points.at(-1)!, points[0]!);
     if (fillOpacity !== undefined) (result.polygons ??= []).push({ points, opacity: fillOpacity });
-  };
-  const arrowHead = (from: DrawingPoint, to: DrawingPoint, size = 10 + drawing.width * 2) => {
-    const length = Math.hypot(to.x - from.x, to.y - from.y);
-    if (!length) return;
-    const ux = (to.x - from.x) / length,
-      uy = (to.y - from.y) / length;
-    const head = Math.min(size, length * 0.7);
-    path(
-      [
-        to,
-        { x: to.x - ux * head - uy * head * 0.5, y: to.y - uy * head + ux * head * 0.5 },
-        { x: to.x - ux * head + uy * head * 0.5, y: to.y - uy * head - ux * head * 0.5 },
-      ],
-      true,
-      1,
-    );
   };
   const blockArrow = (from: DrawingPoint, to: DrawingPoint) => {
     const length = Math.hypot(to.x - from.x, to.y - from.y);
@@ -239,13 +320,6 @@ export function buildDrawingGeometry(
       result.strokeWidth = drawing.width * 8;
       result.opacity = 0.25;
     }
-    if (drawing.kind === "path") {
-      const last = points.at(-1)!;
-      const previous = points
-        .slice(0, -1)
-        .findLast((point) => point.x !== last.x || point.y !== last.y);
-      if (previous) arrowHead(previous, last);
-    }
     return result;
   }
   if (drawing.kind === "horizontal") {
@@ -270,10 +344,7 @@ export function buildDrawingGeometry(
   result.handles.push(second);
   if (drawing.kind === "arrow" || drawing.kind === "arrow-marker") {
     if (drawing.kind === "arrow-marker") blockArrow(first, second);
-    else {
-      line(first, second);
-      arrowHead(first, second);
-    }
+    else line(first, second);
     return result;
   }
   if (drawing.kind === "circle" || drawing.kind === "ellipse") {
@@ -446,6 +517,142 @@ export function buildDrawingGeometry(
   }
   return result;
 }
+/** Clip an optionally extended line to the pane. Left/right refer to time direction, not anchor order. */
+export function extendDrawingLine(
+  source: DrawingLine,
+  width: number,
+  height: number,
+  extendLeft: boolean,
+  extendRight: boolean,
+): DrawingLine | null {
+  const dx = source.to.x - source.from.x,
+    dy = source.to.y - source.from.y;
+  if (!dx && !dy) return source;
+  let minimum = (dx >= 0 ? extendLeft : extendRight) ? -Infinity : 0;
+  let maximum = (dx >= 0 ? extendRight : extendLeft) ? Infinity : 1;
+  for (const [origin, delta, limit] of [
+    [source.from.x, dx, width],
+    [source.from.y, dy, height],
+  ]) {
+    if (delta === 0) {
+      if (origin! < 0 || origin! > limit!) return null;
+      continue;
+    }
+    const a = -origin! / delta!,
+      b = (limit! - origin!) / delta!;
+    minimum = Math.max(minimum, Math.min(a, b));
+    maximum = Math.min(maximum, Math.max(a, b));
+  }
+  if (minimum > maximum || !Number.isFinite(minimum) || !Number.isFinite(maximum)) return null;
+  return {
+    from: { x: source.from.x + dx * minimum, y: source.from.y + dy * minimum },
+    to: { x: source.from.x + dx * maximum, y: source.from.y + dy * maximum },
+    ...(source.label ? { label: source.label } : {}),
+  };
+}
+
+export function buildDrawingGeometry(
+  drawing: ChartDrawing,
+  project: (anchor: DrawingAnchor) => DrawingPoint | null,
+  priceY: (price: number) => number | null,
+  width: number,
+  height: number,
+): DrawingGeometry {
+  const result = buildBaseDrawingGeometry(drawing, project, priceY, width, height);
+  if (drawing.hidden || !result.handles.length) return result;
+  if (
+    supportsLineExtensions(drawing.kind) &&
+    (drawing.extendLeft !== undefined || drawing.extendRight !== undefined)
+  ) {
+    const first = result.handles[0],
+      second = result.handles[1];
+    if (first && second) {
+      if (drawing.kind === "ray") result.lines = [{ from: first, to: second }];
+      const defaultLeft = drawing.kind === "ray" && second.x < first.x;
+      const defaultRight = drawing.kind === "ray" && second.x >= first.x;
+      result.lines = result.lines.flatMap((line) => {
+        const extended = extendDrawingLine(
+          line,
+          width,
+          height,
+          drawing.extendLeft ?? defaultLeft,
+          drawing.extendRight ?? defaultRight,
+        );
+        return extended ? [extended] : [];
+      });
+    }
+  }
+  const bodyFirst = result.lines[0],
+    bodyLast = result.lines.at(-1);
+  if (supportsLineMarkers(drawing.kind) && bodyFirst && bodyLast) {
+    const arrowHead = (from: DrawingPoint, to: DrawingPoint) => {
+      const distance = Math.hypot(to.x - from.x, to.y - from.y);
+      if (!distance) return;
+      const ux = (to.x - from.x) / distance,
+        uy = (to.y - from.y) / distance;
+      const size = Math.min(10 + drawing.width * 2, Math.max(distance * 0.7, 6));
+      const points = [
+        to,
+        { x: to.x - ux * size - (uy * size) / 2, y: to.y - uy * size + (ux * size) / 2 },
+        { x: to.x - ux * size + (uy * size) / 2, y: to.y - uy * size - (ux * size) / 2 },
+      ];
+      (result.polygons ??= []).push({ points, opacity: 1 });
+      for (let index = 0; index < points.length; index++)
+        result.lines.push({ from: points[index]!, to: points[(index + 1) % points.length]! });
+    };
+    if (drawing.startMarker === "arrow") arrowHead(bodyFirst.to, bodyFirst.from);
+    if (
+      drawing.endMarker === "arrow" ||
+      (drawing.endMarker === undefined && (drawing.kind === "arrow" || drawing.kind === "path"))
+    )
+      arrowHead(bodyLast.from, bodyLast.to);
+  }
+  if (drawing.text !== undefined && drawing.text.length && drawing.kind !== "text") {
+    const first =
+      drawing.kind === "horizontal" ||
+      drawing.kind === "horizontal-ray" ||
+      drawing.kind === "vertical"
+        ? bodyFirst?.from
+        : result.handles[0];
+    const last =
+      drawing.kind === "horizontal" ||
+      drawing.kind === "horizontal-ray" ||
+      drawing.kind === "vertical"
+        ? bodyLast?.to
+        : result.handles.at(-1);
+    if (first && last) {
+      const left = first.x <= last.x ? first : last,
+        right = first.x <= last.x ? last : first;
+      const alignment = drawing.textAlignment ?? "center";
+      const ratio = alignment === "left" ? 0 : alignment === "right" ? 1 : 0.5;
+      const position = drawing.textPosition ?? "above";
+      result.text = {
+        point: {
+          x: left.x + (right.x - left.x) * ratio,
+          y:
+            left.y +
+            (right.y - left.y) * ratio +
+            (position === "above" ? -6 : position === "below" ? 6 : 0),
+        },
+        value: drawing.text,
+        align: alignment,
+        baseline: position === "above" ? "bottom" : position === "below" ? "top" : "middle",
+        fontSize: drawing.textFontSize ?? 14,
+      };
+    }
+  } else if (result.text) {
+    result.text.fontSize = drawing.textFontSize ?? 14;
+    result.text.align = drawing.textAlignment ?? "left";
+    result.text.baseline =
+      drawing.textPosition === "center"
+        ? "middle"
+        : drawing.textPosition === "below"
+          ? "top"
+          : "bottom";
+  }
+  return result;
+}
+
 function distance(point: DrawingPoint, line: DrawingLine) {
   const dx = line.to.x - line.from.x,
     dy = line.to.y - line.from.y;
@@ -482,13 +689,25 @@ export function hitDrawingGeometry(
   )
     return true;
   if (geometry.text) {
-    const { point: anchor, value } = geometry.text;
-    return (
-      point.x >= anchor.x - 5 &&
-      point.x <= anchor.x + value.length * 8 + 5 &&
-      point.y >= anchor.y - 17 &&
-      point.y <= anchor.y + 5
-    );
+    const {
+      point: anchor,
+      value,
+      fontSize = 14,
+      align = "left",
+      baseline = "bottom",
+    } = geometry.text;
+    const lines = value.split(/\r?\n/);
+    const width = Math.max(...lines.map((line) => line.length)) * fontSize * 0.65;
+    const height = lines.length * fontSize * 1.2;
+    const x = anchor.x - (align === "center" ? width / 2 : align === "right" ? width : 0);
+    const y = anchor.y - (baseline === "middle" ? height / 2 : baseline === "bottom" ? height : 0);
+    if (
+      point.x >= x - 5 &&
+      point.x <= x + width + 5 &&
+      point.y >= y - 5 &&
+      point.y <= y + height + 5
+    )
+      return true;
   }
   return hitDrawingHandle(geometry, point, tolerance) >= 0;
 }

@@ -8,6 +8,7 @@ import {
   type MouseEventParams,
   type SeriesType,
   type Time,
+  type Logical,
 } from "lightweight-charts";
 import {
   DRAWING_ANCHORS,
@@ -20,12 +21,14 @@ import {
   maximumDrawingAnchors,
   parseChartDrawings,
   validDrawingAnchors,
+  sanitizeDrawingSettings,
   type ChartDrawing,
   type DrawingAnchor,
   type DrawingKind,
   type DrawingPoint,
 } from "./drawingGeometry";
 import { createDrawingPrimitive, drawingProjection } from "./drawingPrimitive";
+import { isDrawingVisibleAtInterval } from "./drawingVisibility";
 export type ChartDrawingTool = "cursor" | DrawingKind;
 export type DrawingMagnetMode = "off" | "weak" | "strong";
 export type DrawingState = {
@@ -41,10 +44,10 @@ export type DrawingState = {
   keepDrawing: boolean;
   selected: ChartDrawing | null;
   instruction: string;
+  settingsOpen: boolean;
+  contextPoint: DrawingPoint | null;
 };
-type DrawingPatch = Partial<
-  Pick<ChartDrawing, "color" | "width" | "text" | "lineStyle" | "locked" | "hidden" | "name">
->;
+export type DrawingPatch = Partial<Omit<ChartDrawing, "id" | "kind">>;
 type DrawingStorage = Pick<Storage, "getItem" | "setItem">;
 const EMPTY: DrawingState = {
   tool: "cursor",
@@ -59,6 +62,8 @@ const EMPTY: DrawingState = {
   keepDrawing: false,
   selected: null,
   instruction: "",
+  settingsOpen: false,
+  contextPoint: null,
 };
 
 /** Each session binds to the workspace-scoped storage and the selected contract. */
@@ -68,6 +73,7 @@ export function createChartDrawingSession(
   symbol: string,
   onChange: (state: DrawingState) => void,
   storage: DrawingStorage | undefined = tradingWorkspaceStorage,
+  intervalMinutes = 1,
 ) {
   const key = `automorphic:chart-drawings:v1:${encodeURIComponent(symbol)}`;
   let drawings: ChartDrawing[] = [];
@@ -79,6 +85,9 @@ export function createChartDrawingSession(
   let tool: ChartDrawingTool = "cursor";
   let anchors: DrawingAnchor[] = [];
   let selectedId: string | null = null;
+  let settingsOpen = false;
+  let settingsDraft: { original: ChartDrawing; drawing: ChartDrawing } | null = null;
+  let contextPoint: DrawingPoint | null = null;
   let replacingId: string | null = null;
   let disposed = false;
   let hidden = false;
@@ -127,15 +136,23 @@ export function createChartDrawingSession(
   const history: ChartDrawing[][] = [];
   const future: ChartDrawing[][] = [];
   const removers: Array<() => void> = [];
+  const displayedDrawings = () =>
+    settingsDraft
+      ? drawings.map((drawing) =>
+          drawing.id === settingsDraft!.original.id ? settingsDraft!.drawing : drawing,
+        )
+      : drawings;
+  const isVisible = (drawing: ChartDrawing) =>
+    !hidden && !drawing.hidden && isDrawingVisibleAtInterval(drawing.visibility, intervalMinutes);
   const primitive = createDrawingPrimitive(chart, series, () => ({
-    drawings,
+    drawings: displayedDrawings().filter(isVisible),
     selected: selectedId,
     preview,
     hidden,
   }));
   series.attachPrimitive(primitive.primitive);
   const emit = () => {
-    const selected = drawings.find((drawing) => drawing.id === selectedId) ?? null;
+    const selected = displayedDrawings().find((drawing) => drawing.id === selectedId) ?? null;
     const remaining = tool === "cursor" ? 0 : DRAWING_ANCHORS[tool] - anchors.length;
     const instruction =
       tool === "cursor"
@@ -168,6 +185,8 @@ export function createChartDrawingSession(
       keepDrawing,
       selected,
       instruction,
+      settingsOpen: settingsOpen && !!selected,
+      contextPoint: selected ? contextPoint : null,
     });
     primitive.redraw();
   };
@@ -198,8 +217,8 @@ export function createChartDrawingSession(
       primitive.redraw();
       return;
     }
-    for (const drawing of drawings) {
-      if (drawing.hidden) continue;
+    for (const drawing of displayedDrawings()) {
+      if (!isVisible(drawing)) continue;
       if (drawing.kind === "horizontal") {
         const line = series.createPriceLine({
           price: drawing.anchors[0]!.price,
@@ -211,7 +230,7 @@ export function createChartDrawingSession(
               : drawing.lineStyle === "dotted"
                 ? LineStyle.Dotted
                 : LineStyle.Solid,
-          axisLabelVisible: true,
+          axisLabelVisible: drawing.showPriceLabel !== false,
           title: "",
         });
         removers.push(() => series.removePriceLine(line));
@@ -219,10 +238,20 @@ export function createChartDrawingSession(
     }
     primitive.redraw();
   };
+  const discardSettings = () => {
+    const hadDraft = settingsDraft !== null;
+    settingsDraft = null;
+    settingsOpen = false;
+    if (hadDraft) render();
+    return hadDraft;
+  };
   const setTool = (next: ChartDrawingTool) => {
     if (disposed) return;
     endDrag(false);
+    discardSettings();
     tool = next;
+    settingsOpen = false;
+    contextPoint = null;
     anchors = [];
     preview = null;
     replacingId = null;
@@ -250,9 +279,12 @@ export function createChartDrawingSession(
   const hit = (point: DrawingPoint) =>
     hidden
       ? undefined
-      : drawings.toReversed().find((drawing) => hitDrawingGeometry(geometry(drawing), point));
+      : drawings
+          .toReversed()
+          .find((drawing) => isVisible(drawing) && hitDrawingGeometry(geometry(drawing), point));
   const beginDrag = (point: DrawingPoint) => {
     if (disposed || hidden) return false;
+    if (discardSettings()) emit();
     if (tool !== "cursor" && isFreehandDrawingTool(tool)) {
       const anchor = drawingProjection(chart, series).unproject(point);
       if (!anchor) return false;
@@ -264,7 +296,8 @@ export function createChartDrawingSession(
     }
     if (tool !== "cursor") return false;
     const selected = drawings.find((drawing) => drawing.id === selectedId);
-    const handle = selected ? hitDrawingHandle(geometry(selected), point) : -1;
+    const handle =
+      selected && isVisible(selected) ? hitDrawingHandle(geometry(selected), point) : -1;
     const drawing = handle >= 0 ? selected : hit(point);
     if (!drawing) return false;
     selectedId = drawing.id;
@@ -464,7 +497,9 @@ export function createChartDrawingSession(
     )
       return;
     if (tool === "cursor") {
+      discardSettings();
       selectedId = hit(event.point)?.id ?? null;
+      contextPoint = null;
       emit();
       return;
     }
@@ -504,30 +539,82 @@ export function createChartDrawingSession(
       emit();
     }
   };
-  const updateDrawing = (id: string, patch: DrawingPatch) => {
-    if (disposed || !drawings.some((drawing) => drawing.id === id)) return;
-    if (patch.color !== undefined && !/^#[a-f\d]{6}$/i.test(patch.color)) return;
-    if (patch.width !== undefined && ![1, 2, 3, 4].includes(patch.width)) return;
+  const normalizePatch = (target: ChartDrawing, patch: DrawingPatch): DrawingPatch | null => {
+    if (
+      patch.anchors !== undefined &&
+      (!Array.isArray(patch.anchors) || !validDrawingAnchors(target.kind, patch.anchors))
+    )
+      return null;
+    if (
+      patch.color !== undefined &&
+      (typeof patch.color !== "string" || !/^#[a-f\d]{6}$/i.test(patch.color))
+    )
+      return null;
+    if (patch.width !== undefined && ![1, 2, 3, 4].includes(patch.width)) return null;
     if (patch.lineStyle !== undefined && !["solid", "dashed", "dotted"].includes(patch.lineStyle))
-      return;
-    endDrag(false);
-    const normalized = {
-      ...patch,
+      return null;
+    if (patch.text !== undefined && typeof patch.text !== "string") return null;
+    if (patch.name !== undefined && typeof patch.name !== "string") return null;
+    if (patch.locked !== undefined && typeof patch.locked !== "boolean") return null;
+    if (patch.hidden !== undefined && typeof patch.hidden !== "boolean") return null;
+    return {
+      ...sanitizeDrawingSettings(patch),
+      ...(patch.anchors ? { anchors: patch.anchors.map((anchor) => ({ ...anchor })) } : {}),
+      ...(patch.color !== undefined ? { color: patch.color } : {}),
+      ...(patch.width !== undefined ? { width: patch.width } : {}),
+      ...(patch.lineStyle !== undefined ? { lineStyle: patch.lineStyle } : {}),
+      ...(patch.locked !== undefined ? { locked: patch.locked } : {}),
+      ...(patch.hidden !== undefined ? { hidden: patch.hidden } : {}),
       ...(patch.text !== undefined ? { text: patch.text.slice(0, 140) } : {}),
       ...(patch.name !== undefined ? { name: patch.name.trim().slice(0, 80) } : {}),
     };
+  };
+  const updateDrawing = (id: string, patch: DrawingPatch) => {
+    if (disposed) return;
+    const target = drawings.find((drawing) => drawing.id === id);
+    if (!target) return;
+    const normalized = normalizePatch(target, patch);
+    if (!normalized) return;
+    endDrag(false);
+    discardSettings();
     const current = drawings.find((drawing) => drawing.id === id)!;
-    if (
-      Object.entries(normalized).every(
-        ([key, value]) => current[key as keyof ChartDrawing] === value,
-      )
-    )
+    const next = { ...current, ...normalized };
+    if (JSON.stringify(current) === JSON.stringify(next)) {
+      emit();
       return;
+    }
     remember();
-    drawings = drawings.map((drawing) =>
-      drawing.id === id ? { ...drawing, ...normalized } : drawing,
-    );
+    drawings = drawings.map((drawing) => (drawing.id === id ? next : drawing));
     changed();
+  };
+  const previewSettings = (patch: DrawingPatch) => {
+    if (disposed || !settingsOpen || !settingsDraft || selectedId !== settingsDraft.original.id)
+      return false;
+    const normalized = normalizePatch(settingsDraft.original, patch);
+    if (!normalized) return false;
+    settingsDraft.drawing = { ...settingsDraft.drawing, ...normalized };
+    render();
+    emit();
+    return true;
+  };
+  const applySettings = (patch: DrawingPatch) => {
+    if (disposed || !settingsOpen || !settingsDraft || selectedId !== settingsDraft.original.id)
+      return false;
+    const normalized = normalizePatch(settingsDraft.original, patch);
+    if (!normalized) return false;
+    const { original } = settingsDraft;
+    const next = { ...settingsDraft.drawing, ...normalized };
+    settingsDraft = null;
+    settingsOpen = false;
+    if (JSON.stringify(original) !== JSON.stringify(next)) {
+      remember();
+      drawings = drawings.map((drawing) => (drawing.id === original.id ? next : drawing));
+      changed();
+    } else {
+      render();
+      emit();
+    }
+    return true;
   };
   const deleteDrawing = (id: string) => {
     if (disposed || !drawings.some((drawing) => drawing.id === id)) return;
@@ -547,9 +634,66 @@ export function createChartDrawingSession(
     dragTo,
     endDrag,
     finishDrawing,
+    isVisible,
+    previewSettings,
+    applySettings,
+    coordinatePrice: (price: number) => {
+      const format = series.options().priceFormat;
+      const precision = format && "precision" in format ? format.precision : 2;
+      return Number(price.toFixed(Math.max(0, Math.min(10, precision ?? 2))));
+    },
+    anchorBar: (anchor: DrawingAnchor) => {
+      const point = drawingProjection(chart, series).project(anchor);
+      return point ? chart.timeScale().coordinateToLogical(point.x) : null;
+    },
+    anchorAtBar: (bar: number, price: number) => {
+      const x = chart.timeScale().logicalToCoordinate(bar as Logical);
+      const y = series.priceToCoordinate(price);
+      return x !== null && y !== null ? drawingProjection(chart, series).unproject({ x, y }) : null;
+    },
+    openSettings: (point?: DrawingPoint) => {
+      if (disposed || tool !== "cursor") return false;
+      endDrag(false);
+      discardSettings();
+      if (point) selectedId = hit(point)?.id ?? null;
+      const original = drawings.find((drawing) => drawing.id === selectedId);
+      if (!original) {
+        emit();
+        return false;
+      }
+      settingsDraft = { original, drawing: original };
+      settingsOpen = true;
+      contextPoint = null;
+      emit();
+      return true;
+    },
+    closeSettings: () => {
+      if (disposed) return;
+      discardSettings();
+      emit();
+    },
+    openContextMenu: (point: DrawingPoint, screenPoint: DrawingPoint) => {
+      if (disposed || tool !== "cursor") return false;
+      if (discardSettings()) emit();
+      const drawing = hit(point);
+      if (!drawing) return false;
+      selectedId = drawing.id;
+      contextPoint = screenPoint;
+      emit();
+      return true;
+    },
+    closeContextMenu: () => {
+      contextPoint = null;
+      emit();
+    },
     cancel: () => setTool("cursor"),
     undo: () => {
       if (disposed) return;
+      if (settingsDraft) {
+        discardSettings();
+        emit();
+        return;
+      }
       if (drag || strokeLastPoint) {
         endDrag(false);
         return;
@@ -596,6 +740,7 @@ export function createChartDrawingSession(
     toggleHidden: () => {
       if (disposed) return;
       endDrag(false);
+      discardSettings();
       hidden = !hidden;
       preview = null;
       tool = "cursor";
@@ -607,6 +752,7 @@ export function createChartDrawingSession(
     clear: () => {
       if (disposed) return;
       endDrag(false);
+      discardSettings();
       remember();
       drawings = [];
       anchors = [];
@@ -645,8 +791,10 @@ export function createChartDrawingSession(
       if (selectedId) deleteDrawing(selectedId);
     },
     redrawSelected: () => {
+      if (disposed) return;
+      if (discardSettings()) emit();
       const selected = drawings.find((drawing) => drawing.id === selectedId);
-      if (!selected || selected.locked || disposed) return;
+      if (!selected || selected.locked) return;
       tool = selected.kind;
       replacingId = selected.id;
       anchors = [];
@@ -657,6 +805,8 @@ export function createChartDrawingSession(
     },
     dispose: () => {
       if (disposed) return;
+      settingsDraft = null;
+      settingsOpen = false;
       disposed = true;
       try {
         chart.unsubscribeClick(click);
@@ -674,18 +824,26 @@ export function useChartDrawings(
   chart: IChartApi | null,
   series: ISeriesApi<SeriesType> | null,
   symbol: string,
+  intervalMinutes = 1,
 ) {
   const [state, setState] = useState<DrawingState>(EMPTY);
   const session = useRef<ReturnType<typeof createChartDrawingSession> | null>(null);
   useEffect(() => {
     if (!chart || !series || !symbol) return;
-    const current = createChartDrawingSession(chart, series, symbol, setState);
+    const current = createChartDrawingSession(
+      chart,
+      series,
+      symbol,
+      setState,
+      tradingWorkspaceStorage,
+      intervalMinutes,
+    );
     session.current = current;
     const element = chart.chartElement();
     const originalTabIndex = element.getAttribute("tabindex");
     element.tabIndex = 0;
     let pointerId: number | null = null;
-    const pointFor = (event: PointerEvent) => {
+    const pointFor = (event: MouseEvent) => {
       const pane = series.getPane().getHTMLElement();
       if (!pane) return null;
       const rect = pane.getBoundingClientRect();
@@ -734,9 +892,17 @@ export function useChartDrawings(
       event.stopPropagation();
     };
     const doubleClick = (event: MouseEvent) => {
-      if (!current.finishDrawing()) return;
+      const point = pointFor(event);
+      if (!current.finishDrawing() && (!point || !current.openSettings(point))) return;
       event.preventDefault();
       event.stopPropagation();
+    };
+    const contextMenu = (event: MouseEvent) => {
+      const point = pointFor(event);
+      if (point && current.openContextMenu(point, { x: event.clientX, y: event.clientY })) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
     };
     const stopTouchPan = (event: TouchEvent) => {
       if (pointerId === null) return;
@@ -744,6 +910,7 @@ export function useChartDrawings(
       event.stopPropagation();
     };
     element.addEventListener("dblclick", doubleClick, true);
+    element.addEventListener("contextmenu", contextMenu, true);
     element.addEventListener("pointerdown", down, true);
     element.addEventListener("pointermove", move, true);
     element.addEventListener("pointerup", finish, true);
@@ -775,6 +942,7 @@ export function useChartDrawings(
     return () => {
       window.removeEventListener("keydown", keyboard);
       element.removeEventListener("dblclick", doubleClick, true);
+      element.removeEventListener("contextmenu", contextMenu, true);
       element.removeEventListener("pointerdown", down, true);
       element.removeEventListener("pointermove", move, true);
       element.removeEventListener("pointerup", finish, true);
@@ -787,7 +955,7 @@ export function useChartDrawings(
       current.dispose();
       if (session.current === current) session.current = null;
     };
-  }, [chart, series, symbol]);
+  }, [chart, series, symbol, intervalMinutes]);
   const setTool = useCallback((tool: ChartDrawingTool) => session.current?.setTool(tool), []);
   const undo = useCallback(() => session.current?.undo(), []);
   const redo = useCallback(() => session.current?.redo(), []);
@@ -812,12 +980,48 @@ export function useChartDrawings(
   );
   const deleteDrawing = useCallback((id: string) => session.current?.deleteDrawing(id), []);
   const duplicateDrawing = useCallback((id: string) => session.current?.duplicateDrawing(id), []);
+  const coordinatePrice = useCallback(
+    (price: number) => session.current?.coordinatePrice(price) ?? price,
+    [],
+  );
+  const anchorBar = useCallback(
+    (anchor: DrawingAnchor) => session.current?.anchorBar(anchor) ?? null,
+    [],
+  );
+  const anchorAtBar = useCallback(
+    (bar: number, price: number) => session.current?.anchorAtBar(bar, price) ?? null,
+    [],
+  );
+  const openSettings = useCallback(() => session.current?.openSettings(), []);
+  const closeSettings = useCallback(() => session.current?.closeSettings(), []);
+  const previewSettings = useCallback(
+    (patch: DrawingPatch) => session.current?.previewSettings(patch) ?? false,
+    [],
+  );
+  const applySettings = useCallback(
+    (patch: DrawingPatch) => session.current?.applySettings(patch) ?? false,
+    [],
+  );
+  const isVisible = useCallback(
+    (drawing: ChartDrawing) => session.current?.isVisible(drawing) ?? false,
+    [],
+  );
+  const closeContextMenu = useCallback(() => session.current?.closeContextMenu(), []);
   const updateSelected = useCallback(
     (patch: DrawingPatch) => session.current?.updateSelected(patch),
     [],
   );
   return {
     ...state,
+    coordinatePrice,
+    anchorBar,
+    anchorAtBar,
+    openSettings,
+    closeSettings,
+    previewSettings,
+    applySettings,
+    isVisible,
+    closeContextMenu,
     selectDrawing,
     updateDrawing,
     deleteDrawing,

@@ -7,6 +7,7 @@ import {
   validDrawingAnchors,
   DRAWING_ANCHORS,
   maximumDrawingAnchors,
+  sanitizeDrawingSettings,
   parseChartDrawings,
   type ChartDrawing,
   type DrawingKind,
@@ -31,6 +32,122 @@ const geometry = (shape: ChartDrawing) =>
   );
 
 describe("native drawing geometry", () => {
+  it("extends lines independently toward earlier/later time while retaining original drag handles", () => {
+    const line = drawing("trend", [
+      [100, 400],
+      [300, 300],
+    ]);
+    const left = geometry({ ...line, extendLeft: true });
+    expect(left.lines[0]).toEqual({ from: { x: 0, y: 50 }, to: { x: 300, y: 200 } });
+    expect(left.handles).toEqual([
+      { x: 100, y: 100 },
+      { x: 300, y: 200 },
+    ]);
+    expect(hitDrawingGeometry(left, { x: 20, y: 60 })).toBe(true);
+    const right = geometry({ ...line, extendRight: true });
+    expect(right.lines[0]?.to).toEqual({ x: 900, y: 500 });
+    const reversed = geometry({ ...line, anchors: line.anchors.toReversed(), extendLeft: true });
+    expect(reversed.lines[0]).toEqual({ from: { x: 300, y: 200 }, to: { x: 0, y: 50 } });
+    const ray = geometry({ ...line, kind: "ray", extendLeft: false, extendRight: false });
+    expect(ray.lines[0]).toEqual({ from: { x: 100, y: 100 }, to: { x: 300, y: 200 } });
+  });
+
+  it("adds independent arrow endpoints and can return arrow tools to normal endpoints", () => {
+    const line = drawing("trend", [
+      [100, 400],
+      [300, 400],
+    ]);
+    const arrows = geometry({
+      ...line,
+      startMarker: "arrow",
+      endMarker: "arrow",
+      extendRight: true,
+    });
+    expect(arrows.polygons?.map((polygon) => polygon.points[0])).toEqual([
+      { x: 100, y: 100 },
+      { x: 1000, y: 100 },
+    ]);
+    expect(arrows.handles).toHaveLength(2);
+    expect(geometry({ ...line, kind: "arrow", endMarker: "normal" }).polygons).toBeUndefined();
+    const channel = geometry({
+      ...drawing("channel", [
+        [100, 400],
+        [300, 300],
+        [200, 300],
+      ]),
+      extendLeft: true,
+    });
+    expect(channel.lines.map((part) => part.from.x)).toEqual([0, 0, 0]);
+  });
+
+  it("places multiline text relative to line anchors and hit-tests its chosen size/alignment", () => {
+    const shape = geometry({
+      ...drawing("trend", [
+        [100, 400],
+        [300, 300],
+      ]),
+      text: "Breakout\nwatch",
+      textFontSize: 20,
+      textPosition: "below",
+      textAlignment: "right",
+    });
+    expect(shape.text).toEqual({
+      point: { x: 300, y: 206 },
+      value: "Breakout\nwatch",
+      fontSize: 20,
+      align: "right",
+      baseline: "top",
+    });
+    expect(hitDrawingGeometry(shape, { x: 250, y: 240 })).toBe(true);
+    expect(hitDrawingGeometry(shape, { x: 350, y: 240 })).toBe(false);
+    expect(
+      geometry({ ...drawing("horizontal", [[100, 400]]), text: "Support", textAlignment: "center" })
+        .text?.point,
+    ).toEqual({ x: 500, y: 94 });
+  });
+
+  it("persists line and text settings without retaining malformed style options", () => {
+    const settings = {
+      extendLeft: false,
+      extendRight: true,
+      showPriceLabel: true,
+      startMarker: "arrow",
+      endMarker: "normal",
+      text: "Supply",
+      textColor: "#aabbcc",
+      textFontSize: 20,
+      textBold: true,
+      textItalic: false,
+      textPosition: "above",
+      textAlignment: "center",
+    } as const;
+    const line = {
+      ...drawing("trend", [
+        [100, 400],
+        [300, 300],
+      ]),
+      ...settings,
+    };
+    expect(parseChartDrawings(JSON.stringify([line]))).toEqual([line]);
+    expect(
+      sanitizeDrawingSettings({
+        extendLeft: "yes",
+        showPriceLabel: 1,
+        startMarker: "triangle",
+        endMarker: "arrow",
+        textColor: "red",
+        textFontSize: Infinity,
+        textPosition: "bad",
+        textAlignment: "bad",
+        textBold: "true",
+        textItalic: true,
+      }),
+    ).toEqual({ endMarker: "arrow", textItalic: true });
+    expect(sanitizeDrawingSettings({ text: "x".repeat(200), textFontSize: 7 }).text).toHaveLength(
+      140,
+    );
+  });
+
   it("renders freehand, highlighter, polyline and arrow-ended paths with editable anchor indices", () => {
     const points: Array<[number, number]> = [
       [100, 400],
