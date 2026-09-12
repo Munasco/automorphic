@@ -1,3 +1,4 @@
+import { resolveIndicatorStyle } from "./indicatorStyles";
 import { useState } from "react";
 import { ChartIcon } from "./ChartIcon";
 import { SolarSettingsIcon } from "./SolarSettingsIcon";
@@ -34,7 +35,7 @@ export function IndicatorLegend({
   return (
     <div className="mt-1 flex flex-col items-start text-xs text-zinc-400">
       {!collapsed &&
-        added.map(({ key, detail }) => {
+        added.map(({ key, detail, styles }) => {
           const label = getIndicatorLabel(key, settings.indicatorInputs);
           const inputs = getIndicatorInputs(key, settings.indicatorInputs);
           const hidden = settings.hiddenIndicators[key];
@@ -136,65 +137,78 @@ export function IndicatorLegend({
                             Reset inputs
                           </button>
                         ) : null}
-                        {key === "volume" ? (
-                          (["up", "down"] as const).map((direction) => (
-                            <label key={direction} className="flex items-center justify-between">
-                              {direction === "up" ? "Up volume" : "Down volume"}
-                              <input
-                                type="color"
-                                aria-label={`${direction} volume color`}
-                                value={settings.volumeColors[direction]}
-                                onChange={(event) =>
-                                  settings.setVolumeColors({
-                                    ...settings.volumeColors,
-                                    [direction]: event.target.value,
-                                  })
-                                }
-                                className="h-7 w-9 cursor-pointer rounded border border-white/15 bg-transparent"
-                              />
-                            </label>
-                          ))
-                        ) : key !== "ib" ? (
-                          <>
-                            <label className="flex items-center justify-between">
-                              {key === "macd" ||
-                              key === "adx" ||
-                              key === "stochastic" ||
-                              key === "stochRsi"
-                                ? "Primary line"
-                                : "Line color"}
-                              <input
-                                type="color"
-                                aria-label={`${label} line color`}
-                                value={color}
-                                onChange={(event) =>
-                                  settings.setIndicatorAppearance(key, {
-                                    color: event.target.value,
-                                  })
-                                }
-                                className="h-7 w-9 cursor-pointer rounded border border-white/15 bg-transparent"
-                              />
-                            </label>
-                            <label className="flex items-center justify-between">
-                              Line width
-                              <select
-                                className={inputClass}
-                                value={settings.appearance[key]?.lineWidth ?? 1}
-                                onChange={(event) =>
-                                  settings.setIndicatorAppearance(key, {
-                                    lineWidth: Number(event.target.value),
-                                  })
-                                }
-                              >
-                                {[1, 2, 3, 4].map((width) => (
-                                  <option key={width} value={width}>
-                                    {width} px
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          </>
-                        ) : null}
+                        {key === "volume"
+                          ? (["up", "down"] as const).map((direction) => (
+                              <label key={direction} className="flex items-center justify-between">
+                                {direction === "up" ? "Up volume" : "Down volume"}
+                                <input
+                                  type="color"
+                                  aria-label={`${direction} volume color`}
+                                  value={settings.volumeColors[direction]}
+                                  onChange={(event) =>
+                                    settings.setVolumeColors({
+                                      ...settings.volumeColors,
+                                      [direction]: event.target.value,
+                                    })
+                                  }
+                                  className="h-7 w-9 cursor-pointer rounded border border-white/15 bg-transparent"
+                                />
+                              </label>
+                            ))
+                          : styles.map((plotStyle) => {
+                              const style = resolveIndicatorStyle(
+                                key,
+                                plotStyle.key,
+                                settings.appearance[key],
+                              );
+                              const update = (patch: { color?: string; lineWidth?: number }) =>
+                                settings.setIndicatorAppearance(key, {
+                                  plots: {
+                                    [plotStyle.key]: {
+                                      ...settings.appearance[key]?.plots?.[plotStyle.key],
+                                      ...patch,
+                                    },
+                                  },
+                                });
+                              return (
+                                <div
+                                  key={plotStyle.key}
+                                  className="space-y-2 border-t border-white/10 pt-3"
+                                >
+                                  <label className="flex items-center justify-between gap-2">
+                                    {plotStyle.label}
+                                    <input
+                                      type="color"
+                                      aria-label={`${label} ${plotStyle.label} color`}
+                                      value={style.color}
+                                      onInput={(event) =>
+                                        update({ color: event.currentTarget.value })
+                                      }
+                                      className="h-7 w-9 cursor-pointer rounded border border-white/15 bg-transparent"
+                                    />
+                                  </label>
+                                  {plotStyle.kind !== "fill" && (
+                                    <label className="flex items-center justify-between">
+                                      Line width
+                                      <select
+                                        aria-label={`${label} ${plotStyle.label} width`}
+                                        className={inputClass}
+                                        value={style.lineWidth}
+                                        onChange={(event) =>
+                                          update({ lineWidth: Number(event.target.value) })
+                                        }
+                                      >
+                                        {[1, 2, 3, 4].map((width) => (
+                                          <option key={width} value={width}>
+                                            {width} px
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </label>
+                                  )}
+                                </div>
+                              );
+                            })}
                         {key === "ib" && (
                           <>
                             <label className="flex items-center justify-between">
@@ -307,7 +321,7 @@ export function IndicatorLegend({
                                   showHistory: true,
                                   showDashboard: true,
                                 });
-                              else settings.resetIndicatorAppearance(key);
+                              settings.resetIndicatorAppearance(key);
                             }}
                             className="rounded px-2 py-1.5 hover:bg-white/10"
                           >

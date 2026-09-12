@@ -248,6 +248,38 @@ describe("native indicator renderer", () => {
     expect(sma.options).toMatchObject({ color: originalColor, lineWidth: 1 });
   });
 
+  it("applies independent signal and histogram styles without recreating series", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.1);
+    const enabled = { ...disabled, macd: true };
+    renderer.update(inputBars(), enabled, DEFAULT_INITIAL_BALANCE, 1);
+    const original = harness.series.slice();
+    renderer.update(inputBars(), enabled, DEFAULT_INITIAL_BALANCE, 1, {
+      macd: {
+        plots: {
+          signal: { color: "#abcdef", lineWidth: 4 },
+          positive: { color: "#123456" },
+          negative: { color: "#654321" },
+        },
+      },
+    });
+    expect(harness.series).toEqual(original);
+    expect(
+      harness.series.find((series) => series.options.title === "Signal")?.options,
+    ).toMatchObject({ color: "#abcdef", lineWidth: 4 });
+    expect(harness.series.find((series) => series.options.title === "MACD")?.options.color).toBe(
+      "#60a5fa",
+    );
+    const histogram = harness.series.find((series) => series.options.title === "Histogram")!;
+    expect(histogram.data.length).toBeGreaterThan(0);
+    for (const point of histogram.data)
+      expect(point).toMatchObject({ color: point.value >= 0 ? "#12345690" : "#65432190" });
+    renderer.update(inputBars(), enabled, DEFAULT_INITIAL_BALANCE, 1);
+    expect(harness.series.find((series) => series.options.title === "Signal")?.options.color).toBe(
+      "#fb923c",
+    );
+  });
+
   it("keeps the locked IB reading after session close, bounds projections, and hides old history", () => {
     const harness = chartHarness();
     const renderer = createIndicatorRenderer(harness.chart, 0.01);

@@ -24,7 +24,8 @@ export type {
   InitialBalanceSettings,
 } from "./indicatorCatalog";
 
-export type IndicatorAppearance = { color?: string; lineWidth?: number };
+import { normalizeIndicatorAppearance, type IndicatorAppearance } from "./indicatorStyles";
+export type { IndicatorAppearance } from "./indicatorStyles";
 export type ChartAppearance = Partial<Record<IndicatorKey, IndicatorAppearance>>;
 export const DEFAULT_VOLUME_COLORS = { up: "#26a69a", down: "#ef5350" };
 const validColor = (value: unknown): value is string =>
@@ -56,10 +57,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     hiddenIndicators[key] = saved.hiddenIndicators?.[key] === true;
     const stored = saved.appearance?.[key];
     if (stored && typeof stored === "object") {
-      const next: IndicatorAppearance = {};
-      if (validColor(stored.color)) next.color = stored.color;
-      if (typeof stored.lineWidth === "number" && [1, 2, 3, 4].includes(stored.lineWidth))
-        next.lineWidth = stored.lineWidth;
+      const next = normalizeIndicatorAppearance(key, stored);
       if (Object.keys(next).length) appearance[key] = next;
     }
   }
@@ -146,10 +144,15 @@ export const useChartPreferences = create<{
       setIndicatorAppearance: (key, patch) =>
         set((state) => {
           const previous = state.appearance[key] ?? {};
-          const next = { ...previous };
-          if (validColor(patch.color)) next.color = patch.color;
-          if (typeof patch.lineWidth === "number" && [1, 2, 3, 4].includes(patch.lineWidth))
-            next.lineWidth = patch.lineWidth;
+          const patchStyles = normalizeIndicatorAppearance(key, patch);
+          const plots = { ...previous.plots };
+          for (const [id, style] of Object.entries(patchStyles.plots ?? {}))
+            plots[id] = { ...plots[id], ...style };
+          const next = {
+            ...previous,
+            ...patchStyles,
+            ...(Object.keys(plots).length ? { plots } : {}),
+          };
           return { appearance: { ...state.appearance, [key]: next } };
         }),
       resetIndicatorAppearance: (key) =>

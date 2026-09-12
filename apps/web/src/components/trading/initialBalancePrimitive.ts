@@ -1,3 +1,4 @@
+import type { IndicatorStyle } from "./indicatorDefinition";
 import type {
   IChartApi,
   ISeriesApi,
@@ -9,7 +10,10 @@ import type {
 } from "lightweight-charts";
 import type { Candle } from "./chartIndicators";
 import type { InitialBalanceRange } from "./initialBalance";
-import { resolveInitialBalanceSettings, type InitialBalanceSettings } from "./indicatorCatalog";
+import {
+  resolveInitialBalanceSettings,
+  type InitialBalanceSettings,
+} from "./initialBalanceSettings";
 
 const HIGH = "#26a69a";
 const LOW = "#ef5350";
@@ -25,6 +29,7 @@ type InitialBalanceLevel = {
 export function initialBalanceLevels(
   range: InitialBalanceRange,
   config: InitialBalanceSettings,
+  styles: Record<string, IndicatorStyle> = {},
 ): InitialBalanceLevel[] {
   const settings = resolveInitialBalanceSettings(config);
   const size = range.high - range.low;
@@ -66,7 +71,14 @@ export function initialBalanceLevels(
         width: 1,
       });
     }
-  return levels;
+  return levels.map((level) => {
+    const key = level.color === HIGH ? "high" : level.color === LOW ? "low" : "internal";
+    return {
+      ...level,
+      color: styles[key]?.color ?? level.color,
+      width: styles[key]?.lineWidth ?? level.width,
+    };
+  });
 }
 
 /** Project the session boundary in pixels without adding future bars to the chart's timeline. */
@@ -113,6 +125,7 @@ export function initialBalanceGeometry(
   timeX: (time: number) => number | null,
   priceY: (price: number) => number | null,
   width: number,
+  styles: Record<string, IndicatorStyle> = {},
 ) {
   if (range.status !== "developing" && range.status !== "complete") return null;
   const start = timeX(range.startTime);
@@ -136,7 +149,7 @@ export function initialBalanceGeometry(
       : null,
     left: Math.max(0, start),
     right: Math.min(width - 4, end),
-    levels: initialBalanceLevels(range, settings).flatMap((level) => {
+    levels: initialBalanceLevels(range, settings, styles).flatMap((level) => {
       const y = priceY(level.price);
       return y === null ? [] : [{ ...level, y }];
     }),
@@ -150,6 +163,7 @@ export function createInitialBalancePrimitive(chart: IChartApi, series: ISeriesA
     settings: InitialBalanceSettings;
     bars: readonly Candle[];
     interval: number;
+    styles: Record<string, IndicatorStyle>;
   } | null = null;
   let requestUpdate = () => {};
   const geometry = () =>
@@ -160,6 +174,7 @@ export function createInitialBalancePrimitive(chart: IChartApi, series: ISeriesA
       (time) => projectInitialBalanceTime(chart, state!.bars, state!.interval, time),
       (price) => series.priceToCoordinate(price),
       chart.timeScale().width(),
+      state.styles,
     );
   const renderer = (layer: "box" | "levels"): IPrimitivePaneRenderer => ({
     draw(target) {
@@ -258,7 +273,7 @@ export function createInitialBalancePrimitive(chart: IChartApi, series: ISeriesA
         sessionStart > right
       )
         return null;
-      const levels = initialBalanceLevels(state.range, state.settings);
+      const levels = initialBalanceLevels(state.range, state.settings, state.styles);
       return {
         priceRange: {
           minValue: Math.min(...levels.map((level) => level.price)),
@@ -274,8 +289,9 @@ export function createInitialBalancePrimitive(chart: IChartApi, series: ISeriesA
       settings: InitialBalanceSettings,
       bars: readonly Candle[],
       interval: number,
+      styles: Record<string, IndicatorStyle> = {},
     ) {
-      state = { range, settings, bars, interval };
+      state = { range, settings, bars, interval, styles };
       requestUpdate();
     },
   };

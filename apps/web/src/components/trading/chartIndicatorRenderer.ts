@@ -1,3 +1,4 @@
+import { resolveIndicatorStyle } from "./indicatorStyles";
 import {
   HistogramSeries,
   LineSeries,
@@ -7,70 +8,29 @@ import {
   type MouseEventParams,
   type UTCTimestamp,
 } from "lightweight-charts";
-import {
-  calculateEMA,
-  calculateRSI,
-  calculateSMA,
-  calculateVWAP,
-  type Candle,
-  type IndicatorPoint,
-} from "./chartIndicators";
-import {
-  calculateADX,
-  calculateATR,
-  calculateBollingerBands,
-  calculateCCI,
-  calculateCMF,
-  calculateKeltnerChannels,
-  calculateROC,
-  calculateStochasticRSI,
-  calculateDonchian,
-  calculateMACD,
-  calculateOBV,
-  calculateStochastic,
-  calculateWilliamsR,
-} from "./advancedIndicators";
-import {
-  calculateInitialBalance,
-  getInitialBalanceStats,
-  type InitialBalanceStats,
-} from "./initialBalance";
+import type { Candle, IndicatorPoint } from "./chartIndicators";
+import type { InitialBalanceStats } from "./initialBalance";
+import type { IndicatorPlot } from "./indicatorDefinition";
 import { createInitialBalancePrimitive } from "./initialBalancePrimitive";
 import type { ChartAppearance } from "./chartPreferences";
 import {
   INDICATOR_CATALOG,
   getIndicatorInputs,
-  resolveInitialBalanceSettings,
   type IndicatorInputSettings,
   type ChartIndicators,
   type IndicatorKey,
   type InitialBalanceSettings,
 } from "./indicatorCatalog";
 
-export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
-  sma: "#eab676",
-  ema: "#67a6ef",
-  vwap: "#c084fc",
-  bollinger: "#60a5fa",
-  donchian: "#2dd4bf",
-  keltner: "#f472b6",
-  stochRsi: "#a78bfa",
-  cmf: "#34d399",
-  roc: "#fbbf24",
-  rsi: "#c084fc",
-  macd: "#60a5fa",
-  atr: "#fbbf24",
-  stochastic: "#38bdf8",
-  adx: "#fbbf24",
-  obv: "#2dd4bf",
-  cci: "#a78bfa",
-  williams: "#fb923c",
-  volume: "#9299a7",
-  ib: "#facc15",
-};
-const OSCILLATORS = INDICATOR_CATALOG.filter(
-  (item) => item.category === "Oscillators" && item.key !== "volume",
-).map((item) => item.key);
+export const INDICATOR_COLORS = Object.fromEntries(
+  INDICATOR_CATALOG.map((item) => [
+    item.key,
+    item.styles.find((style) => style.primary)?.color ?? item.styles[0]?.color ?? "#9299a7",
+  ]),
+) as Record<IndicatorKey, string>;
+const OSCILLATORS = INDICATOR_CATALOG.filter((item) => item.placement === "pane").map(
+  (item) => item.key,
+);
 export const oscillatorPaneCount = (enabled: ChartIndicators) =>
   OSCILLATORS.filter((key) => enabled[key]).length;
 export type IndicatorReadings = Partial<Record<IndicatorKey, number>>;
@@ -128,24 +88,20 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
       id: string,
       indicator: IndicatorKey,
       points: readonly IndicatorPoint[],
-      options: {
-        color?: string;
-        title?: string;
-        primary?: boolean;
-        histogram?: boolean;
-        bounds?: [number, number];
-        levels?: number[];
-        steps?: boolean;
-      } = {},
+      options: Partial<IndicatorPlot> = {},
     ) => {
       desired.add(id);
+      const style = resolveIndicatorStyle(
+        indicator,
+        options.styleKey ?? "main",
+        appearance[indicator],
+      );
       const pane = panes.get(indicator) ?? 0;
       let plot = plots.get(id);
       if (!plot) {
-        const priceFormat =
-          indicator === "obv"
-            ? { type: "volume" as const }
-            : { type: "price" as const, precision: 2, minMove: pane ? 0.01 : minMove };
+        const priceFormat = options.volumeFormat
+          ? { type: "volume" as const }
+          : { type: "price" as const, precision: 2, minMove: pane ? 0.01 : minMove };
         const common = {
           title: options.title ?? "",
           priceLineVisible: false,
@@ -158,12 +114,10 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
               LineSeries,
               {
                 ...common,
-                color: options.color ?? INDICATOR_COLORS[indicator],
+                color: style.color,
                 lineWidth: 1,
                 lineType: options.steps ? LineType.WithSteps : LineType.Simple,
-                ...(indicator === "ib"
-                  ? { lineVisible: false, crosshairMarkerVisible: false }
-                  : {}),
+                ...(options.invisible ? { lineVisible: false, crosshairMarkerVisible: false } : {}),
                 ...(options.bounds
                   ? {
                       autoscaleInfoProvider: () => ({
@@ -189,187 +143,73 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
       }
       if (!options.histogram) {
         plot.series.applyOptions({
-          color:
-            options.primary === false
-              ? (options.color ?? appearance[indicator]?.color ?? INDICATOR_COLORS[indicator])
-              : (appearance[indicator]?.color ?? options.color ?? INDICATOR_COLORS[indicator]),
-          lineWidth: (appearance[indicator]?.lineWidth ?? 1) as 1 | 2 | 3 | 4,
+          color: style.color,
+          lineWidth: style.lineWidth as 1 | 2 | 3 | 4,
         });
       }
       const data = points.map((point) => ({
         ...point,
         time: point.time as UTCTimestamp,
-        ...(options.histogram ? { color: point.value >= 0 ? "#26a69a90" : "#ef535090" } : {}),
+        ...(options.histogram
+          ? {
+              color: `${
+                resolveIndicatorStyle(
+                  indicator,
+                  (point.value >= 0 ? options.positiveStyleKey : options.negativeStyleKey) ??
+                    options.styleKey ??
+                    "main",
+                  appearance[indicator],
+                ).color
+              }90`,
+            }
+          : {}),
       }));
       plot.series.setData(data);
-      if (indicator === "ib" && plot.series.seriesType() === "Line")
+      if (options.invisible && plot.series.seriesType() === "Line")
         plot.series.applyOptions({ pointMarkersVisible: false });
       const latest = points.at(-1);
       if (plot.primary && latest && latest.time === latestTime) readings[indicator] = latest.value;
     };
-    const bands = (
-      indicator: "bollinger" | "donchian" | "keltner",
-      result: ReturnType<typeof calculateBollingerBands>,
-    ) => {
-      line(`${indicator}.upper`, indicator, result.upper, { primary: false });
-      line(`${indicator}.middle`, indicator, result.middle, {
-        color:
-          indicator === "bollinger" ? "#93c5fd" : indicator === "keltner" ? "#fbcfe8" : "#99f6e4",
-      });
-      line(`${indicator}.lower`, indicator, result.lower, { primary: false });
-    };
-    if (enabled.sma) line("sma", "sma", calculateSMA(bars, inputs("sma").period ?? 20));
-    if (enabled.ema) line("ema", "ema", calculateEMA(bars, inputs("ema").period ?? 20));
-    if (enabled.vwap) line("vwap", "vwap", calculateVWAP(bars));
-    if (enabled.bollinger)
-      bands(
-        "bollinger",
-        calculateBollingerBands(bars, inputs("bollinger").period, inputs("bollinger").deviations),
-      );
-    if (enabled.donchian) bands("donchian", calculateDonchian(bars, inputs("donchian").period));
-    if (enabled.keltner)
-      bands(
-        "keltner",
-        calculateKeltnerChannels(
-          bars,
-          inputs("keltner").period,
-          inputs("keltner").atrPeriod,
-          inputs("keltner").multiplier,
-        ),
-      );
-    // Create panes in catalog order, including when several are enabled together.
-    for (const key of oscillatorKeys) {
-      if (key === "rsi")
-        line("rsi", "rsi", calculateRSI(bars, inputs("rsi").period ?? 14), {
-          title: "RSI",
-          bounds: [0, 100],
-          levels: [30, 70],
-        });
-      else if (key === "macd") {
-        const result = calculateMACD(
-          bars,
-          inputs("macd").fast,
-          inputs("macd").slow,
-          inputs("macd").signalPeriod,
-        );
-        line("macd.histogram", "macd", result.histogram, {
-          title: "Histogram",
-          histogram: true,
-          primary: false,
-        });
-        line("macd.macd", "macd", result.macd, { title: "MACD", levels: [0] });
-        line("macd.signal", "macd", result.signal, {
-          title: "Signal",
-          color: "#fb923c",
-          primary: false,
-        });
-      } else if (key === "atr")
-        line("atr", "atr", calculateATR(bars, inputs("atr").period), { title: "ATR" });
-      else if (key === "stochastic" || key === "stochRsi") {
-        const result =
-          key === "stochRsi"
-            ? calculateStochasticRSI(
-                bars,
-                inputs(key).rsiPeriod,
-                inputs(key).stochasticPeriod,
-                inputs(key).smoothK,
-                inputs(key).periodD,
-              )
-            : calculateStochastic(
-                bars,
-                inputs(key).period,
-                inputs(key).smoothK,
-                inputs(key).periodD,
-              );
-        line(`${key}.k`, key, result.k, {
-          title: "%K",
-          bounds: [0, 100],
-          levels: [20, 80],
-        });
-        line(`${key}.d`, key, result.d, {
-          title: "%D",
-          bounds: [0, 100],
-          color: "#fb923c",
-          primary: false,
-        });
-      } else if (key === "adx") {
-        const result = calculateADX(bars, inputs("adx").period, inputs("adx").adxPeriod);
-        line("adx.adx", "adx", result.adx, { title: "ADX", bounds: [0, 100], levels: [25] });
-        line("adx.plus", "adx", result.plusDI, {
-          title: "+DI",
-          bounds: [0, 100],
-          color: "#26a69a",
-          primary: false,
-        });
-        line("adx.minus", "adx", result.minusDI, {
-          title: "−DI",
-          bounds: [0, 100],
-          color: "#ef5350",
-          primary: false,
-        });
-      } else if (key === "cmf")
-        line("cmf", "cmf", calculateCMF(bars, inputs("cmf").period), { title: "CMF", levels: [0] });
-      else if (key === "roc")
-        line("roc", "roc", calculateROC(bars, inputs("roc").period), { title: "ROC", levels: [0] });
-      else if (key === "obv") line("obv", "obv", calculateOBV(bars), { title: "OBV" });
-      else if (key === "cci")
-        line("cci", "cci", calculateCCI(bars, inputs("cci").period), {
-          title: "CCI",
-          levels: [-100, 0, 100],
-        });
-      else if (key === "williams")
-        line("williams", "williams", calculateWilliamsR(bars, inputs("williams").period), {
-          title: "%R",
-          bounds: [-100, 0],
-          levels: [-80, -20],
-        });
-    }
     let initialBalanceStatus = "";
     let initialBalanceStats: InitialBalanceStats | null = null;
-    if (enabled.ib) {
-      const resolved = resolveInitialBalanceSettings(ibSettings);
-      const result = calculateInitialBalance(bars, resolved, interval);
-      const atr = calculateATR(bars).at(-1);
-      initialBalanceStats = getInitialBalanceStats(
-        result,
+    // Catalog order keeps pane assignment stable when enabling several studies together.
+    for (const definition of INDICATOR_CATALOG) {
+      if (!enabled[definition.key]) continue;
+      const result = definition.calculate({
         bars,
-        resolved,
-        atr && atr.time === latestTime ? atr.value : null,
-      );
-      initialBalanceStatus = `${ibSettings.startTime} ${ibSettings.timeZone} · ${ibSettings.durationMinutes} min · ${result.reason ?? result.status}`;
-      const sessions = resolved.showHistory
-        ? result.segments.slice(-20)
-        : result.segments.filter((segment) => segment.session === result.activeSession);
-      for (const segment of sessions) {
-        // Separate series are essential: whitespace alone can bridge overnight sessions.
-        line(
-          `ib.${segment.session}.high`,
-          "ib",
-          segment.high.filter((point) => point.time <= segment.range.sessionEndTime),
-          { primary: false, steps: true },
-        );
-        line(
-          `ib.${segment.session}.low`,
-          "ib",
-          segment.low.filter((point) => point.time <= segment.range.sessionEndTime),
-          { primary: false, steps: true },
-        );
-        line(
-          `ib.${segment.session}.mid`,
-          "ib",
-          segment.mid.filter((point) => point.time <= segment.range.sessionEndTime),
-          { color: "#fde68a", steps: true },
-        );
-        const plot = plots.get(`ib.${segment.session}.high`)!;
-        if (!plot.initialBalance) {
-          plot.initialBalance = createInitialBalancePrimitive(
-            chart,
-            plot.series as ISeriesApi<"Line">,
+        inputs: inputs(definition.key),
+        interval,
+        session: ibSettings,
+      });
+      for (const output of result.plots) {
+        const id = `${definition.key}.${output.id}`;
+        line(id, definition.key, output.points, output);
+        if (output.overlay?.kind === "initial-balance") {
+          const host = plots.get(id)!;
+          if (!host.initialBalance) {
+            host.initialBalance = createInitialBalancePrimitive(
+              chart,
+              host.series as ISeriesApi<"Line">,
+            );
+            host.series.attachPrimitive(host.initialBalance.primitive);
+          }
+          host.initialBalance.update(
+            output.overlay.range,
+            output.overlay.settings,
+            bars,
+            interval,
+            Object.fromEntries(
+              definition.styles.map((style) => [
+                style.key,
+                resolveIndicatorStyle(definition.key, style.key, appearance[definition.key]),
+              ]),
+            ),
           );
-          plot.series.attachPrimitive(plot.initialBalance.primitive);
         }
-        plot.initialBalance.update(segment.range, resolved, bars, interval);
       }
+      if (result.reading !== undefined) readings[definition.key] = result.reading;
+      if (result.sessionStats) initialBalanceStats = result.sessionStats;
+      if (result.status) initialBalanceStatus = result.status;
     }
     for (const [id, plot] of plots)
       if (!desired.has(id)) {
