@@ -33,6 +33,8 @@ import {
   defaultDrawingLevelSettings,
 } from "./drawingGeometry";
 import { DrawingLevelSettings } from "./DrawingLevelSettings";
+import { DrawingTemplateMenu } from "./DrawingTemplateMenu";
+import { applyDrawingTemplate } from "./drawingTemplates";
 import { cn } from "../../lib/utils";
 
 const lineKinds = new Set([
@@ -108,6 +110,7 @@ function DrawingSettings({
     ...defaultDrawingLevelSettings(drawing.kind),
     ...drawing,
   }));
+  const [replaceAppearance, setReplaceAppearance] = useState(false);
   const availableTabs = supportsDrawingLevels(draft.kind)
     ? ["Style", "Coordinates", "Visibility"]
     : ["Style", "Text", "Coordinates", "Visibility"];
@@ -577,6 +580,17 @@ function DrawingSettings({
           ) : null}
         </div>
         <div className="flex justify-end gap-3 border-t border-white/10 px-5 py-4">
+          <div className="mr-auto">
+            <DrawingTemplateMenu
+              drawing={draft}
+              onApply={(patch) => {
+                const next = applyDrawingTemplate(draft, patch);
+                setDraft({ ...defaultDrawingLevelSettings(next.kind), ...next });
+                setReplaceAppearance(true);
+                drawings.previewSettings(patch, { replace: true });
+              }}
+            />
+          </div>
           <button
             type="button"
             onClick={drawings.closeSettings}
@@ -589,7 +603,7 @@ function DrawingSettings({
             disabled={!canSave}
             onClick={() => {
               const { id: _id, kind: _kind, ...patch } = draft;
-              drawings.applySettings(patch);
+              drawings.applySettings(patch, { replace: replaceAppearance });
             }}
             className="rounded bg-zinc-100 px-5 py-2 text-sm font-medium text-zinc-900 hover:bg-white disabled:opacity-40"
           >

@@ -1206,3 +1206,182 @@ describe("drawing settings preview transactions", () => {
     fiveMinute.dispose();
   });
 });
+
+describe("drawing template transactions", () => {
+  it("previews a sparse replacement without leaking old styling or changing object metadata, then cancels", () => {
+    const f = fixture("template-preview"),
+      session = f.open();
+    session.setTool("trend");
+    f.click(100, 100);
+    f.click(200, 200);
+    session.updateSelected({
+      name: "Setup",
+      locked: true,
+      hidden: true,
+      text: "Old label",
+      textBold: true,
+      extendRight: true,
+      levels: [{ value: 0.5, visible: true }],
+    });
+    const original = JSON.parse(f.saved()!)[0];
+    const writes = f.writes();
+    session.openSettings();
+    expect(
+      session.previewSettings(
+        { color: "#123456", width: 3, anchors: [], name: "Injected", locked: false, hidden: false },
+        { replace: true },
+      ),
+    ).toBe(true);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        selected: {
+          id: original.id,
+          kind: original.kind,
+          anchors: original.anchors,
+          name: "Setup",
+          locked: true,
+          hidden: true,
+          color: "#123456",
+          width: 3,
+          lineStyle: "solid",
+        },
+      }),
+    );
+    expect(f.writes()).toBe(writes);
+    session.closeSettings();
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: original, settingsOpen: false }),
+    );
+    expect(JSON.parse(f.saved()!)[0]).toEqual(original);
+    session.dispose();
+  });
+
+  it("applies replacement plus later edits atomically, preserves edited coordinates, and undoes the entire transaction", () => {
+    const f = fixture("template-apply"),
+      session = f.open();
+    session.setTool("trend");
+    f.click(100, 100);
+    f.click(200, 200);
+    session.updateSelected({
+      textBold: true,
+      text: "Old label",
+      extendRight: true,
+      color: "#ff0000",
+    });
+    const original = JSON.parse(f.saved()!)[0];
+    const writes = f.writes();
+    const anchors = [
+      { time: 150 as UTCTimestamp, price: 4850 },
+      { time: 250 as UTCTimestamp, price: 4750 },
+    ];
+    session.openSettings();
+    session.previewSettings({ anchors });
+    session.previewSettings({ color: "#123456", width: 2 }, { replace: true });
+    session.previewSettings({ text: "After template" });
+    expect(
+      session.applySettings(
+        { color: "#123456", width: 2, lineStyle: "dotted", text: "After template" },
+        { replace: true },
+      ),
+    ).toBe(true);
+    const result = JSON.parse(f.saved()!)[0];
+    expect(result).toEqual({
+      id: original.id,
+      kind: "trend",
+      anchors,
+      color: "#123456",
+      width: 2,
+      lineStyle: "dotted",
+      text: "After template",
+    });
+    expect(f.writes()).toBe(writes + 1);
+    session.undo();
+    expect(JSON.parse(f.saved()!)[0]).toEqual(original);
+    session.redo();
+    expect(JSON.parse(f.saved()!)[0]).toEqual(result);
+    session.dispose();
+    const restored = f.open();
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ objects: [result] }));
+    restored.dispose();
+  });
+
+  it("rejects incomplete or invalid replacements without altering the current preview or committing history", () => {
+    const f = fixture("template-invalid"),
+      session = f.open();
+    session.setTool("horizontal");
+    f.click(100, 100);
+    const original = JSON.parse(f.saved()!)[0];
+    const writes = f.writes();
+    session.openSettings();
+    session.previewSettings({ text: "Draft" });
+    expect(session.previewSettings({ color: "#123456" }, { replace: true })).toBe(false);
+    expect(session.applySettings({ color: "invalid", width: 2 }, { replace: true })).toBe(false);
+    expect(f.writes()).toBe(writes);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ settingsOpen: true, selected: { ...original, text: "Draft" } }),
+    );
+    expect(session.applySettings({})).toBe(true);
+    expect(JSON.parse(f.saved()!)[0]).toEqual({ ...original, text: "Draft" });
+    session.undo();
+    expect(JSON.parse(f.saved()!)[0]).toEqual(original);
+    session.dispose();
+  });
+});
+
+describe("drawing hover state", () => {
+  const line = {
+    id: "hover-line",
+    kind: "horizontal",
+    color: "#729bff",
+    width: 2,
+    anchors: [{ time: 100, price: 4900 }],
+  };
+  it("emits only when the hovered object changes, never selects or persists from idle movement", () => {
+    const f = fixture("hover-state", JSON.stringify([line])),
+      session = f.open();
+    f.change.mockClear();
+    session.hover({ x: 400, y: 100 });
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        hovered: expect.objectContaining({ id: line.id }),
+        selected: null,
+      }),
+    );
+    for (let x = 410; x < 600; x++) session.hover({ x, y: 100 });
+    expect(f.change).toHaveBeenCalledTimes(1);
+    expect(f.writes()).toBe(0);
+    session.hover(null);
+    session.hover(null);
+    expect(f.change).toHaveBeenCalledTimes(2);
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ hovered: null }));
+    session.hover({ x: 400, y: 100 });
+    session.setTool("circle");
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ hovered: null }));
+    session.hover({ x: 400, y: 100 });
+    expect(f.change).toHaveBeenCalledTimes(4);
+    session.dispose();
+  });
+  it("keeps locked drawing hits from panning without moving anchors and clears hover during settings", () => {
+    const f = fixture("hover-lock", JSON.stringify([{ ...line, locked: true }])),
+      session = f.open();
+    session.hover({ x: 400, y: 100 });
+    expect(session.beginDrag({ x: 400, y: 100 })).toBe(false);
+    expect(session.blocksChartPan({ x: 400, y: 100 })).toBe(true);
+    expect(session.blocksChartPan({ x: 400, y: 300 })).toBe(false);
+    session.dragTo({ x: 500, y: 200 });
+    session.endDrag();
+    expect(f.writes()).toBe(0);
+    session.openSettings();
+    session.hover({ x: 400, y: 100 });
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ hovered: null, settingsOpen: true }),
+    );
+    session.closeSettings();
+    session.toggleHidden();
+    session.hover({ x: 400, y: 100 });
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ hovered: null, hidden: true }),
+    );
+    session.dispose();
+  });
+});

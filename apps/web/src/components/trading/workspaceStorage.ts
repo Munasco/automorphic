@@ -8,6 +8,7 @@ const preferenceKeys = new Set([
   "automorphic:trading:v1",
   "automorphic:chart-alerts:v1",
   "automorphic:drawing-controls:v1",
+  "automorphic:drawing-templates:v1",
 ]);
 const isWorkspaceKey = (key: string) =>
   preferenceKeys.has(key) || key.startsWith("automorphic:chart-drawings:v1:");

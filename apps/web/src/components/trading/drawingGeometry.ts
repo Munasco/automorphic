@@ -100,6 +100,7 @@ export type DrawingGeometry = {
     align?: "left" | "center" | "right";
     baseline?: "top" | "middle" | "bottom";
     fontSize?: number;
+    angle?: number;
   };
   handles: DrawingPoint[];
   /** Original anchor indices for the visible, editable handles of dense freehand strokes. */
@@ -1030,6 +1031,24 @@ export function buildDrawingGeometry(
           ? "top"
           : "bottom";
   }
+  if (
+    result.text &&
+    ["trend", "info-line", "extended-line", "trend-angle", "ray", "arrow"].includes(drawing.kind)
+  ) {
+    const [a, b] = result.handles;
+    if (a && b) {
+      const first = a.x <= b.x ? a : b,
+        last = a.x <= b.x ? b : a;
+      const angle = Math.atan2(last.y - first.y, last.x - first.x);
+      const offset =
+        drawing.textPosition === "below" ? 6 : drawing.textPosition === "center" ? 0 : -6;
+      result.text.point = {
+        x: result.text.point.x - Math.sin(angle) * offset,
+        y: result.text.point.y - offset + Math.cos(angle) * offset,
+      };
+      result.text.angle = angle;
+    }
+  }
   if (drawing.kind === "trend-angle") {
     const [first, second] = result.handles;
     if (first && second) {
@@ -1107,16 +1126,22 @@ export function hitDrawingGeometry(
       align = "left",
       baseline = "bottom",
     } = geometry.text;
+    const angle = geometry.text.angle ?? 0;
+    const relative = { x: point.x - anchor.x, y: point.y - anchor.y };
+    const local = {
+      x: anchor.x + relative.x * Math.cos(angle) + relative.y * Math.sin(angle),
+      y: anchor.y - relative.x * Math.sin(angle) + relative.y * Math.cos(angle),
+    };
     const lines = value.split(/\r?\n/);
     const width = Math.max(...lines.map((line) => line.length)) * fontSize * 0.65;
     const height = lines.length * fontSize * 1.2;
     const x = anchor.x - (align === "center" ? width / 2 : align === "right" ? width : 0);
     const y = anchor.y - (baseline === "middle" ? height / 2 : baseline === "bottom" ? height : 0);
     if (
-      point.x >= x - 5 &&
-      point.x <= x + width + 5 &&
-      point.y >= y - 5 &&
-      point.y <= y + height + 5
+      local.x >= x - 5 &&
+      local.x <= x + width + 5 &&
+      local.y >= y - 5 &&
+      local.y <= y + height + 5
     )
       return true;
   }

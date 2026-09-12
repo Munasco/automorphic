@@ -11,6 +11,8 @@ import type {
 import {
   buildDrawingGeometry,
   drawingTimeValue,
+  hitDrawingGeometry,
+  hitDrawingHandle,
   defaultDrawingStats,
   supportsLineStatistics,
   supportsDrawingPriceLabels,
@@ -77,6 +79,32 @@ export function drawingProjection(chart: IChartApi, series: ISeriesApi<SeriesTyp
   return { width, height, priceY, project, unproject };
 }
 
+/** The same placement used by canvas text, suitable for positioning an inline text editor. */
+export function drawingTextPlacement(
+  chart: IChartApi,
+  series: ISeriesApi<SeriesType>,
+  drawing: ChartDrawing,
+) {
+  const projection = drawingProjection(chart, series);
+  return (
+    buildDrawingGeometry(
+      { ...drawing, text: drawing.text || " " },
+      projection.project,
+      projection.priceY,
+      projection.width,
+      projection.height,
+    ).text ?? null
+  );
+}
+
+export type DrawingPrimitiveHit = {
+  drawing: ChartDrawing;
+  handle: number;
+  distance: number;
+  hitTestPriority: 0 | 1 | 2;
+  cursorStyle: "default" | "pointer";
+};
+
 export function createDrawingPrimitive(
   chart: IChartApi,
   series: ISeriesApi<SeriesType>,
@@ -85,9 +113,83 @@ export function createDrawingPrimitive(
     selected: string | null;
     preview?: ChartDrawing | null;
     hidden?: boolean;
+    hovered?: string | null;
+    interactive?: boolean;
   },
 ) {
   let requestUpdate = () => {};
+  const hitTest = (point: DrawingPoint): DrawingPrimitiveHit | null => {
+    const state = read();
+    if (state.hidden || state.interactive === false) return null;
+    const projection = drawingProjection(chart, series);
+    if (
+      !Number.isFinite(point.x) ||
+      !Number.isFinite(point.y) ||
+      point.x < 0 ||
+      point.y < 0 ||
+      point.x > projection.width ||
+      point.y > projection.height
+    )
+      return null;
+    let best: DrawingPrimitiveHit | null = null;
+    for (const drawing of state.drawings.toReversed()) {
+      if (drawing.hidden) continue;
+      const geometry = buildDrawingGeometry(
+        drawing,
+        projection.project,
+        projection.priceY,
+        projection.width,
+        projection.height,
+      );
+      const handle = hitDrawingHandle(geometry, point);
+      let candidate: DrawingPrimitiveHit;
+      if (handle >= 0) {
+        const anchor = geometry.handles[handle]!;
+        candidate = {
+          drawing,
+          handle: drawing.locked ? -1 : handle,
+          cursorStyle: "default",
+          distance: Math.hypot(point.x - anchor.x, point.y - anchor.y),
+          hitTestPriority: 2,
+        };
+      } else {
+        if (!hitDrawingGeometry(geometry, point)) continue;
+        let distance = Infinity;
+        for (const line of geometry.lines) {
+          const dx = line.to.x - line.from.x,
+            dy = line.to.y - line.from.y;
+          const ratio = Math.max(
+            0,
+            Math.min(
+              1,
+              ((point.x - line.from.x) * dx + (point.y - line.from.y) * dy) /
+                (dx * dx + dy * dy || 1),
+            ),
+          );
+          distance = Math.min(
+            distance,
+            Math.hypot(point.x - line.from.x - ratio * dx, point.y - line.from.y - ratio * dy),
+          );
+        }
+        const stroke = distance <= Math.max(7, (geometry.strokeWidth ?? drawing.width) / 2 + 3);
+        candidate = {
+          drawing,
+          handle: -1,
+          cursorStyle: "pointer",
+          distance: stroke ? distance : 0,
+          hitTestPriority: stroke ? 1 : 0,
+        };
+      }
+      if (
+        !best ||
+        (candidate.hitTestPriority === 2 && best.hitTestPriority !== 2) ||
+        ((candidate.hitTestPriority === 2) === (best.hitTestPriority === 2) &&
+          candidate.distance < best.distance)
+      )
+        best = candidate;
+    }
+    return best;
+  };
   const renderer: IPrimitivePaneRenderer = {
     draw(target) {
       const { width, height, priceY, project } = drawingProjection(chart, series);
@@ -181,16 +283,23 @@ export function createDrawingPrimitive(
               ctx.fillStyle = drawing.textColor ?? drawing.color;
               ctx.textAlign = text.align ?? "left";
               ctx.textBaseline = "top";
+              const rotated = text.angle !== undefined && text.angle !== 0;
+              if (rotated) {
+                ctx.save();
+                ctx.translate(text.point.x, text.point.y);
+                ctx.rotate(text.angle!);
+              }
               const top =
-                text.point.y -
+                (rotated ? 0 : text.point.y) -
                 (text.baseline === "top"
                   ? 0
                   : text.baseline === "middle"
                     ? (rows.length * rowHeight) / 2
                     : rows.length * rowHeight);
               rows.forEach((row, index) =>
-                ctx.fillText(row, text.point.x, top + index * rowHeight),
+                ctx.fillText(row, rotated ? 0 : text.point.x, top + index * rowHeight),
               );
+              if (rotated) ctx.restore();
             }
           }
           if (supportsLineStatistics(drawing.kind) && drawing.anchors.length >= 2) {
@@ -246,18 +355,29 @@ export function createDrawingPrimitive(
               }
             }
           }
-          if ((drawing.id === state.selected && !drawing.locked) || drawing === state.preview) {
+          if (
+            drawing.id === state.selected ||
+            (drawing.id === state.hovered && !drawing.locked) ||
+            drawing === state.preview
+          ) {
+            const hovering =
+              drawing.id === state.hovered &&
+              drawing.id !== state.selected &&
+              drawing !== state.preview;
             ctx.setLineDash([]);
-            ctx.globalAlpha = 1;
-            ctx.lineWidth = drawing.width;
+            ctx.globalAlpha = hovering ? 0.6 : 1;
+            ctx.lineWidth = hovering ? 1 : drawing.width;
             for (const index of geometry.handleIndices ??
               geometry.handles.map((_, index) => index)) {
               const point = geometry.handles[index]!;
               ctx.beginPath();
-              ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+              ctx.arc(point.x, point.y, hovering ? 6 : drawing.locked ? 3 : 4, 0, Math.PI * 2);
               ctx.fillStyle = "#15171a";
               ctx.fill();
-              ctx.strokeStyle = drawing.id === state.selected ? SELECTION_COLOR : drawing.color;
+              ctx.strokeStyle =
+                drawing.id === state.selected || drawing.id === state.hovered
+                  ? SELECTION_COLOR
+                  : drawing.color;
               ctx.stroke();
             }
           }
@@ -351,9 +471,22 @@ export function createDrawingPrimitive(
     detached: () => {
       requestUpdate = () => {};
     },
+    hitTest: (x, y) => {
+      const hit = hitTest({ x, y });
+      return hit
+        ? {
+            externalId: hit.drawing.id,
+            zOrder: "top",
+            distance: hit.distance,
+            hitTestPriority: hit.hitTestPriority,
+            cursorStyle: hit.cursorStyle,
+            itemType: "primitive",
+          }
+        : null;
+    },
     paneViews: () => [view],
     priceAxisViews: () => drawingAxisViews("price"),
     timeAxisViews: () => drawingAxisViews("time"),
   };
-  return { primitive, redraw: () => requestUpdate() };
+  return { primitive, hitTest, redraw: () => requestUpdate() };
 }

@@ -129,6 +129,8 @@ describe("native drawing primitive", () => {
     const plugin = createDrawingPrimitive(chart, series, () => ({ drawings: [drawing], selected }));
     const ctx = {
       save: vi.fn(),
+      translate: vi.fn(),
+      rotate: vi.fn(),
       restore: vi.fn(),
       beginPath: vi.fn(),
       rect: vi.fn(),
@@ -187,6 +189,8 @@ describe("native drawing primitive", () => {
       fillStyle: "",
       textAlign: "",
       save: vi.fn(),
+      translate: vi.fn(),
+      rotate: vi.fn(),
       restore: vi.fn(),
       beginPath: vi.fn(),
       closePath: vi.fn(),
@@ -254,6 +258,8 @@ describe("native drawing primitive", () => {
       globalAlpha: 1,
       lineWidth: 1,
       save: vi.fn(),
+      translate: vi.fn(),
+      rotate: vi.fn(),
       restore: vi.fn(),
       beginPath: vi.fn(),
       closePath: vi.fn(),
@@ -354,6 +360,8 @@ describe("native drawing primitive", () => {
     expect(update).toHaveBeenCalledTimes(1);
     const ctx = {
       save: vi.fn(),
+      translate: vi.fn(),
+      rotate: vi.fn(),
       restore: vi.fn(),
       beginPath: vi.fn(),
       rect: vi.fn(),
@@ -389,6 +397,8 @@ describe("additional line primitive behavior", () => {
     const plugin = createDrawingPrimitive(chart, series, () => ({ drawings: [drawing], selected }));
     const ctx = {
       save: vi.fn(),
+      translate: vi.fn(),
+      rotate: vi.fn(),
       restore: vi.fn(),
       beginPath: vi.fn(),
       rect: vi.fn(),
@@ -507,6 +517,8 @@ describe("level colors and labels", () => {
       fillStyle: "",
       globalAlpha: 1,
       save: vi.fn(),
+      translate: vi.fn(),
+      rotate: vi.fn(),
       restore: vi.fn(),
       beginPath: vi.fn(),
       closePath: vi.fn(),
@@ -568,5 +580,116 @@ describe("level colors and labels", () => {
     draw();
     expect(fills).toEqual([]);
     expect(texts).toEqual([]);
+  });
+});
+
+describe("native primitive hover hits", () => {
+  const line = (id: string, price = 400): ChartDrawing => ({
+    id,
+    kind: "trend",
+    color: "#ff0000",
+    width: 2,
+    anchors: [
+      { time: 100 as Time, price },
+      { time: 300 as Time, price },
+    ],
+  });
+  it("reports exact distance, stable external IDs, endpoint priority and the native pointer cursors", () => {
+    const { chart, series } = fixture();
+    const first = line("first"),
+      second = line("second", 396);
+    let hidden = false,
+      interactive = true;
+    const plugin = createDrawingPrimitive(chart, series, () => ({
+      drawings: [first, second],
+      selected: null,
+      hidden,
+      interactive,
+    }));
+    expect(plugin.primitive.hitTest!(180, 101)).toMatchObject({
+      externalId: "first",
+      distance: 1,
+      hitTestPriority: 1,
+      cursorStyle: "pointer",
+      zOrder: "top",
+    });
+    expect(plugin.primitive.hitTest!(100, 100)).toMatchObject({
+      externalId: "first",
+      distance: 0,
+      hitTestPriority: 2,
+      cursorStyle: "default",
+    });
+    expect(plugin.primitive.hitTest!(180, 102)?.externalId).toBe("second");
+    first.locked = true;
+    expect(plugin.hitTest({ x: 100, y: 100 })).toMatchObject({
+      handle: -1,
+      cursorStyle: "default",
+    });
+    expect(plugin.primitive.hitTest!(180, 100)?.cursorStyle).toBe("pointer");
+    expect(plugin.primitive.hitTest!(-1, 100)).toBeNull();
+    interactive = false;
+    expect(plugin.primitive.hitTest!(180, 100)).toBeNull();
+    interactive = true;
+    hidden = true;
+    expect(plugin.primitive.hitTest!(180, 100)).toBeNull();
+  });
+
+  it("shows dim blue hover handles without selection labels and tiny locked handles only after selection", () => {
+    const { chart, series } = fixture();
+    const drawing = line("hover");
+    let hovered: string | null = drawing.id,
+      selected: string | null = null;
+    const strokes: Array<[string, number, number]> = [];
+    const ctx = {
+      strokeStyle: "",
+      globalAlpha: 1,
+      lineWidth: 1,
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      clip: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      arc: vi.fn(),
+      fill: vi.fn(),
+      fillText: vi.fn(),
+      setLineDash: vi.fn(),
+      stroke: () => strokes.push([ctx.strokeStyle, ctx.globalAlpha, ctx.lineWidth]),
+    };
+    const plugin = createDrawingPrimitive(chart, series, () => ({
+      drawings: [drawing],
+      hovered,
+      selected,
+    }));
+    const renderer = plugin.primitive.paneViews!()[0]!.renderer()!;
+    const draw = () => {
+      ctx.arc.mockClear();
+      strokes.length = 0;
+      renderer.draw({
+        useMediaCoordinateSpace: (callback: (scope: { context: typeof ctx }) => void) =>
+          callback({ context: ctx }),
+      } as unknown as Parameters<typeof renderer.draw>[0]);
+    };
+    draw();
+    expect(strokes).toEqual([
+      ["#ff0000", 1, 2],
+      ["#2962ff", 0.6, 1],
+      ["#2962ff", 0.6, 1],
+    ]);
+    expect(ctx.arc.mock.calls.map((call) => call[2])).toEqual([6, 6]);
+    expect(plugin.primitive.priceAxisViews!()).toEqual([]);
+    expect(plugin.primitive.timeAxisViews!()).toEqual([]);
+    hovered = null;
+    draw();
+    expect(ctx.arc).not.toHaveBeenCalled();
+    hovered = drawing.id;
+    drawing.locked = true;
+    draw();
+    expect(ctx.arc).not.toHaveBeenCalled();
+    selected = drawing.id;
+    draw();
+    expect(ctx.arc.mock.calls.map((call) => call[2])).toEqual([3, 3]);
+    expect(strokes.slice(1).every(([color]) => color === "#2962ff")).toBe(true);
   });
 });

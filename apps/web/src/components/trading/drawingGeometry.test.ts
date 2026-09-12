@@ -93,7 +93,8 @@ describe("native drawing geometry", () => {
       textAlignment: "right",
     });
     expect(shape.text).toEqual({
-      point: { x: 300, y: 206 },
+      point: { x: 300 - 6 / Math.sqrt(5), y: 200 + 12 / Math.sqrt(5) },
+      angle: Math.atan2(100, 200),
       value: "Breakout\nwatch",
       fontSize: 20,
       align: "right",

@@ -12,10 +12,7 @@ import {
 } from "lightweight-charts";
 import {
   DRAWING_ANCHORS,
-  buildDrawingGeometry,
   drawingTimeValue,
-  hitDrawingGeometry,
-  hitDrawingHandle,
   isVariableDrawingTool,
   isFreehandDrawingTool,
   maximumDrawingAnchors,
@@ -29,6 +26,7 @@ import {
 } from "./drawingGeometry";
 import { createDrawingPrimitive, drawingProjection } from "./drawingPrimitive";
 import { isDrawingVisibleAtInterval } from "./drawingVisibility";
+import { applyDrawingTemplate } from "./drawingTemplates";
 export type ChartDrawingTool = "cursor" | DrawingKind;
 export type DrawingMagnetMode = "off" | "weak" | "strong";
 export type DrawingState = {
@@ -45,11 +43,13 @@ export type DrawingState = {
   allLocked: boolean;
   alwaysRemoveLocked: boolean;
   selected: ChartDrawing | null;
+  hovered: ChartDrawing | null;
   instruction: string;
   settingsOpen: boolean;
   contextPoint: DrawingPoint | null;
 };
 export type DrawingPatch = Partial<Omit<ChartDrawing, "id" | "kind">>;
+export type DrawingSettingsOptions = { replace?: boolean };
 type DrawingStorage = Pick<Storage, "getItem" | "setItem">;
 const EMPTY: DrawingState = {
   tool: "cursor",
@@ -65,6 +65,7 @@ const EMPTY: DrawingState = {
   allLocked: false,
   alwaysRemoveLocked: false,
   selected: null,
+  hovered: null,
   instruction: "",
   settingsOpen: false,
   contextPoint: null,
@@ -89,6 +90,7 @@ export function createChartDrawingSession(
   let tool: ChartDrawingTool = "cursor";
   let anchors: DrawingAnchor[] = [];
   let selectedId: string | null = null;
+  let hoveredId: string | null = null;
   let settingsOpen = false;
   let settingsDraft: { original: ChartDrawing; drawing: ChartDrawing } | null = null;
   let contextPoint: DrawingPoint | null = null;
@@ -153,11 +155,19 @@ export function createChartDrawingSession(
   const primitive = createDrawingPrimitive(chart, series, () => ({
     drawings: displayedDrawings().filter(isVisible),
     selected: selectedId,
+    hovered: hoveredId,
+    interactive: tool === "cursor" && !settingsOpen,
     preview,
     hidden,
   }));
   series.attachPrimitive(primitive.primitive);
   const emit = () => {
+    const hovered =
+      tool === "cursor" && !hidden && !settingsOpen && !drag
+        ? (displayedDrawings().find((drawing) => drawing.id === hoveredId && isVisible(drawing)) ??
+          null)
+        : null;
+    hoveredId = hovered?.id ?? null;
     const selected = displayedDrawings().find((drawing) => drawing.id === selectedId) ?? null;
     const remaining = tool === "cursor" ? 0 : DRAWING_ANCHORS[tool] - anchors.length;
     const instruction =
@@ -192,6 +202,7 @@ export function createChartDrawingSession(
       allLocked: drawings.length > 0 && drawings.every((drawing) => drawing.locked === true),
       alwaysRemoveLocked,
       selected,
+      hovered,
       instruction,
       settingsOpen: settingsOpen && !!selected,
       contextPoint: selected ? contextPoint : null,
@@ -274,22 +285,15 @@ export function createChartDrawingSession(
     render();
     emit();
   };
-  const geometry = (drawing: ChartDrawing) => {
-    const projection = drawingProjection(chart, series);
-    return buildDrawingGeometry(
-      drawing,
-      projection.project,
-      projection.priceY,
-      projection.width,
-      projection.height,
-    );
+  const hit = (point: DrawingPoint) => primitive.hitTest(point)?.drawing;
+  const hover = (point: DrawingPoint | null) => {
+    if (disposed) return;
+    const next =
+      point && tool === "cursor" && !settingsOpen && !drag ? (hit(point)?.id ?? null) : null;
+    if (next === hoveredId) return;
+    hoveredId = next;
+    emit();
   };
-  const hit = (point: DrawingPoint) =>
-    hidden
-      ? undefined
-      : drawings
-          .toReversed()
-          .find((drawing) => isVisible(drawing) && hitDrawingGeometry(geometry(drawing), point));
   const beginDrag = (point: DrawingPoint) => {
     if (disposed || hidden) return false;
     if (discardSettings()) emit();
@@ -303,12 +307,12 @@ export function createChartDrawingSession(
       return true;
     }
     if (tool !== "cursor") return false;
-    const selected = drawings.find((drawing) => drawing.id === selectedId);
-    const handle =
-      selected && isVisible(selected) ? hitDrawingHandle(geometry(selected), point) : -1;
-    const drawing = handle >= 0 ? selected : hit(point);
+    const target = primitive.hitTest(point);
+    const drawing = target?.drawing;
+    const handle = target?.handle ?? -1;
     if (!drawing) return false;
     selectedId = drawing.id;
+    hoveredId = null;
     emit();
     if (drawing.locked) return false;
     const points = drawing.anchors.map((anchor) =>
@@ -319,7 +323,7 @@ export function createChartDrawingSession(
       drawing,
       origin: point,
       points: points as DrawingPoint[],
-      handle: drawing === selected ? handle : -1,
+      handle,
       moved: false,
     };
     return true;
@@ -474,7 +478,17 @@ export function createChartDrawingSession(
     return commitDrawing();
   };
   const move = (event: MouseEventParams<Time>) => {
-    if (disposed || tool === "cursor" || hidden || strokeLastPoint) return;
+    if (disposed) return;
+    if (tool === "cursor") {
+      hover(
+        event.point &&
+          (event.paneIndex === undefined || event.paneIndex === series.getPane().paneIndex())
+          ? event.point
+          : null,
+      );
+      return;
+    }
+    if (hidden || strokeLastPoint) return;
     preview = null;
     if (
       event.point &&
@@ -595,23 +609,34 @@ export function createChartDrawingSession(
     drawings = drawings.map((drawing) => (drawing.id === id ? next : drawing));
     changed();
   };
-  const previewSettings = (patch: DrawingPatch) => {
+  const settingsResult = (
+    patch: DrawingPatch,
+    options: DrawingSettingsOptions,
+  ): ChartDrawing | null => {
+    if (!settingsDraft) return null;
+    if (options.replace) {
+      const next = applyDrawingTemplate(settingsDraft.drawing, patch);
+      return next === settingsDraft.drawing ? null : next;
+    }
+    const normalized = normalizePatch(settingsDraft.original, patch);
+    return normalized ? { ...settingsDraft.drawing, ...normalized } : null;
+  };
+  const previewSettings = (patch: DrawingPatch, options: DrawingSettingsOptions = {}) => {
     if (disposed || !settingsOpen || !settingsDraft || selectedId !== settingsDraft.original.id)
       return false;
-    const normalized = normalizePatch(settingsDraft.original, patch);
-    if (!normalized) return false;
-    settingsDraft.drawing = { ...settingsDraft.drawing, ...normalized };
+    const next = settingsResult(patch, options);
+    if (!next) return false;
+    settingsDraft.drawing = next;
     render();
     emit();
     return true;
   };
-  const applySettings = (patch: DrawingPatch) => {
+  const applySettings = (patch: DrawingPatch, options: DrawingSettingsOptions = {}) => {
     if (disposed || !settingsOpen || !settingsDraft || selectedId !== settingsDraft.original.id)
       return false;
-    const normalized = normalizePatch(settingsDraft.original, patch);
-    if (!normalized) return false;
+    const next = settingsResult(patch, options);
+    if (!next) return false;
     const { original } = settingsDraft;
-    const next = { ...settingsDraft.drawing, ...normalized };
     settingsDraft = null;
     settingsOpen = false;
     if (JSON.stringify(original) !== JSON.stringify(next)) {
@@ -639,6 +664,8 @@ export function createChartDrawingSession(
   return {
     setTool,
     beginDrag,
+    hover,
+    blocksChartPan: (point: DrawingPoint) => !disposed && tool === "cursor" && !!hit(point),
     dragTo,
     endDrag,
     finishDrawing,
@@ -902,7 +929,7 @@ export function useChartDrawings(
       )
         return;
       element.focus({ preventScroll: true });
-      if (!current.beginDrag(point)) return;
+      if (!current.beginDrag(point) && !current.blocksChartPan(point)) return;
       pointerId = event.pointerId;
       element.setPointerCapture(pointerId);
       event.preventDefault();
@@ -944,6 +971,10 @@ export function useChartDrawings(
       event.preventDefault();
       event.stopPropagation();
     };
+    const leave = () => {
+      if (pointerId === null) current.hover(null);
+    };
+    element.addEventListener("pointerleave", leave);
     element.addEventListener("dblclick", doubleClick, true);
     element.addEventListener("contextmenu", contextMenu, true);
     element.addEventListener("pointerdown", down, true);
@@ -976,6 +1007,7 @@ export function useChartDrawings(
     window.addEventListener("keydown", keyboard);
     return () => {
       window.removeEventListener("keydown", keyboard);
+      element.removeEventListener("pointerleave", leave);
       element.removeEventListener("dblclick", doubleClick, true);
       element.removeEventListener("contextmenu", contextMenu, true);
       element.removeEventListener("pointerdown", down, true);
@@ -1039,11 +1071,13 @@ export function useChartDrawings(
   const openSettings = useCallback(() => session.current?.openSettings(), []);
   const closeSettings = useCallback(() => session.current?.closeSettings(), []);
   const previewSettings = useCallback(
-    (patch: DrawingPatch) => session.current?.previewSettings(patch) ?? false,
+    (patch: DrawingPatch, options?: DrawingSettingsOptions) =>
+      session.current?.previewSettings(patch, options) ?? false,
     [],
   );
   const applySettings = useCallback(
-    (patch: DrawingPatch) => session.current?.applySettings(patch) ?? false,
+    (patch: DrawingPatch, options?: DrawingSettingsOptions) =>
+      session.current?.applySettings(patch, options) ?? false,
     [],
   );
   const isVisible = useCallback(
