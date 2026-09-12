@@ -109,6 +109,33 @@ function runShellEnvironment(input: {
 }
 
 describe("DesktopShellEnvironment", () => {
+  it.effect.each(["darwin", "linux"] as const)(
+    "adds existing native CLI directories after shell PATH on %s",
+    (platform) =>
+      Effect.gen(function* () {
+        const env: NodeJS.ProcessEnv = { HOME: "/home/test/", PATH: "/usr/bin" };
+        yield* runShellEnvironment({
+          env,
+          platform,
+          handler: () => envOutput({ PATH: "/custom/bin:/usr/bin" }),
+          existingPaths: ["/home/test/.local/bin"],
+        });
+        assert.equal(env.PATH, "/custom/bin:/usr/bin:/home/test/.local/bin");
+      }),
+  );
+  it.effect("does not duplicate native directories already supplied by a shell", () =>
+    Effect.gen(function* () {
+      const env: NodeJS.ProcessEnv = { HOME: "/home/test", PATH: "/usr/bin" };
+      yield* runShellEnvironment({
+        env,
+        platform: "darwin",
+        handler: () => envOutput({ PATH: "/home/test/.local/bin:/usr/bin" }),
+        existingPaths: ["/home/test/.local/bin"],
+      });
+      assert.equal(env.PATH, "/home/test/.local/bin:/usr/bin");
+    }),
+  );
+
   it.effect("finds bundled Codex after shell-installed commands on Finder launches", () =>
     Effect.gen(function* () {
       const env: NodeJS.ProcessEnv = { HOME: "/Users/test", PATH: "/usr/bin:/bin" };

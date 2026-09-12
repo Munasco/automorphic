@@ -459,9 +459,17 @@ const installPosixEnvironment = Effect.fn("desktop.shellEnvironment.installPosix
         }
       }
     }
+    // Native CLI installers commonly use ~/.local/bin without updating shell startup files.
+    const nativeCliDirectory = config.env.HOME
+      ? `${config.env.HOME.replace(/\/+$/u, "")}/.local/bin`
+      : undefined;
+    const nativeCliDirectoryExists = nativeCliDirectory
+      ? yield* fileSystem.exists(nativeCliDirectory).pipe(Effect.orElseSucceed(() => false))
+      : false;
     const mergedPath = mergePaths(config.platform, [
       trimNonEmpty(shellEnvironment.PATH).pipe(Option.orElse(() => launchctlPath)),
       readEnvPath(config.env),
+      nativeCliDirectoryExists ? trimNonEmpty(nativeCliDirectory) : Option.none(),
       trimNonEmpty(bundledCliDirectories.join(":")),
     ]);
 

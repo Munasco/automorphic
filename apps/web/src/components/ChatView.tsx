@@ -353,6 +353,7 @@ import {
 import {
   dismissThreadErrorBannerForSession,
   getThreadErrorBannerKey,
+  hasRecoveredProviderProcessError,
   isThreadErrorBannerDismissedForSession,
   shouldShowThreadErrorBanner,
   ThreadErrorBanner,
@@ -1759,7 +1760,23 @@ export default function ChatView(props: ChatViewProps) {
   const localDraftError = activeServerThread
     ? null
     : ((draftId ? localDraftErrorsByDraftId[draftId]?.message : null) ?? null);
-  const localServerError = localServerErrorsByThreadKey[routeThreadKey]?.message ?? null;
+  const localServerErrorEntry = localServerErrorsByThreadKey[routeThreadKey];
+  const recoveredProviderProcessError = hasRecoveredProviderProcessError(
+    localServerErrorEntry,
+    activeServerThread,
+  );
+  const localServerError = recoveredProviderProcessError
+    ? null
+    : (localServerErrorEntry?.message ?? null);
+  useEffect(() => {
+    if (!recoveredProviderProcessError) return;
+    setLocalServerErrorsByThreadKey((existing) => {
+      if (existing[routeThreadKey] !== localServerErrorEntry) return existing;
+      const next = { ...existing };
+      delete next[routeThreadKey];
+      return next;
+    });
+  }, [recoveredProviderProcessError, routeThreadKey, localServerErrorEntry]);
   // Draft errors are keyed by draftId while server errors are keyed by thread
   // key, so a pending draft entry must migrate when the server thread loads or
   // a failed send would silently disappear on promotion. When both keys hold
