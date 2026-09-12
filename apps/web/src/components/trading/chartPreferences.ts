@@ -63,6 +63,7 @@ type SavedChartPreferences = {
   appearance: ChartAppearance;
   indicatorInputs: IndicatorInputSettings;
   extraIndicators: ChartIndicatorInstance[];
+  favoriteIndicators: IndicatorKey[];
   volumeColors: typeof DEFAULT_VOLUME_COLORS;
   initialBalance: InitialBalanceSettings;
   showGrid: boolean;
@@ -94,6 +95,9 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     hiddenIndicators,
     appearance,
     indicatorInputs: normalizeIndicatorInputs(saved.indicatorInputs),
+    favoriteIndicators: Array.isArray(saved.favoriteIndicators)
+      ? [...new Set(saved.favoriteIndicators.filter(isIndicatorKey))]
+      : [],
     extraIndicators: normalizeExtraIndicators(
       saved.extraIndicators,
       MAX_CHART_INDICATORS - Object.values(indicators).filter(Boolean).length,
@@ -118,6 +122,7 @@ export const useChartPreferences = create<{
   appearance: ChartAppearance;
   indicatorInputs: IndicatorInputSettings;
   extraIndicators: ChartIndicatorInstance[];
+  favoriteIndicators: IndicatorKey[];
   volumeColors: typeof DEFAULT_VOLUME_COLORS;
   initialBalance: InitialBalanceSettings;
   setInitialBalance: (settings: InitialBalanceSettings) => void;
@@ -125,6 +130,7 @@ export const useChartPreferences = create<{
   logScale: boolean;
   setStyle: (style: ChartStyle) => void;
   toggleIndicator: (key: IndicatorKey) => void;
+  toggleFavoriteIndicator: (key: IndicatorKey) => void;
   toggleIndicatorVisibility: (key: IndicatorKey) => void;
   setIndicatorsHidden: (hidden: boolean) => void;
   removeAllIndicators: () => void;
@@ -154,6 +160,7 @@ export const useChartPreferences = create<{
       appearance: {},
       indicatorInputs: {},
       extraIndicators: [],
+      favoriteIndicators: [],
       volumeColors: { ...DEFAULT_VOLUME_COLORS },
       initialBalance: { ...DEFAULT_INITIAL_BALANCE },
       setInitialBalance: (settings) => {
@@ -163,6 +170,14 @@ export const useChartPreferences = create<{
       showGrid: true,
       logScale: false,
       setStyle: (style) => set({ style }),
+      toggleFavoriteIndicator: (key) => {
+        if (!isIndicatorKey(key)) return;
+        set((state) => ({
+          favoriteIndicators: state.favoriteIndicators.includes(key)
+            ? state.favoriteIndicators.filter((favorite) => favorite !== key)
+            : [...state.favoriteIndicators, key],
+        }));
+      },
       toggleIndicator: (key) => {
         const state = get();
         if (

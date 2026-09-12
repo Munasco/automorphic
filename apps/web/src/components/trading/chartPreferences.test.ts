@@ -446,3 +446,54 @@ describe("duplicating configured indicators", () => {
     expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
   });
 });
+
+describe("indicator favorites", () => {
+  it("normalizes legacy, malformed and duplicate favorites without enabling indicators", () => {
+    expect(normalizeChartPreferences({}).favoriteIndicators).toEqual([]);
+    expect(normalizeChartPreferences({ favoriteIndicators: "sma" }).favoriteIndicators).toEqual([]);
+    const saved = normalizeChartPreferences({
+      favoriteIndicators: ["sma", "unknown", null, "rsi", "sma", 4],
+    });
+    expect(saved.favoriteIndicators).toEqual(["sma", "rsi"]);
+    expect(saved.indicators.sma).toBe(false);
+  });
+
+  it("toggles favorites without altering active instances and retains them after removal", () => {
+    const store = configure();
+    const instances = getChartIndicatorInstances(store);
+    store.toggleFavoriteIndicator("sma");
+    store.toggleFavoriteIndicator("rsi");
+    expect(useChartPreferences.getState().favoriteIndicators).toEqual(["sma", "rsi"]);
+    expect(getChartIndicatorInstances(useChartPreferences.getState())).toEqual(instances);
+    store.toggleFavoriteIndicator("sma");
+    expect(useChartPreferences.getState().favoriteIndicators).toEqual(["rsi"]);
+    expect(getChartIndicatorInstances(useChartPreferences.getState())).toEqual(instances);
+    store.addIndicator("rsi");
+    store.addIndicator("rsi");
+    store.removeAllIndicators();
+    expect(useChartPreferences.getState().favoriteIndicators).toEqual(["rsi"]);
+    expect(getChartIndicatorInstances(useChartPreferences.getState())).toEqual([]);
+    const state = useChartPreferences.getState();
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    store.toggleFavoriteIndicator("unknown" as never);
+    expect(useChartPreferences.getState()).toBe(state);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  });
+
+  it("restores favorites from workspace storage and clears them for a legacy workspace", async () => {
+    const store = useChartPreferences.getState();
+    store.toggleFavoriteIndicator("ib");
+    store.toggleFavoriteIndicator("rsi");
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    await useChartPreferences.persist.rehydrate();
+    expect(useChartPreferences.getState().favoriteIndicators).toEqual(["ib", "rsi"]);
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+      JSON.stringify({ state: { indicators: { sma: true } }, version: 0 }),
+    );
+    await useChartPreferences.persist.rehydrate();
+    expect(useChartPreferences.getState().favoriteIndicators).toEqual([]);
+    expect(useChartPreferences.getState().indicators.sma).toBe(true);
+  });
+});

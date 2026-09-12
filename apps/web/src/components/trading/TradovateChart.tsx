@@ -726,6 +726,8 @@ export function TradovateChart({
         onStyleChange={settings.setStyle}
         indicatorCounts={indicatorCounts}
         onAddIndicator={settings.addIndicator}
+        favoriteIndicators={settings.favoriteIndicators}
+        onToggleFavoriteIndicator={settings.toggleFavoriteIndicator}
         indicatorLimitReached={indicatorInstances.length >= MAX_CHART_INDICATORS}
         showGrid={settings.showGrid}
         onToggleGrid={settings.toggleGrid}

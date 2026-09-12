@@ -48,6 +48,8 @@ export type ChartToolbarProps = {
   onStyleChange: (value: ChartStyle) => void;
   indicatorCounts: Partial<Record<IndicatorKey, number>>;
   onAddIndicator: (key: IndicatorKey) => void;
+  favoriteIndicators: readonly IndicatorKey[];
+  onToggleFavoriteIndicator: (key: IndicatorKey) => void;
   indicatorLimitReached?: boolean;
   showGrid: boolean;
   onToggleGrid: () => void;
@@ -59,6 +61,7 @@ export type ChartToolbarProps = {
   replayControl?: ReactNode;
   historyControls?: ReactNode;
 };
+const NO_FAVORITES: readonly IndicatorKey[] = [];
 const control =
   "inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded px-2.5 text-[13px] text-zinc-400 outline-none hover:bg-white/5 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-blue-400/70 data-popup-open:bg-white/5 data-popup-open:text-zinc-100 [&>svg]:size-[18px]";
 
@@ -71,6 +74,8 @@ export function ChartToolbar({
   onStyleChange,
   indicatorCounts,
   onAddIndicator,
+  favoriteIndicators = NO_FAVORITES,
+  onToggleFavoriteIndicator,
   indicatorLimitReached = false,
   showGrid,
   onToggleGrid,
@@ -111,7 +116,11 @@ export function ChartToolbar({
   const [indicatorSearch, setIndicatorSearch] = useState("");
   const [indicatorCategory, setIndicatorCategory] = useState<string>("All");
   const matchingIndicators = findIndicators(indicatorSearch).filter(
-    (item) => indicatorCategory === "All" || item.category === indicatorCategory,
+    (item) =>
+      indicatorCategory === "All" ||
+      (indicatorCategory === "Favorites"
+        ? favoriteIndicators.includes(item.key)
+        : item.category === indicatorCategory),
   );
   const activeCount = Object.values(indicatorCounts).reduce(
     (total, count) => total + (count ?? 0),
@@ -258,14 +267,14 @@ export function ChartToolbar({
                 aria-label="Indicator categories"
                 className="flex w-40 shrink-0 flex-col gap-1 border-r border-border p-3 max-sm:w-full max-sm:flex-row max-sm:overflow-x-auto max-sm:border-r-0 max-sm:border-b"
               >
-                {["All", ...INDICATOR_CATEGORIES].map((category) => (
+                {["All", "Favorites", ...INDICATOR_CATEGORIES].map((category) => (
                   <button
                     key={category}
                     type="button"
                     aria-pressed={indicatorCategory === category}
                     onClick={() => setIndicatorCategory(category)}
                     className={cn(
-                      "rounded-md px-3 py-2.5 text-left text-sm",
+                      "shrink-0 whitespace-nowrap rounded-md px-3 py-2.5 text-left text-sm",
                       indicatorCategory === category
                         ? "bg-accent font-medium text-foreground"
                         : "text-muted-foreground hover:bg-accent/50",
@@ -285,19 +294,45 @@ export function ChartToolbar({
                         {category}
                       </h3>
                       {entries.map((indicator) => (
-                        <div key={indicator.key}>
+                        <div
+                          key={indicator.key}
+                          className="group/indicator-entry flex items-center rounded-md hover:bg-accent/60"
+                        >
+                          <Tooltip>
+                            <TooltipTrigger
+                              type="button"
+                              aria-label={`${favoriteIndicators.includes(indicator.key) ? "Unfavorite" : "Favorite"} ${indicator.label}`}
+                              aria-pressed={favoriteIndicators.includes(indicator.key)}
+                              onClick={() => onToggleFavoriteIndicator(indicator.key)}
+                              className={cn(
+                                "ml-1 flex size-8 shrink-0 items-center justify-center rounded outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+                                favoriteIndicators.includes(indicator.key)
+                                  ? "text-blue-400"
+                                  : "text-muted-foreground opacity-0 group-hover/indicator-entry:opacity-100 group-focus-within/indicator-entry:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100",
+                              )}
+                            >
+                              <ChartIcon
+                                name="star"
+                                className={cn(
+                                  "size-4",
+                                  favoriteIndicators.includes(indicator.key) &&
+                                    "[&>path]:fill-current",
+                                )}
+                              />
+                            </TooltipTrigger>
+                            <TooltipPopup>
+                              {favoriteIndicators.includes(indicator.key)
+                                ? "Remove from favorites"
+                                : "Add to favorites"}
+                            </TooltipPopup>
+                          </Tooltip>
                           <button
                             type="button"
                             disabled={indicatorLimitReached}
                             onClick={() => onAddIndicator(indicator.key)}
                             aria-label={`Add ${indicator.label}`}
-                            className="flex w-full items-center gap-3 rounded-md px-3 py-3 text-left hover:bg-accent/60 disabled:cursor-default disabled:hover:bg-transparent"
+                            className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-3 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50"
                           >
-                            <ChartIcon
-                              name="sum"
-                              className="size-4 shrink-0 text-muted-foreground"
-                              aria-hidden="true"
-                            />
                             <span className="min-w-0 flex-1">
                               <span className="block text-sm font-medium leading-5 text-foreground">
                                 {indicator.label}
@@ -320,7 +355,11 @@ export function ChartToolbar({
                 })}
                 {!matchingIndicators.length ? (
                   <p className="px-2 py-5 text-center text-xs text-muted-foreground">
-                    No matching indicators.
+                    {indicatorCategory === "Favorites" &&
+                    !favoriteIndicators.length &&
+                    !indicatorSearch
+                      ? "Star indicators to find them here."
+                      : "No matching indicators."}
                   </p>
                 ) : null}
               </div>
