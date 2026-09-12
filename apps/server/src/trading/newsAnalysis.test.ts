@@ -64,7 +64,7 @@ describe("news analysis cache", () => {
     await analyst.settled("NQ");
     expect(classify).toHaveBeenCalledTimes(3);
   });
-  it("re-analyzes edited headlines and expired results", async () => {
+  it("reuses unchanged results after time passes and analyzes only new or edited headlines", async () => {
     let clock = 0;
     const classify = vi.fn(
       async (items: readonly Headline[]) => new Map(items.map((item) => [item.id, impact])),
@@ -74,10 +74,14 @@ describe("news analysis cache", () => {
     await analyst.settled("MGC");
     analyst.annotate([headline("1", "Changed headline")], "MGC", true);
     await analyst.settled("MGC");
-    clock = 31 * 60_000;
+    clock = 24 * 60 * 60_000;
     analyst.annotate([headline("1", "Changed headline")], "MGC", true);
     await analyst.settled("MGC");
+    expect(classify).toHaveBeenCalledTimes(2);
+    analyst.annotate([headline("1", "Changed headline"), headline("2")], "MGC", true);
+    await analyst.settled("MGC");
     expect(classify).toHaveBeenCalledTimes(3);
+    expect(classify.mock.calls[2]?.[0]).toEqual([headline("2")]);
   });
   it("does not call the provider without configuration, and backs off errors without fabricating ratings", async () => {
     let clock = 0;

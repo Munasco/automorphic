@@ -39,37 +39,42 @@ export function InstrumentHeader({
   const dayQuote = current?.source === "quote";
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-6 gap-y-3 border-b border-border bg-card/40 px-4 py-3">
-      <button
-        type="button"
-        onClick={onSelect}
-        aria-label={`Select instrument, ${symbol || root}`}
-        aria-haspopup="dialog"
-        className="group flex max-w-full items-center gap-2.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <span
-          className={cn(
-            "flex size-9 shrink-0 items-center justify-center rounded-full border text-xs font-semibold",
-            root === "MGC"
-              ? "border-amber-400/20 bg-amber-400/10 text-amber-300"
-              : "border-blue-400/20 bg-blue-400/10 text-blue-300",
-          )}
-          aria-hidden="true"
+      <div className="flex min-w-0 items-start gap-2">
+        <button
+          type="button"
+          onClick={onSelect}
+          aria-label={`Select instrument, ${symbol || root}`}
+          aria-haspopup="dialog"
+          className="group flex max-w-full items-center gap-2.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {instrument.badge}
-        </span>
-        <span className="min-w-0">
-          <span className="trading-heading flex items-center gap-2 text-lg font-semibold tracking-tight">
-            <span className="truncate">{symbol || root}</span>
-            <ChartIcon
-              name="chevron-down"
-              className="size-4 text-muted-foreground group-hover:text-foreground"
-            />
+          <span
+            className={cn(
+              "flex size-9 shrink-0 items-center justify-center rounded-full border text-xs font-semibold",
+              root === "MGC"
+                ? "border-amber-400/20 bg-amber-400/10 text-amber-300"
+                : "border-blue-400/20 bg-blue-400/10 text-blue-300",
+            )}
+            aria-hidden="true"
+          >
+            {instrument.badge}
           </span>
-          <span className="block truncate text-xs text-muted-foreground">
-            {instrument.name} <span className="mx-1.5 text-border">·</span> {instrument.exchange}
+          <span className="min-w-0">
+            <span className="trading-heading flex items-center gap-2 text-lg font-semibold tracking-tight">
+              <span className="truncate">{symbol || root}</span>
+              <ChartIcon
+                name="chevron-down"
+                className="size-4 text-muted-foreground group-hover:text-foreground"
+              />
+            </span>
+            <span className="block truncate text-xs text-muted-foreground">
+              {instrument.name} <span className="mx-1.5 text-border">·</span> {instrument.exchange}
+            </span>
           </span>
+        </button>
+        <span className="mt-1">
+          <MarketSessionBadge root={root} />
         </span>
-      </button>
+      </div>
       <div className="min-w-0">
         <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 tabular-nums">
           <span className="text-xl font-medium tracking-tight">
@@ -85,7 +90,6 @@ export function InstrumentHeader({
           ) : null}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          <MarketSessionBadge root={root} />
           {current?.timestamp && Number.isFinite(Date.parse(current.timestamp)) ? (
             <time dateTime={current.timestamp} className="text-[11px] text-muted-foreground">
               {new Date(current.timestamp).toLocaleString(undefined, {

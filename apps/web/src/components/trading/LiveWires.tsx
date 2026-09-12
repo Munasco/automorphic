@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ArrowDownRight, ArrowUpRight, Minus, RefreshCw } from "lucide-react";
+import { selectBreakingNews } from "./breakingNews";
 import { cn } from "../../lib/utils";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 
@@ -32,6 +33,11 @@ export function LiveWires({ root = "MGC" }: { root?: "MGC" | "NQ" }) {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All news");
   const [error, setError] = useState("");
   const [refresh, setRefresh] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
   useEffect(() => {
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
@@ -61,10 +67,12 @@ export function LiveWires({ root = "MGC" }: { root?: "MGC" | "NQ" }) {
     };
   }, [refresh, root]);
   const items = feed.root === root ? feed.items : [];
+  const breaking = !error ? selectBreakingNews(items, now) : null;
+  const regularItems = items.filter((item) => item.id !== breaking?.id);
   const filtered =
     filter === "All news"
-      ? items
-      : items.filter(
+      ? regularItems
+      : regularItems.filter(
           (item) =>
             item.analysis?.status === "rated" && item.analysis.direction === filter.toLowerCase(),
         );
@@ -73,43 +81,26 @@ export function LiveWires({ root = "MGC" }: { root?: "MGC" | "NQ" }) {
       className="flex h-full min-h-0 min-w-0 flex-col bg-[#0c0c0e]"
       aria-label={`Live Wires for ${root}`}
     >
-      <header className="flex items-center justify-between border-b border-white/10 px-4 py-3.5">
-        <div className="flex items-center gap-2.5">
-          <span
-            className={cn(
-              "size-1.5 rounded-full",
-              error ? "bg-amber-400" : items.length ? "bg-blue-500" : "bg-zinc-600",
-            )}
-          />
-          <h2 className="text-xs font-semibold tracking-wide text-zinc-400">Live Wires</h2>
-          <span className="rounded border border-white/10 px-1.5 py-0.5 text-[11px] text-zinc-300">
-            {root}
-          </span>
+      {breaking ? (
+        <div
+          aria-label="Breaking news"
+          className="shrink-0 border-b border-amber-400/20 bg-amber-400/5 px-4 py-2.5"
+        >
+          <Tooltip>
+            <TooltipTrigger className="text-[11px] font-semibold uppercase tracking-wide text-amber-400">
+              Breaking
+            </TooltipTrigger>
+            <TooltipPopup className="max-w-64">
+              Publisher-marked breaking news from the past 15 minutes, independent of sentiment
+              filters.
+            </TooltipPopup>
+          </Tooltip>
+          <NewsItem item={breaking} root={root} compact />
         </div>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                aria-label="Refresh news"
-                onClick={() => setRefresh((value) => value + 1)}
-                className="rounded p-1 text-zinc-500 hover:text-zinc-200"
-              />
-            }
-          >
-            <RefreshCw className="size-3.5" />
-          </TooltipTrigger>
-          <TooltipPopup>
-            Refresh news
-            {feed.updated
-              ? ` · Updated ${new Date(feed.updated).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`
-              : ""}
-          </TooltipPopup>
-        </Tooltip>
-      </header>
+      ) : null}
       <nav
         aria-label="News impact filters"
-        className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-white/5 p-2"
+        className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-white/5 p-2"
       >
         {FILTERS.map((item) => (
           <button
@@ -127,6 +118,26 @@ export function LiveWires({ root = "MGC" }: { root?: "MGC" | "NQ" }) {
             {item}
           </button>
         ))}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                aria-label="Refresh news"
+                onClick={() => setRefresh((value) => value + 1)}
+                className="ml-auto shrink-0 rounded p-1.5 text-zinc-500 hover:text-zinc-200"
+              />
+            }
+          >
+            <RefreshCw className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipPopup>
+            Refresh news
+            {feed.updated
+              ? ` · Updated ${new Date(feed.updated).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`
+              : ""}
+          </TooltipPopup>
+        </Tooltip>
       </nav>
       {error && (
         <p role="status" className="px-3 py-2 text-xs text-amber-400">
@@ -151,7 +162,15 @@ export function LiveWires({ root = "MGC" }: { root?: "MGC" | "NQ" }) {
   );
 }
 
-function NewsItem({ item, root }: { item: Wire; root: "MGC" | "NQ" }) {
+function NewsItem({
+  item,
+  root,
+  compact = false,
+}: {
+  item: Wire;
+  root: "MGC" | "NQ";
+  compact?: boolean;
+}) {
   const analysis = item.analysis;
   const rated = analysis?.status === "rated" ? analysis : undefined;
   const direction = rated?.direction;
@@ -165,7 +184,7 @@ function NewsItem({ item, root }: { item: Wire; root: "MGC" | "NQ" }) {
   const Icon =
     direction === "bullish" ? ArrowUpRight : direction === "bearish" ? ArrowDownRight : Minus;
   return (
-    <article className="px-1 py-4">
+    <article className={compact ? "pt-2" : "px-1 py-4"}>
       <div className="mb-2.5 flex flex-wrap items-center gap-2 text-[11px]">
         <Tooltip>
           <TooltipTrigger
@@ -182,6 +201,9 @@ function NewsItem({ item, root }: { item: Wire; root: "MGC" | "NQ" }) {
             )}
           >
             <Icon className="size-3.5" />
+            <span className="mr-1 font-medium uppercase tracking-wide">
+              {rated ? direction : analysis?.status === "pending" ? "Analyzing" : "Unrated"}
+            </span>
             {rated ? (
               [1, 2, 3].map((level) => (
                 <span

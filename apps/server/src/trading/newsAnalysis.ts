@@ -17,7 +17,6 @@ const UNRATED: NewsAnalysis = {
   status: "unrated",
   reason: "AI analysis is unavailable for this headline.",
 };
-const TTL = 30 * 60_000;
 const RETRY = 5 * 60_000;
 
 export function parseImpacts(value: unknown, headlines: readonly Headline[]): Map<string, Impact> {
@@ -71,7 +70,7 @@ export function createNewsAnalyst(classify: Classifier, now = Date.now) {
       for (const item of missing)
         cache.set(key(item, root), {
           analysis: { status: "pending", reason: "Assessing headline impact…" },
-          expires: now() + TTL,
+          expires: Infinity,
         });
       const job = (async () => {
         for (let offset = 0; offset < missing.length; offset += 20) {
@@ -86,7 +85,8 @@ export function createNewsAnalyst(classify: Classifier, now = Date.now) {
             const rating = ratings.get(item.id);
             cache.set(key(item, root), {
               analysis: rating ?? UNRATED,
-              expires: now() + (rating ? TTL : RETRY),
+              // Successful interpretations remain reusable until the headline changes or is evicted.
+              expires: rating ? Infinity : now() + RETRY,
             });
           }
         }

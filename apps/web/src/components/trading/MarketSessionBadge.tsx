@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { getFuturesSession } from "./marketSession";
 
 export function MarketSessionBadge({ root }: { root: "MGC" | "NQ" }) {
@@ -14,28 +14,21 @@ export function MarketSessionBadge({ root }: { root: "MGC" | "NQ" }) {
     };
   }, []);
   const session = getFuturesSession(root, now);
+  if (session.status === "scheduled-open") return null;
   return (
-    <Popover>
-      <PopoverTrigger
-        aria-label={`${session.label}, view session hours`}
-        className="inline-flex items-center gap-1.5 rounded text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    <Tooltip>
+      <TooltipTrigger
+        aria-label={session.label}
+        className="inline-flex h-5 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-zinc-600 outline-none hover:bg-zinc-300 focus-visible:ring-2 focus-visible:ring-ring dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600"
       >
-        <span
-          aria-hidden="true"
-          className="flex size-3 items-center justify-center rounded-full bg-muted"
-        >
-          <span className="h-0.5 w-1.5 rounded bg-current" />
-        </span>
-        {session.label}
-      </PopoverTrigger>
-      <PopoverPopup align="start" className="w-72">
-        <PopoverTitle className="text-sm">{session.label}</PopoverTitle>
-        <p className="mt-2 text-xs text-muted-foreground">{session.reason}</p>
-        {session.nextOpen ? <p className="mt-2 text-xs">{session.nextOpen}</p> : null}
-        <p className="mt-3 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground">
-          {session.scheduleNote}
-        </p>
-      </PopoverPopup>
-    </Popover>
+        <span aria-hidden="true" className="h-1 w-3 rounded-full bg-current" />
+      </TooltipTrigger>
+      <TooltipPopup className="max-w-72">
+        <p className="font-semibold">{session.label}</p>
+        <p className="mt-1">{session.reason}</p>
+        {session.nextOpen ? <p className="mt-1">{session.nextOpen}</p> : null}
+        <p className="mt-2 text-muted-foreground">{session.scheduleNote}</p>
+      </TooltipPopup>
+    </Tooltip>
   );
 }
