@@ -54,6 +54,7 @@ import type { InitialBalanceStats } from "./initialBalance";
 import { DrawingTools, FavoriteDrawingToolbar } from "./DrawingTools";
 import { DrawingSelectionOverlay } from "./DrawingSelectionOverlay";
 import { DrawingInlineTextEditor } from "./DrawingInlineTextEditor";
+import { ChartContextMenu } from "./ChartContextMenu";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 
@@ -655,6 +656,11 @@ export function TradovateChart({
               <div ref={host} className="absolute inset-0" />
               <DrawingSelectionOverlay drawings={drawings} />
               <DrawingInlineTextEditor
+                chart={activeEngine?.chart ?? null}
+                series={activeEngine?.prices[settings.style] ?? null}
+                drawings={drawings}
+              />
+              <ChartContextMenu
                 chart={activeEngine?.chart ?? null}
                 series={activeEngine?.prices[settings.style] ?? null}
                 drawings={drawings}

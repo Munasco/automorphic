@@ -1327,6 +1327,7 @@ export function useChartDrawings(
     const contextMenu = (event: MouseEvent) => {
       const point = pointFor(event);
       if (point && current.openContextMenu(point, { x: event.clientX, y: event.clientY })) {
+        element.focus({ preventScroll: true });
         event.preventDefault();
         event.stopPropagation();
       }

@@ -9,7 +9,7 @@ import {
   Check,
   inputClass,
 } from "./DrawingStyleControls";
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import { useCallback, useRef, useState, type ClipboardEvent, type ReactNode } from "react";
 import { Slider } from "@base-ui/react/slider";
 import { ContextMenu } from "@base-ui/react/context-menu";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
@@ -821,6 +821,19 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
     drawings.closeContextMenu();
     action();
   };
+  const copyFromMenu = (event: ClipboardEvent) => {
+    const target = event.target;
+    if (
+      target instanceof HTMLElement &&
+      (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
+    )
+      return;
+    const text = drawings.copySelectedSerialized();
+    if (!text) return;
+    event.clipboardData.setData("text/plain", text);
+    event.preventDefault();
+    event.stopPropagation();
+  };
   return (
     <>
       <div
@@ -991,7 +1004,12 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
               ))}
             </svg>
           </MenuTrigger>
-          <MenuPopup aria-label="Drawing options" className="w-56" style={drawingMenuStyle}>
+          <MenuPopup
+            aria-label="Drawing options"
+            className="w-[276px]"
+            style={drawingMenuStyle}
+            onCopy={copyFromMenu}
+          >
             <DrawingMenuCommands drawings={drawings} />
           </MenuPopup>
         </Menu>
@@ -1014,6 +1032,7 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
         >
           <MenuPopup
             aria-label="Drawing context menu"
+            onCopy={copyFromMenu}
             onMouseUpCapture={(event) => {
               // Canvas hit testing opens this virtual-anchor menu without a DOM trigger.
               // Releasing the opening right-click must not activate the item under it.
@@ -1028,7 +1047,7 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
                 event.stopPropagation();
               }
             }}
-            className="w-56"
+            className="w-[276px]"
             style={drawingMenuStyle}
             align="start"
             sideOffset={0}
@@ -1051,7 +1070,14 @@ const drawingMenuStyle = {
   transition: "none",
   animation: "none",
 };
-const drawingMenuItemClass = "min-h-9 px-3 py-2 text-sm";
+const drawingMenuItemClass = "h-8 min-h-8 gap-3 px-3 py-0 text-sm sm:min-h-8";
+function DrawingMenuIcon({ children }: { children?: ReactNode }) {
+  return (
+    <span aria-hidden="true" className="flex size-4.5 shrink-0 items-center justify-center">
+      {children}
+    </span>
+  );
+}
 const executeDrawingAction = (action: () => void) => action();
 function DrawingMenuCommands({
   drawings,
@@ -1062,8 +1088,8 @@ function DrawingMenuCommands({
 }) {
   const selected = drawings.selected;
   if (!selected) return null;
-  const modifier =
-    typeof navigator !== "undefined" && isMacPlatform(navigator.platform) ? "⌘" : "Ctrl";
+  const mac = typeof navigator !== "undefined" && isMacPlatform(navigator.platform);
+  const modifier = mac ? "⌘" : "Ctrl";
   const copy = () => {
     void drawings.copyDrawing(selected.id).then((copied) => {
       if (!copied) {
@@ -1083,30 +1109,53 @@ function DrawingMenuCommands({
         className={drawingMenuItemClass}
         onClick={() => onAction(() => drawings.duplicateDrawing(selected.id))}
       >
-        Clone <MenuShortcut>{modifier} Drag</MenuShortcut>
+        <DrawingMenuIcon>
+          <DrawingToolIcon name="copy" className="size-4.5" />
+        </DrawingMenuIcon>
+        Clone <MenuShortcut className="tracking-normal">{modifier} Drag</MenuShortcut>
       </MenuItem>
       <MenuItem className={drawingMenuItemClass} onClick={() => onAction(copy)}>
-        Copy <MenuShortcut>{modifier} C</MenuShortcut>
+        <DrawingMenuIcon />
+        Copy <MenuShortcut className="tracking-normal">{modifier} C</MenuShortcut>
       </MenuItem>
       <MenuSeparator />
       {[
         {
           label: selected.locked ? "Unlock" : "Lock",
           action: () => drawings.updateSelected({ locked: !selected.locked }),
+          icon: (
+            <DrawingToolIcon name={selected.locked ? "lock-open" : "lock"} className="size-4.5" />
+          ),
         },
-        { label: "Hide", action: () => drawings.updateSelected({ hidden: true }) },
-        { label: "Remove", action: drawings.deleteSelected },
+        {
+          label: "Hide",
+          action: () => drawings.updateSelected({ hidden: true }),
+          icon: <DrawingToolIcon name="eye-off" className="size-4.5" />,
+        },
+        {
+          label: "Remove",
+          action: drawings.deleteSelected,
+          icon: <ChartIcon name="trash" className="size-4.5" />,
+          shortcut: mac ? "⌫" : "Delete",
+        },
       ].map((item) => (
         <MenuItem
           key={item.label}
           className={drawingMenuItemClass}
           onClick={() => onAction(item.action)}
         >
+          <DrawingMenuIcon>{item.icon}</DrawingMenuIcon>
           {item.label}
+          {item.shortcut ? (
+            <MenuShortcut className="tracking-normal">{item.shortcut}</MenuShortcut>
+          ) : null}
         </MenuItem>
       ))}
       <MenuSeparator />
       <MenuItem className={drawingMenuItemClass} onClick={() => onAction(drawings.openSettings)}>
+        <DrawingMenuIcon>
+          <SolarSettingsIcon className="size-4.5" />
+        </DrawingMenuIcon>
         Settings…
       </MenuItem>
     </>
@@ -1117,8 +1166,11 @@ function DrawingOrderSubmenu({ drawings }: { drawings: ChartDrawingsController }
   const last = drawings.objects.length - 1;
   return (
     <MenuSub>
-      <MenuSubTrigger className={drawingMenuItemClass}>Visual order</MenuSubTrigger>
-      <MenuSubPopup aria-label="Visual order" className="w-52" style={drawingMenuStyle}>
+      <MenuSubTrigger className={drawingMenuItemClass}>
+        <DrawingMenuIcon />
+        Visual order
+      </MenuSubTrigger>
+      <MenuSubPopup aria-label="Visual order" className="w-[276px]" style={drawingMenuStyle}>
         {(
           [
             ["front", "Bring to front", index === last],
@@ -1133,6 +1185,7 @@ function DrawingOrderSubmenu({ drawings }: { drawings: ChartDrawingsController }
             disabled={index < 0 || boundary}
             onClick={() => drawings.reorderSelected(direction)}
           >
+            <DrawingMenuIcon />
             {label}
           </MenuItem>
         ))}
