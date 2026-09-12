@@ -72,6 +72,40 @@ const disabled = Object.fromEntries(
 ) as ChartIndicators;
 
 describe("native indicator renderer", () => {
+  it("renders default VWAP bands immediately, adds configured pairs, and keeps fills independent of line visibility", () => {
+    const harness = chartHarness(),
+      renderer = createIndicatorRenderer(harness.chart, 0.1);
+    const input = inputBars(4),
+      enabled = { ...disabled, vwap: true };
+    renderer.update(input, enabled, DEFAULT_INITIAL_BALANCE, 1);
+    expect(harness.series).toHaveLength(3);
+    expect(harness.series[0]?.options.color).toBe("#2962ff");
+    expect(
+      harness.series
+        .slice(1)
+        .every((series) => series.options.color === "#4caf50" && series.data.length === 4),
+    ).toBe(true);
+    expect(harness.series.flatMap((series) => series.primitives)).toHaveLength(1);
+    const host = harness.series[0]!;
+    renderer.update(
+      input,
+      enabled,
+      DEFAULT_INITIAL_BALANCE,
+      1,
+      {
+        vwap: { plots: { upper1: { visible: false }, fill1: { opacity: 0.4, color: "#abcdef" } } },
+      },
+      { vwap: { band2Enabled: 1, band3Enabled: 1, band3Multiplier: 4 } },
+    );
+    expect(harness.series).toHaveLength(7);
+    expect(harness.series[1]?.options.lineVisible).toBe(false);
+    expect(host.primitives).toHaveLength(1);
+    renderer.update(input, enabled, DEFAULT_INITIAL_BALANCE, 1, {}, { vwap: { band1Enabled: 0 } });
+    expect(harness.series).toEqual([host]);
+    renderer.update(input, disabled, DEFAULT_INITIAL_BALANCE, 1);
+    expect(harness.series).toHaveLength(0);
+  });
+
   it("calculates IB from minute history without adding minute timestamps to the seconds chart", () => {
     const start = Date.parse("2026-09-14T13:30:00Z") / 1000;
     const minuteBars = Array.from({ length: 66 }, (_, index) => ({

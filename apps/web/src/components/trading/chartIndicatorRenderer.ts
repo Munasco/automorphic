@@ -1,6 +1,7 @@
 import { initialBalanceChartPoints, type InitialBalanceHistory } from "./useInitialBalanceHistory";
 import { calculateATR } from "./advancedIndicators";
-import { resolveIndicatorStyle } from "./indicatorStyles";
+import { resolveIndicatorStyle, indicatorStyleColor } from "./indicatorStyles";
+import { createIndicatorBandFill } from "./indicatorBandFill";
 import {
   HistogramSeries,
   LineSeries,
@@ -42,6 +43,7 @@ type Plot = {
   primary: boolean;
   oscillator: boolean;
   initialBalance?: ReturnType<typeof createInitialBalancePrimitive>;
+  bandFill?: ReturnType<typeof createIndicatorBandFill>;
 };
 
 /** Owns only indicator series; price, volume, drawings, and the chart lifetime remain with the caller. */
@@ -146,7 +148,10 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
       }
       if (!options.histogram) {
         plot.series.applyOptions({
-          color: style.color,
+          color: indicatorStyleColor(style),
+          lineVisible: !options.invisible && style.visible,
+          crosshairMarkerVisible: !options.invisible && style.visible,
+          lastValueVisible: pane > 0 && style.visible,
           lineWidth: style.lineWidth as 1 | 2 | 3 | 4,
         });
       }
@@ -155,15 +160,15 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
         time: point.time as UTCTimestamp,
         ...(options.histogram
           ? {
-              color: `${
+              color: indicatorStyleColor(
                 resolveIndicatorStyle(
                   indicator,
                   (point.value >= 0 ? options.positiveStyleKey : options.negativeStyleKey) ??
                     options.styleKey ??
                     "main",
                   appearance[indicator],
-                ).color
-              }90`,
+                ),
+              ),
             }
           : {}),
       }));
@@ -251,6 +256,21 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
             ),
           );
         }
+      }
+      const fillHost = result.plots[0]
+        ? plots.get(`${definition.key}.${result.plots[0].id}`)
+        : undefined;
+      if (fillHost && (result.fills?.length || fillHost.bandFill)) {
+        if (!fillHost.bandFill) {
+          fillHost.bandFill = createIndicatorBandFill(chart, fillHost.series as ISeriesApi<"Line">);
+          fillHost.series.attachPrimitive(fillHost.bandFill.primitive);
+        }
+        fillHost.bandFill.update(
+          (result.fills ?? []).map((fill) => ({
+            ...fill,
+            ...resolveIndicatorStyle(definition.key, fill.styleKey, appearance[definition.key]),
+          })),
+        );
       }
       if (result.reading !== undefined) readings[definition.key] = result.reading;
       if (result.sessionStats) initialBalanceStats = result.sessionStats;

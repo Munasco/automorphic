@@ -3,6 +3,7 @@ import { resolveIndicatorStyle } from "./indicatorStyles";
 import { useState } from "react";
 import { ChartIcon } from "./ChartIcon";
 import { SolarSettingsIcon } from "./SolarSettingsIcon";
+import { DrawingToolIcon } from "./DrawingToolIcon";
 import {
   INDICATOR_CATALOG,
   INDICATOR_INPUTS,
@@ -14,6 +15,7 @@ import {
 } from "./indicatorCatalog";
 import { INDICATOR_COLORS, type IndicatorReadings } from "./chartIndicatorRenderer";
 import type { useChartPreferences } from "./chartPreferences";
+import type { IndicatorStyle } from "./indicatorDefinition";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
@@ -84,6 +86,21 @@ export function IndicatorLegend({
                   ) ?? "—"}
                 </span>
                 <div className="absolute -right-1 z-10 inline-flex overflow-hidden rounded border border-white/15 bg-[#14171d] opacity-0 pointer-events-none group-hover/indicator:pointer-events-auto group-hover/indicator:opacity-100 group-focus-within/indicator:pointer-events-auto group-focus-within/indicator:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100">
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          className={controlClass}
+                          aria-label={`${hidden ? "Show" : "Hide"} ${label}`}
+                          onClick={() => settings.toggleIndicatorVisibility(key)}
+                        />
+                      }
+                    >
+                      <DrawingToolIcon name={hidden ? "eye-off" : "eye"} className="size-4" />
+                    </TooltipTrigger>
+                    <TooltipPopup>{`${hidden ? "Show" : "Hide"} ${label}`}</TooltipPopup>
+                  </Tooltip>
                   <Popover>
                     <PopoverTrigger
                       className={controlClass}
@@ -107,29 +124,60 @@ export function IndicatorLegend({
                             onChange={() => settings.toggleIndicatorVisibility(key)}
                           />
                         </label>
-                        {INDICATOR_INPUTS[key].map((input) => (
-                          <label
-                            key={input.key}
-                            className="flex items-center justify-between gap-2"
-                          >
-                            {input.label}
-                            <input
-                              type="number"
-                              aria-label={`${label} ${input.label}`}
-                              min={input.min}
-                              max={input.max}
-                              step={input.step}
-                              className={cn(inputClass, "w-20")}
-                              value={inputs[input.key] ?? input.defaultValue}
-                              onChange={(event) => {
-                                if (event.target.value)
-                                  settings.setIndicatorInputs(key, {
-                                    [input.key]: Number(event.target.value),
-                                  });
-                              }}
-                            />
-                          </label>
-                        ))}
+                        {INDICATOR_INPUTS[key]
+                          .filter(
+                            (input) =>
+                              !input.shownWhen ||
+                              inputs[input.shownWhen.key] === input.shownWhen.value,
+                          )
+                          .map((input) => (
+                            <div
+                              key={input.key}
+                              className="flex items-center justify-between gap-2"
+                            >
+                              <span>{input.label}</span>
+                              {input.kind === "boolean" ? (
+                                <input
+                                  type="checkbox"
+                                  aria-label={`${label} ${input.label}`}
+                                  checked={(inputs[input.key] ?? input.defaultValue) !== 0}
+                                  onChange={(event) =>
+                                    settings.setIndicatorInputs(key, {
+                                      [input.key]: Number(event.target.checked),
+                                    })
+                                  }
+                                />
+                              ) : input.kind === "select" ? (
+                                <DrawingSelect
+                                  label={`${label} ${input.label}`}
+                                  value={String(inputs[input.key] ?? input.defaultValue)}
+                                  options={(input.options ?? []).map(
+                                    (option) => [String(option.value), option.label] as const,
+                                  )}
+                                  onChange={(value) =>
+                                    settings.setIndicatorInputs(key, { [input.key]: Number(value) })
+                                  }
+                                  className="max-w-40"
+                                />
+                              ) : (
+                                <input
+                                  type="number"
+                                  aria-label={`${label} ${input.label}`}
+                                  min={input.min}
+                                  max={input.max}
+                                  step={input.step}
+                                  className={cn(inputClass, "w-20")}
+                                  value={inputs[input.key] ?? input.defaultValue}
+                                  onChange={(event) => {
+                                    if (event.target.value)
+                                      settings.setIndicatorInputs(key, {
+                                        [input.key]: Number(event.target.value),
+                                      });
+                                  }}
+                                />
+                              )}
+                            </div>
+                          ))}
                         {INDICATOR_INPUTS[key].length > 0 ? (
                           <button
                             type="button"
@@ -157,55 +205,76 @@ export function IndicatorLegend({
                                 />
                               </label>
                             ))
-                          : styles.map((plotStyle) => {
-                              const style = resolveIndicatorStyle(
-                                key,
-                                plotStyle.key,
-                                settings.appearance[key],
-                              );
-                              const update = (patch: { color?: string; lineWidth?: number }) =>
-                                settings.setIndicatorAppearance(key, {
-                                  plots: {
-                                    [plotStyle.key]: {
-                                      ...settings.appearance[key]?.plots?.[plotStyle.key],
-                                      ...patch,
+                          : styles
+                              .filter(
+                                (plotStyle) =>
+                                  !plotStyle.shownWhen ||
+                                  inputs[plotStyle.shownWhen.key] === plotStyle.shownWhen.value,
+                              )
+                              .map((plotStyle) => {
+                                const style = resolveIndicatorStyle(
+                                  key,
+                                  plotStyle.key,
+                                  settings.appearance[key],
+                                );
+                                const update = (patch: IndicatorStyle) =>
+                                  settings.setIndicatorAppearance(key, {
+                                    plots: {
+                                      [plotStyle.key]: {
+                                        ...settings.appearance[key]?.plots?.[plotStyle.key],
+                                        ...patch,
+                                      },
                                     },
-                                  },
-                                });
-                              return (
-                                <div
-                                  key={plotStyle.key}
-                                  className="space-y-2 border-t border-white/10 pt-3"
-                                >
-                                  <label className="flex items-center justify-between gap-2">
-                                    {plotStyle.label}
-                                    <input
-                                      type="color"
-                                      aria-label={`${label} ${plotStyle.label} color`}
-                                      value={style.color}
-                                      onInput={(event) =>
-                                        update({ color: event.currentTarget.value })
-                                      }
-                                      className="h-7 w-9 cursor-pointer rounded border border-white/15 bg-transparent"
-                                    />
-                                  </label>
-                                  {plotStyle.kind !== "fill" && (
-                                    <label className="flex items-center justify-between">
-                                      Line width
-                                      <DrawingSelect
-                                        label={`${label} ${plotStyle.label} width`}
-                                        value={String(style.lineWidth)}
-                                        onChange={(value) => update({ lineWidth: Number(value) })}
-                                        options={[1, 2, 3, 4].map(
-                                          (width) => [String(width), `${width} px`] as const,
+                                  });
+                                return (
+                                  <div
+                                    key={plotStyle.key}
+                                    className="space-y-2 border-t border-white/10 pt-3"
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <label className="flex items-center gap-2">
+                                        {key !== "ib" && (
+                                          <input
+                                            type="checkbox"
+                                            aria-label={`Show ${label} ${plotStyle.label}`}
+                                            checked={style.visible}
+                                            onChange={(event) =>
+                                              update({ visible: event.target.checked })
+                                            }
+                                          />
                                         )}
-                                        className="w-20"
+                                        {plotStyle.label}
+                                      </label>
+                                      <ColorPicker
+                                        label={`${label} ${plotStyle.label} color`}
+                                        value={style.color}
+                                        onChange={(color) => update({ color })}
+                                        {...(key !== "ib"
+                                          ? {
+                                              opacity: style.opacity,
+                                              onOpacityChange: (opacity: number) =>
+                                                update({ opacity }),
+                                            }
+                                          : {})}
                                       />
-                                    </label>
-                                  )}
-                                </div>
-                              );
-                            })}
+                                    </div>
+                                    {plotStyle.kind !== "fill" && (
+                                      <label className="flex items-center justify-between">
+                                        Line width
+                                        <DrawingSelect
+                                          label={`${label} ${plotStyle.label} width`}
+                                          value={String(style.lineWidth)}
+                                          onChange={(value) => update({ lineWidth: Number(value) })}
+                                          options={[1, 2, 3, 4].map(
+                                            (width) => [String(width), `${width} px`] as const,
+                                          )}
+                                          className="w-20"
+                                        />
+                                      </label>
+                                    )}
+                                  </div>
+                                );
+                              })}
                         {key === "ib" && (
                           <>
                             <label className="flex items-center justify-between">

@@ -5,6 +5,11 @@ import type { InitialBalanceRange, InitialBalanceStats } from "./initialBalance"
 export type IndicatorInputKey = string;
 export type IndicatorInputDescriptor = {
   key: IndicatorInputKey;
+  kind?: "number" | "boolean" | "select";
+  options?: readonly { value: number; label: string }[];
+  group?: string;
+  shownWhen?: { key: string; value: number };
+  legend?: boolean;
   label: string;
   defaultValue: number;
   min: number;
@@ -13,7 +18,12 @@ export type IndicatorInputDescriptor = {
 };
 export type IndicatorInputValues = Partial<Record<IndicatorInputKey, number>>;
 
-export type IndicatorStyle = { color?: string; lineWidth?: number };
+export type IndicatorStyle = {
+  color?: string;
+  lineWidth?: number;
+  visible?: boolean;
+  opacity?: number;
+};
 export type IndicatorStyleDefinition = {
   key: string;
   label: string;
@@ -21,6 +31,9 @@ export type IndicatorStyleDefinition = {
   lineWidth: number;
   primary?: boolean;
   legacyColor?: boolean;
+  visible?: boolean;
+  opacity?: number;
+  shownWhen?: { key: string; value: number };
   kind?: "line" | "fill";
 };
 export type IndicatorContext = {
@@ -49,7 +62,14 @@ export type IndicatorPlot = {
     settings: InitialBalanceSettings;
   };
 };
+export type IndicatorFill = {
+  id: string;
+  styleKey: string;
+  upper: readonly IndicatorPoint[];
+  lower: readonly IndicatorPoint[];
+};
 export type IndicatorResult = {
+  fills?: IndicatorFill[];
   plots: IndicatorPlot[];
   reading?: number | undefined;
   status?: string;

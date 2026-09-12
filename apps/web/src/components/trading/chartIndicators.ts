@@ -105,17 +105,37 @@ function futuresSession(time: number): number | null {
  * never invents an initial VWAP. No holiday calendar is required for actual bars.
  */
 export function calculateVWAP(bars: readonly Candle[]): IndicatorPoint[] {
-  const points: IndicatorPoint[] = [];
-  let session: number | null = null;
-  let volume = 0;
-  let value = 0;
+  return calculateVWAPBands(bars, []).middle;
+}
+
+/** Volume-weighted population variance of the same HLC3 source as VWAP. Online weighted
+ * moments avoid cancellation in E[x²] - E[x]² when price is large and dispersion is small.
+ * Band width is zero on the first positive-volume bar, not absent. Partial loaded sessions
+ * intentionally use only available volume; missing history is never reconstructed.
+ */
+export function calculateVWAPBands(
+  bars: readonly Candle[],
+  multipliers: readonly number[] = [1, 2, 3],
+  mode: "standard-deviation" | "percentage" = "standard-deviation",
+) {
+  const middle: IndicatorPoint[] = [];
+  const bands = multipliers.map(() => ({
+    upper: [] as IndicatorPoint[],
+    lower: [] as IndicatorPoint[],
+  }));
+  let session: number | null = null,
+    volume = 0,
+    value = 0,
+    variance = 0;
   for (const bar of bars) {
+    if (!Number.isFinite(bar.time)) continue;
     const nextSession = futuresSession(bar.actualTime ?? bar.time);
     if (nextSession === null) continue;
     if (nextSession !== session) {
       session = nextSession;
       volume = 0;
       value = 0;
+      variance = 0;
     }
     if (![bar.high, bar.low, bar.close, bar.volume].every(Number.isFinite) || bar.volume < 0)
       continue;
@@ -124,12 +144,32 @@ export function calculateVWAP(bars: readonly Candle[]): IndicatorPoint[] {
       if (!Number.isFinite(total)) continue;
       const weight = bar.volume / total;
       const typical = bar.high / 3 + bar.low / 3 + bar.close / 3;
-      value = value * (1 - weight) + typical * weight;
+      if (volume === 0) {
+        value = typical;
+        variance = 0;
+      } else {
+        const delta = typical - value;
+        variance = (1 - weight) * (variance + weight * delta * delta);
+        value = value * (1 - weight) + typical * weight;
+      }
       volume = total;
     }
-    if (volume > 0 && Number.isFinite(value)) points.push({ time: bar.time, value });
+    if (volume <= 0 || !Number.isFinite(value)) continue;
+    middle.push({ time: bar.time, value });
+    const deviation =
+      mode === "percentage" ? Math.abs(value) / 100 : Math.sqrt(Math.max(0, variance));
+    for (let index = 0; index < multipliers.length; index++) {
+      const multiplier = multipliers[index]!;
+      if (!Number.isFinite(multiplier) || multiplier < 0 || !Number.isFinite(deviation)) continue;
+      const upper = value + deviation * multiplier,
+        lower = value - deviation * multiplier;
+      if (Number.isFinite(upper) && Number.isFinite(lower)) {
+        bands[index]!.upper.push({ time: bar.time, value: upper });
+        bands[index]!.lower.push({ time: bar.time, value: lower });
+      }
+    }
   }
-  return points;
+  return { middle, bands };
 }
 
 /** Wilder RSI: SMA-seeded gains/losses, then alpha = 1 / period; flat series = 50. */

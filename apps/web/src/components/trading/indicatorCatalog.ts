@@ -31,7 +31,8 @@ const validInput = (value: unknown, descriptor: IndicatorInputDescriptor): value
   Number.isFinite(value) &&
   value >= descriptor.min &&
   value <= descriptor.max &&
-  (descriptor.step !== 1 || Number.isInteger(value));
+  (descriptor.step !== 1 || Number.isInteger(value)) &&
+  (!descriptor.options || descriptor.options.some((option) => option.value === value));
 
 /** Merge only known, valid inputs; older workspace preferences receive the original defaults. */
 export function getIndicatorInputs(
@@ -85,7 +86,9 @@ export function getIndicatorLabel(
 ): string {
   const label = INDICATOR_CATALOG.find((item) => item.key === key)!.label;
   const inputs = getIndicatorInputs(key, settings);
-  const values = INDICATOR_INPUTS[key].map((input) => inputs[input.key]);
+  const values = INDICATOR_INPUTS[key]
+    .filter((input) => input.legend !== false)
+    .map((input) => inputs[input.key]);
   return values.length ? `${label.replace(/ \d+$/, "")} ${values.join(" / ")}` : label;
 }
 

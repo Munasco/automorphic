@@ -9,6 +9,13 @@ function normalizeStyle(value: unknown): IndicatorStyle {
   const input = value as IndicatorStyle;
   return {
     ...(validColor(input.color) ? { color: input.color } : {}),
+    ...(typeof input.visible === "boolean" ? { visible: input.visible } : {}),
+    ...(typeof input.opacity === "number" &&
+    Number.isFinite(input.opacity) &&
+    input.opacity >= 0 &&
+    input.opacity <= 1
+      ? { opacity: input.opacity }
+      : {}),
     ...(typeof input.lineWidth === "number" && [1, 2, 3, 4].includes(input.lineWidth)
       ? { lineWidth: input.lineWidth }
       : {}),
@@ -41,6 +48,8 @@ export function resolveIndicatorStyle(
   const defaults = definition.styles.find((style) => style.key === plot);
   const saved = appearance.plots?.[plot];
   return {
+    visible: saved?.visible ?? appearance.visible ?? defaults?.visible ?? true,
+    opacity: saved?.opacity ?? appearance.opacity ?? defaults?.opacity ?? 1,
     color:
       saved?.color ??
       (defaults?.primary || defaults?.legacyColor ? appearance.color : undefined) ??
@@ -48,4 +57,13 @@ export function resolveIndicatorStyle(
       "#9299a7",
     lineWidth: saved?.lineWidth ?? appearance.lineWidth ?? defaults?.lineWidth ?? 1,
   };
+}
+
+export function indicatorStyleColor(style: { color: string; opacity: number; visible?: boolean }) {
+  const opacity = style.visible === false ? 0 : style.opacity;
+  return opacity >= 1
+    ? style.color
+    : `${style.color}${Math.round(Math.max(0, opacity) * 255)
+        .toString(16)
+        .padStart(2, "0")}`;
 }

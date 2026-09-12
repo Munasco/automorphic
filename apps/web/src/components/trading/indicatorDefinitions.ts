@@ -2,7 +2,7 @@ import {
   calculateEMA,
   calculateRSI,
   calculateSMA,
-  calculateVWAP,
+  calculateVWAPBands,
   type IndicatorPoint,
 } from "./chartIndicators";
 import {
@@ -48,6 +48,7 @@ const single = (
   options: Partial<IndicatorPlot> = {},
 ): IndicatorResult => ({ plots: [{ id: "main", styleKey: "main", points, ...options }] });
 const bands = (result: ReturnType<typeof calculateBollingerBands>): IndicatorResult => ({
+  fills: [{ id: "background", styleKey: "background", upper: result.upper, lower: result.lower }],
   plots: [
     { id: "upper", styleKey: "upper", points: result.upper, primary: false },
     { id: "middle", styleKey: "main", points: result.middle },
@@ -167,6 +168,7 @@ export const INDICATOR_DEFINITIONS = [
       { ...style("upper", "Upper", "#60a5fa"), legacyColor: true },
       style("main", "Middle", "#93c5fd", true),
       { ...style("lower", "Lower", "#60a5fa"), legacyColor: true },
+      { ...style("background", "Background", "#60a5fa"), kind: "fill", opacity: 0.05 },
     ],
     calculate: ({ bars, inputs }) =>
       bands(calculateBollingerBands(bars, inputs.period, inputs.deviations)),
@@ -182,6 +184,7 @@ export const INDICATOR_DEFINITIONS = [
       { ...style("upper", "Upper", "#2dd4bf"), legacyColor: true },
       style("main", "Middle", "#99f6e4", true),
       { ...style("lower", "Lower", "#2dd4bf"), legacyColor: true },
+      { ...style("background", "Background", "#2dd4bf"), kind: "fill", opacity: 0.05 },
     ],
     calculate: ({ bars, inputs }) => bands(calculateDonchian(bars, inputs.period)),
   }),
@@ -200,6 +203,7 @@ export const INDICATOR_DEFINITIONS = [
       { ...style("upper", "Upper", "#f472b6"), legacyColor: true },
       style("main", "Middle", "#fbcfe8", true),
       { ...style("lower", "Lower", "#f472b6"), legacyColor: true },
+      { ...style("background", "Background", "#f472b6"), kind: "fill", opacity: 0.05 },
     ],
     calculate: ({ bars, inputs }) =>
       bands(calculateKeltnerChannels(bars, inputs.period, inputs.atrPeriod, inputs.multiplier)),
@@ -233,8 +237,8 @@ export const INDICATOR_DEFINITIONS = [
     styles: [
       style("main", "Primary line", "#60a5fa", true),
       style("signal", "Signal line", "#fb923c"),
-      { ...style("positive", "Positive histogram", "#26a69a"), kind: "fill" },
-      { ...style("negative", "Negative histogram", "#ef5350"), kind: "fill" },
+      { ...style("positive", "Positive histogram", "#26a69a"), kind: "fill", opacity: 144 / 255 },
+      { ...style("negative", "Negative histogram", "#ef5350"), kind: "fill", opacity: 144 / 255 },
     ],
     validateInputs: (values) => values.fast! < values.slow!,
     repairInputs: (values) => ({ ...values, fast: 12, slow: 26 }),
@@ -437,9 +441,86 @@ export const INDICATOR_DEFINITIONS = [
     detail: "Volume-weighted average price",
     category: "Session",
     placement: "overlay",
-    inputs: [],
-    styles: [style("main", "Line", "#c084fc", true)],
-    calculate: ({ bars }) => single(calculateVWAP(bars)),
+    inputs: [
+      {
+        key: "bandMode",
+        label: "Bands calculation mode",
+        kind: "select",
+        options: [
+          { value: 0, label: "Standard Deviation" },
+          { value: 1, label: "Percentage" },
+        ],
+        defaultValue: 0,
+        min: 0,
+        max: 1,
+        step: 1,
+        legend: false,
+      },
+      ...[1, 2, 3].flatMap((number) => [
+        {
+          key: `band${number}Enabled`,
+          label: `Bands #${number}`,
+          kind: "boolean" as const,
+          defaultValue: number === 1 ? 1 : 0,
+          min: 0,
+          max: 1,
+          step: 1,
+          legend: false,
+        },
+        {
+          key: `band${number}Multiplier`,
+          label: `Bands multiplier #${number}`,
+          defaultValue: number,
+          min: 0,
+          max: 20,
+          step: 0.1,
+          legend: false,
+          shownWhen: { key: `band${number}Enabled`, value: 1 },
+        },
+      ]),
+    ],
+    styles: [
+      style("main", "VWAP", "#2962ff", true),
+      ...["#4caf50", "#808000", "#089981"].flatMap((color, index) => {
+        const number = index + 1,
+          shownWhen = { key: `band${number}Enabled`, value: 1 };
+        return [
+          { ...style(`upper${number}`, `Upper Band #${number}`, color), shownWhen },
+          { ...style(`lower${number}`, `Lower Band #${number}`, color), shownWhen },
+          {
+            ...style(`fill${number}`, `Bands Fill #${number}`, color),
+            kind: "fill" as const,
+            opacity: 0.05,
+            shownWhen,
+          },
+        ];
+      }),
+    ],
+    calculate: ({ bars, inputs }) => {
+      const result = calculateVWAPBands(
+        bars,
+        [1, 2, 3].map((number) => inputs[`band${number}Multiplier`] ?? number),
+        inputs.bandMode === 1 ? "percentage" : "standard-deviation",
+      );
+      const plots: IndicatorPlot[] = [{ id: "main", styleKey: "main", points: result.middle }];
+      const fills: NonNullable<IndicatorResult["fills"]> = [];
+      for (let index = 0; index < 3; index++) {
+        const number = index + 1;
+        if ((inputs[`band${number}Enabled`] ?? (number === 1 ? 1 : 0)) !== 1) continue;
+        const band = result.bands[index]!;
+        plots.push(
+          { id: `upper${number}`, styleKey: `upper${number}`, points: band.upper, primary: false },
+          { id: `lower${number}`, styleKey: `lower${number}`, points: band.lower, primary: false },
+        );
+        fills.push({
+          id: `fill${number}`,
+          styleKey: `fill${number}`,
+          upper: band.upper,
+          lower: band.lower,
+        });
+      }
+      return { plots, fills };
+    },
   }),
   defineIndicator({
     key: "ib",

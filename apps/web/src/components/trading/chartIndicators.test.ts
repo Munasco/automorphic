@@ -4,6 +4,7 @@ import {
   calculateRSI,
   calculateSMA,
   calculateVWAP,
+  calculateVWAPBands,
   type Candle,
 } from "./chartIndicators";
 
@@ -168,6 +169,62 @@ describe("chart indicators", () => {
         result.every((point) => Number.isFinite(point.time) && Number.isFinite(point.value)),
       ).toBe(true);
     }
+  });
+
+  it("emits VWAP bands from the first funded observation with volume-weighted population deviation", () => {
+    const input = bars([10, 14]).map((bar, index) => ({
+      ...bar,
+      high: bar.close,
+      low: bar.close,
+      volume: index ? 3 : 1,
+    }));
+    const result = calculateVWAPBands(input);
+    expect(result.middle.map((point) => point.value)).toEqual([10, 13]);
+    for (const [index, band] of result.bands.entries()) {
+      expect(band.upper[0]).toEqual({ time: input[0]!.time, value: 10 });
+      expect(band.lower[0]).toEqual({ time: input[0]!.time, value: 10 });
+      expect(band.upper[1]!.value).toBeCloseTo(13 + (index + 1) * Math.sqrt(3));
+      expect(band.lower[1]!.value).toBeCloseTo(13 - (index + 1) * Math.sqrt(3));
+    }
+    const percentage = calculateVWAPBands(input, [2], "percentage");
+    expect(percentage.bands[0]!.upper[1]!.value).toBeCloseTo(13.26);
+    expect(percentage.bands[0]!.lower[1]!.value).toBeCloseTo(12.74);
+  });
+
+  it("keeps small VWAP dispersion precise at large price magnitudes", () => {
+    const input = bars([1e9, 1e9 + 2]).map((bar) => ({
+      ...bar,
+      high: bar.close,
+      low: bar.close,
+      volume: 1,
+    }));
+    const result = calculateVWAPBands(input, [1]);
+    expect(result.bands[0]!.upper.at(-1)!.value).toBeCloseTo(1e9 + 2);
+    expect(result.bands[0]!.lower.at(-1)!.value).toBeCloseTo(1e9);
+  });
+
+  it("carries bands through zero volume and resets variance using actual session time", () => {
+    const boundary = Date.parse("2026-09-11T22:00:00Z") / 1000;
+    const input = bars([100, 10, 14, 999, 40]).map((bar, index) => ({
+      ...bar,
+      high: bar.close,
+      low: bar.close,
+      volume: [0, 1, 1, 0, 1][index]!,
+      time: boundary + index * 0.00001,
+      actualTime: index < 4 ? boundary - 0.001 : boundary,
+    }));
+    const result = calculateVWAPBands(input, [1]);
+    expect(result.middle.map((p) => p.value)).toEqual([10, 12, 12, 40]);
+    expect(result.bands[0]!.upper.map((p) => p.value)).toEqual([10, 14, 14, 40]);
+    expect(result.bands[0]!.lower.map((p) => p.value)).toEqual([10, 10, 10, 40]);
+    expect(result.bands[0]!.upper.map((p) => p.time)).toEqual(
+      input.slice(1).map((bar) => bar.time),
+    );
+    expect(
+      calculateVWAPBands(input.map((bar) => ({ ...bar, volume: 0 }))).bands.every(
+        (band) => !band.upper.length && !band.lower.length,
+      ),
+    ).toBe(true);
   });
 
   it("preserves caller-owned candles", () => {
