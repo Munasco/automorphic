@@ -35,6 +35,70 @@ describe("native drawing primitive", () => {
     expect(projection.unproject({ x: 300, y: 200 })).toEqual({ time: 300, price: 300 });
     expect(projection.unproject({ x: 50, y: 200 })).toEqual({ time: 50, price: 300 });
   });
+  it("paints a continuous translucent highlighter and opaque arrow fill without leaking stroke style", () => {
+    const { chart, series } = fixture();
+    const strokes: Array<{ alpha: number; width: number }> = [];
+    const fills: number[] = [];
+    const ctx = {
+      globalAlpha: 1,
+      lineWidth: 1,
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      closePath: vi.fn(),
+      rect: vi.fn(),
+      clip: vi.fn(),
+      fillRect: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      fillText: vi.fn(),
+      arc: vi.fn(),
+      setLineDash: vi.fn(),
+      stroke: () => strokes.push({ alpha: ctx.globalAlpha, width: ctx.lineWidth }),
+      fill: () => fills.push(ctx.globalAlpha),
+    };
+    const drawing: ChartDrawing = {
+      id: "highlight",
+      kind: "highlighter",
+      anchors: [
+        { time: 100 as Time, price: 400 },
+        { time: 150 as Time, price: 450 },
+        { time: 200 as Time, price: 400 },
+      ],
+      color: "#ffdd00",
+      width: 2,
+    };
+    const plugin = createDrawingPrimitive(chart, series, () => ({
+      drawings: [
+        drawing,
+        {
+          ...drawing,
+          id: "arrow",
+          kind: "arrow",
+          anchors: [drawing.anchors[0]!, drawing.anchors[2]!],
+        },
+      ],
+      selected: drawing.id,
+    }));
+    const renderer = plugin.primitive.paneViews!()[0]!.renderer()!;
+    renderer.draw({
+      useMediaCoordinateSpace: (callback: (scope: { context: typeof ctx }) => void) =>
+        callback({ context: ctx }),
+    } as unknown as Parameters<typeof renderer.draw>[0]);
+    expect(strokes).toEqual([
+      { alpha: 0.25, width: 16 },
+      { alpha: 1, width: 2 },
+      { alpha: 1, width: 2 },
+      { alpha: 1, width: 2 },
+    ]);
+    expect(ctx.arc).toHaveBeenCalledTimes(2);
+    expect(ctx.arc.mock.calls.map((call) => call.slice(0, 2))).toEqual([
+      [100, 100],
+      [200, 100],
+    ]);
+    expect(fills).toEqual([1, 1, 1]);
+  });
+
   it("paints rectangle, fib and text geometry and stops requesting updates when detached", () => {
     const { chart, series } = fixture();
     const shapes: ChartDrawing[] = [

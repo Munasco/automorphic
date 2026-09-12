@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { ChartIcon } from "./ChartIcon";
 import { ChartDrawingGlyph } from "./ChartDrawingGlyph";
 import { DrawingToolIcon } from "./DrawingToolIcon";
@@ -47,7 +47,7 @@ function Action({
     </Tooltip>
   );
 }
-type DrawingTool = { kind: ChartDrawingTool; label: string };
+type DrawingTool = { kind: ChartDrawingTool; label: string; section?: string };
 const tools: DrawingTool[] = [
   { kind: "cursor", label: "Select drawing / crosshair" },
   { kind: "trend", label: "Trend line" },
@@ -56,8 +56,23 @@ const tools: DrawingTool[] = [
   { kind: "horizontal-ray", label: "Horizontal ray" },
   { kind: "vertical", label: "Vertical line" },
   { kind: "fib", label: "Fibonacci retracement" },
-  { kind: "rectangle", label: "Rectangle" },
+  { kind: "rectangle", label: "Rectangle", section: "Shapes" },
   { kind: "channel", label: "Parallel channel · three points" },
+  { kind: "brush", label: "Brush", section: "Brushes" },
+  { kind: "highlighter", label: "Highlighter", section: "Brushes" },
+  { kind: "arrow-marker", label: "Arrow marker", section: "Arrows" },
+  { kind: "arrow", label: "Arrow", section: "Arrows" },
+  { kind: "arrow-up", label: "Arrow mark up", section: "Arrows" },
+  { kind: "arrow-down", label: "Arrow mark down", section: "Arrows" },
+  { kind: "rotated-rectangle", label: "Rotated rectangle", section: "Shapes" },
+  { kind: "path", label: "Path", section: "Shapes" },
+  { kind: "circle", label: "Circle", section: "Shapes" },
+  { kind: "ellipse", label: "Ellipse", section: "Shapes" },
+  { kind: "polyline", label: "Polyline", section: "Shapes" },
+  { kind: "triangle", label: "Triangle", section: "Shapes" },
+  { kind: "arc", label: "Arc", section: "Shapes" },
+  { kind: "curve", label: "Curve", section: "Shapes" },
+  { kind: "double-curve", label: "Double curve", section: "Shapes" },
   { kind: "text", label: "Text annotation" },
 ];
 const toolGroups: Array<{ label: string; kinds: ChartDrawingTool[] }> = [
@@ -67,7 +82,27 @@ const toolGroups: Array<{ label: string; kinds: ChartDrawingTool[] }> = [
     kinds: ["trend", "horizontal", "ray", "horizontal-ray", "vertical", "channel"],
   },
   { label: "Fibonacci tools", kinds: ["fib"] },
-  { label: "Geometric shapes", kinds: ["rectangle"] },
+  {
+    label: "Geometric shapes",
+    kinds: [
+      "brush",
+      "highlighter",
+      "arrow-marker",
+      "arrow",
+      "arrow-up",
+      "arrow-down",
+      "rectangle",
+      "rotated-rectangle",
+      "path",
+      "circle",
+      "ellipse",
+      "polyline",
+      "triangle",
+      "arc",
+      "curve",
+      "double-curve",
+    ],
+  },
   { label: "Annotations", kinds: ["text"] },
 ];
 
@@ -121,34 +156,52 @@ function DrawingToolGroup({
         </PopoverTrigger>
       </div>
       <PopoverPopup
+        style={{ background: "#17191f", backdropFilter: "none" }}
         side="right"
         align="start"
         className="w-64 max-w-[calc(100vw-4rem)]"
-        viewportClassName="p-1.5"
+        viewportClassName="max-h-[calc(100dvh-4rem)] overflow-y-auto p-1.5"
       >
-        <PopoverTitle className="px-2 py-2 text-xs font-medium text-zinc-400">{label}</PopoverTitle>
+        <PopoverTitle
+          className={
+            entries[0]?.section ? "sr-only" : "px-2 py-2 text-xs font-medium text-zinc-400"
+          }
+        >
+          {label}
+        </PopoverTitle>
         <div role="group" aria-label={label} className="space-y-0.5">
-          {entries.map((entry) => (
-            <button
-              key={entry.kind}
-              type="button"
-              aria-pressed={currentTool === entry.kind}
-              onClick={() => {
-                setLastTool(entry);
-                onSelect(entry.kind);
-                setOpen(false);
-              }}
-              className={cn(
-                "flex w-full items-center gap-3 rounded px-2 py-2 text-left text-xs text-zinc-300 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/70",
-                currentTool === entry.kind && "bg-blue-400/10 text-blue-300",
-              )}
-            >
-              <ChartDrawingGlyph tool={entry.kind} />
-              <span className="flex-1">{entry.label}</span>
-              {currentTool === entry.kind ? (
-                <span aria-hidden="true" className="size-1.5 rounded-full bg-blue-300" />
+          {entries.map((entry, index) => (
+            <Fragment key={entry.kind}>
+              {entry.section && entry.section !== entries[index - 1]?.section ? (
+                <div
+                  className={cn(
+                    "px-2 pb-2 pt-3 text-[10px] uppercase tracking-wide text-zinc-500",
+                    index > 0 && "mt-2 border-t border-white/10",
+                  )}
+                >
+                  {entry.section}
+                </div>
               ) : null}
-            </button>
+              <button
+                type="button"
+                aria-pressed={currentTool === entry.kind}
+                onClick={() => {
+                  setLastTool(entry);
+                  onSelect(entry.kind);
+                  setOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded px-2 py-2 text-left text-[13px] text-zinc-300 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/70",
+                  currentTool === entry.kind && "bg-blue-600 text-white hover:bg-blue-600",
+                )}
+              >
+                <ChartDrawingGlyph tool={entry.kind} />
+                <span className="flex-1">{entry.label}</span>
+                {currentTool === entry.kind ? (
+                  <span aria-hidden="true" className="size-1.5 rounded-full bg-blue-300" />
+                ) : null}
+              </button>
+            </Fragment>
           ))}
         </div>
       </PopoverPopup>
@@ -160,6 +213,7 @@ export function DrawingTools({ drawings }: { drawings: ChartDrawingsController }
   const selected = drawings.selected;
   const [editorOpen, setEditorOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
+  const [magnetOpen, setMagnetOpen] = useState(false);
   return (
     <>
       {toolGroups.map((group) => (
@@ -185,7 +239,11 @@ export function DrawingTools({ drawings }: { drawings: ChartDrawingsController }
           </TooltipTrigger>
           <TooltipPopup side="right">Drawing objects</TooltipPopup>
         </Tooltip>
-        <PopoverPopup side="right" className="w-80 max-w-[calc(100vw-4rem)] space-y-3 p-3">
+        <PopoverPopup
+          style={{ background: "#17191f", backdropFilter: "none" }}
+          side="right"
+          className="w-80 max-w-[calc(100vw-4rem)] space-y-3 p-3"
+        >
           <PopoverTitle className="text-sm">Drawing objects · {drawings.count}</PopoverTitle>
           {drawings.hidden && drawings.count > 0 ? (
             <button type="button" onClick={drawings.toggleHidden} className="text-xs text-blue-300">
@@ -282,12 +340,64 @@ export function DrawingTools({ drawings }: { drawings: ChartDrawingsController }
         </PopoverPopup>
       </Popover>
       <div className="my-1 w-5 border-t border-white/10" />
+      <Popover open={magnetOpen} onOpenChange={setMagnetOpen}>
+        <div className="group/tool relative flex h-9 w-10 shrink-0 items-center rounded hover:bg-white/5 focus-within:bg-white/5">
+          <Action label="Magnet" active={drawings.magnet} onClick={drawings.toggleMagnet}>
+            <DrawingToolIcon name="magnet" className="size-[22px]" />
+          </Action>
+          <PopoverTrigger
+            aria-label="Magnet options"
+            className={cn(
+              "absolute right-0 top-1/2 flex h-7 w-2.5 -translate-y-1/2 items-center justify-center rounded-sm text-zinc-400 opacity-0 hover:bg-white/10 group-hover/tool:opacity-100 group-focus-within/tool:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400 [@media(hover:none)]:opacity-100",
+              (drawings.magnet || magnetOpen) && "opacity-100",
+            )}
+          >
+            <ChartIcon name="chevron-down" className="size-2.5 -rotate-90" />
+          </PopoverTrigger>
+        </div>
+        <PopoverPopup
+          style={{ background: "#17191f", backdropFilter: "none" }}
+          side="right"
+          align="start"
+          className="w-56"
+          viewportClassName="p-1.5"
+        >
+          <PopoverTitle className="sr-only">Magnet options</PopoverTitle>
+          {(
+            [
+              ["off", "Magnet off"],
+              ["weak", "Weak magnet"],
+              ["strong", "Strong magnet"],
+            ] as const
+          ).map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={drawings.magnetMode === mode}
+              onClick={() => {
+                drawings.setMagnetMode(mode);
+                setMagnetOpen(false);
+              }}
+              className={cn(
+                "flex w-full items-center gap-3 rounded px-2 py-2.5 text-left text-xs text-zinc-300 hover:bg-white/10",
+                drawings.magnetMode === mode && "bg-blue-600 text-white hover:bg-blue-600",
+              )}
+            >
+              <DrawingToolIcon
+                name="magnet"
+                className={cn("size-5", mode === "off" && "opacity-40")}
+              />
+              {label}
+            </button>
+          ))}
+        </PopoverPopup>
+      </Popover>
       <Action
-        label="Magnet · snap drawing points to nearby candle OHLC"
-        active={drawings.magnet}
-        onClick={drawings.toggleMagnet}
+        label="Keep drawing"
+        active={drawings.keepDrawing}
+        onClick={() => drawings.setKeepDrawing(!drawings.keepDrawing)}
       >
-        <DrawingToolIcon name="magnet" className="size-[18px]" />
+        <DrawingToolIcon name="pencil" className="size-[22px]" />
       </Action>
       <Popover open={editorOpen && !!selected} onOpenChange={setEditorOpen}>
         <Tooltip>
@@ -304,7 +414,11 @@ export function DrawingTools({ drawings }: { drawings: ChartDrawingsController }
           </TooltipTrigger>
           <TooltipPopup side="right">Edit selected drawing</TooltipPopup>
         </Tooltip>
-        <PopoverPopup side="right" className="w-60 space-y-3 p-3">
+        <PopoverPopup
+          style={{ background: "#17191f", backdropFilter: "none" }}
+          side="right"
+          className="w-60 space-y-3 p-3"
+        >
           <PopoverTitle className="text-sm">Drawing</PopoverTitle>
           {selected ? (
             <>
@@ -423,7 +537,13 @@ export function DrawingTools({ drawings }: { drawings: ChartDrawingsController }
           </TooltipTrigger>
           <TooltipPopup side="right">Remove drawings</TooltipPopup>
         </Tooltip>
-        <PopoverPopup side="right" align="start" className="w-56" viewportClassName="p-1.5">
+        <PopoverPopup
+          style={{ background: "#17191f", backdropFilter: "none" }}
+          side="right"
+          align="start"
+          className="w-56"
+          viewportClassName="p-1.5"
+        >
           <PopoverTitle className="px-2 py-2 text-xs text-zinc-400">Remove drawings</PopoverTitle>
           <button
             type="button"
@@ -432,7 +552,7 @@ export function DrawingTools({ drawings }: { drawings: ChartDrawingsController }
               drawings.deleteSelected();
               setRemoveOpen(false);
             }}
-            className="w-full rounded px-2 py-2 text-left text-xs text-zinc-300 hover:bg-white/10 disabled:opacity-30"
+            className="w-full rounded px-2 py-2 text-left text-[13px] text-zinc-300 hover:bg-white/10 disabled:opacity-30"
           >
             Delete selected drawing
           </button>

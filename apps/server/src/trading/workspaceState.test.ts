@@ -15,6 +15,13 @@ it("rejects unrelated keys, malformed JSON and oversized settings", () => {
     null,
   );
   assert.deepEqual(
+    parseWorkspaceValue({
+      key: "automorphic:drawing-controls:v1",
+      value: '{"magnetMode":"strong","keepDrawing":true}',
+    }),
+    { key: "automorphic:drawing-controls:v1", value: '{"magnetMode":"strong","keepDrawing":true}' },
+  );
+  assert.deepEqual(
     parseWorkspaceValue({ key: "automorphic:chart-drawings:v1:MGCV6", value: "[]" }),
     { key: "automorphic:chart-drawings:v1:MGCV6", value: "[]" },
   );

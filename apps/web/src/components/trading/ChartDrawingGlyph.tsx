@@ -67,6 +67,84 @@ export function ChartDrawingGlyph({ tool }: { tool: ChartDrawingTool }) {
           <path d="M3.5 3.5h3v3h-3zm14 14h3v3h-3z" fill="var(--color-background, #0b0d12)" />
         </>
       ) : null}
+      {tool === "brush" ? (
+        <path d="M3 20c4 1 7-1 7-4 0-2-2-3-4-2s-1 4-3 6m7-7 8-10 3 3-10 8M15 8l2 2" />
+      ) : null}
+      {tool === "highlighter" ? (
+        <>
+          <path d="m5 14 9-11 7 6-9 10zM5 14l-2 6 5 1 4-2M8 11l7 6" />
+          <path d="M2 23h12" strokeWidth="2" />
+        </>
+      ) : null}
+      {tool === "arrow-marker" ? <path d="m3 20 4-9 3 3L20 3l1 9-5-2L8 21z" /> : null}
+      {tool === "arrow" ? (
+        <>
+          <path d="m5 19 14-14m-6 0h6v6" />
+          <circle cx="4" cy="20" r="1.5" />
+        </>
+      ) : null}
+      {tool === "arrow-up" ? <path d="m12 3 7 8h-4v10H9V11H5z" /> : null}
+      {tool === "arrow-down" ? <path d="m12 21 7-8h-4V3H9v10H5z" /> : null}
+      {tool === "rotated-rectangle" ? (
+        <>
+          <path d="m3 12 11-9 7 9-11 9z" />
+          <circle cx="3" cy="12" r="1.5" />
+          <circle cx="14" cy="3" r="1.5" />
+          <circle cx="21" cy="12" r="1.5" />
+        </>
+      ) : null}
+      {tool === "path" || tool === "polyline" ? (
+        <>
+          <path d="m3 18 6-11 6 8 6-11" />
+          <circle cx="3" cy="18" r="1.5" />
+          <circle cx="9" cy="7" r="1.5" />
+          <circle cx="15" cy="15" r="1.5" />
+          {tool === "path" ? <path d="M15 4h6v6" /> : <circle cx="21" cy="4" r="1.5" />}
+        </>
+      ) : null}
+      {tool === "circle" ? (
+        <>
+          <circle cx="12" cy="12" r="8" />
+          <circle cx="12" cy="12" r="1.5" />
+          <circle cx="19" cy="8" r="1.5" />
+        </>
+      ) : null}
+      {tool === "ellipse" ? (
+        <>
+          <ellipse cx="12" cy="12" rx="10" ry="6" />
+          <circle cx="2" cy="12" r="1.5" />
+          <circle cx="22" cy="12" r="1.5" />
+        </>
+      ) : null}
+      {tool === "triangle" ? (
+        <>
+          <path d="m5 19 2-15 14 15z" />
+          <circle cx="5" cy="19" r="1.5" />
+          <circle cx="7" cy="4" r="1.5" />
+          <circle cx="21" cy="19" r="1.5" />
+        </>
+      ) : null}
+      {tool === "arc" ? (
+        <>
+          <path d="M3 20Q3 3 20 3" />
+          <circle cx="3" cy="20" r="1.5" />
+          <circle cx="20" cy="3" r="1.5" />
+        </>
+      ) : null}
+      {tool === "curve" ? (
+        <>
+          <path d="M3 20Q5 2 21 5" />
+          <circle cx="3" cy="20" r="1.5" />
+          <circle cx="21" cy="5" r="1.5" />
+        </>
+      ) : null}
+      {tool === "double-curve" ? (
+        <>
+          <path d="M3 20C21 22 2 2 21 4" />
+          <circle cx="3" cy="20" r="1.5" />
+          <circle cx="21" cy="4" r="1.5" />
+        </>
+      ) : null}
       {tool === "text" ? <path d="M5 7V4h14v3M12 4v17m-4 0h8" /> : null}
     </svg>
   );

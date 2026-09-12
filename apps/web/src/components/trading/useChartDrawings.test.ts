@@ -63,10 +63,13 @@ function fixture(symbol: string, initial: string | null = null, candles: Candles
     },
   } as unknown as IChartApi;
   let saved = initial;
+  const controls = new Map<string, string>();
   const storage = {
-    getItem: () => saved,
-    setItem: (_key: string, value: string) => {
-      saved = value;
+    getItem: (key: string) =>
+      key === "automorphic:drawing-controls:v1" ? (controls.get(key) ?? null) : saved,
+    setItem: (key: string, value: string) => {
+      if (key === "automorphic:drawing-controls:v1") controls.set(key, value);
+      else saved = value;
     },
   };
   const change = vi.fn();
@@ -508,5 +511,236 @@ describe("native chart drawing lifecycle", () => {
     session.updateDrawing("missing", { name: "Invalid" });
     expect(f.saved()).toBe(saved);
     session.dispose();
+  });
+  it("places all fixed geometric tools with complete anchors and round-trips them", () => {
+    const f = fixture("geometric-placement"),
+      session = f.open();
+    const examples = [
+      ["arrow-marker", 2],
+      ["arrow", 2],
+      ["arrow-up", 1],
+      ["arrow-down", 1],
+      ["rotated-rectangle", 3],
+      ["circle", 2],
+      ["ellipse", 2],
+      ["triangle", 3],
+      ["arc", 3],
+      ["curve", 3],
+      ["double-curve", 4],
+    ] as const;
+    for (const [kind, count] of examples) {
+      const before = f.saved();
+      session.setTool(kind);
+      const points = [
+        [100, 100],
+        [200, 200],
+        [150, 250],
+        [250, 100],
+      ] as const;
+      points.slice(0, count).forEach(([time, y], index) => {
+        f.click(time, y, 0, time);
+        if (index < count - 1) expect(f.saved()).toBe(before);
+      });
+      expect(JSON.parse(f.saved()!).at(-1)).toMatchObject({ kind, anchors: expect.any(Array) });
+      expect(JSON.parse(f.saved()!).at(-1).anchors).toHaveLength(count);
+    }
+    session.dispose();
+    const restored = f.open();
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        objects: expect.arrayContaining(
+          examples.map(([kind]) => expect.objectContaining({ kind })),
+        ),
+      }),
+    );
+    restored.dispose();
+  });
+
+  it("finishes variable paths explicitly, ignores double-click duplicate endpoints, and cancels partial replacements", () => {
+    const f = fixture("variable-path"),
+      session = f.open();
+    for (const kind of ["path", "polyline"] as const) {
+      session.setTool(kind);
+      f.click(100, 100, 0, 100);
+      expect(session.finishDrawing()).toBe(false);
+      f.click(200, 200, 0, 200);
+      f.click(300, 150, 0, 300);
+      f.click(300, 150, 0, 300);
+      expect(f.change).toHaveBeenLastCalledWith(
+        expect.objectContaining({ pending: true, tool: kind }),
+      );
+      expect(session.finishDrawing()).toBe(true);
+      expect(JSON.parse(f.saved()!).at(-1).anchors).toHaveLength(3);
+      expect(session.finishDrawing()).toBe(false);
+    }
+    const before = f.saved();
+    session.redrawSelected();
+    f.click(400, 150, 0, 400);
+    session.cancel();
+    expect(f.saved()).toBe(before);
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toHaveLength(1);
+    session.redo();
+    expect(f.saved()).toBe(before);
+    session.dispose();
+    const restored = f.open();
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ count: 2 }));
+    restored.dispose();
+  });
+
+  it("samples freehand gestures, commits once on release, and edits their original handles", () => {
+    const f = fixture("freehand"),
+      session = f.open();
+    for (const kind of ["brush", "highlighter"] as const) {
+      const before = f.saved();
+      session.setTool(kind);
+      f.click(100, 100, 0, 100);
+      expect(f.saved()).toBe(before);
+      expect(session.beginDrag({ x: 100, y: 100 })).toBe(true);
+      session.dragTo({ x: 101, y: 100 });
+      session.dragTo({ x: 120, y: 100 });
+      session.dragTo({ x: 140, y: 120 });
+      expect(f.saved()).toBe(before);
+      session.endDrag();
+      const after = f.saved();
+      expect(JSON.parse(after!).at(-1).anchors).toEqual([
+        { time: 100, price: 4900 },
+        { time: 120, price: 4900 },
+        { time: 140, price: 4880 },
+      ]);
+      session.undo();
+      expect(JSON.parse(f.saved()!)).toEqual(JSON.parse(before ?? "[]"));
+      session.redo();
+      expect(f.saved()).toBe(after);
+    }
+    const latest = JSON.parse(f.saved()!).at(-1);
+    session.selectDrawing(latest.id);
+    expect(session.beginDrag({ x: 140, y: 120 })).toBe(true);
+    session.dragTo({ x: 160, y: 140 });
+    session.endDrag();
+    expect(JSON.parse(f.saved()!).at(-1).anchors).toEqual([
+      { time: 100, price: 4900 },
+      { time: 120, price: 4900 },
+      { time: 160, price: 4860 },
+    ]);
+    session.dispose();
+    const restored = f.open();
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ count: 2 }));
+    restored.dispose();
+  });
+
+  it("discards cancelled and point-only strokes without consuming undo history", () => {
+    const f = fixture("cancel-stroke"),
+      session = f.open();
+    session.setTool("brush");
+    session.beginDrag({ x: 100, y: 100 });
+    session.endDrag();
+    expect(f.saved()).toBeNull();
+    session.beginDrag({ x: 100, y: 100 });
+    session.dragTo({ x: 200, y: 200 });
+    session.endDrag(false);
+    expect(f.saved()).toBeNull();
+    session.beginDrag({ x: 100, y: 100 });
+    session.dragTo({ x: 200, y: 200 });
+    session.cancel();
+    session.endDrag();
+    expect(f.saved()).toBeNull();
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ pending: false, canUndo: false, tool: "cursor" }),
+    );
+    session.dispose();
+  });
+
+  it("distinguishes weak, strong and off magnets without inventing candles in gaps", () => {
+    const f = fixture("magnet-modes", null, [
+        { time: 100 as UTCTimestamp, open: 4890, high: 4940, low: 4840, close: 4870 },
+      ]),
+      session = f.open();
+    session.setKeepDrawing(true);
+    session.setTool("horizontal");
+    session.setMagnetMode("weak");
+    f.click(105, 10, 0, 105);
+    expect(JSON.parse(f.saved()!).at(-1).anchors).toEqual([{ time: 105, price: 4990 }]);
+    session.setMagnetMode("strong");
+    f.click(105, 10, 0, 105);
+    expect(JSON.parse(f.saved()!).at(-1).anchors).toEqual([{ time: 100, price: 4940 }]);
+    f.click(300, 10, 0, 300);
+    expect(JSON.parse(f.saved()!).at(-1).anchors).toEqual([{ time: 300, price: 4990 }]);
+    session.toggleMagnet();
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ magnet: false, magnetMode: "off" }),
+    );
+    f.click(105, 115, 0, 105);
+    expect(JSON.parse(f.saved()!).at(-1).anchors).toEqual([{ time: 105, price: 4885 }]);
+    session.toggleMagnet();
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ magnet: true, magnetMode: "strong" }),
+    );
+    session.setMagnetMode("weak");
+    f.click(105, 115, 0, 105);
+    expect(JSON.parse(f.saved()!).at(-1).anchors).toEqual([{ time: 100, price: 4890 }]);
+    session.dispose();
+  });
+
+  it("repeats completed fixed, path and freehand tools while repositioning remains a single edit", () => {
+    const f = fixture("keep-drawing"),
+      session = f.open();
+    session.setKeepDrawing(true);
+    session.setTool("arrow-up");
+    f.click(100, 100);
+    f.click(200, 100);
+    expect(JSON.parse(f.saved()!)).toHaveLength(2);
+    session.setTool("path");
+    for (let n = 0; n < 2; n++) {
+      f.click(100, 100);
+      f.click(200, 200);
+      expect(session.finishDrawing()).toBe(true);
+      expect(f.change).toHaveBeenLastCalledWith(
+        expect.objectContaining({ tool: "path", pending: false }),
+      );
+    }
+    session.setTool("highlighter");
+    for (let n = 0; n < 2; n++) {
+      session.beginDrag({ x: 100, y: 100 });
+      session.dragTo({ x: 200, y: 200 });
+      session.endDrag();
+      expect(f.change).toHaveBeenLastCalledWith(
+        expect.objectContaining({ tool: "highlighter", pending: false }),
+      );
+    }
+    expect(JSON.parse(f.saved()!)).toHaveLength(6);
+    session.redrawSelected();
+    session.beginDrag({ x: 300, y: 100 });
+    session.dragTo({ x: 400, y: 200 });
+    session.endDrag();
+    expect(JSON.parse(f.saved()!)).toHaveLength(6);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tool: "cursor", keepDrawing: true }),
+    );
+    session.setKeepDrawing(false);
+    session.setTool("arrow-down");
+    f.click(100, 100);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tool: "cursor", keepDrawing: false }),
+    );
+    session.dispose();
+  });
+  it("restores control preferences across chart recreation and remembers a disabled strong magnet", () => {
+    const f = fixture("drawing-controls"),
+      session = f.open();
+    session.setMagnetMode("strong");
+    session.setKeepDrawing(true);
+    session.toggleMagnet();
+    session.dispose();
+    const restored = f.open();
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ magnetMode: "off", magnet: false, keepDrawing: true }),
+    );
+    restored.toggleMagnet();
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ magnetMode: "strong", magnet: true, keepDrawing: true }),
+    );
+    expect(f.saved()).toBeNull();
+    restored.dispose();
   });
 });

@@ -15,6 +15,9 @@ import {
   drawingTimeValue,
   hitDrawingGeometry,
   hitDrawingHandle,
+  isVariableDrawingTool,
+  isFreehandDrawingTool,
+  maximumDrawingAnchors,
   parseChartDrawings,
   validDrawingAnchors,
   type ChartDrawing,
@@ -24,6 +27,7 @@ import {
 } from "./drawingGeometry";
 import { createDrawingPrimitive, drawingProjection } from "./drawingPrimitive";
 export type ChartDrawingTool = "cursor" | DrawingKind;
+export type DrawingMagnetMode = "off" | "weak" | "strong";
 export type DrawingState = {
   tool: ChartDrawingTool;
   count: number;
@@ -33,6 +37,8 @@ export type DrawingState = {
   canRedo: boolean;
   hidden: boolean;
   magnet: boolean;
+  magnetMode: DrawingMagnetMode;
+  keepDrawing: boolean;
   selected: ChartDrawing | null;
   instruction: string;
 };
@@ -49,6 +55,8 @@ const EMPTY: DrawingState = {
   canRedo: false,
   hidden: false,
   magnet: false,
+  magnetMode: "off",
+  keepDrawing: false,
   selected: null,
   instruction: "",
 };
@@ -74,7 +82,40 @@ export function createChartDrawingSession(
   let replacingId: string | null = null;
   let disposed = false;
   let hidden = false;
-  let magnet = false;
+  const controlSettingsKey = "automorphic:drawing-controls:v1";
+  let magnetMode: DrawingMagnetMode = "off";
+  let lastMagnetMode: Exclude<DrawingMagnetMode, "off"> = "weak";
+  let keepDrawing = false;
+  try {
+    const settings: unknown = JSON.parse(storage?.getItem(controlSettingsKey) ?? "null");
+    if (settings && typeof settings === "object") {
+      if (
+        "magnetMode" in settings &&
+        (settings.magnetMode === "weak" || settings.magnetMode === "strong")
+      )
+        magnetMode = settings.magnetMode;
+      if (
+        "lastMagnetMode" in settings &&
+        (settings.lastMagnetMode === "weak" || settings.lastMagnetMode === "strong")
+      )
+        lastMagnetMode = settings.lastMagnetMode;
+      if (magnetMode !== "off") lastMagnetMode = magnetMode;
+      keepDrawing = "keepDrawing" in settings && settings.keepDrawing === true;
+    }
+  } catch {
+    /* Ignore unavailable storage or invalid preferences. */
+  }
+  const persistControls = () => {
+    try {
+      storage?.setItem(
+        controlSettingsKey,
+        JSON.stringify({ magnetMode, lastMagnetMode, keepDrawing }),
+      );
+    } catch {
+      /* Keep controls usable without storage. */
+    }
+  };
+  let strokeLastPoint: DrawingPoint | null = null;
   let preview: ChartDrawing | null = null;
   let drag: {
     drawing: ChartDrawing;
@@ -105,11 +146,15 @@ export function createChartDrawingSession(
               ? "Drawing locked"
               : "Drag to move · Drag handles to resize"
             : ""
-        : remaining === 1
-          ? tool === "channel"
-            ? "Set channel width · Esc to cancel"
-            : "Place point · Esc to cancel"
-          : `Place ${anchors.length ? "next" : "first"} point · Esc to cancel`;
+        : isFreehandDrawingTool(tool)
+          ? "Drag to draw · Release to finish · Esc to cancel"
+          : isVariableDrawingTool(tool)
+            ? "Click to add points · Double-click or Enter to finish · Esc to cancel"
+            : remaining === 1
+              ? tool === "channel"
+                ? "Set channel width · Esc to cancel"
+                : "Place point · Esc to cancel"
+              : `Place ${anchors.length ? "next" : "first"} point · Esc to cancel`;
     onChange({
       tool,
       count: drawings.length,
@@ -118,7 +163,9 @@ export function createChartDrawingSession(
       canUndo: !!(anchors.length || history.length || drawings.length || replacingId),
       canRedo: future.length > 0,
       hidden,
-      magnet,
+      magnet: magnetMode !== "off",
+      magnetMode,
+      keepDrawing,
       selected,
       instruction,
     });
@@ -205,7 +252,17 @@ export function createChartDrawingSession(
       ? undefined
       : drawings.toReversed().find((drawing) => hitDrawingGeometry(geometry(drawing), point));
   const beginDrag = (point: DrawingPoint) => {
-    if (disposed || tool !== "cursor" || hidden) return false;
+    if (disposed || hidden) return false;
+    if (tool !== "cursor" && isFreehandDrawingTool(tool)) {
+      const anchor = drawingProjection(chart, series).unproject(point);
+      if (!anchor) return false;
+      anchors = [snapAnchor(anchor, point)];
+      strokeLastPoint = point;
+      updatePreview(anchors);
+      emit();
+      return true;
+    }
+    if (tool !== "cursor") return false;
     const selected = drawings.find((drawing) => drawing.id === selectedId);
     const handle = selected ? hitDrawingHandle(geometry(selected), point) : -1;
     const drawing = handle >= 0 ? selected : hit(point);
@@ -227,12 +284,12 @@ export function createChartDrawingSession(
     return true;
   };
   const snapAnchor = (anchor: DrawingAnchor, point: DrawingPoint): DrawingAnchor => {
-    if (!magnet) return anchor;
+    if (magnetMode === "off") return anchor;
     const logical = chart.timeScale().coordinateToLogical(point.x);
     if (logical === null) return anchor;
     const candle = series.dataByIndex(Math.round(logical));
     if (!candle || !("open" in candle)) return anchor;
-    let distance = 12;
+    let distance = magnetMode === "strong" ? Infinity : 12;
     let snapped = anchor;
     for (const price of [candle.open, candle.high, candle.low, candle.close]) {
       const y = series.priceToCoordinate(price);
@@ -246,7 +303,20 @@ export function createChartDrawingSession(
     return snapped;
   };
   const dragTo = (point: DrawingPoint) => {
-    if (!drag || disposed) return;
+    if (disposed) return;
+    if (strokeLastPoint && tool !== "cursor" && isFreehandDrawingTool(tool)) {
+      if (Math.hypot(point.x - strokeLastPoint.x, point.y - strokeLastPoint.y) < 3) return;
+      const anchor = drawingProjection(chart, series).unproject(point);
+      if (!anchor || anchors.length >= maximumDrawingAnchors(tool)) return;
+      strokeLastPoint = point;
+      const next = snapAnchor(anchor, point);
+      if (sameAnchor(anchors.at(-1), next)) return;
+      anchors = [...anchors, next];
+      updatePreview(anchors);
+      primitive.redraw();
+      return;
+    }
+    if (!drag) return;
     const activeDrag = drag;
     let dx = point.x - activeDrag.origin.x,
       dy = point.y - activeDrag.origin.y;
@@ -258,7 +328,7 @@ export function createChartDrawingSession(
       x: activeDrag.drawing.kind === "horizontal" ? point.x : reference.x + dx,
       y: reference.y + dy,
     };
-    const candidateAnchor = magnet ? projection.unproject(candidate) : null;
+    const candidateAnchor = magnetMode !== "off" ? projection.unproject(candidate) : null;
     if (candidateAnchor) {
       const snapped = snapAnchor(candidateAnchor, candidate);
       if (snapped !== candidateAnchor) {
@@ -291,6 +361,14 @@ export function createChartDrawingSession(
     emit();
   };
   const endDrag = (commit = true) => {
+    if (strokeLastPoint) {
+      strokeLastPoint = null;
+      if (commit && commitDrawing()) return;
+      anchors = [];
+      preview = null;
+      emit();
+      return;
+    }
     if (!drag) return;
     const original = drag;
     drag = null;
@@ -309,11 +387,57 @@ export function createChartDrawingSession(
     render();
     emit();
   };
+  const sameAnchor = (a: DrawingAnchor | undefined, b: DrawingAnchor) =>
+    a !== undefined && drawingTimeValue(a.time) === drawingTimeValue(b.time) && a.price === b.price;
+  const updatePreview = (points: DrawingAnchor[]) => {
+    if (tool === "cursor") return;
+    const previous = drawings.find((drawing) => drawing.id === replacingId);
+    preview = {
+      id: "preview",
+      kind: tool,
+      anchors: points,
+      color: previous?.color ?? "#729bff",
+      width: previous?.width ?? 2,
+      lineStyle: isFreehandDrawingTool(tool) ? "solid" : "dashed",
+      text: previous?.text ?? "Text",
+    };
+  };
+  const commitDrawing = () => {
+    if (disposed || tool === "cursor" || !validDrawingAnchors(tool, anchors)) return false;
+    remember();
+    const previous = drawings.find((drawing) => drawing.id === replacingId);
+    const drawing: ChartDrawing = {
+      ...previous,
+      id: previous?.id ?? randomUUID(),
+      kind: tool,
+      anchors,
+      color: previous?.color ?? "#729bff",
+      width: previous?.width ?? 2,
+      ...(previous?.lineStyle ? { lineStyle: previous.lineStyle } : {}),
+      ...(tool === "text" ? { text: previous?.text ?? "Text" } : {}),
+    };
+    drawings = replacingId
+      ? drawings.map((item) => (item.id === replacingId ? drawing : item))
+      : [...drawings, drawing].slice(-100);
+    selectedId = drawing.id;
+    anchors = [];
+    if (!keepDrawing || replacingId) tool = "cursor";
+    replacingId = null;
+    preview = null;
+    changed();
+    return true;
+  };
+  const finishDrawing = () => {
+    if (tool === "cursor" || !isVariableDrawingTool(tool) || isFreehandDrawingTool(tool))
+      return false;
+    return commitDrawing();
+  };
   const move = (event: MouseEventParams<Time>) => {
-    if (disposed || tool === "cursor" || hidden) return;
+    if (disposed || tool === "cursor" || hidden || strokeLastPoint) return;
     preview = null;
     if (
       event.point &&
+      !isFreehandDrawingTool(tool) &&
       (event.paneIndex === undefined || event.paneIndex === series.getPane().paneIndex())
     ) {
       const price = series.coordinateToPrice(event.point.y);
@@ -326,16 +450,8 @@ export function createChartDrawingSession(
               ? { time: 0 as Time, price }
               : drawingProjection(chart, series).unproject(event.point);
       if (anchor) {
-        const previous = drawings.find((drawing) => drawing.id === replacingId);
-        preview = {
-          id: "preview",
-          kind: tool,
-          anchors: [...anchors, snapAnchor(anchor, event.point)],
-          color: previous?.color ?? "#729bff",
-          width: previous?.width ?? 2,
-          lineStyle: "dashed",
-          text: previous?.text ?? "Text",
-        };
+        const next = snapAnchor(anchor, event.point);
+        updatePreview(sameAnchor(anchors.at(-1), next) ? anchors : [...anchors, next]);
       }
     }
     primitive.redraw();
@@ -352,6 +468,7 @@ export function createChartDrawingSession(
       emit();
       return;
     }
+    if (isFreehandDrawingTool(tool)) return;
     const price = series.coordinateToPrice(event.point.y);
     if (price === null || !Number.isFinite(price)) return;
     const fallback =
@@ -374,32 +491,18 @@ export function createChartDrawingSession(
       anchors[0]!.price === anchor.price
     )
       return;
-    anchors.push(anchor);
-    if (anchors.length < DRAWING_ANCHORS[tool]) {
-      emit();
+    if (sameAnchor(anchors.at(-1), anchor) || anchors.length >= maximumDrawingAnchors(tool)) return;
+    const next = [...anchors, anchor];
+    const variable = isVariableDrawingTool(tool);
+    if (!variable && next.length === DRAWING_ANCHORS[tool] && !validDrawingAnchors(tool, next))
       return;
+    anchors = next;
+    if (!variable && anchors.length === DRAWING_ANCHORS[tool]) {
+      commitDrawing();
+    } else {
+      updatePreview(anchors);
+      emit();
     }
-    remember();
-    const previous = drawings.find((drawing) => drawing.id === replacingId);
-    const drawing: ChartDrawing = {
-      ...previous,
-      id: previous?.id ?? randomUUID(),
-      kind: tool,
-      anchors,
-      color: previous?.color ?? "#729bff",
-      width: previous?.width ?? 2,
-      ...(previous?.lineStyle ? { lineStyle: previous.lineStyle } : {}),
-      ...(tool === "text" ? { text: previous?.text ?? "Text" } : {}),
-    };
-    drawings = replacingId
-      ? drawings.map((item) => (item.id === replacingId ? drawing : item))
-      : [...drawings, drawing].slice(-100);
-    selectedId = drawing.id;
-    anchors = [];
-    tool = "cursor";
-    replacingId = null;
-    preview = null;
-    changed();
   };
   const updateDrawing = (id: string, patch: DrawingPatch) => {
     if (disposed || !drawings.some((drawing) => drawing.id === id)) return;
@@ -443,10 +546,11 @@ export function createChartDrawingSession(
     beginDrag,
     dragTo,
     endDrag,
+    finishDrawing,
     cancel: () => setTool("cursor"),
     undo: () => {
       if (disposed) return;
-      if (drag) {
+      if (drag || strokeLastPoint) {
         endDrag(false);
         return;
       }
@@ -462,16 +566,31 @@ export function createChartDrawingSession(
     },
     redo: () => {
       if (disposed || !future.length) return;
-      endDrag(false);
+      setTool("cursor");
       history.push(drawings.slice());
       drawings = future.pop()!;
       selectedId = null;
       changed();
     },
+    setMagnetMode: (mode: DrawingMagnetMode) => {
+      if (disposed || !["off", "weak", "strong"].includes(mode)) return;
+      magnetMode = mode;
+      if (mode !== "off") lastMagnetMode = mode;
+      persistControls();
+      if (!strokeLastPoint) preview = null;
+      emit();
+    },
     toggleMagnet: () => {
       if (disposed) return;
-      magnet = !magnet;
-      preview = null;
+      magnetMode = magnetMode === "off" ? lastMagnetMode : "off";
+      persistControls();
+      if (!strokeLastPoint) preview = null;
+      emit();
+    },
+    setKeepDrawing: (enabled: boolean) => {
+      if (disposed) return;
+      keepDrawing = enabled;
+      persistControls();
       emit();
     },
     toggleHidden: () => {
@@ -605,10 +724,17 @@ export function useChartDrawings(
     };
     const finish = (event: PointerEvent) => {
       if (event.pointerId !== pointerId) return;
+      const point = pointFor(event);
+      if (point && event.type === "pointerup") current.dragTo(point);
       current.endDrag(event.type === "pointerup");
       pointerId = null;
       if (element.hasPointerCapture(event.pointerId))
         element.releasePointerCapture(event.pointerId);
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    const doubleClick = (event: MouseEvent) => {
+      if (!current.finishDrawing()) return;
       event.preventDefault();
       event.stopPropagation();
     };
@@ -617,6 +743,7 @@ export function useChartDrawings(
       event.preventDefault();
       event.stopPropagation();
     };
+    element.addEventListener("dblclick", doubleClick, true);
     element.addEventListener("pointerdown", down, true);
     element.addEventListener("pointermove", move, true);
     element.addEventListener("pointerup", finish, true);
@@ -633,6 +760,7 @@ export function useChartDrawings(
         return;
       if (event.key === "Escape") current.cancel();
       if (!element.contains(document.activeElement)) return;
+      if (event.key === "Enter" && current.finishDrawing()) event.preventDefault();
       if (event.key === "Delete" || event.key === "Backspace") {
         event.preventDefault();
         current.deleteSelected();
@@ -646,6 +774,7 @@ export function useChartDrawings(
     window.addEventListener("keydown", keyboard);
     return () => {
       window.removeEventListener("keydown", keyboard);
+      element.removeEventListener("dblclick", doubleClick, true);
       element.removeEventListener("pointerdown", down, true);
       element.removeEventListener("pointermove", move, true);
       element.removeEventListener("pointerup", finish, true);
@@ -662,6 +791,15 @@ export function useChartDrawings(
   const setTool = useCallback((tool: ChartDrawingTool) => session.current?.setTool(tool), []);
   const undo = useCallback(() => session.current?.undo(), []);
   const redo = useCallback(() => session.current?.redo(), []);
+  const finishDrawing = useCallback(() => session.current?.finishDrawing(), []);
+  const setMagnetMode = useCallback(
+    (mode: DrawingMagnetMode) => session.current?.setMagnetMode(mode),
+    [],
+  );
+  const setKeepDrawing = useCallback(
+    (enabled: boolean) => session.current?.setKeepDrawing(enabled),
+    [],
+  );
   const toggleMagnet = useCallback(() => session.current?.toggleMagnet(), []);
   const toggleHidden = useCallback(() => session.current?.toggleHidden(), []);
   const clear = useCallback(() => session.current?.clear(), []);
@@ -685,6 +823,9 @@ export function useChartDrawings(
     deleteDrawing,
     duplicateDrawing,
     setTool,
+    finishDrawing,
+    setMagnetMode,
+    setKeepDrawing,
     undo,
     redo,
     toggleMagnet,

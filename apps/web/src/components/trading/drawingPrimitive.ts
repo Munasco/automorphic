@@ -95,7 +95,10 @@ export function createDrawingPrimitive(
           const geometry = buildDrawingGeometry(drawing, project, priceY, width, height);
           ctx.strokeStyle = drawing.color;
           ctx.fillStyle = drawing.color;
-          ctx.lineWidth = drawing.width;
+          ctx.lineWidth = geometry.strokeWidth ?? drawing.width;
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+          ctx.globalAlpha = geometry.opacity ?? 1;
           ctx.setLineDash(
             drawing.lineStyle === "dashed" ? [8, 5] : drawing.lineStyle === "dotted" ? [2, 4] : [],
           );
@@ -107,14 +110,28 @@ export function createDrawingPrimitive(
               ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
               ctx.globalAlpha = 1;
             }
-            ctx.font = `12px ${chart.options().layout.fontFamily}`;
-            for (const line of geometry.lines) {
+            for (const polygon of geometry.polygons ?? []) {
+              if (!polygon.points.length) continue;
+              ctx.globalAlpha = polygon.opacity;
               ctx.beginPath();
-              ctx.moveTo(line.from.x, line.from.y);
-              ctx.lineTo(line.to.x, line.to.y);
-              ctx.stroke();
-              if (line.label) ctx.fillText(line.label, line.to.x + 4, line.to.y - 3);
+              ctx.moveTo(polygon.points[0]!.x, polygon.points[0]!.y);
+              for (const point of polygon.points.slice(1)) ctx.lineTo(point.x, point.y);
+              ctx.closePath();
+              ctx.fill();
             }
+            ctx.globalAlpha = geometry.opacity ?? 1;
+            ctx.font = `12px ${chart.options().layout.fontFamily}`;
+            ctx.beginPath();
+            let previous: DrawingPoint | undefined;
+            for (const line of geometry.lines) {
+              if (!previous || previous.x !== line.from.x || previous.y !== line.from.y)
+                ctx.moveTo(line.from.x, line.from.y);
+              ctx.lineTo(line.to.x, line.to.y);
+              previous = line.to;
+            }
+            if (geometry.lines.length) ctx.stroke();
+            for (const line of geometry.lines)
+              if (line.label) ctx.fillText(line.label, line.to.x + 4, line.to.y - 3);
             if (geometry.text) {
               ctx.font = `13px ${chart.options().layout.fontFamily}`;
               ctx.fillText(geometry.text.value, geometry.text.point.x, geometry.text.point.y);
@@ -122,7 +139,11 @@ export function createDrawingPrimitive(
           }
           if ((drawing.id === state.selected && !drawing.locked) || drawing === state.preview) {
             ctx.setLineDash([]);
-            for (const point of geometry.handles) {
+            ctx.globalAlpha = 1;
+            ctx.lineWidth = drawing.width;
+            for (const index of geometry.handleIndices ??
+              geometry.handles.map((_, index) => index)) {
+              const point = geometry.handles[index]!;
               ctx.beginPath();
               ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
               ctx.fillStyle = "#15171a";
