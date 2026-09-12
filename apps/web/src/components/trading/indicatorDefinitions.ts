@@ -1,5 +1,6 @@
 import {
   calculateEMA,
+  PRICE_SOURCES,
   calculateRSI,
   calculateSMA,
   calculateVWAPBands,
@@ -35,6 +36,21 @@ const length = (
   key: IndicatorInputKey = "period",
   label = "Length",
 ): IndicatorInputDescriptor => ({ key, label, defaultValue, min: 1, max: 500, step: 1 });
+
+const priceSource: IndicatorInputDescriptor = {
+  key: "source",
+  label: "Source",
+  kind: "select",
+  legend: false,
+  defaultValue: 0,
+  min: 0,
+  max: PRICE_SOURCES.length - 1,
+  step: 1,
+  options: PRICE_SOURCES.map((source, value) => ({
+    value,
+    label: /\d/.test(source) ? source.toUpperCase() : source[0]!.toUpperCase() + source.slice(1),
+  })),
+};
 
 const style = (key: string, label: string, color: string, primary = false, lineWidth = 1) => ({
   key,
@@ -133,9 +149,10 @@ export const INDICATOR_DEFINITIONS = [
     detail: "Simple moving average",
     category: "Overlays",
     placement: "overlay",
-    inputs: [length(20)],
+    inputs: [length(20), priceSource],
     styles: [style("main", "Line", "#eab676", true)],
-    calculate: ({ bars, inputs }) => single(calculateSMA(bars, inputs.period ?? 20)),
+    calculate: ({ bars, inputs }) =>
+      single(calculateSMA(bars, inputs.period ?? 20, PRICE_SOURCES[inputs.source ?? 0])),
   }),
   defineIndicator({
     key: "ema",
@@ -143,9 +160,10 @@ export const INDICATOR_DEFINITIONS = [
     detail: "Exponential moving average",
     category: "Overlays",
     placement: "overlay",
-    inputs: [length(20)],
+    inputs: [length(20), priceSource],
     styles: [style("main", "Line", "#67a6ef", true)],
-    calculate: ({ bars, inputs }) => single(calculateEMA(bars, inputs.period ?? 20)),
+    calculate: ({ bars, inputs }) =>
+      single(calculateEMA(bars, inputs.period ?? 20, PRICE_SOURCES[inputs.source ?? 0])),
   }),
   defineIndicator({
     key: "bollinger",

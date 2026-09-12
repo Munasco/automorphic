@@ -19,6 +19,31 @@ export interface IndicatorPoint {
   value: number;
 }
 
+export const PRICE_SOURCES = ["close", "open", "high", "low", "hl2", "hlc3", "ohlc4"] as const;
+export type PriceSource = (typeof PRICE_SOURCES)[number];
+
+function sourcePrice(bar: Candle, source: PriceSource): number {
+  switch (source) {
+    case "hl2":
+      return Number.isFinite(bar.high) && Number.isFinite(bar.low)
+        ? bar.high / 2 + bar.low / 2
+        : NaN;
+    case "hlc3":
+      return Number.isFinite(bar.high) && Number.isFinite(bar.low) && Number.isFinite(bar.close)
+        ? bar.high / 3 + bar.low / 3 + bar.close / 3
+        : NaN;
+    case "ohlc4":
+      return Number.isFinite(bar.open) &&
+        Number.isFinite(bar.high) &&
+        Number.isFinite(bar.low) &&
+        Number.isFinite(bar.close)
+        ? bar.open / 4 + bar.high / 4 + bar.low / 4 + bar.close / 4
+        : NaN;
+    default:
+      return bar[source];
+  }
+}
+
 function validPeriod(period: number): boolean {
   return Number.isSafeInteger(period) && period > 0;
 }
@@ -27,15 +52,20 @@ function validClose(bar: Candle): boolean {
   return Number.isFinite(bar.time) && Number.isFinite(bar.close);
 }
 
-/** Close-price SMA. Invalid prices restart the warmup instead of bridging missing data. */
-export function calculateSMA(bars: readonly Candle[], period: number): IndicatorPoint[] {
+/** Invalid selected prices restart the warmup instead of bridging missing data. */
+export function calculateSMA(
+  bars: readonly Candle[],
+  period: number,
+  source: PriceSource = "close",
+): IndicatorPoint[] {
   if (!validPeriod(period) || bars.length < period) return [];
   const points: IndicatorPoint[] = [];
   const window: number[] = [];
   let sum = 0;
   let cursor = 0;
   for (const bar of bars) {
-    if (!validClose(bar)) {
+    const price = sourcePrice(bar, source);
+    if (!Number.isFinite(bar.time) || !Number.isFinite(price)) {
       window.length = 0;
       sum = 0;
       cursor = 0;
@@ -43,36 +73,41 @@ export function calculateSMA(bars: readonly Candle[], period: number): Indicator
     }
     if (window.length === period) {
       sum -= window[cursor]!;
-      window[cursor] = bar.close;
+      window[cursor] = price;
       cursor = (cursor + 1) % period;
     } else {
-      window.push(bar.close);
+      window.push(price);
     }
-    sum += bar.close;
+    sum += price;
     const value = sum / period;
     if (window.length === period && Number.isFinite(value)) points.push({ time: bar.time, value });
   }
   return points;
 }
 
-/** SMA seed followed by alpha = 2 / (period + 1), using available close-price history. */
-export function calculateEMA(bars: readonly Candle[], period: number): IndicatorPoint[] {
+/** SMA seed followed by alpha = 2 / (period + 1), using the selected candle source. */
+export function calculateEMA(
+  bars: readonly Candle[],
+  period: number,
+  source: PriceSource = "close",
+): IndicatorPoint[] {
   if (!validPeriod(period) || bars.length < period) return [];
   const points: IndicatorPoint[] = [];
   const alpha = 2 / (period + 1);
   let samples = 0;
   let value = 0;
   for (const bar of bars) {
-    if (!validClose(bar)) {
+    const price = sourcePrice(bar, source);
+    if (!Number.isFinite(bar.time) || !Number.isFinite(price)) {
       samples = 0;
       value = 0;
       continue;
     }
     if (samples < period) {
       samples += 1;
-      value = value * ((samples - 1) / samples) + bar.close / samples;
+      value = value * ((samples - 1) / samples) + price / samples;
     } else {
-      value = value * (1 - alpha) + bar.close * alpha;
+      value = value * (1 - alpha) + price * alpha;
     }
     if (samples === period && Number.isFinite(value)) points.push({ time: bar.time, value });
   }

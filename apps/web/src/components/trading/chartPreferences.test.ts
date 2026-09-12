@@ -103,7 +103,7 @@ describe("global indicator actions", () => {
       const added = useChartPreferences.getState();
       expect(added.indicators).toMatchObject({ sma: true, ib: true, volume: false });
       expect(added.hiddenIndicators).toMatchObject({ sma: false, ib: false });
-      expect(added.indicatorInputs.sma).toEqual({ period: 42 });
+      expect(added.indicatorInputs.sma).toEqual({ period: 42, source: 0 });
       expect(added.appearance.sma).toEqual({ color: "#123456", lineWidth: 3 });
       expect(added.initialBalance.startTime).toBe("09:45");
     } finally {
@@ -315,7 +315,10 @@ describe("independent indicator instances", () => {
       ],
     });
     expect(normalized.extraIndicators.map((instance) => instance.id)).toEqual(["one", "repaired"]);
-    expect(normalized.extraIndicators[0]).toEqual(valid);
+    expect(normalized.extraIndicators[0]).toEqual({
+      ...valid,
+      inputs: { ...valid.inputs, source: 0 },
+    });
     expect(normalized.extraIndicators[1]).toMatchObject({
       inputs: getIndicatorInputs("sma"),
       appearance: {},
@@ -496,4 +499,26 @@ describe("indicator favorites", () => {
     expect(useChartPreferences.getState().favoriteIndicators).toEqual([]);
     expect(useChartPreferences.getState().indicators.sma).toBe(true);
   });
+});
+
+it("preserves each moving-average source through duplication and workspace reload", async () => {
+  const store = useChartPreferences.getState();
+  store.addIndicator("sma");
+  store.setIndicatorInstanceInputs("base:sma", { source: 1 });
+  const copyId = store.duplicateIndicatorInstance("base:sma")!;
+  expect(store.setIndicatorInstanceInputs(copyId, { source: 6 })).toBe(true);
+  expect(store.setIndicatorInstanceInputs(copyId, { source: 7 })).toBe(false);
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+  await useChartPreferences.persist.rehydrate();
+  const restored = getChartIndicatorInstances(useChartPreferences.getState());
+  expect(restored.find((instance) => instance.id === "base:sma")?.inputs.source).toBe(1);
+  expect(restored.find((instance) => instance.id === copyId)?.inputs.source).toBe(6);
+  useChartPreferences.getState().resetIndicatorInstanceInputs(copyId);
+  expect(
+    useChartPreferences.getState().extraIndicators.find((instance) => instance.id === copyId)
+      ?.inputs.source,
+  ).toBe(0);
+  expect(useChartPreferences.getState().indicatorInputs.sma?.source).toBe(1);
 });

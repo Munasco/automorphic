@@ -186,14 +186,14 @@ describe("indicator inputs", () => {
       },
     });
     expect(restored.indicatorInputs).toEqual({
-      sma: { period: 50 },
+      sma: { period: 50, source: 0 },
       bollinger: { period: 20, deviations: 1.5 },
       keltner: { period: 20, atrPeriod: 8, multiplier: 2 },
       stochRsi: { rsiPeriod: 10, stochasticPeriod: 14, smoothK: 2, periodD: 3 },
       macd: { fast: 12, slow: 26, signalPeriod: 5 },
     });
     expect(normalizeChartPreferences({ indicators: { sma: true } }).indicatorInputs).toEqual({});
-    expect(getIndicatorInputs("sma")).toEqual({ period: 20 });
+    expect(getIndicatorInputs("sma")).toEqual({ period: 20, source: 0 });
     expect(getIndicatorLabel("sma", restored.indicatorInputs)).toBe("SMA 50");
     expect(getIndicatorLabel("stochRsi", restored.indicatorInputs)).toBe(
       "Stochastic RSI 10 / 14 / 2 / 3",
@@ -220,6 +220,7 @@ describe("indicator inputs", () => {
       store.resetIndicatorInputs("sma");
       expect(getIndicatorInputs("sma", useChartPreferences.getState().indicatorInputs)).toEqual({
         period: 20,
+        source: 0,
       });
       expect(useChartPreferences.getState().indicatorInputs.bollinger).toEqual({
         period: 20,
@@ -232,6 +233,41 @@ describe("indicator inputs", () => {
       });
     } finally {
       useChartPreferences.setState(original, true);
+    }
+  });
+});
+
+describe("moving-average price source inputs", () => {
+  it("routes the selected source into both moving-average calculations", () => {
+    const bars = [
+      { time: 1, open: 10, high: 40, low: 0, close: 30, volume: 1 },
+      { time: 2, open: 20, high: 80, low: 0, close: 60, volume: 1 },
+    ];
+    for (const key of ["sma", "ema"] as const) {
+      const definition = INDICATOR_CATALOG.find((item) => item.key === key)!;
+      const calculate = (source: number) =>
+        definition
+          .calculate({
+            bars,
+            inputs: getIndicatorInputs(key, { [key]: { period: 2, source } }),
+            interval: 1,
+            session: DEFAULT_INITIAL_BALANCE,
+          })
+          .plots[0]!.points.at(-1)!.value;
+      expect(calculate(0)).toBe(45);
+      expect(calculate(1)).toBe(15);
+      expect(calculate(2)).toBe(60);
+      expect(calculate(3)).toBe(0);
+      expect(calculate(4)).toBe(30);
+      expect(calculate(5)).toBe(35);
+      expect(calculate(6)).toBe(30);
+      expect(getIndicatorInputs(key, { [key]: { period: 50, source: 99 } })).toEqual({
+        period: 50,
+        source: 0,
+      });
+      expect(getIndicatorLabel(key, { [key]: { period: 50, source: 1 } })).toBe(
+        `${key.toUpperCase()} 50`,
+      );
     }
   });
 });

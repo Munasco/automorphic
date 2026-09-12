@@ -69,7 +69,10 @@ export function IndicatorLegend({
                 ? "VWAP uses loaded bars, reset at 5 p.m. Chicago time."
                 : INDICATOR_INPUTS[key].length
                   ? INDICATOR_INPUTS[key]
-                      .map((input) => `${input.label}: ${inputs[input.key] ?? input.defaultValue}`)
+                      .map((input) => {
+                        const value = inputs[input.key] ?? input.defaultValue;
+                        return `${input.label}: ${input.options?.find((option) => option.value === value)?.label ?? value}`;
+                      })
                       .join(" · ")
                   : detail;
           return (

@@ -6,6 +6,7 @@ import {
   calculateVWAP,
   calculateVWAPBands,
   type Candle,
+  type PriceSource,
 } from "./chartIndicators";
 
 const epoch = Date.parse("2026-09-14T14:00:00Z") / 1000;
@@ -41,6 +42,91 @@ describe("chart indicators", () => {
     const expected = [34 / 3, 35 / 3, 40 / 3, 41 / 3];
     values(result).forEach((value, index) => expect(value).toBeCloseTo(expected[index]!, 12));
     expect(calculateEMA(input.slice(0, 2), 3)).toEqual([]);
+  });
+
+  it.each([
+    { source: "close", sma: [12, 22, 36], ema: [12, 68 / 3, 332 / 9] },
+    { source: "open", sma: [6, 14, 30], ema: [6, 46 / 3, 286 / 9] },
+    { source: "high", sma: [18, 30, 48], ema: [18, 30, 50] },
+    { source: "low", sma: [2, 8, 18], ema: [2, 26 / 3, 170 / 9] },
+    { source: "hl2", sma: [10, 19, 33], ema: [10, 58 / 3, 310 / 9] },
+    { source: "hlc3", sma: [32 / 3, 20, 34], ema: [32 / 3, 184 / 9, 952 / 27] },
+    { source: "ohlc4", sma: [9.5, 18.5, 33], ema: [9.5, 115 / 6, 619 / 18] },
+  ] as const)(
+    "calculates SMA and EMA from $source without changing candle data",
+    ({ source, sma, ema }) => {
+      const input = bars([8, 16, 28, 44]).map((bar, index) => ({
+        ...bar,
+        open: [4, 8, 20, 40][index]!,
+        high: [12, 24, 36, 60][index]!,
+        low: [0, 4, 12, 24][index]!,
+      }));
+      const original = structuredClone(input);
+      for (const [calculate, expected] of [
+        [calculateSMA, sma],
+        [calculateEMA, ema],
+      ] as const) {
+        const points = calculate(input, 2, source);
+        expect(points.map((point) => point.time)).toEqual(input.slice(1).map((bar) => bar.time));
+        values(points).forEach((value, index) => expect(value).toBeCloseTo(expected[index]!, 12));
+        if (source === "close") expect(calculate(input, 2)).toEqual(points);
+      }
+      expect(input).toEqual(original);
+    },
+  );
+
+  it.each([
+    { source: "close", field: "close" },
+    { source: "open", field: "open" },
+    { source: "high", field: "high" },
+    { source: "low", field: "low" },
+    { source: "hl2", field: "high" },
+    { source: "hlc3", field: "close" },
+    { source: "ohlc4", field: "open" },
+  ] as const)("restarts $source warmup after missing or nonfinite $field", ({ source, field }) => {
+    for (const invalid of [undefined, NaN, Infinity, -Infinity]) {
+      const input = bars([1, 2, 3, 4, 5, 6]);
+      Object.assign(input[2]!, { [field]: invalid });
+      for (const calculate of [calculateSMA, calculateEMA]) {
+        const points = calculate(input, 2, source);
+        expect(points.map((point) => point.time)).toEqual([
+          input[1]!.time,
+          input[4]!.time,
+          input[5]!.time,
+        ]);
+        values(points).forEach((value, index) =>
+          expect(value).toBeCloseTo([1.5, 4.5, 5.5][index]!, 12),
+        );
+      }
+    }
+  });
+
+  it.each([
+    { source: "close", field: "open" },
+    { source: "open", field: "close" },
+    { source: "high", field: "low" },
+    { source: "low", field: "high" },
+    { source: "hl2", field: "close" },
+    { source: "hlc3", field: "open" },
+    { source: "ohlc4", field: "volume" },
+  ] as const)(
+    "does not let unused $field values poison the $source average",
+    ({ source, field }) => {
+      const input = bars([1, 2, 3, 4]).map((bar) => ({ ...bar, [field]: NaN }));
+      for (const calculate of [calculateSMA, calculateEMA])
+        expect(calculate(input, 2, source)).toEqual(calculate(bars([1, 2, 3, 4]), 2, source));
+    },
+  );
+
+  it("resets selected-source warmup when the chart time is invalid", () => {
+    const input = bars([1, 2, 3, 4, 5]);
+    input[2]!.time = NaN;
+    for (const calculate of [calculateSMA, calculateEMA])
+      for (const source of ["open", "hl2", "ohlc4"] satisfies PriceSource[])
+        expect(calculate(input, 2, source).map((point) => point.time)).toEqual([
+          input[1]!.time,
+          input[4]!.time,
+        ]);
   });
 
   it("uses Wilder smoothing of gains and losses for RSI", () => {
