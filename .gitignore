@@ -38,3 +38,6 @@ node_modules/
 *.log
 .env*
 !.env.example
+
+# Private local font previews; never included in builds.
+apps/web/.local-fonts/

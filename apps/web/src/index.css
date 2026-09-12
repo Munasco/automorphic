@@ -2104,3 +2104,20 @@ code {
     visibility: visible;
   }
 }
+
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/Geist-Variable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+.trading-surface {
+  font-family: "Geist", var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+.trading-surface :is(h1, h2, [role="tab"], nav button, .trading-heading) {
+  font-family: "Aeonik", "Geist", var(--font-sans);
+}

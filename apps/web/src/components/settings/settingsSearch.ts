@@ -9,6 +9,7 @@ import {
 } from "./settingsScope";
 
 export type SettingsPath =
+  | "/settings/trading"
   | "/settings/projects"
   | "/settings/general"
   | "/settings/appearance"
@@ -72,6 +73,7 @@ export interface SettingsSearchAvailability {
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/projects": "Project",
   "/settings/general": "General",
+  "/settings/trading": "Trading",
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
   "/settings/snap-shot": "SnapShots",
@@ -88,6 +90,18 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
  * that may not be mounted point at their nearest stable section instead.
  */
 export const SETTINGS_SEARCH_ITEMS = [
+  {
+    id: "tradingview-charts",
+    title: "Use TradingView charts",
+    to: "/settings/trading",
+    searchTerms: ["trading futures MGC NQ Tradovate chart"],
+  },
+  {
+    id: "trading-live-wires",
+    title: "Live Wires news rail",
+    to: "/settings/trading",
+    searchTerms: ["news macro investinglive"],
+  },
   {
     id: "project-defaults",
     title: "Project defaults and overrides",
@@ -529,13 +543,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["auto pull default branch current checkout fast forward upstream"],
   },
   {
-    id: "pull-request-merge-method",
-    title: "Default merge method",
-    to: "/settings/source-control",
-    scope: "project-defaults",
-    searchTerms: ["pull request merge squash rebase last selected"],
-  },
-  {
     id: "source-control",
     title: "Source control",
     to: "/settings/source-control",
@@ -677,6 +684,7 @@ const SEARCH_ITEMS_BY_ID = new Map(SETTINGS_SEARCH_ITEMS.map((item) => [item.id,
 const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScope | null>> = {
   "/settings/projects": "project",
   "/settings/general": null,
+  "/settings/trading": null,
   "/settings/appearance": null,
   "/settings/snap-shot": null,
   // Keybindings fan out to the selection; Providers shows the representative

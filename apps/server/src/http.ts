@@ -1,3 +1,5 @@
+import { contracts, chartStream } from "./trading/marketData.ts";
+import { liveWires } from "./trading/news.ts";
 import Mime from "@effect/platform-node/Mime";
 import {
   AuthOrchestrationOperateScope,
@@ -356,6 +358,50 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
           HttpServerResponse.text("Trace export failed.", { status: 502 }),
         ),
       );
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
+export const tradingRouteLayer = HttpRouter.add(
+  "GET",
+  "/api/trading/*",
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = new URL(request.url, "http://localhost");
+    return yield* Effect.tryPromise(async () => {
+      if (url.pathname === "/api/trading/contracts")
+        return HttpServerResponse.jsonUnsafe(
+          await contracts(url.searchParams.get("root") ?? "MGC"),
+        );
+      if (url.pathname === "/api/trading/news")
+        return HttpServerResponse.jsonUnsafe(
+          await liveWires(url.searchParams.get("root") === "NQ" ? "NQ" : "MGC"),
+        );
+      if (url.pathname === "/api/trading/stream")
+        return HttpServerResponse.fromWeb(
+          await chartStream(
+            url.searchParams.get("symbol") ?? "",
+            Number(url.searchParams.get("interval") ?? 5),
+          ),
+        );
+      return HttpServerResponse.empty({ status: 404 });
+    }).pipe(
+      Effect.orElseSucceed(() =>
+        HttpServerResponse.jsonUnsafe(
+          {
+            error:
+              "Trading data is unavailable. Check the server's Tradovate session or news connection.",
+          },
+          { status: 502 },
+        ),
+      ),
+    );
   }).pipe(
     Effect.catchTags({
       EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,

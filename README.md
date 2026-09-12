@@ -1,6 +1,22 @@
-# T3 Code
+# Automorphic
 
-T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
+Automorphic is based on [T3 Code](https://github.com/pingdotgg/t3code). The original MIT license and attribution are preserved.
+
+## Local Automorphic preview
+
+Run `vp i`, then `vp run dev`. Open the pairing URL printed by the server. In a thread, open the right panel and choose **Trading**. Click the instrument name to search MGC and NQ contracts. **Expand chart** switches to a larger chart view; **Restore** brings chat back. Native candlestick and volume charts use Tradovate market data. **Settings → Trading → Use TradingView charts** enables the optional hosted widgets. Broker order execution is not connected.
+
+Live Wires shows sourced news with AI-assessed direction and three levels of strength for the selected instrument. Set `GEMINI_API_KEY` in the ignored root `.env` to enable analysis; unavailable analysis stays unrated. These are headline-impact assessments, not backtested trading signals. Credentials stay on the server.
+
+Put `TRADOVATE_ACCESS_TOKEN` and `TRADOVATE_ENVIRONMENT=demo` (or `live` for your session) in the ignored root `.env`. Startup commands renew once on launch and check every minute, renewing within 15 minutes of expiry. Renewed tokens are saved with owner-only permissions. An expired token requires a fresh login.
+
+The optional Convex backend in `apps/trading-backend` keeps renewal running while the local app is closed. Its five-minute cron renews sessions approaching expiry. With `TRADOVATE_SYNC_URL` and `TRADOVATE_SYNC_SECRET` configured in `.env`, startup synchronizes the hosted session instead of renewing locally. The secret must match the backend configuration. The session endpoint is authenticated, has no browser CORS access, and is not used directly by the frontend. Repository wrappers apply to this preview, not upstream packaged releases.
+
+Run `vp run --filter @t3tools/marketing dev` for the local landing-page preview. Set `PUBLIC_APP_URL` when deploying that site.
+
+The installation instructions below describe the upstream T3 Code project, not this Automorphic preview.
+
+The base application is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
 
 Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, and Google Antigravity. If they're set up on your computer, T3 Code can control them.
 
