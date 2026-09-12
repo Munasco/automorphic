@@ -376,26 +376,82 @@ describe("native drawing geometry", () => {
     expect(shape.lines[3]!.to).toEqual({ x: 300, y: 100 });
   });
 
-  it("preserves special-channel boundary markers pending separate reference validation", () => {
-    const source = drawing("flat-channel", [
-      [100, 400],
-      [300, 300],
-      [100, 300],
-    ]);
-    const body = geometry({ ...source, extendRight: true });
-    const marked = geometry({
-      ...source,
-      extendRight: true,
-      startMarker: "arrow",
-      endMarker: "arrow",
-    });
-    const markers = marked.polygons?.filter((polygon) => polygon.lineFill);
-    expect(markers).toHaveLength(4);
-    expect(markers?.map((polygon) => polygon.points[0])).toEqual(
-      body.lines.slice(0, 2).flatMap((boundary) => [boundary.from, boundary.to]),
-    );
-    expect(marked.handles).toEqual(body.handles);
-  });
+  it.each(["flat-channel", "disjoint-channel"] as const)(
+    "keeps open %s markers on both original boundaries under extension and reversal",
+    (kind) => {
+      for (const reversed of [false, true]) {
+        const source = drawing(
+          kind,
+          reversed
+            ? [
+                [300, 300],
+                [100, 400],
+                [100, 200],
+              ]
+            : [
+                [100, 400],
+                [300, 300],
+                [300, 200],
+              ],
+        );
+        const original = geometry(source);
+        for (const extensions of [
+          { extendRight: true },
+          { extendLeft: true },
+          { extendLeft: true, extendRight: true },
+        ]) {
+          const body = geometry({ ...source, ...extensions });
+          const marked = geometry({
+            ...source,
+            ...extensions,
+            startMarker: "arrow",
+            endMarker: "arrow",
+          });
+          expect(marked.lines.slice(0, 2)).toEqual(body.lines);
+          expect(marked.lines).toHaveLength(10);
+          expect(marked.polygons).toEqual(body.polygons);
+          expect(marked.handles).toEqual(original.handles);
+          original.lines.forEach((boundary, index) => {
+            const wings = marked.lines.slice(2 + index * 4, 6 + index * 4);
+            expect(wings[0]!.to).toEqual(boundary.from);
+            expect(wings[1]!.from).toEqual(boundary.from);
+            expect(wings[2]!.to).toEqual(boundary.to);
+            expect(wings[3]!.from).toEqual(boundary.to);
+            for (const wing of wings) {
+              expect(Math.hypot(wing.to.x - wing.from.x, wing.to.y - wing.from.y)).toBeCloseTo(
+                Math.SQRT2 * 10,
+              );
+            }
+          });
+        }
+      }
+    },
+  );
+
+  it.each(["flat-channel", "disjoint-channel"] as const)(
+    "does not add viewport-edge arrow tips for %s anchors outside the pane",
+    (kind) => {
+      const source = drawing(kind, [
+        [-100, 400],
+        [1100, 300],
+        [1100, 200],
+      ]);
+      const body = geometry({ ...source, extendLeft: true, extendRight: true });
+      const marked = geometry({
+        ...source,
+        extendLeft: true,
+        extendRight: true,
+        endMarker: "arrow",
+      });
+      expect(marked.lines.slice(0, 2)).toEqual(body.lines);
+      expect(marked.lines).toHaveLength(6);
+      expect(marked.lines.slice(2).every((wing) => wing.from.x > 1000 && wing.to.x > 1000)).toBe(
+        true,
+      );
+      expect(marked.polygons).toEqual(body.polygons);
+      expect(marked.handles).toEqual(body.handles);
+    },
+  );
 
   it("places multiline text relative to line anchors and hit-tests its chosen size/alignment", () => {
     const shape = geometry({
@@ -1423,7 +1479,8 @@ describe("three-anchor non-parallel channels", () => {
     expect(shape.lines[1]).toEqual({ from: { x: 0, y: 400 }, to: { x: 1000, y: 400 } });
     expect(shape.polygons?.[0]).toMatchObject({ color: "#00ff00", opacity: 0.3 });
     expect(shape.polygons?.[0]?.points.map((point) => point.x)).toEqual([0, 1000, 1000, 0]);
-    expect(shape.polygons?.slice(1)).toHaveLength(4);
+    expect(shape.polygons).toHaveLength(1);
+    expect(shape.lines).toHaveLength(10);
     const noFill = geometry({
       ...channel,
       background: false,

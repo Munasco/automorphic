@@ -1607,6 +1607,7 @@ export function buildDrawingGeometry(
       ? { from: result.handles[0]!, to: result.handles[1] }
       : result.lines[0];
   const markerLast = drawing.kind === "ray" ? markerFirst : result.lines.at(-1);
+  const markerBoundaries = isSpecialChannelDrawing(drawing.kind) ? result.lines.slice(0, 2) : [];
   if (
     supportsLineExtensions(drawing.kind) &&
     !supportsDrawingLevels(drawing.kind) &&
@@ -1644,32 +1645,24 @@ export function buildDrawingGeometry(
     bodyLast = result.lines.at(-1);
   if (supportsLineMarkers(drawing.kind) && bodyFirst && bodyLast) {
     const markers = drawingLineMarkers(drawing);
-    const arrowHead = (from: DrawingPoint, to: DrawingPoint, filled = false) => {
+    const arrowHead = (from: DrawingPoint, to: DrawingPoint) => {
       const distance = Math.hypot(to.x - from.x, to.y - from.y);
       if (!distance) return;
       const ux = (to.x - from.x) / distance,
         uy = (to.y - from.y) / distance;
-      const depth = filled
-        ? Math.min(10 + drawing.width * 2, Math.max(distance * 0.7, 6))
-        : 5 * drawing.width;
-      const halfWidth = filled ? depth / 2 : depth;
+      const depth = 5 * drawing.width;
+      const halfWidth = depth;
       const points = [
         to,
         { x: to.x - ux * depth - uy * halfWidth, y: to.y - uy * depth + ux * halfWidth },
         { x: to.x - ux * depth + uy * halfWidth, y: to.y - uy * depth - ux * halfWidth },
       ];
-      if (filled) {
-        (result.polygons ??= []).push({ points, opacity: 1, lineFill: true });
-        for (let index = 0; index < points.length; index++)
-          result.lines.push({ from: points[index]!, to: points[(index + 1) % points.length]! });
-      } else {
-        result.lines.push({ from: points[1]!, to }, { from: to, to: points[2]! });
-      }
+      result.lines.push({ from: points[1]!, to }, { from: to, to: points[2]! });
     };
     if (isSpecialChannelDrawing(drawing.kind)) {
-      for (const boundary of result.lines.slice(0, 2)) {
-        if (markers.start === "arrow") arrowHead(boundary.to, boundary.from, true);
-        if (markers.end === "arrow") arrowHead(boundary.from, boundary.to, true);
+      for (const boundary of markerBoundaries) {
+        if (markers.start === "arrow") arrowHead(boundary.to, boundary.from);
+        if (markers.end === "arrow") arrowHead(boundary.from, boundary.to);
       }
     }
     if (!isSpecialChannelDrawing(drawing.kind) && markers.start === "arrow" && markerFirst)
