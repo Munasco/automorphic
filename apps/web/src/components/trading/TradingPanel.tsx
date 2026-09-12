@@ -140,7 +140,7 @@ function ReadyTradingPanel({
                   />
                 }
               >
-                <ChartIcon name={item.name} className="size-4" />
+                <ChartIcon name={item.name} className="size-5" />
                 {item.view === "alerts" && alerts.activeCount > 0 ? (
                   <span className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-blue-400" />
                 ) : null}
@@ -165,7 +165,7 @@ function ReadyTradingPanel({
               />
             }
           >
-            <ChartIcon name="message-chatbot" className="size-4" />
+            <ChartIcon name="message-chatbot" className="size-5" />
           </TooltipTrigger>
           <TooltipPopup>AI chat</TooltipPopup>
         </Tooltip>
@@ -183,9 +183,9 @@ function ReadyTradingPanel({
             }
           >
             {expanded ? (
-              <ChartIcon name="minimize" className="size-4" />
+              <ChartIcon name="minimize" className="size-5" />
             ) : (
-              <ChartIcon name="maximize" className="size-4" />
+              <ChartIcon name="maximize" className="size-5" />
             )}
           </TooltipTrigger>
           <TooltipPopup>{expanded ? "Restore chat and chart" : "Expand chart"}</TooltipPopup>

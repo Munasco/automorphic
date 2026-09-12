@@ -329,7 +329,7 @@ export function ChartToolbar({
                 />
               }
             >
-              <ChartIcon name="adjustments-horizontal" className="size-4" aria-hidden="true" />
+              <ChartIcon name="adjustments-horizontal" className="size-5" aria-hidden="true" />
             </TooltipTrigger>
             <TooltipPopup>Chart display settings</TooltipPopup>
           </Tooltip>
@@ -358,7 +358,7 @@ export function ChartToolbar({
             aria-label="Download chart screenshot"
             onClick={onScreenshot}
           >
-            <ChartIcon name="camera" className="size-4" aria-hidden="true" />
+            <ChartIcon name="camera" className="size-5" aria-hidden="true" />
           </TooltipTrigger>
           <TooltipPopup>Download chart screenshot</TooltipPopup>
         </Tooltip>
