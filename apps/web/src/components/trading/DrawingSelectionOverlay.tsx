@@ -1,6 +1,6 @@
 import { supportsInlineDrawingText } from "./drawingPrimitive";
 import { getDrawingDialogBounds } from "./drawingDialogBounds";
-import { DrawingTextSettings } from "./DrawingTextSettings";
+import { DRAWING_TEXT_FONT_SIZES, DrawingTextSettings } from "./DrawingTextSettings";
 import { DrawingNumberField } from "./DrawingNumberField";
 import { DrawingVisibilitySettings } from "./DrawingVisibilitySettings";
 import {
@@ -113,8 +113,8 @@ function titleFor(drawing: ChartDrawing) {
     "fib-time-zone": "Fib Time Zone",
     "fib-trend-time": "Trend-based Fib Time",
     channel: "Parallel Channel",
-    "flat-channel": "Flat Top/Bottom",
-    "disjoint-channel": "Disjoint Channel",
+    "flat-channel": "Flat top/bottom",
+    "disjoint-channel": "Disjoint channel",
     "rotated-rectangle": "Rotated Rectangle",
     "double-curve": "Double Curve",
   };
@@ -344,11 +344,13 @@ function DrawingSettings({
   const dialogWidth =
     tab === "Visibility"
       ? 459.07
-      : supportsDrawingLevels(draft.kind) &&
-          !isFibTimeDrawing(draft.kind) &&
-          !isPitchforkDrawingTool(draft.kind)
-        ? 460
-        : 380;
+      : tab === "Style" && isSpecialChannelDrawing(draft.kind)
+        ? 390
+        : supportsDrawingLevels(draft.kind) &&
+            !isFibTimeDrawing(draft.kind) &&
+            !isPitchforkDrawingTool(draft.kind)
+          ? 460
+          : 380;
   const dialogBounds = dialogPosition
     ? getDrawingDialogBounds(dialogPosition, dialogWidth, viewport)
     : null;
@@ -477,9 +479,11 @@ function DrawingSettings({
                   ? "space-y-0"
                   : tab === "Style" && supportsLineStatistics(draft.kind)
                     ? "pb-8 [&>div]:min-h-[50px] [&>label]:min-h-[50px]"
-                    : tab === "Style" && axisLine
-                      ? "min-h-[145px] [&>div]:min-h-[50px] [&>label]:min-h-[50px]"
-                      : "space-y-6",
+                    : tab === "Style" && isSpecialChannelDrawing(draft.kind)
+                      ? "space-y-0 [&>div]:min-h-[50px] [&>label]:min-h-[50px]"
+                      : tab === "Style" && axisLine
+                        ? "min-h-[145px] [&>div]:min-h-[50px] [&>label]:min-h-[50px]"
+                        : "space-y-6",
           )}
         >
           {draft.kind === "regression-trend" && (tab === "Style" || tab === "Inputs") ? (
@@ -502,29 +506,53 @@ function DrawingSettings({
           draft.kind !== "channel" &&
           draft.kind !== "regression-trend" ? (
             <>
-              <div className={cn("flex items-center", axisLine ? "gap-5" : "gap-2")}>
-                <span className={cn("shrink-0 text-sm", !axisLine && "w-[100px]")}>
+              <div
+                className={cn(
+                  "flex items-center",
+                  isSpecialChannelDrawing(draft.kind) ? "gap-0" : axisLine ? "gap-5" : "gap-2",
+                )}
+              >
+                <span
+                  className={cn(
+                    "shrink-0 text-sm",
+                    isSpecialChannelDrawing(draft.kind) ? "w-[124px]" : !axisLine && "w-[100px]",
+                  )}
+                >
                   {line ? "Line" : "Stroke"}
                 </span>
-                <LineAppearancePicker drawing={draft} onChange={update} />
-                {supportsLineMarkers(draft.kind) && !axisLine ? (
-                  <>
-                    <MarkerPicker
-                      side="start"
-                      value={markers.start}
-                      onChange={(startMarker) => update({ startMarker })}
-                    />
-                    <MarkerPicker
-                      side="end"
-                      value={markers.end}
-                      onChange={(endMarker) => update({ endMarker })}
-                    />
-                  </>
-                ) : null}
+                <div className="flex items-center gap-2">
+                  <LineAppearancePicker drawing={draft} onChange={update} />
+                  {supportsLineMarkers(draft.kind) && !axisLine ? (
+                    <>
+                      <MarkerPicker
+                        side="start"
+                        value={markers.start}
+                        onChange={(startMarker) => update({ startMarker })}
+                      />
+                      <MarkerPicker
+                        side="end"
+                        value={markers.end}
+                        onChange={(endMarker) => update({ endMarker })}
+                      />
+                    </>
+                  ) : null}
+                </div>
               </div>
               {extendable ? (
-                <label className="flex items-center gap-2 text-sm">
-                  <span className="w-[100px] shrink-0">Extend</span>
+                <label
+                  className={cn(
+                    "flex items-center text-sm",
+                    !isSpecialChannelDrawing(draft.kind) && "gap-2",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "shrink-0",
+                      isSpecialChannelDrawing(draft.kind) ? "w-[124px]" : "w-[100px]",
+                    )}
+                  >
+                    Extend
+                  </span>
                   <LineExtensionPicker left={extendLeft} right={extendRight} onChange={update} />
                 </label>
               ) : null}
@@ -1308,38 +1336,46 @@ function ChannelAppearance({
   onChange: (patch: DrawingPatch) => void;
 }) {
   const prices = drawing.showPriceLabel ?? false;
+  const background = drawing.background ?? true;
+  const fontSize = drawing.priceLabelFontSize ?? 12;
+  const fontSizes: readonly number[] = DRAWING_TEXT_FONT_SIZES;
+  const fontOptions = (
+    fontSizes.includes(fontSize) ? fontSizes : [...fontSizes, fontSize].sort((a, b) => a - b)
+  ).map((size) => [String(size), String(size)] as const);
   return (
     <>
-      <div className="flex items-center justify-between gap-3">
-        <Check
-          label="Prices"
-          checked={prices}
-          onChange={(showPriceLabel) => onChange({ showPriceLabel })}
-        />
-        <div
-          className={cn("flex items-center gap-1", !prices && "pointer-events-none opacity-40")}
-          inert={!prices}
-        >
+      <div className="flex h-[50px] items-center">
+        <div className="w-[124px] shrink-0">
+          <Check
+            label="Prices"
+            checked={prices}
+            onChange={(showPriceLabel) => onChange({ showPriceLabel })}
+          />
+        </div>
+        <div className="flex items-center gap-2" inert={!prices}>
           <ColorPicker
+            variant="settings"
+            disabled={!prices}
             label="Price label color"
             value={drawing.priceLabelColor ?? drawing.color}
             onChange={(priceLabelColor) => onChange({ priceLabelColor })}
           />
-          <DrawingNumberField
+          <DrawingSelect
             label="Price label font size"
-            min={8}
-            max={48}
-            value={drawing.priceLabelFontSize ?? 12}
-            onValueChange={(priceLabelFontSize) => onChange({ priceLabelFontSize })}
-            className="w-14"
+            disabled={!prices}
+            value={String(fontSize)}
+            options={fontOptions}
+            onChange={(value) => onChange({ priceLabelFontSize: Number(value) })}
+            className="h-[34px] w-[100px] shrink-0 disabled:opacity-40"
           />
           <button
             type="button"
             aria-label="Bold price labels"
+            disabled={!prices}
             aria-pressed={drawing.priceLabelBold ?? false}
             onClick={() => onChange({ priceLabelBold: !drawing.priceLabelBold })}
             className={cn(
-              "size-8 rounded font-bold hover:bg-white/10",
+              "size-[34px] shrink-0 rounded border border-white/15 font-bold hover:bg-white/10 disabled:opacity-40",
               drawing.priceLabelBold && "bg-white/15",
             )}
           >
@@ -1348,10 +1384,11 @@ function ChannelAppearance({
           <button
             type="button"
             aria-label="Italic price labels"
+            disabled={!prices}
             aria-pressed={drawing.priceLabelItalic ?? false}
             onClick={() => onChange({ priceLabelItalic: !drawing.priceLabelItalic })}
             className={cn(
-              "size-8 rounded italic hover:bg-white/10",
+              "size-[34px] shrink-0 rounded border border-white/15 italic hover:bg-white/10 disabled:opacity-40",
               drawing.priceLabelItalic && "bg-white/15",
             )}
           >
@@ -1359,30 +1396,24 @@ function ChannelAppearance({
           </button>
         </div>
       </div>
-      <div className="flex items-center justify-between gap-3">
-        <Check
-          label="Background"
-          checked={drawing.background ?? true}
-          onChange={(background) => onChange({ background })}
-        />
+      <div className="flex h-[50px] items-center">
+        <div className="w-[124px] shrink-0">
+          <Check
+            label="Background"
+            checked={background}
+            onChange={(background) => onChange({ background })}
+          />
+        </div>
         <ColorPicker
+          variant="settings"
+          disabled={!background}
           label="Background color"
           value={drawing.backgroundColor ?? drawing.color}
           onChange={(backgroundColor) => onChange({ backgroundColor })}
+          opacity={drawing.backgroundOpacity ?? 0.12}
+          onOpacityChange={(backgroundOpacity) => onChange({ backgroundOpacity })}
         />
       </div>
-      <label className="flex items-center justify-between gap-4 text-sm">
-        Opacity
-        <input
-          aria-label="Background opacity"
-          type="range"
-          min={0}
-          max={100}
-          value={Math.round((drawing.backgroundOpacity ?? 0.12) * 100)}
-          onChange={(event) => onChange({ backgroundOpacity: event.target.valueAsNumber / 100 })}
-          className="w-44 accent-white"
-        />
-      </label>
     </>
   );
 }

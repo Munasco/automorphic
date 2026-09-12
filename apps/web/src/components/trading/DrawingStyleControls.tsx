@@ -105,6 +105,7 @@ export function ColorPicker({
   opacity,
   onOpacityChange,
   variant = "default",
+  disabled = false,
 }: {
   value: string;
   onChange: (color: string) => void;
@@ -114,14 +115,16 @@ export function ColorPicker({
   variant?: "default" | "settings" | "toolbar";
   opacity?: number | undefined;
   onOpacityChange?: (opacity: number) => void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         aria-label={label}
+        disabled={disabled}
         className={cn(
-          "flex shrink-0 items-center justify-center rounded hover:bg-white/10",
+          "flex shrink-0 items-center justify-center rounded hover:bg-white/10 disabled:opacity-40",
           variant === "settings"
             ? "size-[34px] border border-white/15"
             : variant === "toolbar"
@@ -140,18 +143,33 @@ export function ColorPicker({
         ) : (
           <span
             className={cn(
-              "rounded-sm border border-white/20",
+              "relative overflow-hidden rounded-sm border border-white/20",
               variant === "settings" ? "size-6" : "size-4",
             )}
-            style={{
-              background:
-                mixed === "diagonal"
-                  ? "linear-gradient(45deg, #f7525f 50%, #22ab94 50%)"
-                  : mixed
-                    ? "conic-gradient(#f23645 0 25%, #2962ff 0 50%, #4caf50 0 75%, #ff9800 0)"
-                    : value,
-            }}
-          />
+            style={
+              opacity === undefined
+                ? undefined
+                : {
+                    backgroundColor: "white",
+                    backgroundImage:
+                      "repeating-conic-gradient(rgba(42,46,57,.4) 0 25%, transparent 0 50%)",
+                    backgroundSize: "8px 8px",
+                  }
+            }
+          >
+            <span
+              className="absolute inset-0"
+              style={{
+                background:
+                  mixed === "diagonal"
+                    ? "linear-gradient(45deg, #f7525f 50%, #22ab94 50%)"
+                    : mixed
+                      ? "conic-gradient(#f23645 0 25%, #2962ff 0 50%, #4caf50 0 75%, #ff9800 0)"
+                      : value,
+                opacity: opacity ?? 1,
+              }}
+            />
+          </span>
         )}
       </PopoverTrigger>
       <PopoverPopup

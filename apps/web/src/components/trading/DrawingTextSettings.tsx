@@ -3,9 +3,8 @@ import { ColorPicker, DrawingSelect, inputClass } from "./DrawingStyleControls";
 import type { ChartDrawing } from "./drawingGeometry";
 import type { DrawingPatch } from "./useChartDrawings";
 
-const textSizes = [8, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 40].map(
-  (size) => [String(size), String(size)] as const,
-);
+export const DRAWING_TEXT_FONT_SIZES = [8, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 40];
+const textSizes = DRAWING_TEXT_FONT_SIZES.map((size) => [String(size), String(size)] as const);
 
 export function DrawingTextSettings({
   drawing,

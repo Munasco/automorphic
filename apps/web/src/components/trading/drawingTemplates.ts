@@ -38,6 +38,10 @@ export function defaultDrawingTemplateSettings(kind: DrawingKind): DrawingTempla
     ...defaultDrawingLevelSettings(kind),
     ...defaultChannelDrawingSettings(kind),
     ...defaultRegressionDrawingSettings(kind),
+    // Explicit resets/new tools get the reference palette; legacy channel fallbacks stay unchanged.
+    ...(kind === "flat-channel" || kind === "disjoint-channel"
+      ? { color: kind === "flat-channel" ? "#ff9800" : "#089981", backgroundOpacity: 0.2 }
+      : {}),
     // Factory-only values: sparse saved pitchforks retain their historical fallback palette.
     ...(isPitchforkDrawingTool(kind)
       ? {

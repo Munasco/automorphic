@@ -29,6 +29,33 @@ const drawing: ChartDrawing = {
 
 describe("last-used drawing appearance", () => {
   it.each([
+    ["flat-channel", "#ff9800"],
+    ["disjoint-channel", "#089981"],
+  ] as const)("uses factory %s appearance only without remembered settings", (kind, color) => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        values.set(key, value);
+      },
+    };
+    const defaults = createDrawingDefaults(storage);
+    expect(defaults.get(kind)).toMatchObject({ color, backgroundOpacity: 0.2 });
+    const legacy: ChartDrawing = { ...drawing, kind, color: "#2962ff", backgroundOpacity: 0.12 };
+    expect(defaults.remember(legacy)).toBe(true);
+    expect(createDrawingDefaults(storage).get(kind)).toMatchObject({
+      color: "#2962ff",
+      backgroundOpacity: 0.12,
+    });
+    const { backgroundOpacity: _opacity, ...sparse } = legacy;
+    expect(defaults.remember(sparse)).toBe(true);
+    const remembered = createDrawingDefaults(storage).get(kind);
+    expect(remembered.color).toBe("#2962ff");
+    expect(remembered).not.toHaveProperty("backgroundOpacity");
+    values.clear();
+    expect(defaults.get(kind)).toMatchObject({ color, backgroundOpacity: 0.2 });
+  });
+  it.each([
     "pitchfork",
     "schiff-pitchfork",
     "modified-schiff-pitchfork",

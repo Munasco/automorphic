@@ -32,7 +32,7 @@ export function DrawingTemplateMenu({
   const deleteTemplate = useDrawingTemplates((state) => state.deleteTemplate);
   const templates = allTemplates.filter((template) => template.kind === drawing.kind);
   const menuClass =
-    "w-full rounded px-3 py-2 text-left text-[13px] text-zinc-200 hover:bg-white/10";
+    "h-8 w-full whitespace-nowrap rounded px-2 text-left text-sm text-zinc-200 hover:bg-white/10";
   return (
     <>
       <Popover open={open} onOpenChange={setOpen}>
@@ -43,24 +43,24 @@ export function DrawingTemplateMenu({
             "flex shrink-0 items-center justify-center gap-2 rounded text-sm text-zinc-200 hover:bg-white/10",
             compact
               ? "size-[38px] aria-expanded:bg-white/10"
-              : "h-[34px] border border-white/20 px-[11px] text-base",
+              : "h-[34px] w-[100px] justify-between gap-0 border border-white/20 px-[11px] text-sm",
           )}
         >
           {compact ? (
             <ChartIcon name="layout-grid-add" className="size-7" />
           ) : (
             <>
-              Template <ChartIcon name="chevron-down" className="size-3" />
+              Template <ChartIcon name="chevron-down" className="size-[18px] shrink-0" />
             </>
           )}
         </PopoverTrigger>
         <PopoverPopup
           instant
-          side={compact ? "bottom" : "top"}
+          side="bottom"
           align="start"
           style={{ background: "#1f1f1f", backdropFilter: "none" }}
-          className="w-72"
-          viewportClassName="p-1"
+          className="w-max min-w-[120px] max-w-72"
+          viewportClassName="p-1.5"
         >
           <PopoverTitle className="sr-only">Drawing templates</PopoverTitle>
           <button
@@ -81,7 +81,7 @@ export function DrawingTemplateMenu({
               setOpen(false);
             }}
           >
-            Apply default
+            Apply defaults
           </button>
           {templates.length ? (
             <div

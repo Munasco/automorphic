@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Time } from "lightweight-charts";
-import { defaultDrawingLevels, parseChartDrawings, type ChartDrawing } from "./drawingGeometry";
+import {
+  defaultChannelDrawingSettings,
+  defaultDrawingLevels,
+  parseChartDrawings,
+  type ChartDrawing,
+} from "./drawingGeometry";
 
 vi.mock("./workspaceStorage", () => ({
   tradingWorkspaceStorage: {
@@ -44,6 +49,51 @@ beforeEach(() => {
 });
 
 describe("drawing templates", () => {
+  it.each([
+    ["flat-channel", "#ff9800"],
+    ["disjoint-channel", "#089981"],
+  ] as const)(
+    "applies factory %s colors only on reset while preserving custom and sparse legacy drawings",
+    (kind, color) => {
+      const target: ChartDrawing = {
+        ...drawing,
+        kind,
+        anchors: [...drawing.anchors, { time: 300 as Time, price: 15 }],
+        backgroundOpacity: 0.65,
+      };
+      const saved = saveDrawingTemplate([], target, "Custom channel")!;
+      const restored = normalizeDrawingTemplates(JSON.parse(JSON.stringify(saved)))[0]!;
+      expect(applyDrawingTemplate(target, restored.settings)).toEqual(target);
+      const reset = applyDrawingTemplate(target, defaultDrawingTemplateSettings(kind));
+      expect(reset).toMatchObject({
+        id: target.id,
+        kind,
+        anchors: target.anchors,
+        name: target.name,
+        locked: true,
+        hidden: true,
+        color,
+        width: 2,
+        lineStyle: "solid",
+        background: true,
+        backgroundOpacity: 0.2,
+      });
+      expect(applyDrawingTemplate(reset, restored.settings)).toEqual(target);
+      const legacy: ChartDrawing = {
+        id: "legacy",
+        kind,
+        anchors: target.anchors,
+        color: "#2962ff",
+        width: 2,
+      };
+      const loaded = parseChartDrawings(JSON.stringify([legacy]))[0]!;
+      expect(loaded).toEqual(legacy);
+      expect({ ...defaultChannelDrawingSettings(kind), ...loaded }).toMatchObject({
+        color: "#2962ff",
+        backgroundOpacity: 0.12,
+      });
+    },
+  );
   it.each([
     "pitchfork",
     "schiff-pitchfork",
