@@ -1,4 +1,5 @@
 import { contracts, chartStream } from "./trading/marketData.ts";
+import { accountSnapshot, parseAccountId, TradingAccountError } from "./trading/accountData.ts";
 import { makeTradingWorkspaceCreator } from "./trading/createWorkspace.ts";
 import { TradingWorkspace } from "./trading/TradingWorkspace.ts";
 import { parseWorkspaceValue } from "./trading/workspaceState.ts";
@@ -445,6 +446,27 @@ const tradingReadHandler = Effect.gen(function* () {
     );
   }
   return yield* Effect.tryPromise(async () => {
+    if (url.pathname === "/api/trading/account") {
+      try {
+        return HttpServerResponse.jsonUnsafe(
+          await accountSnapshot(parseAccountId(url.searchParams.get("accountId"))),
+          { headers: { "Cache-Control": "no-store" } },
+        );
+      } catch (error) {
+        return HttpServerResponse.jsonUnsafe(
+          {
+            error:
+              error instanceof TradingAccountError
+                ? error.message
+                : "Tradovate account data is unavailable. Retry shortly.",
+          },
+          {
+            status: error instanceof TradingAccountError ? error.status : 502,
+            headers: { "Cache-Control": "no-store" },
+          },
+        );
+      }
+    }
     if (url.pathname === "/api/trading/contracts")
       return HttpServerResponse.jsonUnsafe(await contracts(url.searchParams.get("root") ?? "MGC"));
     if (url.pathname === "/api/trading/stream")

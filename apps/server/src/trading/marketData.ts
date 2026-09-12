@@ -70,7 +70,7 @@ export function normalizeQuote(quote: unknown, symbol: string, contractId: numbe
   };
 }
 
-async function credentials() {
+export async function credentials() {
   const path =
     process.env.AUTOMORPHIC_ENV_FILE ??
     NodeURL.fileURLToPath(new URL("../../../../.env", import.meta.url));
@@ -123,7 +123,11 @@ export async function chartStream(symbol: string, interval: number) {
   const contract = await contractResponse.json();
   if (
     !contract ||
+    typeof contract !== "object" ||
+    !("name" in contract) ||
+    !("id" in contract) ||
     contract.name !== symbol ||
+    typeof contract.id !== "number" ||
     !Number.isSafeInteger(contract.id) ||
     contract.id <= 0
   ) {

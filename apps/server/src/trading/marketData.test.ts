@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - Temporary native env-file fixtures for the WebSocket adapter.
 import { describe, it, expect, vi, afterEach } from "vite-plus/test";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
