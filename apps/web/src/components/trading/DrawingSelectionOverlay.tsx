@@ -31,6 +31,8 @@ import {
   defaultDrawingStats,
   supportsDrawingLevels,
   defaultDrawingLevelSettings,
+  defaultChannelDrawingSettings,
+  isSpecialChannelDrawing,
 } from "./drawingGeometry";
 import { DrawingLevelSettings } from "./DrawingLevelSettings";
 import { DrawingTemplateMenu } from "./DrawingTemplateMenu";
@@ -46,6 +48,8 @@ const lineKinds = new Set([
   "arrow",
   "arrow-marker",
   "channel",
+  "flat-channel",
+  "disjoint-channel",
 ]);
 function titleFor(drawing: ChartDrawing) {
   const labels: Record<string, string> = {
@@ -54,6 +58,8 @@ function titleFor(drawing: ChartDrawing) {
     "horizontal-ray": "Horizontal Ray",
     fib: "Fib Retracement",
     channel: "Parallel Channel",
+    "flat-channel": "Flat Top/Bottom",
+    "disjoint-channel": "Disjoint Channel",
     "rotated-rectangle": "Rotated Rectangle",
     "double-curve": "Double Curve",
   };
@@ -108,12 +114,15 @@ function DrawingSettings({
 }) {
   const [draft, setDraft] = useState(() => ({
     ...defaultDrawingLevelSettings(drawing.kind),
+    ...defaultChannelDrawingSettings(drawing.kind),
     ...drawing,
   }));
   const [replaceAppearance, setReplaceAppearance] = useState(false);
   const availableTabs = supportsDrawingLevels(draft.kind)
     ? ["Style", "Coordinates", "Visibility"]
-    : ["Style", "Text", "Coordinates", "Visibility"];
+    : isSpecialChannelDrawing(draft.kind)
+      ? ["Style", "Text", "Visibility"]
+      : ["Style", "Text", "Coordinates", "Visibility"];
   const tab = availableTabs.includes(requestedTab) ? requestedTab : "Style";
   const [anchorKeys] = useState(() =>
     drawing.anchors.map((_, index) => `${drawing.id}-anchor-${index}`),
@@ -277,7 +286,10 @@ function DrawingSettings({
                   onChange={(showMiddlePoint) => update({ showMiddlePoint })}
                 />
               ) : null}
-              {supportsDrawingPriceLabels(draft.kind) ? (
+              {isSpecialChannelDrawing(draft.kind) ? (
+                <ChannelAppearance drawing={draft} onChange={update} />
+              ) : null}
+              {supportsDrawingPriceLabels(draft.kind) && !isSpecialChannelDrawing(draft.kind) ? (
                 <Check
                   label="Price labels"
                   checked={draft.showPriceLabel ?? draft.kind === "horizontal"}
@@ -371,7 +383,7 @@ function DrawingSettings({
                   aria-label="Text size"
                   value={draft.textFontSize ?? 14}
                   onChange={(event) => update({ textFontSize: Number(event.target.value) })}
-                  className={cn(inputClass, "bg-[#1e222d]")}
+                  className={cn(inputClass, "bg-[#1f1f1f]")}
                 >
                   {[8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48].map((size) => (
                     <option key={size}>{size}</option>
@@ -413,7 +425,7 @@ function DrawingSettings({
                       textPosition: event.target.value as NonNullable<ChartDrawing["textPosition"]>,
                     })
                   }
-                  className={cn(inputClass, "bg-[#1e222d]")}
+                  className={cn(inputClass, "bg-[#1f1f1f]")}
                 >
                   {["above", "center", "below"].map((value) => (
                     <option key={value} value={value}>
@@ -437,7 +449,7 @@ function DrawingSettings({
                       >,
                     })
                   }
-                  className={cn(inputClass, "bg-[#1e222d]")}
+                  className={cn(inputClass, "bg-[#1f1f1f]")}
                 >
                   {["left", "center", "right"].map((value) => (
                     <option key={value} value={value}>
@@ -585,7 +597,11 @@ function DrawingSettings({
               drawing={draft}
               onApply={(patch) => {
                 const next = applyDrawingTemplate(draft, patch);
-                setDraft({ ...defaultDrawingLevelSettings(next.kind), ...next });
+                setDraft({
+                  ...defaultDrawingLevelSettings(next.kind),
+                  ...defaultChannelDrawingSettings(next.kind),
+                  ...next,
+                });
                 setReplaceAppearance(true);
                 drawings.previewSettings(patch, { replace: true });
               }}
@@ -629,7 +645,7 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
       <div
         role="toolbar"
         aria-label="Selected drawing"
-        className="absolute left-1/2 top-3 z-20 flex max-w-[calc(100%-16px)] -translate-x-1/2 items-center gap-0.5 rounded-lg border border-white/15 bg-[#1e222d] p-1 text-zinc-200 shadow-lg"
+        className="absolute left-1/2 top-3 z-20 flex max-w-[calc(100%-16px)] -translate-x-1/2 items-center gap-0.5 rounded-lg border border-white/15 bg-[#1f1f1f] p-1 text-zinc-200 shadow-lg"
         style={{ marginLeft: offset.x, marginTop: offset.y }}
       >
         <button
@@ -708,7 +724,7 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
             </svg>
           </PopoverTrigger>
           <PopoverPopup
-            style={{ background: "#1e222d", backdropFilter: "none" }}
+            style={{ background: "#1f1f1f", backdropFilter: "none" }}
             className="w-48"
             viewportClassName="p-1"
           >
@@ -752,7 +768,7 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
               <div
                 role="menu"
                 aria-label="Drawing context menu"
-                className="fixed w-56 rounded-lg border border-white/15 bg-[#1e222d] p-1 text-sm text-zinc-200 shadow-xl"
+                className="fixed w-56 rounded-lg border border-white/15 bg-[#1f1f1f] p-1 text-sm text-zinc-200 shadow-xl"
                 style={{
                   left: Math.min(drawings.contextPoint.x, window.innerWidth - 232),
                   top: Math.min(drawings.contextPoint.y, window.innerHeight - 250),
@@ -784,6 +800,99 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
             document.body,
           )
         : null}
+    </>
+  );
+}
+
+function ChannelAppearance({
+  drawing,
+  onChange,
+}: {
+  drawing: ChartDrawing;
+  onChange: (patch: DrawingPatch) => void;
+}) {
+  const prices = drawing.showPriceLabel ?? false;
+  return (
+    <>
+      <div className="flex items-center justify-between gap-3">
+        <Check
+          label="Prices"
+          checked={prices}
+          onChange={(showPriceLabel) => onChange({ showPriceLabel })}
+        />
+        <div
+          className={cn("flex items-center gap-1", !prices && "pointer-events-none opacity-40")}
+          inert={!prices}
+        >
+          <ColorPicker
+            label="Price label color"
+            value={drawing.priceLabelColor ?? drawing.color}
+            onChange={(priceLabelColor) => onChange({ priceLabelColor })}
+          />
+          <input
+            aria-label="Price label font size"
+            type="number"
+            min={8}
+            max={48}
+            value={drawing.priceLabelFontSize ?? 12}
+            onChange={(event) => {
+              if (Number.isFinite(event.target.valueAsNumber))
+                onChange({
+                  priceLabelFontSize: Math.max(8, Math.min(48, event.target.valueAsNumber)),
+                });
+            }}
+            className={cn(inputClass, "w-14 px-1")}
+          />
+          <button
+            type="button"
+            aria-label="Bold price labels"
+            aria-pressed={drawing.priceLabelBold ?? false}
+            onClick={() => onChange({ priceLabelBold: !drawing.priceLabelBold })}
+            className={cn(
+              "size-8 rounded font-bold hover:bg-white/10",
+              drawing.priceLabelBold && "bg-white/15",
+            )}
+          >
+            B
+          </button>
+          <button
+            type="button"
+            aria-label="Italic price labels"
+            aria-pressed={drawing.priceLabelItalic ?? false}
+            onClick={() => onChange({ priceLabelItalic: !drawing.priceLabelItalic })}
+            className={cn(
+              "size-8 rounded italic hover:bg-white/10",
+              drawing.priceLabelItalic && "bg-white/15",
+            )}
+          >
+            I
+          </button>
+        </div>
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <Check
+          label="Background"
+          checked={drawing.background ?? true}
+          onChange={(background) => onChange({ background })}
+        />
+        <ColorPicker
+          label="Background color"
+          value={drawing.backgroundColor ?? drawing.color}
+          onChange={(backgroundColor) => onChange({ backgroundColor })}
+        />
+      </div>
+      <label className="flex items-center justify-between gap-4 text-sm">
+        Opacity
+        <input
+          aria-label="Background opacity"
+          type="range"
+          min={0}
+          max={100}
+          value={Math.round((drawing.backgroundOpacity ?? 0.12) * 100)}
+          onChange={(event) => onChange({ backgroundOpacity: event.target.valueAsNumber / 100 })}
+          className="w-44 accent-white"
+        />
+      </label>
     </>
   );
 }

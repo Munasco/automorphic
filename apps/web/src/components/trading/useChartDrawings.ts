@@ -14,6 +14,7 @@ import {
   DRAWING_ANCHORS,
   drawingTimeValue,
   isVariableDrawingTool,
+  isSpecialChannelDrawing,
   isFreehandDrawingTool,
   maximumDrawingAnchors,
   parseChartDrawings,
@@ -146,6 +147,7 @@ export function createChartDrawingSession(
     origin: DrawingPoint;
     points: DrawingPoint[];
     handle: number;
+    handlePoint: DrawingPoint | undefined;
     moved: boolean;
   } | null = null;
   const history: ChartDrawing[][] = [];
@@ -337,6 +339,7 @@ export function createChartDrawingSession(
       origin: point,
       points: points as DrawingPoint[],
       handle,
+      handlePoint: target?.handlePoint,
       moved: false,
     };
     return true;
@@ -381,7 +384,9 @@ export function createChartDrawingSession(
     if (!activeDrag.moved && Math.hypot(dx, dy) < 3) return;
     const projection = drawingProjection(chart, series);
     // Snap one reference point, then translate the entire shape by that same offset.
-    const reference = activeDrag.points[Math.max(0, activeDrag.handle)]!;
+    const reference = activeDrag.handlePoint ?? activeDrag.points[Math.max(0, activeDrag.handle)]!;
+    const disjoint = activeDrag.drawing.kind === "disjoint-channel";
+    if (disjoint && activeDrag.handle === 2) dx = 0;
     const candidate = {
       x: activeDrag.drawing.kind === "horizontal" ? point.x : reference.x + dx,
       y: reference.y + dy,
@@ -398,6 +403,41 @@ export function createChartDrawingSession(
       }
     }
     const moved = activeDrag.drawing.anchors.map((anchor, index) => {
+      if (disjoint && activeDrag.handle >= 0) {
+        const handle = activeDrag.handle;
+        const old = activeDrag.points[index]!;
+        if ((handle === 3 && index === 0) || handle === index) {
+          const moved = projection.unproject({
+            x: old.x + (handle === 2 ? 0 : dx),
+            y: old.y + (handle === 3 ? -dy : dy),
+          });
+          return moved && (Math.abs(dx) < 1 || handle === 2)
+            ? { ...moved, time: anchor.time }
+            : moved;
+        }
+        // Moving the upper-right corner mirrors the opposite right price so the left pair stays fixed.
+        if (handle === 1 && index === 2) {
+          const price = series.coordinateToPrice(old.y - dy);
+          return price === null ? null : { ...anchor, price };
+        }
+        return anchor;
+      }
+      if (isSpecialChannelDrawing(activeDrag.drawing.kind) && activeDrag.handle >= 2) {
+        // Flat opposite corners resize the matching timestamp and move the third price.
+        const timeAnchor = activeDrag.handle === 2 ? 1 : 0;
+        if (index === timeAnchor) {
+          const moved = projection.unproject({
+            x: activeDrag.points[index]!.x + dx,
+            y: activeDrag.points[index]!.y,
+          });
+          return moved ? { ...anchor, time: Math.abs(dx) < 1 ? anchor.time : moved.time } : null;
+        }
+        if (index === 2) {
+          const price = series.coordinateToPrice(activeDrag.points[2]!.y + dy);
+          return price === null ? null : { ...anchor, price };
+        }
+        return anchor;
+      }
       if (activeDrag.handle >= 0 && index !== activeDrag.handle) return anchor;
       const old = activeDrag.points[index]!;
       if (activeDrag.drawing.kind === "horizontal") {

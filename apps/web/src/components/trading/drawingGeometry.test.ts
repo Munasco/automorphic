@@ -848,3 +848,143 @@ describe("pitchfork style settings", () => {
     ).toMatchObject({ pitchforkStyle: "inside", extendLines: true });
   });
 });
+
+describe("three-anchor non-parallel channels", () => {
+  it("builds a sloped boundary and a flat opposite boundary over the first two timestamps", () => {
+    const flat = drawing("flat-channel", [
+      [100, 300],
+      [300, 400],
+      [900, 100],
+    ]);
+    const shape = geometry(flat);
+    expect(shape.lines).toEqual([
+      { from: { x: 100, y: 200 }, to: { x: 300, y: 100 } },
+      { from: { x: 100, y: 400 }, to: { x: 300, y: 400 } },
+    ]);
+    expect(shape.handles).toEqual([
+      { x: 100, y: 200 },
+      { x: 300, y: 100 },
+      { x: 300, y: 400 },
+      { x: 100, y: 400 },
+    ]);
+    expect(shape.polygons?.[0]?.points).toEqual([
+      { x: 100, y: 200 },
+      { x: 300, y: 100 },
+      { x: 300, y: 400 },
+      { x: 100, y: 400 },
+    ]);
+    expect(hitDrawingGeometry(shape, { x: 200, y: 300 })).toBe(true);
+    expect(
+      geometry({
+        ...flat,
+        anchors: [flat.anchors[0]!, flat.anchors[1]!, { time: 10 as Time, price: 100 }],
+      }).lines,
+    ).toEqual(shape.lines);
+    const moved = geometry({
+      ...flat,
+      anchors: [flat.anchors[0]!, flat.anchors[1]!, { time: 900 as Time, price: 150 }],
+    });
+    expect(moved.handles.slice(2).map((point) => point.y)).toEqual([350, 350]);
+  });
+
+  it("reflects the disjoint opposite slope", () => {
+    const channel = drawing("disjoint-channel", [
+      [100, 250],
+      [350, 310],
+      [900, 40],
+    ]);
+    const shape = geometry(channel);
+    expect(shape.lines).toEqual([
+      { from: { x: 100, y: 250 }, to: { x: 350, y: 190 } },
+      { from: { x: 100, y: 400 }, to: { x: 350, y: 460 } },
+    ]);
+    expect(hitDrawingHandle(shape, { x: 100, y: 400 })).toBe(3);
+    expect(geometry(channel).lines).toHaveLength(2);
+    const upward = geometry(
+      drawing("disjoint-channel", [
+        [100, 310],
+        [350, 250],
+        [900, 100],
+      ]),
+    );
+    expect(upward.lines[1]).toEqual({ from: { x: 100, y: 460 }, to: { x: 350, y: 400 } });
+  });
+
+  it("extends each channel boundary, fills the extended region and styles all endpoint markers", () => {
+    const channel: ChartDrawing = {
+      ...drawing("flat-channel", [
+        [100, 300],
+        [300, 400],
+        [900, 100],
+      ]),
+      extendLeft: true,
+      extendRight: true,
+      backgroundColor: "#00ff00",
+      backgroundOpacity: 0.3,
+      startMarker: "arrow",
+      endMarker: "arrow",
+    };
+    const shape = geometry(channel);
+    expect(shape.lines[0]).toEqual({ from: { x: 0, y: 250 }, to: { x: 500, y: 0 } });
+    expect(shape.lines[1]).toEqual({ from: { x: 0, y: 400 }, to: { x: 1000, y: 400 } });
+    expect(shape.polygons?.[0]).toMatchObject({ color: "#00ff00", opacity: 0.3 });
+    expect(shape.polygons?.[0]?.points.map((point) => point.x)).toEqual([0, 1000, 1000, 0]);
+    expect(shape.polygons?.slice(1)).toHaveLength(4);
+    const noFill = geometry({
+      ...channel,
+      background: false,
+      startMarker: "normal",
+      endMarker: "normal",
+    });
+    expect(noFill.polygons).toBeUndefined();
+    expect(hitDrawingGeometry(noFill, { x: 900, y: 300 })).toBe(false);
+    const text = geometry({ ...channel, text: "Range", extendLeft: false, extendRight: false });
+    expect(text.text?.angle).toBeCloseTo(Math.atan2(-100, 200));
+    expect(text.text?.align).toBe("left");
+  });
+
+  it("round-trips three anchors and settings while rejecting collapsed time spans or empty ranges", () => {
+    for (const kind of ["flat-channel", "disjoint-channel"] as const) {
+      const shape = {
+        ...drawing(kind, [
+          [100, 300],
+          [300, 400],
+          [900, 100],
+        ]),
+        backgroundColor: "#00ff00",
+        backgroundOpacity: 0.3,
+        priceLabelColor: "#ff0000",
+        priceLabelFontSize: 16,
+        priceLabelBold: true,
+        priceLabelItalic: true,
+      };
+      expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+      expect(validDrawingAnchors(kind, shape.anchors)).toBe(true);
+      expect(validDrawingAnchors(kind, shape.anchors.slice(0, 2))).toBe(false);
+      expect(
+        validDrawingAnchors(
+          kind,
+          drawing(kind, [
+            [100, 300],
+            [100, 400],
+            [900, 100],
+          ]).anchors,
+        ),
+      ).toBe(false);
+      expect(
+        validDrawingAnchors(
+          kind,
+          drawing(kind, [
+            [100, 300],
+            [300, 300],
+            [900, 300],
+          ]).anchors,
+        ),
+      ).toBe(false);
+    }
+    expect(sanitizeDrawingSettings({ backgroundColor: "invalid" })).toEqual({});
+    expect(sanitizeDrawingSettings({ backgroundColor: "#00ff00" })).toEqual({
+      backgroundColor: "#00ff00",
+    });
+  });
+});

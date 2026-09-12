@@ -1497,3 +1497,118 @@ describe("inline drawing text transactions", () => {
     session.dispose();
   });
 });
+
+describe("channel corner editing", () => {
+  const shape = (kind: "flat-channel" | "disjoint-channel") => ({
+    id: "channel",
+    kind,
+    color: "#729bff",
+    width: 2,
+    anchors: [
+      { time: 100, price: 4750 },
+      { time: 350, price: 4810 },
+      { time: 900, price: 4540 },
+    ],
+  });
+  it.each([
+    {
+      kind: "flat-channel",
+      from: [100, 460],
+      to: [150, 500],
+      expected: [
+        [150, 4750],
+        [350, 4810],
+        [900, 4500],
+      ],
+    },
+    {
+      kind: "flat-channel",
+      from: [350, 460],
+      to: [400, 500],
+      expected: [
+        [100, 4750],
+        [400, 4810],
+        [900, 4500],
+      ],
+    },
+    {
+      kind: "disjoint-channel",
+      from: [100, 400],
+      to: [150, 470],
+      expected: [
+        [150, 4820],
+        [350, 4810],
+        [900, 4540],
+      ],
+    },
+    {
+      kind: "disjoint-channel",
+      from: [350, 460],
+      to: [450, 510],
+      expected: [
+        [100, 4750],
+        [350, 4810],
+        [900, 4490],
+      ],
+    },
+    {
+      kind: "disjoint-channel",
+      from: [100, 250],
+      to: [150, 280],
+      expected: [
+        [150, 4720],
+        [350, 4810],
+        [900, 4540],
+      ],
+    },
+    {
+      kind: "disjoint-channel",
+      from: [350, 190],
+      to: [450, 230],
+      expected: [
+        [100, 4750],
+        [450, 4770],
+        [900, 4580],
+      ],
+    },
+  ] as const)(
+    "couples $kind corner $from correctly in one undoable write",
+    ({ kind, from, to, expected }) => {
+      const original = shape(kind);
+      const f = fixture(`corner-${kind}`, JSON.stringify([original]));
+      const session = f.open();
+      expect(session.beginDrag({ x: from[0], y: from[1] })).toBe(true);
+      session.dragTo({ x: to[0], y: to[1] });
+      expect(f.writes()).toBe(0);
+      session.endDrag();
+      expect(f.writes()).toBe(1);
+      expect(JSON.parse(f.saved()!)[0].anchors).toEqual(
+        expected.map(([time, price]) => ({ time, price })),
+      );
+      session.undo();
+      expect(JSON.parse(f.saved()!)[0]).toEqual(original);
+      session.redo();
+      expect(JSON.parse(f.saved()!)[0].anchors).toEqual(
+        expected.map(([time, price]) => ({ time, price })),
+      );
+      session.dispose();
+    },
+  );
+  it("snaps a derived corner at its visible candle rather than the ignored third timestamp", () => {
+    const original = shape("flat-channel");
+    const f = fixture("channel-magnet", JSON.stringify([original]), [
+      { time: 200 as UTCTimestamp, open: 4550, high: 4570, low: 4500, close: 4560 },
+    ]);
+    const session = f.open();
+    session.setMagnetMode("strong");
+    session.beginDrag({ x: 100, y: 460 });
+    session.dragTo({ x: 205, y: 452 });
+    session.endDrag();
+    expect(JSON.parse(f.saved()!)[0].anchors).toEqual([
+      { time: 200, price: 4750 },
+      { time: 350, price: 4810 },
+      { time: 900, price: 4550 },
+    ]);
+    session.dispose();
+  });
+});

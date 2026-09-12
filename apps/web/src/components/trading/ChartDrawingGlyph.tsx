@@ -127,6 +127,22 @@ export function ChartDrawingGlyph({ tool }: { tool: ChartDrawingTool }) {
           <circle cx="7" cy="20" r="1.5" />
         </>
       ) : null}
+      {tool === "flat-channel" ? (
+        <>
+          <path d="m3 14 18-9M3 20h18" />
+          <circle cx="3" cy="14" r="1.5" />
+          <circle cx="21" cy="5" r="1.5" />
+          <circle cx="21" cy="20" r="1.5" />
+        </>
+      ) : null}
+      {tool === "disjoint-channel" ? (
+        <>
+          <path d="m3 14 18-9M3 17l18 5" />
+          <circle cx="3" cy="14" r="1.5" />
+          <circle cx="21" cy="5" r="1.5" />
+          <circle cx="21" cy="22" r="1.5" />
+        </>
+      ) : null}
       {tool === "rectangle" ? (
         <>
           <path d="M5 5h14v14H5z" />

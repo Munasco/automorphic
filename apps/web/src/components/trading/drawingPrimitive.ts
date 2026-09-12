@@ -16,6 +16,7 @@ import {
   defaultDrawingStats,
   supportsLineStatistics,
   supportsDrawingPriceLabels,
+  isSpecialChannelDrawing,
   type ChartDrawing,
   type DrawingAnchor,
   type DrawingKind,
@@ -115,6 +116,7 @@ export function drawingTextPlacement(
 export type DrawingPrimitiveHit = {
   drawing: ChartDrawing;
   handle: number;
+  handlePoint?: DrawingPoint;
   distance: number;
   hitTestPriority: 0 | 1 | 2;
   cursorStyle: "default" | "pointer";
@@ -163,6 +165,7 @@ export function createDrawingPrimitive(
         candidate = {
           drawing,
           handle: drawing.locked ? -1 : handle,
+          handlePoint: anchor,
           cursorStyle: "default",
           distance: Math.hypot(point.x - anchor.x, point.y - anchor.y),
           hitTestPriority: 2,
@@ -289,6 +292,15 @@ export function createDrawingPrimitive(
               const point = line.labelPoint ?? { x: line.to.x + 4, y: line.to.y - 3 };
               ctx.fillText(line.label, point.x, point.y);
             }
+            if (geometry.priceLabels?.length) {
+              ctx.font = `${drawing.priceLabelItalic ? "italic " : ""}${drawing.priceLabelBold ? "bold " : ""}${drawing.priceLabelFontSize ?? 12}px ${chart.options().layout.fontFamily}`;
+              ctx.fillStyle = drawing.priceLabelColor ?? drawing.color;
+              ctx.textBaseline = "middle";
+              for (const label of geometry.priceLabels) {
+                ctx.textAlign = label.align;
+                ctx.fillText(label.value, label.point.x, label.point.y);
+              }
+            }
             if (geometry.text) {
               const text = geometry.text;
               const size = text.fontSize ?? 14;
@@ -386,7 +398,11 @@ export function createDrawingPrimitive(
               geometry.handles.map((_, index) => index)) {
               const point = geometry.handles[index]!;
               ctx.beginPath();
-              ctx.arc(point.x, point.y, hovering ? 6 : drawing.locked ? 3 : 4, 0, Math.PI * 2);
+              const radius = hovering ? 6 : drawing.locked ? 3 : 4;
+              // The disjoint channel's third anchor changes only the opposite right price.
+              if (drawing.kind === "disjoint-channel" && index === 2)
+                ctx.rect(point.x - radius, point.y - radius, radius * 2, radius * 2);
+              else ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
               ctx.fillStyle = "#15171a";
               ctx.fill();
               ctx.strokeStyle =
@@ -416,12 +432,26 @@ export function createDrawingPrimitive(
             axis === "price" &&
             drawing.showPriceLabel === true &&
             drawing.kind !== "horizontal" &&
+            !isSpecialChannelDrawing(drawing.kind) &&
             supportsDrawingPriceLabels(drawing.kind);
           if (!selected && !persistent) return [];
+          const projection = drawingProjection(chart, series);
+          const selectedAnchors = isSpecialChannelDrawing(drawing.kind)
+            ? buildDrawingGeometry(
+                drawing,
+                projection.project,
+                projection.priceY,
+                projection.width,
+                projection.height,
+              ).handles.flatMap((point) => {
+                const anchor = projection.unproject(point);
+                return anchor ? [anchor] : [];
+              })
+            : drawing.anchors;
           const anchors = selected
-            ? drawing.anchors.length > 4
-              ? [drawing.anchors[0]!, drawing.anchors.at(-1)!]
-              : drawing.anchors
+            ? selectedAnchors.length > 4
+              ? [selectedAnchors[0]!, selectedAnchors.at(-1)!]
+              : selectedAnchors
             : drawing.anchors.slice(0, 2);
           return anchors
             .filter(

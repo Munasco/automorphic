@@ -19,6 +19,8 @@ export type DrawingKind =
   | "modified-schiff-pitchfork"
   | "inside-pitchfork"
   | "channel"
+  | "flat-channel"
+  | "disjoint-channel"
   | "text"
   | "brush"
   | "highlighter"
@@ -45,6 +47,7 @@ export type DrawingSettings = {
   reverse?: boolean;
   background?: boolean;
   backgroundOpacity?: number;
+  backgroundColor?: string;
   showPrices?: boolean;
   showLevels?: boolean;
   showTrendLine?: boolean;
@@ -59,6 +62,10 @@ export type DrawingSettings = {
   extendLeft?: boolean;
   extendRight?: boolean;
   showPriceLabel?: boolean;
+  priceLabelColor?: string;
+  priceLabelFontSize?: number;
+  priceLabelBold?: boolean;
+  priceLabelItalic?: boolean;
   startMarker?: "normal" | "arrow";
   endMarker?: "normal" | "arrow";
   text?: string;
@@ -92,6 +99,7 @@ export type DrawingLine = {
   labelBaseline?: "top" | "middle" | "bottom";
 };
 export type DrawingGeometry = {
+  priceLabels?: Array<{ point: DrawingPoint; value: string; align: "left" | "right" }>;
   lines: DrawingLine[];
   rectangle?: { x: number; y: number; width: number; height: number };
   text?: {
@@ -128,6 +136,8 @@ export const DRAWING_ANCHORS: Record<DrawingKind, number> = {
   "modified-schiff-pitchfork": 3,
   "inside-pitchfork": 3,
   channel: 3,
+  "flat-channel": 3,
+  "disjoint-channel": 3,
   text: 1,
   brush: 2,
   highlighter: 2,
@@ -234,14 +244,28 @@ function isAnchor(value: unknown): value is DrawingAnchor {
     Number.isFinite(value.price)
   );
 }
+export const isSpecialChannelDrawing = (kind: DrawingKind) =>
+  kind === "flat-channel" || kind === "disjoint-channel";
+export function defaultChannelDrawingSettings(kind: DrawingKind): DrawingSettings {
+  return isSpecialChannelDrawing(kind)
+    ? {
+        background: true,
+        backgroundOpacity: 0.12,
+        textAlignment: "left",
+        textPosition: "above",
+      }
+    : {};
+}
 export const supportsLineStatistics = (kind: DrawingKind) =>
   ["trend", "info-line", "extended-line", "trend-angle"].includes(kind);
 export const defaultDrawingStats = (kind: DrawingKind): NonNullable<DrawingSettings["stats"]> =>
   kind === "info-line" ? ["price", "percent", "bars", "datetime"] : [];
 export const supportsLineExtensions = (kind: DrawingKind) =>
   supportsDrawingLevels(kind) ||
+  isSpecialChannelDrawing(kind) ||
   ["trend", "info-line", "extended-line", "trend-angle", "ray", "arrow", "channel"].includes(kind);
 export const supportsLineMarkers = (kind: DrawingKind) =>
+  isSpecialChannelDrawing(kind) ||
   [
     "trend",
     "info-line",
@@ -259,6 +283,7 @@ export const supportsLineMarkers = (kind: DrawingKind) =>
     "arc",
   ].includes(kind);
 export const supportsDrawingPriceLabels = (kind: DrawingKind) =>
+  isSpecialChannelDrawing(kind) ||
   [
     "horizontal",
     "horizontal-ray",
@@ -337,12 +362,25 @@ export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
     "extendLeft",
     "extendRight",
     "showPriceLabel",
+    "priceLabelBold",
+    "priceLabelItalic",
     "textBold",
     "textItalic",
   ] as const)
     if (typeof source[key] === "boolean") result[key] = source[key];
   for (const key of ["startMarker", "endMarker"] as const)
     if (source[key] === "normal" || source[key] === "arrow") result[key] = source[key];
+  if (typeof source.backgroundColor === "string" && /^#[a-f\d]{6}$/i.test(source.backgroundColor))
+    result.backgroundColor = source.backgroundColor;
+  if (typeof source.priceLabelColor === "string" && /^#[a-f\d]{6}$/i.test(source.priceLabelColor))
+    result.priceLabelColor = source.priceLabelColor;
+  if (
+    typeof source.priceLabelFontSize === "number" &&
+    Number.isInteger(source.priceLabelFontSize) &&
+    source.priceLabelFontSize >= 8 &&
+    source.priceLabelFontSize <= 48
+  )
+    result.priceLabelFontSize = source.priceLabelFontSize;
   if (typeof source.text === "string") result.text = source.text.slice(0, 140);
   if (typeof source.textColor === "string" && /^#[a-f\d]{6}$/i.test(source.textColor))
     result.textColor = source.textColor;
@@ -652,6 +690,43 @@ function buildBaseDrawingGeometry(
     line({ x, y: y + h }, { x, y });
     return result;
   }
+  if (isSpecialChannelDrawing(drawing.kind)) {
+    const third = drawing.anchors[2];
+    const y = third && priceY(third.price);
+    if (y === undefined || y === null || first.x === second.x) {
+      line(first, second);
+      return result;
+    }
+    const oppositeLeft = {
+      x: first.x,
+      y: drawing.kind === "flat-channel" ? y : y + second.y - first.y,
+    };
+    const oppositeRight = { x: second.x, y };
+    result.handles = [first, second, oppositeRight, oppositeLeft];
+    line(first, second);
+    line(oppositeLeft, oppositeRight);
+    if (drawing.background !== false) {
+      const left = drawing.extendLeft ? 0 : Math.min(first.x, second.x),
+        right = drawing.extendRight ? width : Math.max(first.x, second.x);
+      const at = (a: DrawingPoint, b: DrawingPoint, x: number) => ({
+        x,
+        y: a.y + ((b.y - a.y) * (x - a.x)) / (b.x - a.x),
+      });
+      result.polygons = [
+        {
+          points: [
+            at(first, second, left),
+            at(first, second, right),
+            at(oppositeLeft, oppositeRight, right),
+            at(oppositeLeft, oppositeRight, left),
+          ],
+          opacity: drawing.backgroundOpacity ?? 0.12,
+          color: drawing.backgroundColor ?? drawing.color,
+        },
+      ];
+    }
+    return result;
+  }
   line(first, second);
   if (drawing.kind === "channel") {
     const third = drawing.anchors[2] && project(drawing.anchors[2]);
@@ -924,6 +999,8 @@ export function buildDrawingGeometry(
   formatPrice: (price: number) => string = (price) => String(Number(price.toFixed(6))),
   coordinatePrice?: (coordinate: number) => number | null,
 ): DrawingGeometry {
+  if (isSpecialChannelDrawing(drawing.kind))
+    drawing = { ...defaultChannelDrawingSettings(drawing.kind), ...drawing };
   const result = supportsDrawingLevels(drawing.kind)
     ? buildLevelDrawingGeometry(
         drawing,
@@ -963,6 +1040,21 @@ export function buildDrawingGeometry(
       });
     }
   }
+  if (isSpecialChannelDrawing(drawing.kind) && drawing.showPriceLabel && coordinatePrice) {
+    const left = Math.min(...result.handles.map((point) => point.x));
+    result.priceLabels = result.handles.flatMap((point) => {
+      const price = coordinatePrice(point.y);
+      return price === null
+        ? []
+        : [
+            {
+              point: { x: point.x + (point.x === left ? -5 : 5), y: point.y },
+              value: formatPrice(price),
+              align: point.x === left ? ("right" as const) : ("left" as const),
+            },
+          ];
+    });
+  }
   const bodyFirst = result.lines[0],
     bodyLast = result.lines.at(-1);
   if (supportsLineMarkers(drawing.kind) && bodyFirst && bodyLast) {
@@ -981,10 +1073,18 @@ export function buildDrawingGeometry(
       for (let index = 0; index < points.length; index++)
         result.lines.push({ from: points[index]!, to: points[(index + 1) % points.length]! });
     };
-    if (drawing.startMarker === "arrow") arrowHead(bodyFirst.to, bodyFirst.from);
+    if (isSpecialChannelDrawing(drawing.kind)) {
+      for (const boundary of result.lines.slice(0, 2)) {
+        if (drawing.startMarker === "arrow") arrowHead(boundary.to, boundary.from);
+        if (drawing.endMarker === "arrow") arrowHead(boundary.from, boundary.to);
+      }
+    }
+    if (!isSpecialChannelDrawing(drawing.kind) && drawing.startMarker === "arrow")
+      arrowHead(bodyFirst.to, bodyFirst.from);
     if (
-      drawing.endMarker === "arrow" ||
-      (drawing.endMarker === undefined && (drawing.kind === "arrow" || drawing.kind === "path"))
+      !isSpecialChannelDrawing(drawing.kind) &&
+      (drawing.endMarker === "arrow" ||
+        (drawing.endMarker === undefined && (drawing.kind === "arrow" || drawing.kind === "path")))
     )
       arrowHead(bodyLast.from, bodyLast.to);
   }
@@ -1000,7 +1100,9 @@ export function buildDrawingGeometry(
       drawing.kind === "horizontal-ray" ||
       drawing.kind === "vertical"
         ? bodyLast?.to
-        : result.handles.at(-1);
+        : isSpecialChannelDrawing(drawing.kind)
+          ? result.handles[1]
+          : result.handles.at(-1);
     if (first && last) {
       const left = first.x <= last.x ? first : last,
         right = first.x <= last.x ? last : first;
@@ -1033,7 +1135,16 @@ export function buildDrawingGeometry(
   }
   if (
     result.text &&
-    ["trend", "info-line", "extended-line", "trend-angle", "ray", "arrow"].includes(drawing.kind)
+    [
+      "trend",
+      "info-line",
+      "extended-line",
+      "trend-angle",
+      "ray",
+      "arrow",
+      "flat-channel",
+      "disjoint-channel",
+    ].includes(drawing.kind)
   ) {
     const [a, b] = result.handles;
     if (a && b) {
@@ -1180,6 +1291,12 @@ export function validDrawingAnchors(kind: DrawingKind, anchors: DrawingAnchor[])
       ax * (third.price - first.price) - bx * (second.price - first.price) !== 0
     );
   }
+  if (isSpecialChannelDrawing(kind))
+    return (
+      !!third &&
+      drawingTimeValue(first.time) !== drawingTimeValue(second.time) &&
+      (first.price !== second.price || third.price !== first.price)
+    );
   if (["trend", "rectangle", "fib", "channel"].includes(kind))
     return drawingTimeValue(first.time) !== drawingTimeValue(second.time);
   if (kind === "ellipse")

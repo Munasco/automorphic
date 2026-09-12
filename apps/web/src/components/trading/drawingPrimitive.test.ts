@@ -396,6 +396,7 @@ describe("additional line primitive behavior", () => {
     let selected: string | null = null;
     const plugin = createDrawingPrimitive(chart, series, () => ({ drawings: [drawing], selected }));
     const ctx = {
+      font: "",
       save: vi.fn(),
       translate: vi.fn(),
       rotate: vi.fn(),
@@ -468,6 +469,72 @@ describe("additional line primitive behavior", () => {
     f.draw();
     expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual(["200 ticks"]);
     drawing.stats = [];
+    f.draw();
+    expect(f.ctx.fillText).not.toHaveBeenCalled();
+  });
+
+  it("distinguishes the disjoint vertical-only square handle from its three round corners", () => {
+    const drawing: ChartDrawing = {
+      id: "channel-handles",
+      kind: "disjoint-channel",
+      color: "#729bff",
+      width: 2,
+      background: false,
+      anchors: [
+        { time: 100 as Time, price: 250 },
+        { time: 350 as Time, price: 310 },
+        { time: 900 as Time, price: 40 },
+      ],
+    };
+    const f = renderFixture(drawing);
+    f.select();
+    f.draw();
+    expect(f.ctx.rect.mock.calls).toEqual([
+      [0, 0, 1000, 500],
+      [346, 456, 8, 8],
+    ]);
+    expect(f.ctx.arc.mock.calls.map(([x, y, radius]) => [x, y, radius])).toEqual([
+      [100, 250, 4],
+      [350, 190, 4],
+      [100, 400, 4],
+    ]);
+    f.ctx.rect.mockClear();
+    f.ctx.arc.mockClear();
+    drawing.kind = "flat-channel";
+    f.draw();
+    expect(f.ctx.rect.mock.calls).toEqual([[0, 0, 1000, 500]]);
+    expect(f.ctx.arc).toHaveBeenCalledTimes(4);
+  });
+
+  it("renders four independently styled corner price labels and clears them when disabled", () => {
+    const drawing: ChartDrawing = {
+      id: "channel-prices",
+      background: false,
+      kind: "disjoint-channel",
+      color: "#729bff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 250 },
+        { time: 350 as Time, price: 310 },
+        { time: 900 as Time, price: 40 },
+      ],
+      showPriceLabel: true,
+      priceLabelColor: "#ff0000",
+      priceLabelFontSize: 16,
+      priceLabelBold: true,
+      priceLabelItalic: true,
+    };
+    const f = renderFixture(drawing);
+    f.draw();
+    expect(f.ctx.fillText.mock.calls).toEqual([
+      ["250.00", 95, 250],
+      ["310.00", 355, 190],
+      ["40.00", 355, 460],
+      ["100.00", 95, 400],
+    ]);
+    expect(f.ctx.font).toContain("italic bold 16px");
+    expect(f.plugin.primitive.priceAxisViews!()).toEqual([]);
+    drawing.showPriceLabel = false;
     f.draw();
     expect(f.ctx.fillText).not.toHaveBeenCalled();
   });
@@ -691,5 +758,41 @@ describe("native primitive hover hits", () => {
     draw();
     expect(ctx.arc.mock.calls.map((call) => call[2])).toEqual([3, 3]);
     expect(strokes.slice(1).every(([color]) => color === "#2962ff")).toBe(true);
+  });
+});
+
+describe("derived channel corner handles", () => {
+  it("returns each derived corner and its visible point for coupled editing and snapping", () => {
+    const { chart, series } = fixture();
+    const drawing: ChartDrawing = {
+      id: "channel",
+      kind: "disjoint-channel",
+      color: "#729bff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 250 },
+        { time: 350 as Time, price: 310 },
+        { time: 900 as Time, price: 40 },
+      ],
+    };
+    const plugin = createDrawingPrimitive(chart, series, () => ({
+      drawings: [drawing],
+      selected: drawing.id,
+    }));
+    expect(plugin.hitTest({ x: 100, y: 400 })).toMatchObject({
+      handle: 3,
+      handlePoint: { x: 100, y: 400 },
+      distance: 0,
+      hitTestPriority: 2,
+    });
+    expect(plugin.hitTest({ x: 350, y: 460 })).toMatchObject({
+      handle: 2,
+      handlePoint: { x: 350, y: 460 },
+      distance: 0,
+      hitTestPriority: 2,
+    });
+    expect(plugin.hitTest({ x: 100, y: 250 })).toMatchObject({ handle: 0 });
+    expect(plugin.hitTest({ x: 350, y: 190 })).toMatchObject({ handle: 1 });
+    expect(plugin.primitive.hitTest!(900, 460)).toBeNull();
   });
 });
