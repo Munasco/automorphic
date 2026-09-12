@@ -267,6 +267,7 @@ function DrawingSettings({
             ? ["Style", "Text", "Visibility"]
             : ["Style", "Text", "Coordinates", "Visibility"];
   const tab = availableTabs.includes(requestedTab) ? requestedTab : availableTabs[0]!;
+  const [focusedTab, setFocusedTab] = useState(tab);
   const [anchorKeys] = useState(() =>
     drawing.anchors.map((_, index) => `${drawing.id}-anchor-${index}`),
   );
@@ -422,7 +423,7 @@ function DrawingSettings({
           ref={tabList}
           role="tablist"
           aria-label="Drawing settings"
-          className="flex h-8 shrink-0 overflow-x-auto border-b border-white/10 px-5"
+          className="relative flex h-8 shrink-0 overflow-x-auto px-5 before:absolute before:inset-x-5 before:bottom-0 before:h-1 before:rounded-[2px] before:bg-[#4a4a4a]"
         >
           {availableTabs.map((name) => (
             <button
@@ -432,25 +433,25 @@ function DrawingSettings({
               id={`drawing-tab-${name}`}
               aria-controls={`drawing-panel-${name}`}
               aria-selected={name === tab}
-              tabIndex={name === tab ? 0 : -1}
+              tabIndex={name === focusedTab ? 0 : -1}
+              onFocus={() => setFocusedTab(name)}
               onKeyDown={(event) => {
                 const tabs = availableTabs;
-                let index = tabs.indexOf(tab);
+                let index = tabs.indexOf(name);
                 if (event.key === "ArrowRight") index = (index + 1) % tabs.length;
                 else if (event.key === "ArrowLeft") index = (index + tabs.length - 1) % tabs.length;
                 else if (event.key === "Home") index = 0;
                 else if (event.key === "End") index = tabs.length - 1;
                 else return;
                 event.preventDefault();
-                setTab(tabs[index]!);
                 (
                   event.currentTarget.parentElement?.children[index] as HTMLElement | undefined
                 )?.focus();
               }}
               onClick={() => setTab(name)}
               className={cn(
-                "relative mr-6 h-8 shrink-0 pb-2 text-base font-semibold leading-6 text-zinc-400 after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-transparent hover:text-white",
-                tab === name && "text-white after:bg-white",
+                "relative mr-6 h-8 shrink-0 pb-2 text-base font-semibold leading-6 text-zinc-400 outline-none before:pointer-events-none before:absolute before:-inset-x-2.5 before:-top-0.5 before:bottom-0 before:rounded-[8px] before:border-2 before:border-transparent after:absolute after:inset-x-0 after:bottom-0 after:h-1 after:rounded-[2px] after:bg-transparent hover:text-white focus-visible:before:border-[#2962ff]",
+                tab === name && "text-white after:bg-[#f2f2f2]",
               )}
             >
               {name}

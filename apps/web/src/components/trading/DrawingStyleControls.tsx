@@ -789,12 +789,27 @@ export function Check({
 }) {
   return (
     <label className="flex cursor-pointer items-center gap-2 text-sm leading-[18px] text-zinc-200">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-        className="size-[18px] shrink-0 accent-[#2962ff]"
-      />
+      <span className="relative flex size-[18px] shrink-0">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(event) => onChange(event.target.checked)}
+          className="peer absolute inset-0 z-10 size-full cursor-pointer opacity-0"
+        />
+        <span
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none flex size-full items-center justify-center rounded-[3px] border border-[#f2f2f2] text-[#2e2e2e] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#2962ff] peer-focus-visible:[outline-style:solid]",
+            checked ? "bg-[#f2f2f2]" : "peer-hover:bg-[#efefef]/[0.075]",
+          )}
+        >
+          {checked ? (
+            <svg width="11" height="9" viewBox="0 0 11 9" fill="none">
+              <path stroke="currentColor" strokeWidth="2" d="M1 4 4 7 10 1" />
+            </svg>
+          ) : null}
+        </span>
+      </span>
       {label}
     </label>
   );
