@@ -11,18 +11,21 @@ import { SymbolPicker, type FuturesContract } from "./SymbolPicker";
 import { SolarSettingsIcon } from "./SolarSettingsIcon";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
+import { tradingWorkspaceStorage, useTradingWorkspace } from "./workspaceStorage";
 
-export function TradingPanel({
+function ReadyTradingPanel({
+  projectId,
   expanded,
   onToggleExpand,
 }: {
+  projectId: string | null;
   expanded: boolean;
   onToggleExpand?: (() => void) | undefined;
 }) {
   const settings = useTradingPreferences();
   const [view, setView] = useState<"chart" | "news">("chart");
   const [contracts, setContracts] = useState<FuturesContract[]>([]);
-  const [selected, setSelected] = useState("");
+  const selected = settings.selectedSymbol;
   const [errors, setErrors] = useState<Partial<Record<"MGC" | "NQ", string>>>({});
   const [loading, setLoading] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -142,7 +145,7 @@ export function TradingPanel({
         loading={loading}
         onSelect={(contract) => {
           settings.setRoot(contract.root);
-          setSelected(contract.name);
+          settings.setSelectedSymbol(contract.name);
         }}
       />
       <nav
@@ -221,15 +224,58 @@ export function TradingPanel({
         </div>
         {settings.showLiveWires ? (
           <aside className="hidden h-full w-[300px] shrink-0 overflow-hidden border-l border-border @min-[800px]:block">
-            <LiveWires root={settings.root} />
+            <LiveWires root={settings.root} projectId={projectId} />
           </aside>
         ) : null}
       </div>
       {view === "news" ? (
         <div className="min-h-0 flex-1 overflow-hidden">
-          <LiveWires root={settings.root} />
+          <LiveWires root={settings.root} projectId={projectId} />
         </div>
       ) : null}
     </section>
+  );
+}
+
+export function TradingPanel(props: {
+  projectId: string | null;
+  expanded: boolean;
+  onToggleExpand?: (() => void) | undefined;
+}) {
+  const workspace = useTradingWorkspace(props.projectId);
+  if (!workspace.ready)
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-4 text-sm text-muted-foreground">
+        <p role={workspace.error ? "alert" : "status"}>
+          {workspace.error ?? "Opening trading workspace…"}
+        </p>
+        {workspace.error ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void tradingWorkspaceStorage.initialize()}
+          >
+            Retry
+          </Button>
+        ) : null}
+      </div>
+    );
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {workspace.error ? (
+        <div
+          role="alert"
+          className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs text-amber-400"
+        >
+          <span className="flex-1">{workspace.error}</span>
+          <Button variant="outline" size="sm" onClick={() => void tradingWorkspaceStorage.flush()}>
+            Retry
+          </Button>
+        </div>
+      ) : null}
+      <div className="min-h-0 flex-1">
+        <ReadyTradingPanel key={props.projectId ?? "default"} {...props} />
+      </div>
+    </div>
   );
 }

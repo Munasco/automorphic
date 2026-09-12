@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { resolveStorage } from "../../lib/storage";
+import { tradingWorkspaceStorage } from "./workspaceStorage";
 
 export type ChartStyle = "candles" | "bars" | "line" | "area";
 export type IndicatorKey = "sma" | "ema" | "vwap" | "rsi" | "volume";
@@ -28,7 +28,13 @@ export const useChartPreferences = create<{
     }),
     {
       name: "automorphic:chart:v1",
-      storage: createJSONStorage(() => resolveStorage(globalThis.localStorage)),
+      storage: createJSONStorage(() => tradingWorkspaceStorage),
+      skipHydration: true,
     },
   ),
 );
+
+tradingWorkspaceStorage.registerHydrator(() => {
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  return useChartPreferences.persist.rehydrate();
+});

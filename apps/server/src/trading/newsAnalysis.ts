@@ -1,4 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalDate:off - Native HTTP adapter with deterministic cache tests.
+import * as NodeCrypto from "node:crypto";
+import { TOMBSTONE_RETENTION, type StoredAnalysis } from "./newsStore.ts";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
@@ -56,15 +58,60 @@ type Classifier = (
 ) => Promise<Map<string, Impact>>;
 // At most one job per supported instrument; twenty headlines per API call.
 // The HTTP response stays quick while the client polls the pending analysis.
-export function createNewsAnalyst(classify: Classifier, now = Date.now) {
-  const cache = new Map<string, { analysis: NewsAnalysis; expires: number }>();
+export function headlineCacheKey(item: Headline, root: NewsInstrument) {
+  return NodeCrypto.createHash("sha256")
+    .update(JSON.stringify([root, item.id, item.title, item.publishedAt]))
+    .digest("hex");
+}
+type Persistence = {
+  initial: StoredAnalysis[];
+  retentionMs: () => number;
+  save: (key: string, analysis: Impact, now: number) => Promise<void>;
+};
+export function createNewsAnalyst(classify: Classifier, now = Date.now, persistence?: Persistence) {
+  const cache = new Map<
+    string,
+    { analysis: NewsAnalysis; expires: number; processedAt?: number }
+  >();
+  const processed = new Map<string, number>();
+  for (const entry of persistence?.initial ?? []) {
+    processed.set(entry.key, entry.processedAt);
+    cache.set(entry.key, {
+      analysis: entry.analysis ?? UNRATED,
+      expires: Infinity,
+      processedAt: entry.processedAt,
+    });
+  }
   const jobs = new Map<NewsInstrument, Promise<void>>();
-  const key = (item: Headline, root: NewsInstrument) =>
-    JSON.stringify([root, item.id, item.title, item.publishedAt]);
+  const key = headlineCacheKey;
   function annotate<T extends Headline>(items: T[], root: NewsInstrument, enabled: boolean) {
+    const eligible = (item: Headline) => {
+      if (!persistence) return true;
+      const published = Date.parse(item.publishedAt);
+      return (
+        Number.isFinite(published) &&
+        published <= now() &&
+        published > now() - persistence.retentionMs()
+      );
+    };
+    for (const [id, timestamp] of processed) {
+      if (timestamp <= now() - TOMBSTONE_RETENTION) {
+        processed.delete(id);
+        cache.delete(id);
+      }
+    }
+    for (const entry of cache.values()) {
+      if (
+        entry.processedAt !== undefined &&
+        persistence &&
+        entry.processedAt <= now() - persistence.retentionMs()
+      )
+        entry.analysis = UNRATED;
+    }
     const missing = items.filter((item) => {
-      const entry = cache.get(key(item, root));
-      return !entry || entry.expires <= now();
+      const id = key(item, root);
+      const entry = cache.get(id);
+      return eligible(item) && !processed.has(id) && (!entry || entry.expires <= now());
     });
     if (enabled && missing.length && !jobs.has(root)) {
       for (const item of missing)
@@ -82,11 +129,23 @@ export function createNewsAnalyst(classify: Classifier, now = Date.now) {
             /* Errors never expose provider payloads or credentials. */
           }
           for (const item of batch) {
-            const rating = ratings.get(item.id);
-            cache.set(key(item, root), {
+            let rating = ratings.get(item.id);
+            const id = key(item, root);
+            const processedAt = now();
+            if (rating && persistence) {
+              try {
+                await persistence.save(id, rating, processedAt);
+                processed.set(id, processedAt);
+              } catch {
+                // A failed durable write stays retryable instead of pretending it was saved.
+                rating = undefined;
+              }
+            }
+            cache.set(id, {
               analysis: rating ?? UNRATED,
               // Successful interpretations remain reusable until the headline changes or is evicted.
               expires: rating ? Infinity : now() + RETRY,
+              ...(rating ? { processedAt } : {}),
             });
           }
         }
@@ -194,8 +253,10 @@ async function classify(headlines: readonly Headline[], root: NewsInstrument) {
   if (!text) throw new Error("No analysis returned.");
   return parseImpacts(JSON.parse(text), headlines);
 }
-const analyst = createNewsAnalyst(classify);
-export async function analyzeWires<T extends Headline>(items: T[], root: NewsInstrument) {
-  const config = await configuration();
-  return analyst.annotate(items, root, Boolean(config.key));
+export function createWireAnalysis(persistence?: Persistence) {
+  const analyst = createNewsAnalyst(classify, Date.now, persistence);
+  return async <T extends Headline>(items: T[], root: NewsInstrument) => {
+    const config = await configuration();
+    return analyst.annotate(items, root, Boolean(config.key));
+  };
 }

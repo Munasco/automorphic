@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { tradingWorkspaceStorage } from "./workspaceStorage";
 import {
   LineSeries,
   LineStyle,
@@ -15,7 +16,6 @@ type Drawing = { kind: "horizontal"; price: number } | { kind: "trend"; from: An
 type DrawingState = { tool: ChartDrawingTool; count: number; pending: boolean };
 type DrawingStorage = Pick<Storage, "getItem" | "setItem">;
 const MAX_DRAWINGS = 100;
-const memory = new Map<string, Drawing[]>();
 
 function timeValue(time: unknown): number | null {
   if (typeof time === "number") return Number.isFinite(time) ? time : null;
@@ -72,24 +72,16 @@ function parseDrawings(value: string | null): Drawing[] {
   }
 }
 
-function browserStorage(): DrawingStorage | undefined {
-  try {
-    return globalThis.localStorage;
-  } catch {
-    return undefined;
-  }
-}
-
 /** One chart lifecycle. Records survive replacement; chart objects and event handlers never do. */
 export function createChartDrawingSession(
   chart: IChartApi,
   series: ISeriesApi<SeriesType>,
   symbol: string,
   onChange: (state: DrawingState) => void,
-  storage: DrawingStorage | undefined = browserStorage(),
+  storage: DrawingStorage | undefined = tradingWorkspaceStorage,
 ) {
   const key = `automorphic:chart-drawings:v1:${encodeURIComponent(symbol)}`;
-  let drawings = memory.get(key) ?? [];
+  let drawings: Drawing[] = [];
   try {
     const saved = storage?.getItem(key);
     if (saved !== undefined && saved !== null) drawings = parseDrawings(saved);
@@ -103,7 +95,6 @@ export function createChartDrawingSession(
   const removers: Array<() => void> = [];
   const emit = () => onChange({ tool, count: drawings.length, pending: first !== null });
   const persist = () => {
-    memory.set(key, [...drawings]);
     try {
       storage?.setItem(key, JSON.stringify(drawings));
     } catch {

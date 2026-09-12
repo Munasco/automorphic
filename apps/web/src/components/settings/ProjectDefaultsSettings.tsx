@@ -156,8 +156,8 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
             title="Model"
             description={
               isProjectScope
-                ? "Model for new threads in this project."
-                : "Default model for new threads. Projects can override it."
+                ? "Model for new threads in this workspace."
+                : "Default model for new threads. Workspaces can override it."
             }
             status={
               unavailable || mixedModel || modelSource === "project"
@@ -228,8 +228,8 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
             title="Workspace"
             description={
               isProjectScope
-                ? "Where new threads in this project start. A t3.json preference applies when the project has no override."
-                : "Where new threads start, unless overridden by the project or t3.json."
+                ? "Where new threads in this workspace start. A t3.json preference applies when the workspace has no override."
+                : "Where new threads start, unless overridden by the workspace or t3.json."
             }
             status={
               inheritedEnvModeLabel ? `Repository default: ${inheritedEnvModeLabel}` : undefined
@@ -283,8 +283,8 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
             title="Automatically pull"
             description={
               isProjectScope
-                ? "Keeps this project's default branch current when the checkout has no local changes or commits."
-                : "Keeps the default branch current when the checkout has no local changes or commits. Projects can override it."
+                ? "Keeps this workspace's default branch current when the checkout has no local changes or commits."
+                : "Keeps the default branch current when the checkout has no local changes or commits. Workspaces can override it."
             }
             resetAction={
               settings.defaultAutoPull ? (
@@ -315,8 +315,8 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
             title="Agent browser access"
             description={
               isProjectScope
-                ? "Allow agents in this project to use the shared browser. Applies when the agent session next starts."
-                : "Allow agents to use the shared browser. Projects can override it."
+                ? "Allow agents in this workspace to use the shared browser. Applies when the agent session next starts."
+                : "Allow agents to use the shared browser. Workspaces can override it."
             }
             resetAction={
               settings.enableAgentBrowserAccess !==

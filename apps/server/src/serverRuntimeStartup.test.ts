@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   DEFAULT_MODEL,
+  type OrchestrationProject,
   DEFAULT_SERVER_SETTINGS,
   ProjectId,
   ProviderInstanceId,
@@ -11,12 +12,14 @@ import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "./config.ts";
+import { TradingWorkspaceHome } from "./trading/defaultWorkspace.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
@@ -135,19 +138,24 @@ it.effect("enqueueCommand fails queued work when readiness fails", () =>
   ),
 );
 
-it.effect("resolveWelcomeBase derives cwd and project name from server config", () =>
-  Effect.gen(function* () {
-    const welcome = yield* ServerRuntimeStartup.resolveWelcomeBase.pipe(
-      Effect.provideService(ServerConfig.ServerConfig, {
-        cwd: "/tmp/startup-project",
-      } as never),
-    );
+it.effect(
+  "resolveWelcomeBase identifies the trading workspace instead of the launched code folder",
+  () =>
+    Effect.gen(function* () {
+      const welcome = yield* ServerRuntimeStartup.resolveWelcomeBase.pipe(
+        Effect.provideService(TradingWorkspaceHome, "/tmp/mock-automorphic-home"),
+        Effect.provideService(ServerConfig.ServerConfig, {
+          cwd: "/tmp/startup-project",
+          stateDir: "/tmp/automorphic-startup-state",
+        } as never),
+        Effect.provide(NodeServices.layer),
+      );
 
-    assert.deepStrictEqual(welcome, {
-      cwd: "/tmp/startup-project",
-      projectName: "startup-project",
-    });
-  }),
+      assert.deepStrictEqual(welcome, {
+        cwd: "/tmp/mock-automorphic-home/Automorphic/Workspaces/My workspace",
+        projectName: "My workspace",
+      });
+    }),
 );
 
 it.effect("resolveAutoBootstrapWelcomeTargets returns existing project and thread ids", () => {
@@ -157,9 +165,17 @@ it.effect("resolveAutoBootstrapWelcomeTargets returns existing project and threa
   return Effect.gen(function* () {
     const dispatchCalls = yield* Ref.make<ReadonlyArray<string>>([]);
     const targets = yield* ServerRuntimeStartup.resolveAutoBootstrapWelcomeTargets.pipe(
+      Effect.provideService(TradingWorkspaceHome, "/tmp/mock-automorphic-home"),
+      Effect.provideService(
+        FileSystem.FileSystem,
+        FileSystem.makeNoop({
+          makeDirectory: () => Effect.void,
+        }),
+      ),
       Effect.provide(ServerSettings.layerTest()),
       Effect.provideService(ServerConfig.ServerConfig, {
         cwd: "/tmp/startup-project",
+        stateDir: "/tmp/automorphic-startup-state",
         autoBootstrapProjectFromCwd: true,
       } as never),
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
@@ -194,7 +210,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets returns existing project and threa
         getFullThreadDiffContext: () => Effect.succeed(Option.none()),
         getThreadRuntimeContext: () => Effect.die("unused"),
         getTurnStartMessage: () => Effect.die("unused"),
-        getThreadShellById: () => Effect.die("unused"),
+        getThreadShellById: () => Effect.succeed(Option.none()),
         getThreadDetailById: () => Effect.die("unused"),
         getThreadDetailSnapshot: () => Effect.die("unused"),
         searchThreads: () => Effect.succeed({ matches: [] }),
@@ -225,6 +241,171 @@ it.effect("resolveAutoBootstrapWelcomeTargets returns existing project and threa
 });
 
 it.effect.each([
+  {
+    mode: "web",
+    autoBootstrapProjectFromCwd: false,
+    legacy: false,
+    conflict: false,
+    oldHome: false,
+  },
+  {
+    mode: "web",
+    autoBootstrapProjectFromCwd: true,
+    legacy: false,
+    conflict: false,
+    oldHome: false,
+  },
+  {
+    mode: "desktop",
+    autoBootstrapProjectFromCwd: false,
+    legacy: false,
+    conflict: false,
+    oldHome: false,
+  },
+  {
+    mode: "web",
+    autoBootstrapProjectFromCwd: false,
+    legacy: true,
+    conflict: false,
+    oldHome: false,
+  },
+  { mode: "web", autoBootstrapProjectFromCwd: false, legacy: true, conflict: true, oldHome: false },
+  { mode: "web", autoBootstrapProjectFromCwd: false, legacy: true, conflict: false, oldHome: true },
+] as const)("trading workspace persists independently of launch directory: %j", (options) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "automorphic-workspace-" });
+      const workspaceRoot = `${stateDir}/Automorphic/Workspaces/My workspace`;
+      const projects = new Map<string, OrchestrationProject>();
+      const threads = new Map<ProjectId, ThreadId>();
+      const commands: string[] = [];
+      const legacyRoot = options.oldHome
+        ? `${stateDir}/Automorphic/Workspaces/My Trading Workspace`
+        : `${stateDir}/workspaces/trading`;
+      const threadTitles = new Map<ThreadId, string>();
+      if (options.legacy) {
+        yield* fs.makeDirectory(legacyRoot, { recursive: true });
+        yield* fs.writeFileString(`${legacyRoot}/strategy.md`, "Preserve my research");
+        const id = ProjectId.make("legacy-trading-project");
+        projects.set(legacyRoot, {
+          id,
+          title: "My Trading Workspace",
+          workspaceRoot: legacyRoot,
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: "2026-09-11T00:00:00.000Z",
+          updatedAt: "2026-09-11T00:00:00.000Z",
+          deletedAt: null,
+        });
+        threads.set(id, ThreadId.make("legacy-trading-thread"));
+        threadTitles.set(ThreadId.make("legacy-trading-thread"), "Market research");
+      }
+      const bootstrap = (cwd: string) =>
+        ServerRuntimeStartup.resolveAutoBootstrapWelcomeTargets.pipe(
+          Effect.provideService(TradingWorkspaceHome, stateDir),
+          Effect.provide(ServerSettings.layerTest()),
+          Effect.provideService(ServerConfig.ServerConfig, { stateDir, cwd, ...options } as never),
+          Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
+            getActiveProjectByWorkspaceRoot: (root: string) =>
+              Effect.sync(() => Option.fromUndefinedOr(projects.get(root))),
+            getFirstActiveThreadIdByProjectId: (id: ProjectId) =>
+              Effect.sync(() => Option.fromUndefinedOr(threads.get(id))),
+            getThreadShellById: (id: ThreadId) =>
+              Effect.sync(() => Option.some({ id, title: threadTitles.get(id) })),
+          } as unknown as ProjectionSnapshotQuery.ProjectionSnapshotQuery["Service"]),
+          Effect.provideService(OrchestrationEngine.OrchestrationEngineService, {
+            dispatch: (
+              command: Parameters<
+                OrchestrationEngine.OrchestrationEngineService["Service"]["dispatch"]
+              >[0],
+            ) =>
+              Effect.sync(() => {
+                commands.push(command.type);
+                if (command.type === "project.create") {
+                  assert.equal(command.title, "My workspace");
+                  assert.equal(command.workspaceRoot, workspaceRoot);
+                  projects.set(command.workspaceRoot, {
+                    id: command.projectId,
+                    title: command.title,
+                    workspaceRoot: command.workspaceRoot,
+                    defaultModelSelection: null,
+                    scripts: [],
+                    createdAt: command.createdAt,
+                    updatedAt: command.createdAt,
+                    deletedAt: null,
+                  });
+                } else if (command.type === "project.meta.update") {
+                  const legacy = projects.get(legacyRoot)!;
+                  assert.equal(command.projectId, legacy.id);
+                  assert.equal(command.workspaceRoot, workspaceRoot);
+                  projects.delete(legacyRoot);
+                  projects.set(workspaceRoot, {
+                    ...legacy,
+                    workspaceRoot,
+                    title: command.title ?? legacy.title,
+                  });
+                } else if (command.type === "thread.create") {
+                  assert.equal(command.title, "New thread");
+                  threads.set(command.projectId, command.threadId);
+                  threadTitles.set(command.threadId, command.title);
+                } else if (command.type === "thread.meta.update") {
+                  assert.equal(command.title, "New thread");
+                  assert.equal(command.threadId, "legacy-trading-thread");
+                  threadTitles.set(command.threadId, command.title!);
+                }
+                return { sequence: commands.length };
+              }),
+          } as unknown as OrchestrationEngine.OrchestrationEngineService["Service"]),
+        );
+
+      if (options.conflict) {
+        yield* fs.makeDirectory(workspaceRoot, { recursive: true });
+        yield* fs.writeFileString(`${workspaceRoot}/existing.md`, "Keep existing files");
+        yield* Effect.flip(bootstrap("/source/apps/server"));
+        assert.equal(yield* fs.readFileString(`${legacyRoot}/strategy.md`), "Preserve my research");
+        assert.equal(
+          yield* fs.readFileString(`${workspaceRoot}/existing.md`),
+          "Keep existing files",
+        );
+        assert.deepStrictEqual(commands, []);
+        return;
+      }
+      const first = yield* bootstrap("/source/apps/server");
+      assert.equal(yield* fs.exists(workspaceRoot), true);
+      assert.equal(first.bootstrapProjectCreated, !options.legacy);
+      assert.equal(first.bootstrapThreadCreated, !options.legacy);
+      if (options.legacy) {
+        assert.equal(first.bootstrapProjectId, "legacy-trading-project");
+        assert.equal(first.bootstrapThreadId, "legacy-trading-thread");
+        assert.equal(
+          yield* fs.readFileString(`${workspaceRoot}/strategy.md`),
+          "Preserve my research",
+        );
+        assert.equal(yield* fs.exists(legacyRoot), false);
+      }
+      assert.equal(projects.get(workspaceRoot)?.title, "My workspace");
+      assert.equal(threadTitles.get(first.bootstrapThreadId!), "New thread");
+      const project = projects.get(workspaceRoot)!;
+      projects.set(workspaceRoot, { ...project, title: "My renamed workspace" });
+      const restarted = yield* bootstrap("/another/launch/directory");
+      assert.deepStrictEqual(restarted, {
+        ...first,
+        bootstrapProjectCreated: false,
+        bootstrapThreadCreated: false,
+      });
+      assert.equal(projects.get(workspaceRoot)?.title, "My renamed workspace");
+      assert.deepStrictEqual(
+        commands,
+        options.legacy
+          ? ["project.meta.update", "thread.meta.update"]
+          : ["project.create", "thread.create"],
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+  ),
+);
+
+it.effect.each([
   { existing: false, machineModel: null, projectModel: null },
   { existing: false, machineModel: "claude-sonnet-4-6", projectModel: null },
   { existing: true, machineModel: "claude-sonnet-4-6", projectModel: null },
@@ -245,6 +426,13 @@ it.effect.each([
       }>
     >([]);
     const targets = yield* ServerRuntimeStartup.resolveAutoBootstrapWelcomeTargets.pipe(
+      Effect.provideService(TradingWorkspaceHome, "/tmp/mock-automorphic-home"),
+      Effect.provideService(
+        FileSystem.FileSystem,
+        FileSystem.makeNoop({
+          makeDirectory: () => Effect.void,
+        }),
+      ),
       Effect.provide(
         ServerSettings.layerTest({
           defaultModelSelection: machineSelection,
@@ -258,6 +446,7 @@ it.effect.each([
       ),
       Effect.provideService(ServerConfig.ServerConfig, {
         cwd: "/tmp/startup-project",
+        stateDir: "/tmp/automorphic-startup-state",
         autoBootstrapProjectFromCwd: true,
       } as never),
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
@@ -291,7 +480,7 @@ it.effect.each([
         getFullThreadDiffContext: () => Effect.succeed(Option.none()),
         getThreadRuntimeContext: () => Effect.die("unused"),
         getTurnStartMessage: () => Effect.die("unused"),
-        getThreadShellById: () => Effect.die("unused"),
+        getThreadShellById: () => Effect.succeed(Option.none()),
         getThreadDetailById: () => Effect.die("unused"),
         getThreadDetailSnapshot: () => Effect.die("unused"),
         searchThreads: () => Effect.succeed({ matches: [] }),
@@ -338,9 +527,17 @@ it.effect(
     Effect.gen(function* () {
       const dispatchCalls = yield* Ref.make<ReadonlyArray<string>>([]);
       const targets = yield* ServerRuntimeStartup.resolveAutoBootstrapWelcomeTargets.pipe(
+        Effect.provideService(TradingWorkspaceHome, "/tmp/mock-automorphic-home"),
+        Effect.provideService(
+          FileSystem.FileSystem,
+          FileSystem.makeNoop({
+            makeDirectory: () => Effect.void,
+          }),
+        ),
         Effect.provide(ServerSettings.layerTest()),
         Effect.provideService(ServerConfig.ServerConfig, {
           cwd: "/tmp/startup-project",
+          stateDir: "/tmp/automorphic-startup-state",
           autoBootstrapProjectFromCwd: true,
         } as never),
         Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
@@ -360,7 +557,7 @@ it.effect(
           getFullThreadDiffContext: () => Effect.succeed(Option.none()),
           getThreadRuntimeContext: () => Effect.die("unused"),
           getTurnStartMessage: () => Effect.die("unused"),
-          getThreadShellById: () => Effect.die("unused"),
+          getThreadShellById: () => Effect.succeed(Option.none()),
           getThreadDetailById: () => Effect.die("unused"),
           getThreadDetailSnapshot: () => Effect.die("unused"),
           searchThreads: () => Effect.succeed({ matches: [] }),
@@ -400,9 +597,17 @@ it.effect("resolveAutoBootstrapWelcomeTargets preserves typed UUID generation fa
     const dispatchCalls = yield* Ref.make<ReadonlyArray<string>>([]);
 
     const error = yield* ServerRuntimeStartup.resolveAutoBootstrapWelcomeTargets.pipe(
+      Effect.provideService(TradingWorkspaceHome, "/tmp/mock-automorphic-home"),
+      Effect.provideService(
+        FileSystem.FileSystem,
+        FileSystem.makeNoop({
+          makeDirectory: () => Effect.void,
+        }),
+      ),
       Effect.provide(ServerSettings.layerTest()),
       Effect.provideService(ServerConfig.ServerConfig, {
         cwd: "/tmp/startup-project",
+        stateDir: "/tmp/automorphic-startup-state",
         autoBootstrapProjectFromCwd: true,
       } as never),
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
@@ -422,7 +627,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets preserves typed UUID generation fa
         getFullThreadDiffContext: () => Effect.succeed(Option.none()),
         getThreadRuntimeContext: () => Effect.die("unused"),
         getTurnStartMessage: () => Effect.die("unused"),
-        getThreadShellById: () => Effect.die("unused"),
+        getThreadShellById: () => Effect.succeed(Option.none()),
         getThreadDetailById: () => Effect.die("unused"),
         getThreadDetailSnapshot: () => Effect.die("unused"),
         searchThreads: () => Effect.succeed({ matches: [] }),

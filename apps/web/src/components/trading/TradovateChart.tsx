@@ -16,7 +16,6 @@ import {
 } from "lightweight-charts";
 import type { MarketQuote } from "./InstrumentHeader";
 import { INSTRUMENTS } from "./InstrumentHeader";
-import { MarketSessionBadge } from "./MarketSessionBadge";
 import { ChartToolbar } from "./ChartToolbar";
 import { useChartPreferences, type ChartStyle, type IndicatorKey } from "./chartPreferences";
 import {
@@ -583,7 +582,6 @@ export function TradovateChart({
                 {INSTRUMENTS[root].name} · {interval === 60 ? "1h" : `${interval}m`} ·{" "}
                 {INSTRUMENTS[root].exchange}
               </button>
-              <MarketSessionBadge root={root} />
             </div>
             {shown ? (
               <div

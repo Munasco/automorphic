@@ -71,7 +71,7 @@ export interface SettingsSearchAvailability {
  * subtitles both render from this record, so each label exists once.
  */
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
-  "/settings/projects": "Project",
+  "/settings/projects": "Workspaces",
   "/settings/general": "General",
   "/settings/trading": "Trading",
   "/settings/appearance": "Appearance",
@@ -104,16 +104,16 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "project-defaults",
-    title: "Project defaults and overrides",
+    title: "Workspace defaults and overrides",
     to: "/settings/general",
     scope: "project-defaults",
     searchTerms: ["model workspace environments projects inheritance checkout"],
   },
   {
     id: "project-overview",
-    title: "Project overview",
+    title: "Workspace overview",
     to: "/settings/projects",
-    searchTerms: ["name icon emoji image checkout remove delete"],
+    searchTerms: ["project overview name icon emoji image checkout remove delete"],
   },
   {
     id: "default-model",
@@ -211,7 +211,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "project-grouping",
-    title: "Project grouping",
+    title: "Workspace grouping",
     to: "/settings/general",
     searchTerms: ["combine matching repositories environments sidebar"],
   },
@@ -317,7 +317,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "add-project-starts-in",
-    title: "Add project starts in",
+    title: "Add workspace starts in",
     to: "/settings/general",
     scope: "environment-defaults",
     searchTerms: ["base directory folder browser path home"],

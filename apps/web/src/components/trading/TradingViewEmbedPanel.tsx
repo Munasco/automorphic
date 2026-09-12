@@ -4,7 +4,7 @@ import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { resolveStorage } from "../../lib/storage";
+import { tradingWorkspaceStorage } from "./workspaceStorage";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
 
@@ -25,9 +25,15 @@ const useTradingPreferences = create<{
 }>()(
   persist((set) => ({ symbol: MARKETS[0].symbol, setSymbol: (symbol) => set({ symbol }) }), {
     name: "automorphic:trading:v1",
-    storage: createJSONStorage(() => resolveStorage(globalThis.localStorage)),
+    storage: createJSONStorage(() => tradingWorkspaceStorage),
+    skipHydration: true,
   }),
 );
+
+tradingWorkspaceStorage.registerHydrator(() => {
+  useTradingPreferences.setState(useTradingPreferences.getInitialState(), true);
+  return useTradingPreferences.persist.rehydrate();
+});
 
 function widgetSpec(view: TradingView, symbol: string) {
   const common = {

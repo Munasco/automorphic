@@ -35,8 +35,19 @@ export function normalizeBars(bars: unknown): Candle[] {
   return [...result.values()].sort((a, b) => a.time - b.time);
 }
 
-export function normalizeQuote(quote: unknown, symbol: string) {
-  if (!quote || typeof quote !== "object" || !("entries" in quote)) return null;
+export function normalizeQuote(quote: unknown, symbol: string, contractId: number) {
+  // Tradovate can batch quotes for multiple contracts in one market-data frame.
+  // A requested display symbol alone is not evidence that a quote belongs to it.
+  if (
+    !Number.isSafeInteger(contractId) ||
+    contractId <= 0 ||
+    !quote ||
+    typeof quote !== "object" ||
+    !("contractId" in quote) ||
+    quote.contractId !== contractId ||
+    !("entries" in quote)
+  )
+    return null;
   const entries = quote.entries as Record<string, { price?: number; size?: number }>;
   if (!entries || typeof entries !== "object" || !Number.isFinite(entries.Trade?.price))
     return null;
@@ -97,6 +108,28 @@ export async function chartStream(symbol: string, interval: number) {
     throw new Error("Choose a valid MGC/NQ contract and chart interval.");
   }
   const session = await credentials();
+  // https://api.tradovate.com/: contract/find binds the requested expiry to its ID.
+  const contractResponse = await fetch(
+    `https://${session.environment}.tradovateapi.com/v1/contract/find?name=${encodeURIComponent(symbol)}`,
+    {
+      headers: { Authorization: `Bearer ${session.token}` },
+      signal: AbortSignal.timeout(10_000),
+      redirect: "error",
+    },
+  );
+  if (!contractResponse.ok) {
+    throw new Error(`Tradovate contract lookup returned HTTP ${contractResponse.status}.`);
+  }
+  const contract = await contractResponse.json();
+  if (
+    !contract ||
+    contract.name !== symbol ||
+    !Number.isSafeInteger(contract.id) ||
+    contract.id <= 0
+  ) {
+    throw new Error("Tradovate did not confirm the selected contract.");
+  }
+  const contractId: number = contract.id;
   let dispose = () => {};
   const body = new NodeStreamWeb.ReadableStream<Uint8Array>({
     start(controller) {
@@ -180,7 +213,7 @@ export async function chartStream(symbol: string, interval: number) {
             });
           } else if (message.e === "md" && Array.isArray(message.d?.quotes)) {
             for (const rawQuote of message.d.quotes) {
-              const quote = normalizeQuote(rawQuote, symbol);
+              const quote = normalizeQuote(rawQuote, symbol, contractId);
               if (quote) send({ type: "quote", quote });
             }
           } else if (message.e === "chart" && Array.isArray(message.d?.charts)) {

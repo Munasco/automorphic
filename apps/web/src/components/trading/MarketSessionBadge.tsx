@@ -14,14 +14,14 @@ export function MarketSessionBadge({ root }: { root: "MGC" | "NQ" }) {
     };
   }, []);
   const session = getFuturesSession(root, now);
-  if (session.status === "scheduled-open") return null;
+  const isOpen = session.status === "scheduled-open";
   return (
     <Tooltip>
       <TooltipTrigger
-        aria-label={session.label}
-        className="inline-flex h-5 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-zinc-600 outline-none hover:bg-zinc-300 focus-visible:ring-2 focus-visible:ring-ring dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600"
+        aria-label={isOpen ? "Market open, regular schedule" : session.label}
+        className={`shrink-0 rounded px-1.5 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring ${isOpen ? "text-emerald-400" : "text-zinc-400"}`}
       >
-        <span aria-hidden="true" className="h-1 w-3 rounded-full bg-current" />
+        {isOpen ? "Open" : "Closed"}
       </TooltipTrigger>
       <TooltipPopup className="max-w-72">
         <p className="font-semibold">{session.label}</p>

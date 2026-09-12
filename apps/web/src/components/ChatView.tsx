@@ -8078,6 +8078,7 @@ export default function ChatView(props: ChatViewProps) {
       </Suspense>
     ) : renderedRightPanelSurface?.kind === "trading" ? (
       <TradingPanel
+        projectId={activeProject?.id ?? null}
         expanded={rightPanelMaximized}
         onToggleExpand={canMaximizeRightPanel ? toggleRightPanelMaximized : undefined}
       />

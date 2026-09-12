@@ -1,6 +1,6 @@
+import { MarketSessionBadge } from "./MarketSessionBadge";
 import { ChartIcon } from "./ChartIcon";
 import { cn } from "../../lib/utils";
-import { MarketSessionBadge } from "./MarketSessionBadge";
 
 export interface MarketQuote {
   symbol: string;
@@ -71,9 +71,6 @@ export function InstrumentHeader({
             </span>
           </span>
         </button>
-        <span className="mt-1">
-          <MarketSessionBadge root={root} />
-        </span>
       </div>
       <div className="min-w-0">
         <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 tabular-nums">
@@ -133,6 +130,9 @@ export function InstrumentHeader({
           ) : null}
         </dl>
       ) : null}
+      <div className="ml-auto self-end">
+        <MarketSessionBadge root={root} />
+      </div>
     </div>
   );
 }

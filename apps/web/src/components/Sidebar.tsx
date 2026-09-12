@@ -2263,7 +2263,7 @@ export default function Sidebar() {
   // while the popup search filters the same collection.
   const projectScopeItems = useMemo(
     () => [
-      { value: "all", label: "All projects" },
+      { value: "all", label: "All workspaces" },
       ...projectGroups.map((project) => ({
         value: project.projectKey,
         label: project.displayName,
@@ -2295,7 +2295,7 @@ export default function Sidebar() {
   const projectScopeFilter = useComboboxFilter();
   // Filtering derives from the same React state that controls the input, so
   // the visible query and the visible list can never desync — the peer wiring
-  // in DiffPanel and BranchToolbarBranchSelector. "All projects" is a scope
+  // in DiffPanel and BranchToolbarBranchSelector. "All workspaces" is a scope
   // reset, not a searchable entry: it only shows while a project scope is
   // active (there is something to reset) and the query is empty, so it can't
   // outrank a project match under autoHighlight and no-hit queries reach the
@@ -4327,7 +4327,7 @@ export default function Sidebar() {
                             : "New thread"}
                         </span>
                         <span className="text-muted-foreground">
-                          New thread in current project: Shift+click
+                          New thread in current workspace: Shift+click
                           {newThreadInProjectShortcutLabel
                             ? ` (${newThreadInProjectShortcutLabel})`
                             : ""}
@@ -4371,7 +4371,7 @@ export default function Sidebar() {
                   <ComboboxTrigger
                     render={
                       <SidebarMenuButton
-                        aria-label="Filter threads by project"
+                        aria-label="Filter threads by workspace"
                         className="min-w-0 flex-1 ps-[calc(var(--sidebar-row-content-inset)-1px)] focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
                       />
                     }
@@ -4384,7 +4384,7 @@ export default function Sidebar() {
                       <FolderIcon className="size-4 shrink-0" />
                     )}
                     <span className="min-w-0 flex-1 truncate">
-                      {scopedProjectGroup?.displayName ?? "All projects"}
+                      {scopedProjectGroup?.displayName ?? "All workspaces"}
                     </span>
                     {scopedProjectGroup && showProjectEnvironments ? (
                       <ProjectEnvironmentBadge
@@ -4400,8 +4400,8 @@ export default function Sidebar() {
                     className="w-(--anchor-width) min-w-0 overflow-hidden"
                   >
                     <ComboboxSearchInput
-                      aria-label="Search projects"
-                      placeholder="Search projects..."
+                      aria-label="Search workspaces"
+                      placeholder="Search workspaces..."
                       value={projectScopeMenuState.query}
                       onKeyDown={(event) => {
                         if (
@@ -4427,7 +4427,7 @@ export default function Sidebar() {
                         })
                       }
                     />
-                    <ComboboxEmpty>No matching projects.</ComboboxEmpty>
+                    <ComboboxEmpty>No matching workspaces.</ComboboxEmpty>
                     <ComboboxList>
                       {(item: (typeof projectScopeItems)[number]) => {
                         const project = projectGroupByScopeKey.get(item.value) ?? null;
@@ -4461,7 +4461,7 @@ export default function Sidebar() {
                                 variant="ghost-muted"
                                 tabIndex={-1}
                                 aria-hidden="true"
-                                title={`Project settings for ${project.displayName}`}
+                                title={`Workspace settings for ${project.displayName}`}
                                 className="ml-auto size-6 [--control-icon-color:currentColor] text-icon-muted focus-visible:bg-accent focus-visible:text-foreground"
                                 onPointerDown={(event) => event.stopPropagation()}
                                 onClick={(event) => {
@@ -4485,7 +4485,7 @@ export default function Sidebar() {
                         className="relative shrink-0 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
                         onClick={openAddProjectCommandPalette}
                         type="button"
-                        aria-label="New project"
+                        aria-label="New workspace"
                       />
                     }
                   >
@@ -4495,7 +4495,7 @@ export default function Sidebar() {
                       aria-hidden="true"
                     />
                   </TooltipTrigger>
-                  <TooltipPopup side="right">New project</TooltipPopup>
+                  <TooltipPopup side="right">New workspace</TooltipPopup>
                 </Tooltip>
               </div>
             ) : null}
@@ -4857,14 +4857,14 @@ export default function Sidebar() {
             <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
               {projects.length === 0 ? (
                 <>
-                  <span>No projects yet</span>
+                  <span>No workspaces yet</span>
                   <button
                     type="button"
                     onClick={openAddProjectCommandPalette}
                     className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-[11px] font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                   >
                     <PlusIcon className="-mx-0.5 size-3" />
-                    Add project
+                    New workspace
                   </button>
                 </>
               ) : scopedProjectGroup ? (

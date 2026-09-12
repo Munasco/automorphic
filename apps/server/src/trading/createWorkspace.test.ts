@@ -1,0 +1,96 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { type OrchestrationProject, ProjectId, ThreadId } from "@t3tools/contracts";
+import { assert, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
+import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
+import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import { TradingWorkspaceHome } from "./defaultWorkspace.ts";
+import { makeTradingWorkspaceCreator, normalizeWorkspaceTitle } from "./createWorkspace.ts";
+
+it("accepts ordinary titles and rejects traversal, reserved names and control characters", () => {
+  assert.equal(normalizeWorkspaceTitle("  Gold research  "), "Gold research");
+  for (const input of [
+    "",
+    "..",
+    ".hidden",
+    "../other",
+    "a/b",
+    "a\\b",
+    "C:\\outside",
+    "bad\u0000name",
+    "CON",
+    "LPT1.txt",
+    "bad.",
+    "x".repeat(81),
+  ])
+    assert.equal(normalizeWorkspaceTitle(input), undefined);
+});
+
+it.effect(
+  "creates a home folder and starter thread, then reuses them across concurrent case variants and creator restarts",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const home = yield* fs.makeTempDirectoryScoped({ prefix: "automorphic-create-" });
+        const projects = new Map<string, OrchestrationProject>();
+        const threads = new Map<ProjectId, ThreadId>();
+        const commands: string[] = [];
+        const query = {
+          getActiveProjectByWorkspaceRoot: (root: string) =>
+            Effect.sync(() => Option.fromUndefinedOr(projects.get(root))),
+          getFirstActiveThreadIdByProjectId: (id: ProjectId) =>
+            Effect.sync(() => Option.fromUndefinedOr(threads.get(id))),
+        } as unknown as ProjectionSnapshotQuery["Service"];
+        const engine = {
+          dispatch: (command: Parameters<OrchestrationEngineService["Service"]["dispatch"]>[0]) =>
+            Effect.sync(() => {
+              commands.push(command.type);
+              if (command.type === "project.create")
+                projects.set(command.workspaceRoot, {
+                  id: command.projectId,
+                  title: command.title,
+                  workspaceRoot: command.workspaceRoot,
+                  defaultModelSelection: null,
+                  scripts: [],
+                  createdAt: command.createdAt,
+                  updatedAt: command.createdAt,
+                  deletedAt: null,
+                });
+              if (command.type === "thread.create") {
+                assert.equal(command.title, "New thread");
+                threads.set(command.projectId, command.threadId);
+              }
+              return { sequence: commands.length };
+            }),
+        } as unknown as OrchestrationEngineService["Service"];
+        const make = makeTradingWorkspaceCreator.pipe(
+          Effect.provideService(TradingWorkspaceHome, home),
+          Effect.provideService(ProjectionSnapshotQuery, query),
+          Effect.provideService(OrchestrationEngineService, engine),
+          Effect.provide(ServerSettings.layerTest()),
+        );
+        const create = yield* make;
+        const [first, second] = yield* Effect.all(
+          [create("Gold research"), create("gold RESEARCH")],
+          { concurrency: "unbounded" },
+        );
+        assert.deepEqual(first, second);
+        const folder = `${home}/Automorphic/Workspaces/Gold research`;
+        assert.equal(yield* fs.exists(folder), true);
+        yield* fs.writeFileString(`${folder}/notes.md`, "Keep this research");
+        const reopened = yield* make;
+        assert.deepEqual(yield* reopened("GOLD RESEARCH"), first);
+        assert.equal(yield* fs.readFileString(`${folder}/notes.md`), "Keep this research");
+        assert.deepEqual(commands, ["project.create", "thread.create"]);
+        yield* fs.writeFileString(`${home}/Automorphic/Workspaces/Blocked`, "a file");
+        assert.equal(
+          (yield* create("Blocked").pipe(Effect.flip))._tag,
+          "InvalidTradingWorkspaceName",
+        );
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+);

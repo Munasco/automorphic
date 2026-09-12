@@ -24,7 +24,13 @@ type Wire = {
 };
 const FILTERS = ["All news", "Bullish", "Bearish", "Neutral"] as const;
 
-export function LiveWires({ root = "MGC" }: { root?: "MGC" | "NQ" }) {
+export function LiveWires({
+  root = "MGC",
+  projectId,
+}: {
+  root?: "MGC" | "NQ";
+  projectId?: string | null;
+}) {
   const [feed, setFeed] = useState<{ root: string; items: Wire[]; updated: number }>({
     root,
     items: [],
@@ -44,10 +50,13 @@ export function LiveWires({ root = "MGC" }: { root?: "MGC" | "NQ" }) {
     const load = async () => {
       let delay = 60_000;
       try {
-        const response = await fetch(`/api/trading/news?root=${root}`, {
-          signal: abort.signal,
-          credentials: "same-origin",
-        });
+        const response = await fetch(
+          `/api/trading/news?root=${root}${projectId ? `&projectId=${encodeURIComponent(projectId)}` : ""}`,
+          {
+            signal: abort.signal,
+            credentials: "same-origin",
+          },
+        );
         if (!response.ok) throw Error("News feed unavailable");
         const data = await response.json();
         if (!Array.isArray(data.items)) throw Error("No headlines received");
@@ -65,7 +74,7 @@ export function LiveWires({ root = "MGC" }: { root?: "MGC" | "NQ" }) {
       abort.abort();
       clearTimeout(timer);
     };
-  }, [refresh, root]);
+  }, [refresh, root, projectId]);
   const items = feed.root === root ? feed.items : [];
   const breaking = !error ? selectBreakingNews(items, now) : null;
   const regularItems = items.filter((item) => item.id !== breaking?.id);
