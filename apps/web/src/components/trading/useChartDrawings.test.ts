@@ -357,6 +357,7 @@ describe("native chart drawing lifecycle", () => {
         );
         f.click(150, 250);
       }
+      if (kind === "text") session.commitText("Annotation");
     }
     expect(JSON.parse(f.saved()!).map((item: { kind: string }) => item.kind)).toEqual([
       "ray",
@@ -418,7 +419,7 @@ describe("native chart drawing lifecycle", () => {
     session.cancel();
     session.setTool("text");
     f.click(100, 100);
-    session.updateSelected({ text: "Buy only above range" });
+    session.commitText("Buy only above range");
     expect(JSON.parse(f.saved()!)[0].text).toBe("Buy only above range");
     session.dispose();
   });
@@ -504,6 +505,7 @@ describe("native chart drawing lifecycle", () => {
     expect(f.priceLines).toMatchObject([{ price: 4900 }]);
     restored.setTool("text");
     f.click(200, 200);
+    restored.commitText("New annotation");
     restored.redo();
     expect(JSON.parse(f.saved()!).map((drawing: { kind: string }) => drawing.kind)).toEqual([
       "horizontal",
@@ -534,9 +536,11 @@ describe("native chart drawing lifecycle", () => {
     }
     session.setTool("text");
     f.click(100, 10, 0, 100);
+    session.commitText("Above candle");
     expect(JSON.parse(f.saved()!).at(-1).anchors).toEqual([{ time: 100, price: 4990 }]);
     session.setTool("text");
     f.click(300, 115, 0, 300);
+    session.commitText("Future annotation");
     expect(JSON.parse(f.saved()!).at(-1).anchors).toEqual([{ time: 300, price: 4885 }]);
     session.toggleMagnet();
     session.setTool("horizontal");
@@ -636,6 +640,7 @@ describe("native chart drawing lifecycle", () => {
       session = f.open();
     session.setTool("text");
     f.click(100, 100);
+    session.commitText("Wait for breakout");
     const originalId = JSON.parse(f.saved()!)[0].id;
     session.updateDrawing(originalId, { name: "Plan", text: "Wait for breakout", locked: true });
     session.duplicateDrawing(originalId);
@@ -1396,6 +1401,120 @@ describe("drawing hover state", () => {
 });
 
 describe("inline drawing text transactions", () => {
+  it("creates standalone text as one undoable edit without persisting an empty placeholder", () => {
+    const f = fixture("standalone-text-create"),
+      session = f.open();
+    session.setTool("text");
+    f.click(100, 120);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        textEditing: true,
+        settingsOpen: false,
+        tool: "cursor",
+        canUndo: false,
+        selected: expect.objectContaining({
+          kind: "text",
+          text: "",
+          anchors: [{ time: 100, price: 4880 }],
+        }),
+      }),
+    );
+    session.previewText("Entry\nwait for retest");
+    expect(f.saved()).toBeNull();
+    expect(f.writes()).toBe(0);
+    expect(session.commitText()).toBe(true);
+    expect(f.writes()).toBe(1);
+    const saved = f.saved();
+    expect(JSON.parse(saved!)).toEqual([
+      expect.objectContaining({ kind: "text", text: "Entry\nwait for retest" }),
+    ]);
+    expect(session.commitText("duplicate blur")).toBe(false);
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toEqual([]);
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ canUndo: false }));
+    session.redo();
+    expect(f.saved()).toBe(saved);
+    session.dispose();
+  });
+
+  it.each(["escape", "cancel", "empty", "tool", "dispose"])(
+    "discards a new standalone text draft on %s without saving or adding undo history",
+    (action) => {
+      const f = fixture(`standalone-text-abandon-${action}`),
+        session = f.open();
+      session.setTool("text");
+      f.click(100, 100);
+      session.previewText("Unsaved note");
+      if (action === "escape") session.cancel();
+      else if (action === "cancel") session.cancelTextEdit();
+      else if (action === "empty") session.commitText("");
+      else if (action === "tool") session.setTool("trend");
+      else session.dispose();
+      expect(f.saved()).toBeNull();
+      expect(f.writes()).toBe(0);
+      if (action !== "dispose") {
+        expect(f.change).toHaveBeenLastCalledWith(
+          expect.objectContaining({ textEditing: false, count: 0, canUndo: false }),
+        );
+        session.undo();
+        expect(f.writes()).toBe(0);
+      }
+      session.dispose();
+    },
+  );
+
+  it("reopens saved standalone text, cancels drafts and commits a separate undoable revision", () => {
+    const f = fixture("standalone-text-reedit"),
+      session = f.open();
+    session.setTool("text");
+    f.click(100, 100);
+    session.commitText("Original note");
+    const original = f.saved();
+    expect(session.beginTextEdit()).toBe(true);
+    session.previewText("Cancelled revision");
+    session.cancelTextEdit();
+    expect(f.saved()).toBe(original);
+    expect(f.writes()).toBe(1);
+    expect(session.beginTextEdit()).toBe(true);
+    session.previewText("Saved revision");
+    expect(session.commitText()).toBe(true);
+    expect(f.writes()).toBe(2);
+    const edited = f.saved();
+    expect(JSON.parse(edited!)[0]).toEqual({
+      ...JSON.parse(original!)[0],
+      text: "Saved revision",
+    });
+    session.undo();
+    expect(f.saved()).toBe(original);
+    session.redo();
+    expect(f.saved()).toBe(edited);
+    session.dispose();
+  });
+
+  it("resumes repeated Text placement after committing, but leaves it after cancelling", () => {
+    const f = fixture("standalone-text-repeat"),
+      session = f.open();
+    session.setKeepDrawing(true);
+    session.setTool("text");
+    f.click(100, 100);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tool: "cursor", textEditing: true }),
+    );
+    session.commitText("First note");
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tool: "text", textEditing: false }),
+    );
+    f.click(200, 200);
+    session.previewText("Cancel second");
+    session.cancel();
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tool: "cursor", textEditing: false }),
+    );
+    expect(JSON.parse(f.saved()!)).toHaveLength(1);
+    expect(f.writes()).toBe(1);
+    session.dispose();
+  });
+
   it("previews multiline text without opening settings, commits once and restores it atomically with undo", () => {
     const f = fixture("inline-text-commit"),
       session = f.open();

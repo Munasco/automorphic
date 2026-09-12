@@ -88,6 +88,7 @@ export function drawingProjection(chart: IChartApi, series: ISeriesApi<SeriesTyp
 
 export const supportsInlineDrawingText = (kind: DrawingKind) =>
   [
+    "text",
     "trend",
     "info-line",
     "extended-line",
