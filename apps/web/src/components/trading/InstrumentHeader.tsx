@@ -37,7 +37,7 @@ export function InstrumentHeader({
   const change = current?.previousClose ? current.last - current.previousClose : null;
   const dayQuote = current?.source === "quote";
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-x-6 gap-y-3 border-b border-border bg-card/40 px-4 py-3">
+    <div className="flex shrink-0 flex-wrap items-center gap-x-6 gap-y-3 border-b border-white/5 bg-linear-to-b from-background via-[#0d0d10] to-[#101013] px-4 py-3">
       <div className="flex min-w-0 items-start gap-2">
         <Tooltip>
           <TooltipTrigger
