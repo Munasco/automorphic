@@ -22,20 +22,16 @@ import { ChartIcon } from "./ChartIcon";
 import { useId, useState, type ReactNode } from "react";
 import { cn } from "../../lib/utils";
 import { Dialog, DialogPopup, DialogTitle, DialogTrigger } from "../ui/dialog";
-import { CheckIcon, PlusIcon } from "lucide-react";
+import { PlusIcon } from "lucide-react";
 import { Checkbox } from "../ui/checkbox";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 import {
-  INDICATOR_CATALOG,
   INDICATOR_CATEGORIES,
-  INITIAL_BALANCE_TIME_ZONES,
   findIndicators,
   type ChartStyle,
   type IndicatorKey,
-  type ChartIndicators,
-  type InitialBalanceSettings,
 } from "./indicatorCatalog";
 export type {
   ChartStyle,
@@ -50,10 +46,9 @@ export type ChartToolbarProps = {
   onIntervalChange: (value: ChartInterval) => void;
   style: ChartStyle;
   onStyleChange: (value: ChartStyle) => void;
-  indicators: ChartIndicators;
-  onToggleIndicator: (key: IndicatorKey) => void;
-  initialBalance: InitialBalanceSettings;
-  onInitialBalanceChange: (settings: InitialBalanceSettings) => void;
+  indicatorCounts: Partial<Record<IndicatorKey, number>>;
+  onAddIndicator: (key: IndicatorKey) => void;
+  indicatorLimitReached?: boolean;
   showGrid: boolean;
   onToggleGrid: () => void;
   logScale: boolean;
@@ -74,10 +69,9 @@ export function ChartToolbar({
   onIntervalChange,
   style,
   onStyleChange,
-  indicators,
-  onToggleIndicator,
-  initialBalance,
-  onInitialBalanceChange,
+  indicatorCounts,
+  onAddIndicator,
+  indicatorLimitReached = false,
   showGrid,
   onToggleGrid,
   logScale,
@@ -119,7 +113,10 @@ export function ChartToolbar({
   const matchingIndicators = findIndicators(indicatorSearch).filter(
     (item) => indicatorCategory === "All" || item.category === indicatorCategory,
   );
-  const activeCount = INDICATOR_CATALOG.filter((indicator) => indicators[indicator.key]).length;
+  const activeCount = Object.values(indicatorCounts).reduce(
+    (total, count) => total + (count ?? 0),
+    0,
+  );
   return (
     <div
       role="group"
@@ -291,9 +288,9 @@ export function ChartToolbar({
                         <div key={indicator.key}>
                           <button
                             type="button"
-                            disabled={indicators[indicator.key]}
-                            onClick={() => onToggleIndicator(indicator.key)}
-                            aria-label={`${indicators[indicator.key] ? "Added" : "Add"} ${indicator.label}`}
+                            disabled={indicatorLimitReached}
+                            onClick={() => onAddIndicator(indicator.key)}
+                            aria-label={`Add ${indicator.label}`}
                             className="flex w-full items-center gap-3 rounded-md px-3 py-3 text-left hover:bg-accent/60 disabled:cursor-default disabled:hover:bg-transparent"
                           >
                             <ChartIcon
@@ -309,90 +306,13 @@ export function ChartToolbar({
                                 {indicator.detail}
                               </span>
                             </span>
-                            {indicators[indicator.key] ? (
-                              <CheckIcon className="size-4 text-blue-400" aria-hidden="true" />
-                            ) : (
-                              <PlusIcon
-                                className="size-4 text-muted-foreground"
-                                aria-hidden="true"
-                              />
+                            {(indicatorCounts[indicator.key] ?? 0) > 0 && (
+                              <span className="min-w-4 text-center text-xs tabular-nums text-blue-400">
+                                {indicatorCounts[indicator.key]}
+                              </span>
                             )}
+                            <PlusIcon className="size-4 text-muted-foreground" aria-hidden="true" />
                           </button>
-                          {indicator.key === "ib" && indicators.ib ? (
-                            <fieldset className="mb-2 ml-8 space-y-2 rounded border border-border p-2">
-                              <legend className="px-1 text-[11px] text-muted-foreground">
-                                Session window
-                              </legend>
-                              <div className="flex items-center justify-between gap-3">
-                                <label htmlFor={`${id}-ib-start`} className="text-[11px]">
-                                  Start
-                                </label>
-                                <input
-                                  id={`${id}-ib-start`}
-                                  type="time"
-                                  value={initialBalance.startTime}
-                                  onChange={(event) =>
-                                    onInitialBalanceChange({
-                                      ...initialBalance,
-                                      startTime: event.target.value,
-                                    })
-                                  }
-                                  className="h-7 rounded border border-border bg-background px-1.5 text-xs"
-                                />
-                              </div>
-                              <div className="flex items-center justify-between gap-3">
-                                <label htmlFor={`${id}-ib-zone`} className="text-[11px]">
-                                  Time zone
-                                </label>
-                                <TradingSelect
-                                  id={`${id}-ib-zone`}
-                                  label="Initial balance time zone"
-                                  value={initialBalance.timeZone}
-                                  options={INITIAL_BALANCE_TIME_ZONES.map(
-                                    (zone) =>
-                                      [
-                                        zone,
-                                        zone === "America/New_York"
-                                          ? "New York"
-                                          : zone === "America/Chicago"
-                                            ? "Chicago"
-                                            : "UTC",
-                                      ] as const,
-                                  )}
-                                  onChange={(value) => {
-                                    const timeZone = INITIAL_BALANCE_TIME_ZONES.find(
-                                      (zone) => zone === value,
-                                    );
-                                    if (timeZone)
-                                      onInitialBalanceChange({ ...initialBalance, timeZone });
-                                  }}
-                                />
-                              </div>
-                              <div className="flex items-center justify-between gap-3">
-                                <label htmlFor={`${id}-ib-duration`} className="text-[11px]">
-                                  Minutes
-                                </label>
-                                <input
-                                  id={`${id}-ib-duration`}
-                                  type="number"
-                                  min={1}
-                                  max={240}
-                                  step={1}
-                                  value={initialBalance.durationMinutes}
-                                  onChange={(event) =>
-                                    onInitialBalanceChange({
-                                      ...initialBalance,
-                                      durationMinutes: Number(event.target.value),
-                                    })
-                                  }
-                                  className="h-7 w-20 rounded border border-border bg-background px-1.5 text-xs"
-                                />
-                              </div>
-                              <p className="text-[11px] text-muted-foreground">
-                                Weekdays · based on loaded bars
-                              </p>
-                            </fieldset>
-                          ) : null}
                         </div>
                       ))}
                     </section>

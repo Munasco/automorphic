@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { IChartApi, MouseEventParams } from "lightweight-charts";
 import type { Candle } from "./chartIndicators";
 import { createIndicatorRenderer } from "./chartIndicatorRenderer";
+import { createIndicatorInstance } from "./chartIndicatorInstances";
 import {
   DEFAULT_INITIAL_BALANCE,
   DEFAULT_INDICATORS,
@@ -72,6 +73,113 @@ const disabled = Object.fromEntries(
 ) as ChartIndicators;
 
 describe("native indicator renderer", () => {
+  it("keeps duplicate moving-average plots, inputs, styles, and crosshair readings independent", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.25);
+    const a = { ...createIndicatorInstance("sma", "base:sma"), inputs: { period: 2 } };
+    const b = {
+      ...createIndicatorInstance("sma", "sma-second"),
+      inputs: { period: 5 },
+      appearance: { color: "#ff0000" },
+    };
+    const bars = inputBars();
+    const update = (instances: (typeof a)[]) =>
+      renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, instances);
+    expect(update([a, b]).readings).toEqual({ sma: 178.5, "sma-second": 177 });
+    expect(harness.series).toHaveLength(2);
+    const [first, second] = harness.series;
+    const originalFirstData = first!.data;
+    expect(second!.options.color).toBe("#ff0000");
+    update([a, { ...b, inputs: { period: 3 }, appearance: { color: "#00ff00" } }]);
+    expect(harness.series).toEqual([first, second]);
+    expect(first!.data).toEqual(originalFirstData);
+    expect(second!.data.at(-1)?.value).toBe(178);
+    expect(second!.options.color).toBe("#00ff00");
+    expect(
+      renderer.readCrosshair({
+        seriesData: new Map([
+          [first, { value: 123 }],
+          [second, { value: 456 }],
+        ]),
+      } as unknown as MouseEventParams),
+    ).toEqual({ sma: 123, "sma-second": 456 });
+    expect(update([{ ...a, hidden: true }, b]).readings).toEqual({ "sma-second": 177 });
+    expect(harness.series).toEqual([second]);
+    update([]);
+    expect(harness.series).toHaveLength(0);
+  });
+
+  it("gives duplicate oscillators their own panes and compacts panes after removal", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.25);
+    const instances = [
+      createIndicatorInstance("rsi", "base:rsi"),
+      createIndicatorInstance("rsi", "rsi-second"),
+      createIndicatorInstance("macd", "macd-second"),
+    ];
+    const update = (active: typeof instances) =>
+      renderer.update(inputBars(), disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, active);
+    update(instances);
+    expect(harness.series.map((series) => series.pane)).toEqual([1, 2, 3, 3, 3]);
+    update(instances.slice(1));
+    expect(harness.series.map((series) => series.pane)).toEqual([1, 2, 2, 2]);
+    expect(harness.paneCount()).toBe(3);
+    update([]);
+    expect(harness.paneCount()).toBe(1);
+  });
+
+  it("renders additional volume in its own pane with independently configured bar colors", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.25);
+    const bars = inputBars(2);
+    bars[1]!.close = bars[1]!.open - 1;
+    const instance = {
+      ...createIndicatorInstance("volume", "volume-second"),
+      volumeColors: { up: "#123456", down: "#abcdef" },
+    };
+    const result = renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [
+      createIndicatorInstance("volume", "base:volume"),
+      instance,
+    ]);
+    expect(harness.series).toHaveLength(1);
+    expect(harness.series[0]!.pane).toBe(1);
+    expect(harness.series[0]!.data).toMatchObject([{ color: "#123456" }, { color: "#abcdef" }]);
+    expect(result.readings).toEqual({ volume: 10, "volume-second": 10 });
+  });
+
+  it("calculates duplicate IB sessions separately and chooses the first visible dashboard", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.25);
+    const start = Date.parse("2026-09-14T13:30:00Z") / 1000;
+    const bars = inputBars(80).map((bar, index) => ({ ...bar, time: start + index * 60 }));
+    const first = createIndicatorInstance("ib", "base:ib");
+    const second = {
+      ...createIndicatorInstance("ib", "ib-second"),
+      initialBalance: { ...DEFAULT_INITIAL_BALANCE, startTime: "10:00", durationMinutes: 30 },
+    };
+    const result = renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [
+      first,
+      second,
+    ]);
+    expect(harness.series).toHaveLength(6);
+    expect(result.readings.ib).not.toBe(result.readings[second.id]);
+    expect(result.initialBalanceStatuses[first.id]).toContain("09:30");
+    expect(result.initialBalanceStatuses[second.id]).toContain("10:00");
+    const remaining = renderer.update(
+      bars,
+      disabled,
+      DEFAULT_INITIAL_BALANCE,
+      1,
+      {},
+      {},
+      undefined,
+      [{ ...first, hidden: true }, second],
+    );
+    expect(remaining.initialBalanceStats?.midpoint).toBe(result.readings[second.id]);
+    expect(remaining.readings.ib).toBeUndefined();
+    expect(harness.series).toHaveLength(3);
+  });
+
   it("autoscales IB from visible overlays instead of its hidden data series", () => {
     const harness = chartHarness();
     const start = Date.parse("2026-09-14T13:30:00Z") / 1000;

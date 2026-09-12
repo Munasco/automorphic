@@ -6,17 +6,16 @@ import { SolarSettingsIcon } from "./SolarSettingsIcon";
 import { DrawingToolIcon } from "./DrawingToolIcon";
 import { IndicatorNumberField } from "./IndicatorNumberField";
 import {
-  INDICATOR_CATALOG,
   INDICATOR_INPUTS,
-  getIndicatorInputs,
+  getIndicatorDefinition,
   getIndicatorLabel,
-  updateIndicatorInputs,
   INITIAL_BALANCE_TIME_ZONES,
   DEFAULT_INITIAL_BALANCE,
   type InitialBalanceSettings,
 } from "./indicatorCatalog";
 import { INDICATOR_COLORS, type IndicatorReadings } from "./chartIndicatorRenderer";
-import type { useChartPreferences } from "./chartPreferences";
+import { DEFAULT_VOLUME_COLORS, type useChartPreferences } from "./chartPreferences";
+import { getChartIndicatorInstances, indicatorReadingKey } from "./chartIndicatorInstances";
 import type { IndicatorStyle } from "./indicatorDefinition";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -30,25 +29,38 @@ export function IndicatorLegend({
   settings,
   readings,
   initialBalanceStatus,
+  initialBalanceStatuses,
 }: {
   settings: Preferences;
   readings: IndicatorReadings;
   initialBalanceStatus: string;
+  initialBalanceStatuses?: Readonly<Record<string, string>>;
 }) {
   const [collapsed, setCollapsed] = useState(false);
-  const added = INDICATOR_CATALOG.filter(({ key }) => settings.indicators[key]);
+  const [inputResetVersions, setInputResetVersions] = useState<Record<string, number>>({});
+  const added = getChartIndicatorInstances(settings);
+  const counts = new Map<string, number>();
+  for (const instance of added) counts.set(instance.key, (counts.get(instance.key) ?? 0) + 1);
+  const indices = new Map<string, number>();
   if (!added.length) return null;
   return (
     <div className="mt-1 flex flex-col items-start text-xs text-zinc-400">
       {!collapsed &&
-        added.map(({ key, detail, styles }) => {
-          const label = getIndicatorLabel(key, settings.indicatorInputs);
-          const inputs = getIndicatorInputs(key, settings.indicatorInputs);
-          const hidden = settings.hiddenIndicators[key];
-          const color = settings.appearance[key]?.color ?? INDICATOR_COLORS[key];
+        added.map((instance) => {
+          const { id, key, hidden, inputs, appearance } = instance;
+          const { detail, styles } = getIndicatorDefinition(key);
+          const label = getIndicatorLabel(key, { [key]: inputs });
+          const index = (indices.get(key) ?? 0) + 1;
+          indices.set(key, index);
+          const accessible = (text: string) =>
+            (counts.get(key) ?? 0) > 1 ? `${text}, instance ${index}` : text;
+          const initialBalance = instance.initialBalance ?? DEFAULT_INITIAL_BALANCE;
+          const volumeColors = instance.volumeColors ?? DEFAULT_VOLUME_COLORS;
+          const color = appearance.color ?? INDICATOR_COLORS[key];
           const description =
             key === "ib"
-              ? initialBalanceStatus || "Waiting for opening-session candles."
+              ? (initialBalanceStatuses?.[id] ?? initialBalanceStatus) ||
+                "Waiting for opening-session candles."
               : key === "vwap"
                 ? "VWAP uses loaded bars, reset at 5 p.m. Chicago time."
                 : INDICATOR_INPUTS[key].length
@@ -58,9 +70,10 @@ export function IndicatorLegend({
                   : detail;
           return (
             <div
-              key={key}
+              key={id}
               className="pointer-events-auto group/indicator relative flex min-h-6 max-w-full items-center gap-2 rounded hover:bg-white/[0.025] focus-within:bg-white/[0.025]"
               data-indicator={key}
+              data-indicator-instance={id}
             >
               <Tooltip>
                 <TooltipTrigger
@@ -80,7 +93,7 @@ export function IndicatorLegend({
               </Tooltip>
               <div className="relative flex min-w-[6.25rem] items-center">
                 <span className={cn("tabular-nums", hidden && "invisible")} style={{ color }}>
-                  {readings[key]?.toLocaleString(
+                  {readings[indicatorReadingKey(instance)]?.toLocaleString(
                     "en-US",
                     key === "volume" || key === "obv"
                       ? { notation: "compact", maximumFractionDigits: 2 }
@@ -94,8 +107,8 @@ export function IndicatorLegend({
                         <button
                           type="button"
                           className={controlClass}
-                          aria-label={`${hidden ? "Show" : "Hide"} ${label}`}
-                          onClick={() => settings.toggleIndicatorVisibility(key)}
+                          aria-label={accessible(`${hidden ? "Show" : "Hide"} ${label}`)}
+                          onClick={() => settings.toggleIndicatorInstanceVisibility(id)}
                         />
                       }
                     >
@@ -106,7 +119,7 @@ export function IndicatorLegend({
                   <Popover>
                     <PopoverTrigger
                       className={controlClass}
-                      aria-label={`${label} settings`}
+                      aria-label={accessible(`${label} settings`)}
                       title={`${label} settings`}
                     >
                       <SolarSettingsIcon className="size-4" />
@@ -121,9 +134,9 @@ export function IndicatorLegend({
                           Visible
                           <input
                             type="checkbox"
-                            aria-label={`Show ${label}`}
+                            aria-label={accessible(`Show ${label}`)}
                             checked={!hidden}
-                            onChange={() => settings.toggleIndicatorVisibility(key)}
+                            onChange={() => settings.toggleIndicatorInstanceVisibility(id)}
                           />
                         </label>
                         {INDICATOR_INPUTS[key]
@@ -141,44 +154,40 @@ export function IndicatorLegend({
                               {input.kind === "boolean" ? (
                                 <input
                                   type="checkbox"
-                                  aria-label={`${label} ${input.label}`}
+                                  aria-label={accessible(`${label} ${input.label}`)}
                                   checked={(inputs[input.key] ?? input.defaultValue) !== 0}
                                   onChange={(event) =>
-                                    settings.setIndicatorInputs(key, {
+                                    settings.setIndicatorInstanceInputs(id, {
                                       [input.key]: Number(event.target.checked),
                                     })
                                   }
                                 />
                               ) : input.kind === "select" ? (
                                 <DrawingSelect
-                                  label={`${label} ${input.label}`}
+                                  label={accessible(`${label} ${input.label}`)}
                                   value={String(inputs[input.key] ?? input.defaultValue)}
                                   options={(input.options ?? []).map(
                                     (option) => [String(option.value), option.label] as const,
                                   )}
                                   onChange={(value) =>
-                                    settings.setIndicatorInputs(key, { [input.key]: Number(value) })
+                                    settings.setIndicatorInstanceInputs(id, {
+                                      [input.key]: Number(value),
+                                    })
                                   }
                                   className="max-w-40"
                                 />
                               ) : (
                                 <IndicatorNumberField
-                                  label={`${label} ${input.label}`}
+                                  label={accessible(`${label} ${input.label}`)}
                                   min={input.min}
                                   max={input.max}
                                   step={input.step}
                                   className={cn(inputClass, "w-20")}
                                   value={inputs[input.key] ?? input.defaultValue}
-                                  resetKey={settings.indicatorInputs[key]?.[input.key]}
-                                  onCommit={(value) => {
-                                    const patch = { [input.key]: value };
-                                    if (
-                                      !updateIndicatorInputs(key, settings.indicatorInputs, patch)
-                                    )
-                                      return false;
-                                    settings.setIndicatorInputs(key, patch);
-                                    return true;
-                                  }}
+                                  resetKey={inputResetVersions[id] ?? 0}
+                                  onCommit={(value) =>
+                                    settings.setIndicatorInstanceInputs(id, { [input.key]: value })
+                                  }
                                 />
                               )}
                             </div>
@@ -186,7 +195,13 @@ export function IndicatorLegend({
                         {INDICATOR_INPUTS[key].length > 0 ? (
                           <button
                             type="button"
-                            onClick={() => settings.resetIndicatorInputs(key)}
+                            onClick={() => {
+                              settings.resetIndicatorInstanceInputs(id);
+                              setInputResetVersions((versions) => ({
+                                ...versions,
+                                [id]: (versions[id] ?? 0) + 1,
+                              }));
+                            }}
                             className="text-zinc-400 hover:text-white"
                           >
                             Reset inputs
@@ -198,11 +213,11 @@ export function IndicatorLegend({
                                 {direction === "up" ? "Up volume" : "Down volume"}
                                 <input
                                   type="color"
-                                  aria-label={`${direction} volume color`}
-                                  value={settings.volumeColors[direction]}
+                                  aria-label={accessible(`${direction} volume color`)}
+                                  value={volumeColors[direction]}
                                   onChange={(event) =>
-                                    settings.setVolumeColors({
-                                      ...settings.volumeColors,
+                                    settings.setIndicatorInstanceVolumeColors(id, {
+                                      ...volumeColors,
                                       [direction]: event.target.value,
                                     })
                                   }
@@ -217,16 +232,12 @@ export function IndicatorLegend({
                                   inputs[plotStyle.shownWhen.key] === plotStyle.shownWhen.value,
                               )
                               .map((plotStyle) => {
-                                const style = resolveIndicatorStyle(
-                                  key,
-                                  plotStyle.key,
-                                  settings.appearance[key],
-                                );
+                                const style = resolveIndicatorStyle(key, plotStyle.key, appearance);
                                 const update = (patch: IndicatorStyle) =>
-                                  settings.setIndicatorAppearance(key, {
+                                  settings.setIndicatorInstanceAppearance(id, {
                                     plots: {
                                       [plotStyle.key]: {
-                                        ...settings.appearance[key]?.plots?.[plotStyle.key],
+                                        ...appearance?.plots?.[plotStyle.key],
                                         ...patch,
                                       },
                                     },
@@ -240,7 +251,9 @@ export function IndicatorLegend({
                                       <label className="flex items-center gap-2">
                                         <input
                                           type="checkbox"
-                                          aria-label={`Show ${label} ${plotStyle.label}`}
+                                          aria-label={accessible(
+                                            `Show ${label} ${plotStyle.label}`,
+                                          )}
                                           checked={style.visible}
                                           onChange={(event) =>
                                             update({ visible: event.target.checked })
@@ -249,7 +262,7 @@ export function IndicatorLegend({
                                         {plotStyle.label}
                                       </label>
                                       <ColorPicker
-                                        label={`${label} ${plotStyle.label} color`}
+                                        label={accessible(`${label} ${plotStyle.label} color`)}
                                         value={style.color}
                                         onChange={(color) => update({ color })}
                                         opacity={style.opacity}
@@ -260,7 +273,7 @@ export function IndicatorLegend({
                                       <label className="flex items-center justify-between">
                                         Line width
                                         <DrawingSelect
-                                          label={`${label} ${plotStyle.label} width`}
+                                          label={accessible(`${label} ${plotStyle.label} width`)}
                                           value={String(style.lineWidth)}
                                           onChange={(value) => update({ lineWidth: Number(value) })}
                                           options={[1, 2, 3, 4].map(
@@ -280,10 +293,11 @@ export function IndicatorLegend({
                               <input
                                 type="time"
                                 className={inputClass}
-                                value={settings.initialBalance.startTime}
+                                aria-label={accessible("Initial balance session start")}
+                                value={initialBalance.startTime}
                                 onChange={(event) =>
-                                  settings.setInitialBalance({
-                                    ...settings.initialBalance,
+                                  settings.setIndicatorInstanceInitialBalance(id, {
+                                    ...initialBalance,
                                     startTime: event.target.value,
                                   })
                                 }
@@ -293,12 +307,12 @@ export function IndicatorLegend({
                               Session end
                               <input
                                 type="time"
-                                aria-label="Initial balance session end"
+                                aria-label={accessible("Initial balance session end")}
                                 className={inputClass}
-                                value={settings.initialBalance.sessionEndTime ?? "16:00"}
+                                value={initialBalance.sessionEndTime ?? "16:00"}
                                 onChange={(event) =>
-                                  settings.setInitialBalance({
-                                    ...settings.initialBalance,
+                                  settings.setIndicatorInstanceInitialBalance(id, {
+                                    ...initialBalance,
                                     sessionEndTime: event.target.value,
                                   })
                                 }
@@ -311,22 +325,22 @@ export function IndicatorLegend({
                                 min={1}
                                 max={240}
                                 className={cn(inputClass, "w-20")}
-                                aria-label="Initial balance minutes"
-                                value={settings.initialBalance.durationMinutes}
+                                aria-label={accessible("Initial balance minutes")}
+                                value={initialBalance.durationMinutes}
                                 onChange={(event) =>
-                                  settings.setInitialBalance({
-                                    ...settings.initialBalance,
+                                  settings.setIndicatorInstanceInitialBalance(id, {
+                                    ...initialBalance,
                                     durationMinutes: Number(event.target.value),
                                   })
                                 }
                               />
                             </label>
                             <DrawingSelect
-                              label="Initial balance time zone"
-                              value={settings.initialBalance.timeZone}
+                              label={accessible("Initial balance time zone")}
+                              value={initialBalance.timeZone}
                               onChange={(timeZone) =>
-                                settings.setInitialBalance({
-                                  ...settings.initialBalance,
+                                settings.setIndicatorInstanceInitialBalance(id, {
+                                  ...initialBalance,
                                   timeZone: timeZone as InitialBalanceSettings["timeZone"],
                                 })
                               }
@@ -340,11 +354,11 @@ export function IndicatorLegend({
                                 <label className="flex items-center gap-2">
                                   <input
                                     type="checkbox"
-                                    aria-label="First-hour background"
-                                    checked={settings.initialBalance.showBox ?? true}
+                                    aria-label={accessible("First-hour background")}
+                                    checked={initialBalance.showBox ?? true}
                                     onChange={(event) =>
-                                      settings.setInitialBalance({
-                                        ...settings.initialBalance,
+                                      settings.setIndicatorInstanceInitialBalance(id, {
+                                        ...initialBalance,
                                         showBox: event.target.checked,
                                       })
                                     }
@@ -352,24 +366,24 @@ export function IndicatorLegend({
                                   Background
                                 </label>
                                 <ColorPicker
-                                  label="Initial balance background color"
+                                  label={accessible("Initial balance background color")}
                                   value={
-                                    settings.initialBalance.backgroundColor ??
+                                    initialBalance.backgroundColor ??
                                     DEFAULT_INITIAL_BALANCE.backgroundColor
                                   }
                                   opacity={
-                                    settings.initialBalance.backgroundOpacity ??
+                                    initialBalance.backgroundOpacity ??
                                     DEFAULT_INITIAL_BALANCE.backgroundOpacity
                                   }
                                   onChange={(backgroundColor) =>
-                                    settings.setInitialBalance({
-                                      ...settings.initialBalance,
+                                    settings.setIndicatorInstanceInitialBalance(id, {
+                                      ...initialBalance,
                                       backgroundColor,
                                     })
                                   }
                                   onOpacityChange={(backgroundOpacity) =>
-                                    settings.setInitialBalance({
-                                      ...settings.initialBalance,
+                                    settings.setIndicatorInstanceInitialBalance(id, {
+                                      ...initialBalance,
                                       backgroundOpacity,
                                     })
                                   }
@@ -392,11 +406,11 @@ export function IndicatorLegend({
                                   {title}
                                   <input
                                     type="checkbox"
-                                    aria-label={title}
-                                    checked={settings.initialBalance[option] ?? true}
+                                    aria-label={accessible(title)}
+                                    checked={initialBalance[option] ?? true}
                                     onChange={(event) =>
-                                      settings.setInitialBalance({
-                                        ...settings.initialBalance,
+                                      settings.setIndicatorInstanceInitialBalance(id, {
+                                        ...initialBalance,
                                         [option]: event.target.checked,
                                       })
                                     }
@@ -411,8 +425,8 @@ export function IndicatorLegend({
                             type="button"
                             onClick={() => {
                               if (key === "ib")
-                                settings.setInitialBalance({
-                                  ...settings.initialBalance,
+                                settings.setIndicatorInstanceInitialBalance(id, {
+                                  ...initialBalance,
                                   showMidpoint: true,
                                   showQuarters: true,
                                   showBox: true,
@@ -423,7 +437,7 @@ export function IndicatorLegend({
                                   showHistory: true,
                                   showDashboard: true,
                                 });
-                              settings.resetIndicatorAppearance(key);
+                              settings.resetIndicatorInstanceAppearance(id);
                             }}
                             className="rounded px-2 py-1.5 hover:bg-white/10"
                           >
@@ -431,7 +445,7 @@ export function IndicatorLegend({
                           </button>
                           <button
                             type="button"
-                            onClick={() => settings.toggleIndicator(key)}
+                            onClick={() => settings.removeIndicatorInstance(id)}
                             className="rounded px-2 py-1.5 text-red-400 hover:bg-white/10"
                           >
                             Remove

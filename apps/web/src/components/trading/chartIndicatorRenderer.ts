@@ -17,8 +17,14 @@ import type { IndicatorPlot } from "./indicatorDefinition";
 import { createInitialBalancePrimitive } from "./initialBalancePrimitive";
 import type { ChartAppearance } from "./chartPreferences";
 import {
+  indicatorReadingKey,
+  DEFAULT_VOLUME_COLORS,
+  type ChartIndicatorInstance,
+} from "./chartIndicatorInstances";
+import {
   INDICATOR_CATALOG,
   getIndicatorInputs,
+  getIndicatorDefinition,
   type IndicatorInputSettings,
   type ChartIndicators,
   type IndicatorKey,
@@ -36,10 +42,17 @@ const OSCILLATORS = INDICATOR_CATALOG.filter((item) => item.placement === "pane"
 );
 export const oscillatorPaneCount = (enabled: ChartIndicators) =>
   OSCILLATORS.filter((key) => enabled[key]).length;
-export type IndicatorReadings = Partial<Record<IndicatorKey, number>>;
+export const oscillatorInstancePaneCount = (instances: readonly ChartIndicatorInstance[]) =>
+  instances.filter(
+    (instance) =>
+      !instance.hidden &&
+      (OSCILLATORS.includes(instance.key) ||
+        (instance.key === "volume" && instance.id !== "base:volume")),
+  ).length;
+export type IndicatorReadings = Partial<Record<string, number>>;
 type Plot = {
   series: ISeriesApi<"Line"> | ISeriesApi<"Histogram">;
-  indicator: IndicatorKey;
+  readingKey: string;
   primary: boolean;
   oscillator: boolean;
   initialBalance?: ReturnType<typeof createInitialBalancePrimitive>;
@@ -56,7 +69,7 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
       if (!plot.primary) continue;
       const point = event.seriesData.get(plot.series);
       if (point && "value" in point && typeof point.value === "number")
-        result[plot.indicator] = point.value;
+        result[plot.readingKey] = point.value;
     }
     return result;
   };
@@ -68,10 +81,26 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
     appearance: ChartAppearance = {},
     indicatorInputs: IndicatorInputSettings = {},
     sessionHistory?: Pick<InitialBalanceHistory, "bars" | "status">,
+    instances?: readonly ChartIndicatorInstance[],
   ) => {
-    const inputs = (key: IndicatorKey) => getIndicatorInputs(key, indicatorInputs);
-    const oscillatorKeys = OSCILLATORS.filter((key) => enabled[key]);
-    const nextSignature = oscillatorKeys.join(",");
+    const active: readonly ChartIndicatorInstance[] = instances
+      ? instances.filter((instance) => !instance.hidden)
+      : INDICATOR_CATALOG.filter(({ key }) => enabled[key]).map(({ key }) => ({
+          id: `base:${key}`,
+          key,
+          hidden: false,
+          inputs: getIndicatorInputs(key, indicatorInputs),
+          appearance: appearance[key] ?? {},
+          ...(key === "ib" ? { initialBalance: ibSettings } : {}),
+        }));
+    const oscillatorIds = active
+      .filter(
+        (instance) =>
+          OSCILLATORS.includes(instance.key) ||
+          (instance.key === "volume" && instance.id !== "base:volume"),
+      )
+      .map(({ id }) => id);
+    const nextSignature = oscillatorIds.join(",");
     const changedPanes = nextSignature !== paneSignature;
     if (changedPanes) {
       // Removing the final series also removes its pane. Rebuild the oscillator group
@@ -83,25 +112,26 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
         }
       paneSignature = nextSignature;
     }
-    const panes = new Map<IndicatorKey, number>(
-      oscillatorKeys.map((key, index) => [key, index + 1]),
-    );
+    const panes = new Map<string, number>(oscillatorIds.map((id, index) => [id, index + 1]));
     const desired = new Set<string>();
     const readings: IndicatorReadings = {};
     const latestTime = bars.at(-1)?.time;
+    const upBars = new Map(bars.map((bar) => [bar.time, bar.close >= bar.open]));
     const line = (
       id: string,
-      indicator: IndicatorKey,
+      instance: ChartIndicatorInstance,
       points: readonly IndicatorPoint[],
       options: Partial<IndicatorPlot> = {},
     ) => {
       desired.add(id);
+      const indicator = instance.key;
+      const readingKey = indicatorReadingKey(instance);
       const style = resolveIndicatorStyle(
         indicator,
         options.styleKey ?? "main",
-        appearance[indicator],
+        instance.appearance,
       );
-      const pane = panes.get(indicator) ?? 0;
+      const pane = panes.get(instance.id) ?? 0;
       let plot = plots.get(id);
       if (!plot) {
         const priceFormat = options.volumeFormat
@@ -157,7 +187,7 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
               axisLabelVisible: false,
               title: "",
             });
-        plot = { series, indicator, primary: options.primary ?? true, oscillator: pane > 0 };
+        plot = { series, readingKey, primary: options.primary ?? true, oscillator: pane > 0 };
         plots.set(id, plot);
       }
       if (!options.histogram) {
@@ -174,15 +204,20 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
         time: point.time as UTCTimestamp,
         ...(options.histogram
           ? {
-              color: indicatorStyleColor(
-                resolveIndicatorStyle(
-                  indicator,
-                  (point.value >= 0 ? options.positiveStyleKey : options.negativeStyleKey) ??
-                    options.styleKey ??
-                    "main",
-                  appearance[indicator],
-                ),
-              ),
+              color:
+                indicator === "volume"
+                  ? (instance.volumeColors ?? DEFAULT_VOLUME_COLORS)[
+                      upBars.get(point.time) ? "up" : "down"
+                    ]
+                  : indicatorStyleColor(
+                      resolveIndicatorStyle(
+                        indicator,
+                        (point.value >= 0 ? options.positiveStyleKey : options.negativeStyleKey) ??
+                          options.styleKey ??
+                          "main",
+                        instance.appearance,
+                      ),
+                    ),
             }
           : {}),
       }));
@@ -190,19 +225,32 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
       if (options.invisible && plot.series.seriesType() === "Line")
         plot.series.applyOptions({ pointMarkersVisible: false });
       const latest = points.at(-1);
-      if (plot.primary && latest && latest.time === latestTime) readings[indicator] = latest.value;
+      if (plot.primary && latest && latest.time === latestTime) readings[readingKey] = latest.value;
     };
     let initialBalanceStatus = "";
     let initialBalanceStats: InitialBalanceStats | null = null;
-    // Catalog order keeps pane assignment stable when enabling several studies together.
-    for (const definition of INDICATOR_CATALOG) {
-      if (!enabled[definition.key]) continue;
+    const initialBalanceStatuses: Record<string, string> = {};
+    // Stable instance IDs keep duplicate settings, plot ownership, and readings separate.
+    for (const instance of active) {
+      const definition = getIndicatorDefinition(instance.key);
+      const readingKey = indicatorReadingKey(instance);
+      if (instance.key === "volume" && instance.id !== "base:volume") {
+        line(
+          `${instance.id}.volume`,
+          instance,
+          bars
+            .filter((bar) => Number.isFinite(bar.volume))
+            .map((bar) => ({ time: bar.time, value: bar.volume! })),
+          { histogram: true, volumeFormat: true },
+        );
+        continue;
+      }
       const auxiliary = definition.key === "ib" ? sessionHistory : undefined;
       const result = definition.calculate({
         bars: auxiliary?.bars ?? bars,
-        inputs: inputs(definition.key),
+        inputs: instance.inputs,
         interval: auxiliary ? 1 : interval,
-        session: ibSettings,
+        session: instance.initialBalance ?? ibSettings,
       });
       if (auxiliary && result.sessionStats) {
         const last = bars.at(-1);
@@ -239,7 +287,7 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
         ),
       );
       for (const output of result.plots) {
-        const id = `${definition.key}.${output.id}`;
+        const id = `${instance.id}.${output.id}`;
         const points = auxiliary
           ? initialBalanceChartPoints(
               output.points,
@@ -247,7 +295,7 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
               sessionEnd.get(output.id.split(".")[0]!) ?? -Infinity,
             )
           : output.points;
-        line(id, definition.key, points, output);
+        line(id, instance, points, output);
         if (output.overlay?.kind === "initial-balance") {
           const host = plots.get(id)!;
           if (!host.initialBalance) {
@@ -265,14 +313,14 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
             Object.fromEntries(
               definition.styles.map((style) => [
                 style.key,
-                resolveIndicatorStyle(definition.key, style.key, appearance[definition.key]),
+                resolveIndicatorStyle(definition.key, style.key, instance.appearance),
               ]),
             ),
           );
         }
       }
       const fillHost = result.plots[0]
-        ? plots.get(`${definition.key}.${result.plots[0].id}`)
+        ? plots.get(`${instance.id}.${result.plots[0].id}`)
         : undefined;
       if (fillHost && (result.fills?.length || fillHost.bandFill)) {
         if (!fillHost.bandFill) {
@@ -282,13 +330,19 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
         fillHost.bandFill.update(
           (result.fills ?? []).map((fill) => ({
             ...fill,
-            ...resolveIndicatorStyle(definition.key, fill.styleKey, appearance[definition.key]),
+            ...resolveIndicatorStyle(definition.key, fill.styleKey, instance.appearance),
           })),
         );
       }
-      if (result.reading !== undefined) readings[definition.key] = result.reading;
-      if (result.sessionStats) initialBalanceStats = result.sessionStats;
-      if (result.status) initialBalanceStatus = auxiliary?.status || result.status;
+      if (result.reading !== undefined) readings[readingKey] = result.reading;
+      if (result.sessionStats) {
+        readings[readingKey] = result.sessionStats.midpoint;
+        initialBalanceStats ??= result.sessionStats;
+      }
+      if (result.status) {
+        initialBalanceStatuses[instance.id] = auxiliary?.status || result.status;
+        initialBalanceStatus ||= initialBalanceStatuses[instance.id]!;
+      }
     }
     for (const [id, plot] of plots)
       if (!desired.has(id)) {
@@ -299,8 +353,7 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
       chart.panes()[0]?.setStretchFactor(3);
       for (const pane of chart.panes().slice(1)) pane.setStretchFactor(1);
     }
-    if (initialBalanceStats) readings.ib = initialBalanceStats.midpoint;
-    return { readings, initialBalanceStatus, initialBalanceStats };
+    return { readings, initialBalanceStatus, initialBalanceStats, initialBalanceStatuses };
   };
   return { update, readCrosshair };
 }

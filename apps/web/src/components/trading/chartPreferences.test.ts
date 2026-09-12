@@ -12,6 +12,13 @@ vi.mock("./workspaceStorage", () => ({
 import { useChartPreferences, normalizeChartPreferences } from "./chartPreferences";
 import { DEFAULT_INITIAL_BALANCE } from "./initialBalanceSettings";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
+import { getIndicatorInputs } from "./indicatorCatalog";
+import {
+  DEFAULT_VOLUME_COLORS,
+  MAX_CHART_INDICATORS,
+  getChartIndicatorInstances,
+  indicatorReadingKey,
+} from "./chartIndicatorInstances";
 
 beforeEach(() => {
   vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(null);
@@ -148,5 +155,188 @@ describe("initial balance background preferences", () => {
     store.setInitialBalance({ ...initial, backgroundColor: "not-a-color" });
     expect(useChartPreferences.getState().initialBalance).toBe(initial);
     expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  });
+});
+
+describe("independent indicator instances", () => {
+  it("keeps legacy indicator configuration and reading IDs unchanged", () => {
+    const saved = normalizeChartPreferences({
+      indicators: { sma: true },
+      indicatorInputs: { sma: { period: 42 } },
+      appearance: { sma: { color: "#123456" } },
+      hiddenIndicators: { sma: true },
+    });
+    expect(saved.extraIndicators).toEqual([]);
+    const base = getChartIndicatorInstances(saved).find((instance) => instance.key === "sma")!;
+    expect(base).toMatchObject({
+      id: "base:sma",
+      hidden: true,
+      inputs: { period: 42 },
+      appearance: { color: "#123456" },
+    });
+    expect(indicatorReadingKey(base)).toBe("sma");
+  });
+
+  it("adds duplicates with fresh defaults and edits, hides, resets, removes, and reloads them independently", async () => {
+    const store = useChartPreferences.getState();
+    expect(store.addIndicator("sma")).toBe("base:sma");
+    store.setIndicatorInstanceInputs("base:sma", { period: 42 });
+    store.setIndicatorInstanceAppearance("base:sma", { color: "#123456" });
+    const id = store.addIndicator("sma")!;
+    let duplicate = getChartIndicatorInstances(useChartPreferences.getState()).find(
+      (instance) => instance.id === id,
+    )!;
+    expect(duplicate.inputs.period).toBe(getIndicatorInputs("sma").period);
+    expect(duplicate.appearance).toEqual({});
+    expect(indicatorReadingKey(duplicate)).toBe(id);
+    expect(store.setIndicatorInstanceInputs(id, { period: 12 })).toBe(true);
+    store.setIndicatorInstanceAppearance(id, { color: "#abcdef", lineWidth: 3 });
+    store.toggleIndicatorInstanceVisibility(id);
+    let state = useChartPreferences.getState();
+    expect(state.indicatorInputs.sma?.period).toBe(42);
+    expect(state.appearance.sma).toEqual({ color: "#123456" });
+    expect(state.hiddenIndicators.sma).toBe(false);
+    duplicate = state.extraIndicators[0]!;
+    expect(duplicate).toMatchObject({
+      id,
+      hidden: true,
+      inputs: { period: 12 },
+      appearance: { color: "#abcdef", lineWidth: 3 },
+    });
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    await useChartPreferences.persist.rehydrate();
+    state = useChartPreferences.getState();
+    expect(state.extraIndicators).toEqual([duplicate]);
+    state.resetIndicatorInstanceInputs(id);
+    state.resetIndicatorInstanceAppearance(id);
+    expect(useChartPreferences.getState().extraIndicators[0]).toMatchObject({
+      inputs: getIndicatorInputs("sma"),
+      appearance: {},
+      hidden: true,
+    });
+    state.removeIndicatorInstance("base:sma");
+    expect(useChartPreferences.getState().indicators.sma).toBe(false);
+    expect(useChartPreferences.getState().extraIndicators).toHaveLength(1);
+    state.removeIndicatorInstance(id);
+    expect(useChartPreferences.getState().extraIndicators).toEqual([]);
+    expect(state.addIndicator("sma")).toBe("base:sma");
+    expect(useChartPreferences.getState().indicatorInputs.sma?.period).toBe(42);
+  });
+
+  it("rejects invalid instance input transactions without changing siblings or writing storage", () => {
+    const store = useChartPreferences.getState();
+    store.addIndicator("macd");
+    const id = store.addIndicator("macd")!;
+    const original = useChartPreferences.getState();
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    expect(store.setIndicatorInstanceInputs(id, { fast: 40, slow: 12 })).toBe(false);
+    expect(store.setIndicatorInstanceInputs(id, { period: NaN })).toBe(false);
+    expect(store.setIndicatorInstanceInputs("missing", { period: 10 })).toBe(false);
+    expect(useChartPreferences.getState()).toBe(original);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  });
+
+  it("merges individual plot styles on only the selected duplicate", () => {
+    const store = useChartPreferences.getState();
+    store.addIndicator("macd");
+    const id = store.addIndicator("macd")!;
+    store.setIndicatorInstanceAppearance(id, {
+      plots: { main: { color: "#123456", opacity: 0.5 }, signal: { lineWidth: 3 } },
+    });
+    store.setIndicatorInstanceAppearance(id, { plots: { main: { lineWidth: 4 } } });
+    expect(useChartPreferences.getState().extraIndicators[0]?.appearance).toEqual({
+      plots: { main: { color: "#123456", opacity: 0.5, lineWidth: 4 }, signal: { lineWidth: 3 } },
+    });
+    expect(useChartPreferences.getState().appearance.macd).toBeUndefined();
+    store.resetIndicatorInstanceAppearance(id);
+    expect(useChartPreferences.getState().extraIndicators[0]?.appearance).toEqual({});
+  });
+
+  it("isolates initial balance schedules and volume colors and includes extras in global actions", () => {
+    const store = useChartPreferences.getState();
+    store.addIndicator("ib");
+    const ib = store.addIndicator("ib")!;
+    const volume = store.addIndicator("volume")!;
+    store.setIndicatorInstanceInitialBalance(ib, {
+      ...DEFAULT_INITIAL_BALANCE,
+      startTime: "08:30",
+      backgroundColor: "#123456",
+    });
+    store.setIndicatorInstanceVolumeColors(volume, { up: "#abcdef", down: "#123456" });
+    expect(useChartPreferences.getState().initialBalance.startTime).toBe(
+      DEFAULT_INITIAL_BALANCE.startTime,
+    );
+    expect(useChartPreferences.getState().volumeColors).toEqual(DEFAULT_VOLUME_COLORS);
+    const original = useChartPreferences.getState().extraIndicators;
+    expect(normalizeChartPreferences(useChartPreferences.getState()).extraIndicators).toEqual(
+      original,
+    );
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    store.setIndicatorsHidden(true);
+    expect(
+      useChartPreferences.getState().extraIndicators.every((instance) => instance.hidden),
+    ).toBe(true);
+    expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(1);
+    store.setIndicatorsHidden(false);
+    expect(useChartPreferences.getState().extraIndicators).toEqual(original);
+    store.resetIndicatorInstanceAppearance(volume);
+    expect(
+      useChartPreferences.getState().extraIndicators.find((instance) => instance.id === volume)
+        ?.volumeColors,
+    ).toEqual(DEFAULT_VOLUME_COLORS);
+    store.removeAllIndicators();
+    expect(getChartIndicatorInstances(useChartPreferences.getState())).toEqual([]);
+  });
+
+  it("filters malformed and duplicate instance metadata while repairing known saved inputs and appearance", () => {
+    const valid = {
+      id: "one",
+      key: "sma",
+      hidden: false,
+      inputs: { period: 42 },
+      appearance: { color: "#123456" },
+    };
+    const normalized = normalizeChartPreferences({
+      extraIndicators: [
+        valid,
+        { ...valid, inputs: { period: 99 } },
+        { ...valid, id: "base:sma" },
+        { ...valid, id: "bad-key", key: "constructor" },
+        { ...valid, id: "bad-hidden", hidden: "false" },
+        { ...valid, id: "bad-inputs", inputs: [] },
+        {
+          ...valid,
+          id: "repaired",
+          inputs: { period: -1 },
+          appearance: { color: "url(untrusted)", plots: { unknown: { color: "#123456" } } },
+        },
+      ],
+    });
+    expect(normalized.extraIndicators.map((instance) => instance.id)).toEqual(["one", "repaired"]);
+    expect(normalized.extraIndicators[0]).toEqual(valid);
+    expect(normalized.extraIndicators[1]).toMatchObject({
+      inputs: getIndicatorInputs("sma"),
+      appearance: {},
+    });
+  });
+
+  it("caps active instances at100 without losing existing extras on reload", () => {
+    const store = useChartPreferences.getState();
+    while (getChartIndicatorInstances(useChartPreferences.getState()).length < MAX_CHART_INDICATORS)
+      expect(store.addIndicator("volume")).not.toBeNull();
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    expect(store.addIndicator("volume")).toBeNull();
+    expect(store.addIndicator("sma")).toBeNull();
+    store.toggleIndicator("sma");
+    expect(useChartPreferences.getState().indicators.sma).toBe(false);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+    const state = useChartPreferences.getState();
+    expect(getChartIndicatorInstances(normalizeChartPreferences(state))).toHaveLength(
+      MAX_CHART_INDICATORS,
+    );
+    const ids = getChartIndicatorInstances(state).map((instance) => instance.id);
+    expect(new Set(ids).size).toBe(MAX_CHART_INDICATORS);
   });
 });

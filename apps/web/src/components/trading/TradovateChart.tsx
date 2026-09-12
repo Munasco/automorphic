@@ -45,8 +45,13 @@ import {
   type ChartIndicators,
 } from "./chartPreferences";
 import type { Candle } from "./chartIndicators";
-import { INDICATOR_CATALOG } from "./indicatorCatalog";
-import { createIndicatorRenderer, oscillatorPaneCount } from "./chartIndicatorRenderer";
+import { INDICATOR_CATALOG, getIndicatorLabel } from "./indicatorCatalog";
+import { getChartIndicatorInstances, MAX_CHART_INDICATORS } from "./chartIndicatorInstances";
+import {
+  createIndicatorRenderer,
+  oscillatorInstancePaneCount,
+  type IndicatorReadings,
+} from "./chartIndicatorRenderer";
 import { useChartDrawings } from "./useChartDrawings";
 import { IndicatorLegend } from "./IndicatorLegend";
 import { InitialBalanceDashboard } from "./InitialBalanceDashboard";
@@ -235,6 +240,41 @@ export function TradovateChart({
   }, [marketActive, queryClient, marketOptions]);
   const intraday =
     interval.unit === "minute" || interval.unit === "second" || interval.unit === "tick";
+  const indicatorInstances = useMemo(
+    () =>
+      getChartIndicatorInstances({
+        indicators: settings.indicators,
+        hiddenIndicators: settings.hiddenIndicators,
+        appearance: settings.appearance,
+        indicatorInputs: settings.indicatorInputs,
+        initialBalance: settings.initialBalance,
+        volumeColors: settings.volumeColors,
+        extraIndicators: settings.extraIndicators,
+      }),
+    [
+      settings.indicators,
+      settings.hiddenIndicators,
+      settings.appearance,
+      settings.indicatorInputs,
+      settings.initialBalance,
+      settings.volumeColors,
+      settings.extraIndicators,
+    ],
+  );
+  const visibleInstances = useMemo(
+    () =>
+      indicatorInstances.filter(
+        (instance) => !instance.hidden && (instance.key !== "ib" || intraday),
+      ),
+    [indicatorInstances, intraday],
+  );
+  const firstInitialBalance = visibleInstances.find((instance) => instance.key === "ib");
+  const indicatorCounts = useMemo(() => {
+    const counts: Partial<Record<IndicatorKey, number>> = {};
+    for (const instance of indicatorInstances)
+      counts[instance.key] = (counts[instance.key] ?? 0) + 1;
+    return counts;
+  }, [indicatorInstances]);
   const visibleIndicators = useMemo(
     () =>
       Object.fromEntries(
@@ -247,17 +287,19 @@ export function TradovateChart({
   );
   const auxiliaryHistory = useInitialBalanceHistory(
     symbol,
-    visibleIndicators.ib && interval.unit !== "minute",
+    !!firstInitialBalance && interval.unit !== "minute",
   );
   const auxiliaryHistoryRef = useRef(auxiliaryHistory);
   const indicatorSettings = useRef(visibleIndicators);
+  const instanceSettings = useRef(visibleInstances);
   const appearanceSettings = useRef(settings.appearance);
   const inputSettings = useRef(settings.indicatorInputs);
   const volumeColors = useRef(settings.volumeColors);
   const initialBalanceSettings = useRef(settings.initialBalance);
   const [initialBalanceStatus, setInitialBalanceStatus] = useState("");
+  const [initialBalanceStatuses, setInitialBalanceStatuses] = useState<Record<string, string>>({});
   const [initialBalanceStats, setInitialBalanceStats] = useState<InitialBalanceStats | null>(null);
-  const paneCount = oscillatorPaneCount(visibleIndicators);
+  const paneCount = oscillatorInstancePaneCount(visibleInstances);
   const [engine, setEngine] = useState<ChartEngine | null>(null);
   const [status, setStatus] = useState("Connecting to Tradovate…");
   const [tickHistory, setTickHistory] = useState<TickHistoryQuality | null>(null);
@@ -268,10 +310,8 @@ export function TradovateChart({
   const [notice, setNotice] = useState("");
   const [objectTreeOpen, setObjectTreeOpen] = useState(false);
   const [alertDrawing, setAlertDrawing] = useState<ChartDrawing | null>(null);
-  const [readings, setReadings] = useState<Partial<Record<IndicatorKey, number>>>({});
-  const [hoverReadings, setHoverReadings] = useState<Partial<Record<IndicatorKey, number>> | null>(
-    null,
-  );
+  const [readings, setReadings] = useState<IndicatorReadings>({});
+  const [hoverReadings, setHoverReadings] = useState<IndicatorReadings | null>(null);
   const activeEngine =
     engine?.symbol === symbol &&
     chartIntervalKey(engine.interval) === chartIntervalKey(interval) &&
@@ -312,6 +352,7 @@ export function TradovateChart({
   useEffect(() => {
     auxiliaryHistoryRef.current = auxiliaryHistory;
     indicatorSettings.current = visibleIndicators;
+    instanceSettings.current = visibleInstances;
     appearanceSettings.current = settings.appearance;
     inputSettings.current = settings.indicatorInputs;
     volumeColors.current = settings.volumeColors;
@@ -320,6 +361,7 @@ export function TradovateChart({
   }, [
     engine,
     visibleIndicators,
+    visibleInstances,
     auxiliaryHistory,
     settings.initialBalance,
     settings.appearance,
@@ -458,6 +500,7 @@ export function TradovateChart({
                 }
               : auxiliaryHistoryRef.current
             : undefined,
+          instanceSettings.current,
         );
         const latestVolume = sorted.at(-1)?.volume;
         if (latestVolume !== undefined) result.readings.volume = latestVolume;
@@ -472,6 +515,7 @@ export function TradovateChart({
           .applyOptions({ scaleMargins: { top: 0.08, bottom: enabled.volume ? 0.2 : 0.06 } });
         setReadings(result.readings);
         setInitialBalanceStatus(result.initialBalanceStatus);
+        setInitialBalanceStatuses(result.initialBalanceStatuses);
         setInitialBalanceStats(result.initialBalanceStats);
       },
     };
@@ -680,10 +724,9 @@ export function TradovateChart({
         onIntervalChange={onIntervalChange}
         style={settings.style}
         onStyleChange={settings.setStyle}
-        indicators={settings.indicators}
-        onToggleIndicator={settings.toggleIndicator}
-        initialBalance={settings.initialBalance}
-        onInitialBalanceChange={settings.setInitialBalance}
+        indicatorCounts={indicatorCounts}
+        onAddIndicator={settings.addIndicator}
+        indicatorLimitReached={indicatorInstances.length >= MAX_CHART_INDICATORS}
         showGrid={settings.showGrid}
         onToggleGrid={settings.toggleGrid}
         logScale={settings.logScale}
@@ -777,10 +820,8 @@ export function TradovateChart({
           <DrawingTools
             drawings={drawings}
             indicatorControls={{
-              count: INDICATOR_CATALOG.filter(({ key }) => settings.indicators[key]).length,
-              hidden: INDICATOR_CATALOG.filter(({ key }) => settings.indicators[key]).every(
-                ({ key }) => settings.hiddenIndicators[key],
-              ),
+              count: indicatorInstances.length,
+              hidden: indicatorInstances.every((instance) => instance.hidden),
               setHidden: settings.setIndicatorsHidden,
               remove: settings.removeAllIndicators,
             }}
@@ -856,10 +897,11 @@ export function TradovateChart({
                   settings={settings}
                   readings={hoverReadings ?? readings}
                   initialBalanceStatus={initialBalanceStatus}
+                  initialBalanceStatuses={initialBalanceStatuses}
                 />
               </div>
-              {visibleIndicators.ib &&
-              settings.initialBalance.showDashboard !== false &&
+              {firstInitialBalance &&
+              firstInitialBalance.initialBalance?.showDashboard !== false &&
               initialBalanceStats &&
               activeEngine ? (
                 <InitialBalanceDashboard
@@ -886,15 +928,13 @@ export function TradovateChart({
             drawings={drawings}
             symbol={symbol}
             onClose={() => setObjectTreeOpen(false)}
-            indicators={INDICATOR_CATALOG.filter(({ key }) => settings.indicators[key]).map(
-              ({ key, label }) => ({
-                key,
-                label,
-                hidden: settings.hiddenIndicators[key],
-                onToggleHidden: () => settings.toggleIndicatorVisibility(key),
-                onRemove: () => settings.toggleIndicator(key),
-              }),
-            )}
+            indicators={indicatorInstances.map((instance) => ({
+              key: instance.id,
+              label: getIndicatorLabel(instance.key, { [instance.key]: instance.inputs }),
+              hidden: instance.hidden,
+              onToggleHidden: () => settings.toggleIndicatorInstanceVisibility(instance.id),
+              onRemove: () => settings.removeIndicatorInstance(instance.id),
+            }))}
           />
         ) : null}
         {technicals ? (
