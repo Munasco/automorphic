@@ -2,6 +2,9 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import {
   DRAWING_ANCHORS,
+  defaultChannelDrawingSettings,
+  defaultDrawingLevelSettings,
+  defaultRegressionDrawingSettings,
   sanitizeDrawingSettings,
   type ChartDrawing,
   type DrawingKind,
@@ -18,6 +21,20 @@ export type DrawingTemplate = {
   kind: DrawingKind;
   settings: DrawingTemplateSettings;
 };
+
+/** Factory appearance, independent of saved templates and the user's last edited style. */
+export function defaultDrawingTemplateSettings(kind: DrawingKind): DrawingTemplateSettings {
+  return {
+    color: "#2962ff",
+    width: 2,
+    lineStyle: "solid",
+    lineOpacity: 1,
+    textOpacity: 1,
+    ...defaultDrawingLevelSettings(kind),
+    ...defaultChannelDrawingSettings(kind),
+    ...defaultRegressionDrawingSettings(kind),
+  };
+}
 
 /** Replace appearance completely while preserving the target object's identity and placement. */
 export function applyDrawingTemplate(

@@ -117,7 +117,6 @@ export function DrawingInlineTextEditor({
   const selected = drawings.selected;
   const eligible =
     selected &&
-    !selected.locked &&
     drawings.isVisible(selected) &&
     drawings.tool === "cursor" &&
     !drawings.settingsOpen &&

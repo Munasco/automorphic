@@ -261,7 +261,11 @@ export function createChartDrawingSession(
       if (drawing.kind === "horizontal") {
         const line = series.createPriceLine({
           price: drawing.anchors[0]!.price,
-          color: drawing.color,
+          color:
+            drawing.lineOpacity === undefined || drawing.lineOpacity === 1
+              ? drawing.color
+              : `rgba(${Number.parseInt(drawing.color.slice(1, 3), 16)}, ${Number.parseInt(drawing.color.slice(3, 5), 16)}, ${Number.parseInt(drawing.color.slice(5, 7), 16)}, ${drawing.lineOpacity})`,
+          axisLabelColor: drawing.color,
           lineWidth: drawing.width as 1 | 2 | 3 | 4,
           lineStyle:
             drawing.lineStyle === "dashed"
@@ -681,6 +685,23 @@ export function createChartDrawingSession(
     drawings = drawings.map((drawing) => (drawing.id === id ? next : drawing));
     changed();
   };
+  const applySelectedTemplate = (patch: DrawingPatch) => {
+    if (disposed) return false;
+    const target = drawings.find((drawing) => drawing.id === selectedId);
+    if (!target || applyDrawingTemplate(target, patch) === target) return false;
+    // Restore any drag or draft first; templates replace appearance, never provisional placement.
+    setTool("cursor");
+    const current = drawings.find((drawing) => drawing.id === selectedId);
+    if (!current) return false;
+    const next = applyDrawingTemplate(current, patch);
+    // Normalize both sides so optional defaults and property order cannot create spurious undo entries.
+    if (JSON.stringify(applyDrawingTemplate(current, current)) === JSON.stringify(next))
+      return false;
+    remember();
+    drawings = drawings.map((drawing) => (drawing.id === current.id ? next : drawing));
+    changed();
+    return true;
+  };
   const settingsResult = (
     patch: DrawingPatch,
     options: DrawingSettingsOptions,
@@ -730,12 +751,7 @@ export function createChartDrawingSession(
     if (disposed || tool !== "cursor" || settingsOpen || contextPoint || drag) return false;
     if (textEditing) return true;
     const original = drawings.find((drawing) => drawing.id === selectedId);
-    if (
-      !original ||
-      original.locked ||
-      !isVisible(original) ||
-      !supportsInlineDrawingText(original.kind)
-    )
+    if (!original || !isVisible(original) || !supportsInlineDrawingText(original.kind))
       return false;
     discardSettings();
     settingsDraft = { original, drawing: original };
@@ -794,6 +810,7 @@ export function createChartDrawingSession(
     isVisible,
     previewSettings,
     applySettings,
+    applySelectedTemplate,
     beginTextEdit,
     previewText,
     commitText,
@@ -1204,6 +1221,10 @@ export function useChartDrawings(
       session.current?.previewSettings(patch, options) ?? false,
     [],
   );
+  const applySelectedTemplate = useCallback(
+    (patch: DrawingPatch) => session.current?.applySelectedTemplate(patch) ?? false,
+    [],
+  );
   const applySettings = useCallback(
     (patch: DrawingPatch, options?: DrawingSettingsOptions) =>
       session.current?.applySettings(patch, options) ?? false,
@@ -1237,6 +1258,7 @@ export function useChartDrawings(
     closeSettings,
     previewSettings,
     applySettings,
+    applySelectedTemplate,
     beginTextEdit,
     previewText,
     commitText,

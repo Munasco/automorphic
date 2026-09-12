@@ -17,6 +17,7 @@ import {
   supportsLineStatistics,
   supportsDrawingPriceLabels,
   isSpecialChannelDrawing,
+  isFibTimeDrawing,
   type ChartDrawing,
   type DrawingAnchor,
   type DrawingKind,
@@ -292,6 +293,11 @@ export function createDrawingPrimitive(
             (coordinate) => series.coordinateToPrice(coordinate),
             regressionFit(drawing),
           );
+          const genericLineOpacity =
+            drawing.kind === "regression-trend" || isFibTimeDrawing(drawing.kind)
+              ? 1
+              : (drawing.lineOpacity ?? 1);
+          const lineAlpha = genericLineOpacity * (geometry.opacity ?? 1);
           ctx.textAlign = "left";
           ctx.textBaseline = "alphabetic";
           ctx.strokeStyle = drawing.color;
@@ -299,7 +305,7 @@ export function createDrawingPrimitive(
           ctx.lineWidth = geometry.strokeWidth ?? drawing.width;
           ctx.lineCap = "round";
           ctx.lineJoin = "round";
-          ctx.globalAlpha = geometry.opacity ?? 1;
+          ctx.globalAlpha = lineAlpha;
           ctx.setLineDash(
             drawing.lineStyle === "dashed" ? [8, 5] : drawing.lineStyle === "dotted" ? [2, 4] : [],
           );
@@ -313,7 +319,7 @@ export function createDrawingPrimitive(
             }
             for (const polygon of geometry.polygons ?? []) {
               if (!polygon.points.length) continue;
-              ctx.globalAlpha = polygon.opacity;
+              ctx.globalAlpha = polygon.opacity * (polygon.lineFill ? genericLineOpacity : 1);
               ctx.fillStyle = polygon.color ?? drawing.color;
               ctx.beginPath();
               ctx.moveTo(polygon.points[0]!.x, polygon.points[0]!.y);
@@ -321,7 +327,7 @@ export function createDrawingPrimitive(
               ctx.closePath();
               ctx.fill();
             }
-            ctx.globalAlpha = geometry.opacity ?? 1;
+            ctx.globalAlpha = lineAlpha;
             ctx.fillStyle = drawing.color;
             ctx.font = `${drawing.textFontSize ?? 12}px ${chart.options().layout.fontFamily}`;
             ctx.beginPath();
@@ -329,13 +335,13 @@ export function createDrawingPrimitive(
             let activeColor = drawing.color;
             let activeStyle = drawing.lineStyle ?? "solid";
             let activeWidth = geometry.strokeWidth ?? drawing.width;
-            let activeOpacity = geometry.opacity ?? 1;
+            let activeOpacity = lineAlpha;
             const visibleLines = nativeLine ? geometry.lines.slice(1) : geometry.lines;
             for (const line of visibleLines) {
               const color = line.color ?? drawing.color;
               const style = line.lineStyle ?? drawing.lineStyle ?? "solid";
               const lineWidth = line.width ?? geometry.strokeWidth ?? drawing.width;
-              const opacity = (line.opacity ?? 1) * (geometry.opacity ?? 1);
+              const opacity = (line.opacity ?? 1) * lineAlpha;
               if (
                 color !== activeColor ||
                 style !== activeStyle ||
@@ -362,7 +368,7 @@ export function createDrawingPrimitive(
             if (visibleLines.length) ctx.stroke();
             for (const line of visibleLines) {
               if (!line.label) continue;
-              ctx.globalAlpha = (line.opacity ?? 1) * (geometry.opacity ?? 1);
+              ctx.globalAlpha = (line.opacity ?? 1) * lineAlpha;
               ctx.fillStyle = line.color ?? drawing.color;
               ctx.textAlign = line.labelAlign ?? "left";
               ctx.textBaseline = line.labelBaseline ?? "alphabetic";
@@ -381,6 +387,8 @@ export function createDrawingPrimitive(
             }
             if (geometry.text) {
               const text = geometry.text;
+              ctx.globalAlpha =
+                drawing.kind === "regression-trend" ? 1 : (drawing.textOpacity ?? 1);
               const size = text.fontSize ?? 14;
               const rows = text.value.split(/\r?\n/);
               const rowHeight = size * 1.2;
@@ -418,7 +426,7 @@ export function createDrawingPrimitive(
             const b = project(drawing.anchors[1]!);
             if (a && b) {
               ctx.setLineDash([]);
-              ctx.globalAlpha = 1;
+              ctx.globalAlpha = lineAlpha;
               ctx.strokeStyle = drawing.color;
               ctx.fillStyle = drawing.color;
               if (drawing.showMiddlePoint) {

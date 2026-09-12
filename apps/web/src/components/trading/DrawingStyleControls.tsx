@@ -1,3 +1,5 @@
+import { Slider } from "@base-ui/react/slider";
+import { DrawingToolIcon } from "./DrawingToolIcon";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import type { ChartDrawing } from "./drawingGeometry";
 import type { DrawingPatch } from "./useChartDrawings";
@@ -5,9 +7,15 @@ import { Select, SelectTrigger, SelectValue, SelectPopup, SelectItem } from "../
 import { cn } from "../../lib/utils";
 const colors = [
   "#ffffff",
-  "#b2b5be",
-  "#787b86",
-  "#131722",
+  "#dbdbdb",
+  "#b8b8b8",
+  "#9c9c9c",
+  "#808080",
+  "#636363",
+  "#4a4a4a",
+  "#2e2e2e",
+  "#0f0f0f",
+  "#000000",
   "#f23645",
   "#ff9800",
   "#ffeb3b",
@@ -15,9 +23,69 @@ const colors = [
   "#089981",
   "#00bcd4",
   "#2962ff",
-  "#729bff",
+  "#673ab7",
   "#9c27b0",
-  "#e040fb",
+  "#e91e63",
+  "#fccbcd",
+  "#ffe0b2",
+  "#fff9c4",
+  "#c8e6c9",
+  "#ace5dc",
+  "#b2ebf2",
+  "#bbd9fb",
+  "#d1c4e9",
+  "#e1bee7",
+  "#f8bbd0",
+  "#faa1a4",
+  "#ffcc80",
+  "#fff59d",
+  "#a5d6a7",
+  "#70ccbd",
+  "#80deea",
+  "#90bff9",
+  "#b39ddb",
+  "#ce93d8",
+  "#f48fb1",
+  "#f77c80",
+  "#ffb74d",
+  "#fff176",
+  "#81c784",
+  "#42bda8",
+  "#4dd0e1",
+  "#5b9cf6",
+  "#9575cd",
+  "#ba68c8",
+  "#f06292",
+  "#f7525f",
+  "#ffa726",
+  "#ffee58",
+  "#66bb6a",
+  "#22ab94",
+  "#26c6da",
+  "#3179f5",
+  "#7e57c2",
+  "#ab47bc",
+  "#ec407a",
+  "#b22833",
+  "#f57c00",
+  "#fbc02d",
+  "#388e3c",
+  "#056656",
+  "#0097a7",
+  "#1848cc",
+  "#512da8",
+  "#7b1fa2",
+  "#c2185b",
+  "#801922",
+  "#e65100",
+  "#f57f17",
+  "#1b5e20",
+  "#00332a",
+  "#006064",
+  "#0c3299",
+  "#311b92",
+  "#4a148c",
+  "#880e4f",
 ];
 export const inputClass =
   "h-9 rounded border border-white/15 bg-transparent px-2.5 text-[13px] text-zinc-200 outline-none focus:border-blue-500";
@@ -26,11 +94,17 @@ export function ColorPicker({
   onChange,
   label = "Line color",
   mixed = false,
+  icon,
+  opacity,
+  onOpacityChange,
 }: {
   value: string;
   onChange: (color: string) => void;
   label?: string;
   mixed?: boolean;
+  icon?: "pencil" | "letter-t";
+  opacity?: number | undefined;
+  onOpacityChange?: (opacity: number) => void;
 }) {
   return (
     <Popover>
@@ -38,24 +112,34 @@ export function ColorPicker({
         aria-label={label}
         className="flex size-8 items-center justify-center rounded hover:bg-white/10"
       >
-        <span
-          className="size-4 rounded-sm border border-white/20"
-          style={{
-            background: mixed
-              ? "conic-gradient(#f23645 0 25%, #2962ff 0 50%, #4caf50 0 75%, #ff9800 0)"
-              : value,
-          }}
-        />
+        {icon ? (
+          <span className="relative flex size-6 items-center justify-center pb-1">
+            <DrawingToolIcon name={icon} className="size-5" />
+            <span
+              className="absolute inset-x-0 bottom-0 h-0.5 rounded"
+              style={{ background: value }}
+            />
+          </span>
+        ) : (
+          <span
+            className="size-4 rounded-sm border border-white/20"
+            style={{
+              background: mixed
+                ? "conic-gradient(#f23645 0 25%, #2962ff 0 50%, #4caf50 0 75%, #ff9800 0)"
+                : value,
+            }}
+          />
+        )}
       </PopoverTrigger>
       <PopoverPopup
         instant
         style={{ background: "#1f1f1f", backdropFilter: "none" }}
-        className="w-56"
+        className="w-[250px]"
         viewportClassName="p-3"
       >
         <PopoverTitle className="sr-only">{label}</PopoverTitle>
-        <div className="grid grid-cols-7 gap-2">
-          {colors.map((color) => (
+        <div className="grid grid-cols-10 gap-[6px]">
+          {colors.map((color, index) => (
             <button
               type="button"
               key={color}
@@ -63,7 +147,8 @@ export function ColorPicker({
               aria-pressed={value === color}
               onClick={() => onChange(color)}
               className={cn(
-                "size-5 rounded-sm border border-white/10",
+                "size-[17px] rounded-[1px] border border-white/10",
+                index >= 20 && index < 30 && "mt-[6px]",
                 color === value && "ring-2 ring-white ring-offset-2 ring-offset-[#1e222d]",
               )}
               style={{ background: color }}
@@ -80,8 +165,61 @@ export function ColorPicker({
             className="h-7 w-10 bg-transparent"
           />
         </label>
+        {opacity !== undefined && onOpacityChange ? (
+          <OpacityControl label={`${label} opacity`} value={opacity} onChange={onOpacityChange} />
+        ) : null}
       </PopoverPopup>
     </Popover>
+  );
+}
+export function OpacityControl({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const percent = Math.round(value * 100);
+  return (
+    <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
+      <div className="text-xs text-zinc-300">Opacity</div>
+      <div className="flex items-center gap-3">
+        <Slider.Root
+          min={0}
+          max={100}
+          value={percent}
+          onValueChange={(next) => onChange(Number(next) / 100)}
+          className="flex-1"
+        >
+          <Slider.Control className="relative flex h-6 w-full touch-none items-center">
+            <Slider.Track className="relative h-1 w-full rounded bg-zinc-600">
+              <Slider.Indicator className="rounded bg-[#2962ff]" />
+              <Slider.Thumb
+                getAriaLabel={() => `${label} slider`}
+                className="size-3 rounded-full border-2 border-[#2962ff] bg-[#202020] outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              />
+            </Slider.Track>
+          </Slider.Control>
+        </Slider.Root>
+        <div className="flex h-8 items-center gap-1 rounded border border-white/15 px-2 text-xs text-zinc-300">
+          <input
+            type="number"
+            min={0}
+            max={100}
+            aria-label={label}
+            value={percent}
+            onChange={(event) => {
+              const next = event.target.valueAsNumber;
+              if (Number.isFinite(next)) onChange(Math.min(100, Math.max(0, next)) / 100);
+            }}
+            className="w-8 bg-transparent text-right outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+          />
+          %
+        </div>
+      </div>
+    </div>
   );
 }
 export function LineStylePicker({
@@ -296,23 +434,21 @@ export function LineAppearancePicker({
       >
         <PopoverTitle className="sr-only">{label}</PopoverTitle>
         <div className="flex items-center justify-between">
-          <ColorPicker value={drawing.color} onChange={(color) => onChange({ color })} />
+          <ColorPicker
+            value={drawing.color}
+            onChange={(color) => onChange({ color })}
+            opacity={fillOpacity === undefined ? (drawing.lineOpacity ?? 1) : undefined}
+            onOpacityChange={(lineOpacity) => onChange({ lineOpacity })}
+          />
           <WidthPicker drawing={drawing} onChange={onChange} />
           <LineStylePicker drawing={drawing} onChange={onChange} />
         </div>
         {fillOpacity !== undefined && onFillOpacityChange ? (
-          <label className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-300">
-            Opacity <span>{Math.round(fillOpacity * 100)}%</span>
-            <input
-              type="range"
-              aria-label={`${label} opacity`}
-              min={0}
-              max={100}
-              value={Math.round(fillOpacity * 100)}
-              onChange={(event) => onFillOpacityChange(event.target.valueAsNumber / 100)}
-              className="w-full accent-[#2962ff]"
-            />
-          </label>
+          <OpacityControl
+            label={`${label} opacity`}
+            value={fillOpacity}
+            onChange={onFillOpacityChange}
+          />
         ) : null}
       </PopoverPopup>
     </Popover>

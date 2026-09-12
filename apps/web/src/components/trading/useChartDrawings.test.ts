@@ -1469,7 +1469,45 @@ describe("inline drawing text transactions", () => {
     session.dispose();
   });
 
-  it("requires a visible unlocked line and keeps inline and settings editors mutually exclusive", () => {
+  it("edits locked annotation text undoably while keeping body and endpoint drags locked", () => {
+    const f = fixture("inline-text-locked"),
+      session = f.open();
+    session.setTool("trend");
+    f.click(100, 100);
+    f.click(200, 200);
+    session.updateSelected({ locked: true });
+    const before = f.saved(),
+      original = JSON.parse(before!)[0],
+      writes = f.writes();
+    for (const point of [
+      { x: 150, y: 150 },
+      { x: 100, y: 100 },
+    ]) {
+      expect(session.beginDrag(point)).toBe(false);
+      session.dragTo({ x: 300, y: 300 });
+      session.endDrag();
+    }
+    expect(f.saved()).toBe(before);
+    expect(f.writes()).toBe(writes);
+    expect(session.beginTextEdit()).toBe(true);
+    expect(session.previewText("Locked price level")).toBe(true);
+    expect(f.saved()).toBe(before);
+    expect(session.commitText()).toBe(true);
+    expect(f.writes()).toBe(writes + 1);
+    expect(JSON.parse(f.saved()!)[0]).toEqual({ ...original, text: "Locked price level" });
+    const after = f.saved();
+    session.undo();
+    expect(f.saved()).toBe(before);
+    session.redo();
+    expect(f.saved()).toBe(after);
+    expect(session.beginDrag({ x: 100, y: 100 })).toBe(false);
+    session.dragTo({ x: 400, y: 400 });
+    session.endDrag();
+    expect(f.saved()).toBe(after);
+    session.dispose();
+  });
+
+  it("requires a visible line and keeps inline and settings editors mutually exclusive", () => {
     const f = fixture("inline-text-eligibility"),
       session = f.open();
     expect(session.beginTextEdit()).toBe(false);
@@ -1479,9 +1517,7 @@ describe("inline drawing text transactions", () => {
     expect(session.beginTextEdit()).toBe(false);
     session.setTool("horizontal");
     f.click(300, 100);
-    session.updateSelected({ locked: true });
-    expect(session.beginTextEdit()).toBe(false);
-    session.updateSelected({ locked: false, hidden: true });
+    session.updateSelected({ hidden: true });
     expect(session.beginTextEdit()).toBe(false);
     session.updateSelected({ hidden: false });
     session.openSettings();
@@ -1677,4 +1713,135 @@ describe("Fibonacci time placement and editing", () => {
       session.dispose();
     },
   );
+});
+
+describe("selected drawing template application", () => {
+  const original = {
+    id: "template-target",
+    kind: "trend",
+    anchors: [
+      { time: 100, price: 4900 },
+      { time: 300, price: 4800 },
+    ],
+    color: "#729bff",
+    width: 2,
+    lineStyle: "dotted",
+    name: "Research line",
+    locked: true,
+    hidden: true,
+    text: "Old text",
+    extendLeft: true,
+    showPriceLabel: true,
+  };
+  it("atomically replaces sparse appearance on locked drawings while preserving identity, placement and metadata", () => {
+    const f = fixture("selected-template", JSON.stringify([original])),
+      session = f.open();
+    session.selectDrawing(original.id);
+    const patch = {
+      color: "#ff0000",
+      width: 3,
+      id: "malicious",
+      kind: "rectangle",
+      anchors: [{ time: 900 as Time, price: 0 }],
+      locked: false,
+      hidden: false,
+      name: "Changed",
+    };
+    expect(session.applySelectedTemplate(patch)).toBe(true);
+    expect(f.writes()).toBe(1);
+    const updated = JSON.parse(f.saved()!)[0];
+    expect(updated).toEqual({
+      id: original.id,
+      kind: original.kind,
+      anchors: original.anchors,
+      color: "#ff0000",
+      width: 3,
+      lineStyle: "solid",
+      name: original.name,
+      locked: true,
+      hidden: true,
+    });
+    session.undo();
+    expect(JSON.parse(f.saved()!)[0]).toEqual(original);
+    session.redo();
+    expect(JSON.parse(f.saved()!)[0]).toEqual(updated);
+    const writes = f.writes();
+    expect(session.applySelectedTemplate({ color: "#ff0000", width: 3 })).toBe(false);
+    expect(f.writes()).toBe(writes);
+    session.dispose();
+  });
+  it("discards uncommitted settings and coordinates before applying and cannot restore them on later cancellation", () => {
+    const f = fixture("selected-template-draft", JSON.stringify([original])),
+      session = f.open();
+    session.selectDrawing(original.id);
+    session.openSettings();
+    session.previewSettings({
+      color: "#00ff00",
+      anchors: [
+        { time: 200 as Time, price: 4700 },
+        { time: 400 as Time, price: 4600 },
+      ],
+    });
+    expect(session.applySelectedTemplate({ color: "#ff0000", width: 1 })).toBe(true);
+    expect(f.writes()).toBe(1);
+    expect(JSON.parse(f.saved()!)[0].anchors).toEqual(original.anchors);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ settingsOpen: false, textEditing: false }),
+    );
+    session.closeSettings();
+    expect(f.writes()).toBe(1);
+    session.undo();
+    expect(JSON.parse(f.saved()!)[0]).toEqual(original);
+    session.dispose();
+  });
+  it("does nothing for invalid templates, missing selection or disposal", () => {
+    const f = fixture("selected-template-invalid", JSON.stringify([original])),
+      session = f.open();
+    expect(session.applySelectedTemplate({ color: "#ff0000", width: 2 })).toBe(false);
+    session.selectDrawing(original.id);
+    session.openSettings();
+    expect(session.applySelectedTemplate({ color: "#ff0000" })).toBe(false);
+    expect(session.applySelectedTemplate({ color: "invalid", width: 2 })).toBe(false);
+    expect(f.writes()).toBe(0);
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ settingsOpen: true }));
+    session.dispose();
+    expect(session.applySelectedTemplate({ color: "#ff0000", width: 2 })).toBe(false);
+    expect(f.writes()).toBe(0);
+  });
+});
+
+describe("native horizontal opacity", () => {
+  it("updates native line RGBA while retaining an opaque axis label and persists template opacity", () => {
+    const f = fixture("horizontal-opacity"),
+      session = f.open();
+    session.setTool("horizontal");
+    f.click(100, 100);
+    session.updateSelected({ color: "#ff8000", lineOpacity: 0.5 });
+    expect(f.priceLines[0]).toMatchObject({
+      color: "rgba(255, 128, 0, 0.5)",
+      axisLabelColor: "#ff8000",
+      axisLabelVisible: true,
+    });
+    session.updateSelected({ lineOpacity: 0 });
+    expect(f.priceLines[0]).toMatchObject({
+      color: "rgba(255, 128, 0, 0)",
+      axisLabelColor: "#ff8000",
+    });
+    expect(
+      session.applySelectedTemplate({
+        color: "#123456",
+        width: 2,
+        lineOpacity: 0.5,
+        textOpacity: 0,
+      }),
+    ).toBe(true);
+    expect(JSON.parse(f.saved()!)[0]).toMatchObject({ lineOpacity: 0.5, textOpacity: 0 });
+    session.dispose();
+    const restored = f.open();
+    expect(f.priceLines[0]).toMatchObject({
+      color: "rgba(18, 52, 86, 0.5)",
+      axisLabelColor: "#123456",
+    });
+    restored.dispose();
+  });
 });

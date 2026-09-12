@@ -393,13 +393,17 @@ describe("native drawing primitive", () => {
 });
 
 describe("additional line primitive behavior", () => {
-  function renderFixture(drawing: ChartDrawing, regressionSeries?: ISeriesApi<SeriesType>) {
+  function renderFixture(
+    drawing: ChartDrawing,
+    regressionSeries?: ISeriesApi<SeriesType>,
+    extraDrawings: ChartDrawing[] = [],
+  ) {
     const { chart, series } = fixture();
     let selected: string | null = null;
     const plugin = createDrawingPrimitive(
       chart,
       series,
-      () => ({ drawings: [drawing], selected }),
+      () => ({ drawings: [drawing, ...extraDrawings], selected }),
       regressionSeries ?? series,
     );
     const ctx = {
@@ -484,6 +488,8 @@ describe("additional line primitive behavior", () => {
   it("renders regression boundaries with independent colors, widths and styles, and Pearson in the lower color", () => {
     const drawing: ChartDrawing = {
       id: "regression-style",
+      lineOpacity: 0,
+      textOpacity: 0,
       kind: "regression-trend",
       color: "#ffffff",
       width: 2,
@@ -533,9 +539,68 @@ describe("additional line primitive behavior", () => {
     expect((f.ctx as unknown as CanvasRenderingContext2D).fillStyle).toBe("#0000ff");
   });
 
+  it.each([
+    [0, 0.5],
+    [0.5, 0],
+  ] as const)(
+    "keeps line opacity %s and text opacity %s independent from handles and the next drawing",
+    (lineOpacity, textOpacity) => {
+      const drawing: ChartDrawing = {
+        ...line("trend"),
+        id: "opacity-first",
+        lineOpacity,
+        textOpacity,
+        text: "First",
+      };
+      const next: ChartDrawing = { ...line("trend"), id: "opacity-next", text: "Second" };
+      const f = renderFixture(drawing, undefined, [next]),
+        strokes: number[] = [],
+        texts: Array<[string, number]> = [];
+      f.ctx.stroke.mockImplementation(() => {
+        strokes.push((f.ctx as unknown as CanvasRenderingContext2D).globalAlpha);
+      });
+      f.ctx.fillText.mockImplementation((value: string) => {
+        texts.push([value, (f.ctx as unknown as CanvasRenderingContext2D).globalAlpha]);
+      });
+      f.select();
+      f.draw();
+      expect(strokes).toEqual([lineOpacity, 1, 1, 1]);
+      expect(texts).toEqual([
+        ["First", textOpacity],
+        ["Second", 1],
+      ]);
+      expect(
+        f.plugin.primitive.priceAxisViews!().every((view) => view.backColor() === "#2962ff"),
+      ).toBe(true);
+    },
+  );
+
+  it("keeps endpoint arrow fills at line opacity without dimming independent annotation text", () => {
+    const drawing: ChartDrawing = {
+      ...line("trend"),
+      endMarker: "arrow",
+      lineOpacity: 0,
+      text: "Visible",
+    };
+    const f = renderFixture(drawing),
+      fills: number[] = [],
+      texts: number[] = [];
+    f.ctx.fill.mockImplementation(() => {
+      fills.push((f.ctx as unknown as CanvasRenderingContext2D).globalAlpha);
+    });
+    f.ctx.fillText.mockImplementation(() => {
+      texts.push((f.ctx as unknown as CanvasRenderingContext2D).globalAlpha);
+    });
+    f.draw();
+    expect(fills).toEqual([0]);
+    expect(texts).toEqual([1]);
+  });
+
   it("isolates zero and partial Fibonacci level opacity from later strokes and labels", () => {
     const drawing: ChartDrawing = {
       id: "time-opacity",
+      lineOpacity: 0,
+      textOpacity: 0,
       kind: "fib-trend-time",
       color: "#2962ff",
       width: 2,
@@ -566,6 +631,8 @@ describe("additional line primitive behavior", () => {
     expect(labels).toEqual([0, 0.4, 1]);
     expect((f.ctx as unknown as CanvasRenderingContext2D).globalAlpha).toBe(1);
     drawing.kind = "trend";
+    delete drawing.lineOpacity;
+    delete drawing.textOpacity;
     drawing.anchors = drawing.anchors.slice(0, 2);
     f.draw();
     expect(strokes.at(-1)).toBe(1);

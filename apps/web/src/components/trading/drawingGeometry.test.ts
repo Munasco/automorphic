@@ -1357,3 +1357,23 @@ describe("Fibonacci time global appearance", () => {
     expect(fibTimeAppearancePatch({ ...tool, kind: "trend" }, { color: "#ff0000" })).toEqual({});
   });
 });
+
+describe("line and annotation opacity persistence", () => {
+  it("preserves transparent and partial alpha while rejecting non-finite or out-of-range values", () => {
+    const shape = {
+      ...drawing("trend", [
+        [100, 400],
+        [200, 300],
+      ]),
+      lineOpacity: 0,
+      textOpacity: 0.5,
+    };
+    expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+    expect(sanitizeDrawingSettings({ lineOpacity: 0.5, textOpacity: 0 })).toEqual({
+      lineOpacity: 0.5,
+      textOpacity: 0,
+    });
+    expect(sanitizeDrawingSettings({ lineOpacity: Infinity, textOpacity: -1 })).toEqual({});
+    expect(sanitizeDrawingSettings({ lineOpacity: 1.1, textOpacity: "0.5" })).toEqual({});
+  });
+});

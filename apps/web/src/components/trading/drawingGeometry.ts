@@ -64,6 +64,8 @@ export type DrawingLineAppearance = Pick<
 >;
 export type DrawingRegressionFit = { result: ChartRegression; start: Time; end: Time };
 export type DrawingSettings = {
+  lineOpacity?: number;
+  textOpacity?: number;
   trendLine?: DrawingLineAppearance;
   regressionSource?: RegressionSource;
   regressionUpperDeviation?: number;
@@ -150,7 +152,7 @@ export type DrawingGeometry = {
   /** Original anchor indices for the visible, editable handles of dense freehand strokes. */
   handleIndices?: number[];
   handleAnchorIndices?: number[];
-  polygons?: Array<{ points: DrawingPoint[]; opacity: number; color?: string }>;
+  polygons?: Array<{ points: DrawingPoint[]; opacity: number; color?: string; lineFill?: boolean }>;
   strokeWidth?: number;
   opacity?: number;
 };
@@ -484,6 +486,14 @@ export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
   if (!value || typeof value !== "object") return {};
   const source = value as DrawingSettings;
   const result: DrawingSettings = {};
+  for (const key of ["lineOpacity", "textOpacity"] as const)
+    if (
+      typeof source[key] === "number" &&
+      Number.isFinite(source[key]) &&
+      source[key] >= 0 &&
+      source[key] <= 1
+    )
+      result[key] = source[key];
   if (["original", "schiff", "modified-schiff", "inside"].includes(source.pitchforkStyle ?? ""))
     result.pitchforkStyle = source.pitchforkStyle!;
   if (source.levelLabelFormat === "percent" || source.levelLabelFormat === "value")
@@ -732,7 +742,12 @@ function buildBaseDrawingGeometry(
   const path = (points: DrawingPoint[], closed = false, fillOpacity?: number) => {
     for (let index = 1; index < points.length; index++) line(points[index - 1]!, points[index]!);
     if (closed && points.length > 2) line(points.at(-1)!, points[0]!);
-    if (fillOpacity !== undefined) (result.polygons ??= []).push({ points, opacity: fillOpacity });
+    if (fillOpacity !== undefined)
+      (result.polygons ??= []).push({
+        points,
+        opacity: fillOpacity,
+        ...(fillOpacity === 1 ? { lineFill: true } : {}),
+      });
   };
   const blockArrow = (from: DrawingPoint, to: DrawingPoint) => {
     const length = Math.hypot(to.x - from.x, to.y - from.y);
@@ -1497,7 +1512,7 @@ export function buildDrawingGeometry(
         { x: to.x - ux * size - (uy * size) / 2, y: to.y - uy * size + (ux * size) / 2 },
         { x: to.x - ux * size + (uy * size) / 2, y: to.y - uy * size - (ux * size) / 2 },
       ];
-      (result.polygons ??= []).push({ points, opacity: 1 });
+      (result.polygons ??= []).push({ points, opacity: 1, lineFill: true });
       for (let index = 0; index < points.length; index++)
         result.lines.push({ from: points[index]!, to: points[(index + 1) % points.length]! });
     };

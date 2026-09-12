@@ -13,6 +13,7 @@ vi.mock("./workspaceStorage", () => ({
 
 import {
   applyDrawingTemplate,
+  defaultDrawingTemplateSettings,
   normalizeDrawingTemplates,
   saveDrawingTemplate,
   useDrawingTemplates,
@@ -43,6 +44,78 @@ beforeEach(() => {
 });
 
 describe("drawing templates", () => {
+  it("resets factory appearance and clears custom text while preserving object identity and placement", () => {
+    const target: ChartDrawing = {
+      ...drawing,
+      kind: "trend",
+      text: "Custom annotation",
+      textBold: true,
+      textOpacity: 0.2,
+      lineOpacity: 0.35,
+      extendRight: true,
+      showMiddlePoint: true,
+    };
+    const reset = applyDrawingTemplate(target, defaultDrawingTemplateSettings(target.kind));
+    expect(reset).toEqual({
+      id: target.id,
+      kind: target.kind,
+      anchors: target.anchors,
+      name: target.name,
+      hidden: true,
+      locked: true,
+      color: "#2962ff",
+      width: 2,
+      lineStyle: "solid",
+      lineOpacity: 1,
+      textOpacity: 1,
+    });
+    expect(applyDrawingTemplate(reset, defaultDrawingTemplateSettings(reset.kind))).toEqual(reset);
+  });
+
+  it("restores existing level, channel and regression defaults without retaining custom settings", () => {
+    const reset = (kind: ChartDrawing["kind"]) =>
+      applyDrawingTemplate(
+        {
+          ...drawing,
+          kind,
+          background: false,
+          textAlignment: "right",
+          regressionSource: "high",
+          regressionLowerDeviation: 5,
+          regressionUpperLine: { visible: false, color: "#123456", width: 4, lineStyle: "dotted" },
+        },
+        defaultDrawingTemplateSettings(kind),
+      );
+    expect(reset("fib-extension")).toMatchObject({
+      background: true,
+      showTrendLine: true,
+      showPrices: true,
+      showLevels: true,
+      extendLeft: false,
+      extendRight: false,
+    });
+    expect(reset("fib-extension")).not.toHaveProperty("levels");
+    expect(reset("fib-time-zone")).toMatchObject({ background: false, backgroundOpacity: 0.2 });
+    expect(reset("flat-channel")).toMatchObject({
+      background: true,
+      textAlignment: "left",
+      textPosition: "above",
+    });
+    expect(reset("flat-channel")).not.toHaveProperty("regressionSource");
+    expect(reset("regression-trend")).toMatchObject({
+      regressionSource: "close",
+      regressionLowerDeviation: -2,
+      regressionUpperLine: {
+        visible: true,
+        color: "#2962ff",
+        width: 2,
+        lineStyle: "solid",
+        opacity: 0.3,
+      },
+    });
+    expect(reset("regression-trend")).not.toHaveProperty("levels");
+  });
+
   it("captures validated settings without copying identity, anchors, object names or locks", () => {
     const saved = saveDrawingTemplate([], drawing, "  My levels  ")!;
     expect(saved).toEqual([

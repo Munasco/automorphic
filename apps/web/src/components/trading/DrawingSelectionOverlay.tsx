@@ -1,5 +1,7 @@
+import { supportsInlineDrawingText } from "./drawingPrimitive";
 import {
   ColorPicker,
+  DrawingSelect,
   WidthPicker,
   LineStylePicker,
   MarkerPicker,
@@ -273,8 +275,8 @@ function DrawingSettings({
               {extendable ? (
                 <label className="flex items-center justify-between gap-3 text-sm">
                   Extend
-                  <select
-                    aria-label="Extend line"
+                  <DrawingSelect
+                    label="Extend line"
                     value={
                       extendLeft && extendRight
                         ? "both"
@@ -284,19 +286,20 @@ function DrawingSettings({
                             ? "right"
                             : "none"
                     }
-                    onChange={(event) =>
+                    onChange={(value) =>
                       update({
-                        extendLeft: ["left", "both"].includes(event.target.value),
-                        extendRight: ["right", "both"].includes(event.target.value),
+                        extendLeft: ["left", "both"].includes(value),
+                        extendRight: ["right", "both"].includes(value),
                       })
                     }
-                    className={cn(inputClass, "w-44 bg-[#202020]")}
-                  >
-                    <option value="none">Don't extend</option>
-                    <option value="left">Extend left</option>
-                    <option value="right">Extend right</option>
-                    <option value="both">Extend both</option>
-                  </select>
+                    options={[
+                      ["none", "Don't extend"],
+                      ["left", "Extend left"],
+                      ["right", "Extend right"],
+                      ["both", "Extend both"],
+                    ]}
+                    className="w-44"
+                  />
                 </label>
               ) : null}
               {supportsLineStatistics(draft.kind) ? (
@@ -364,24 +367,21 @@ function DrawingSettings({
                   </div>
                   <label className="flex items-center justify-between text-sm">
                     Stats position
-                    <select
-                      aria-label="Stats position"
+                    <DrawingSelect
+                      label="Stats position"
                       value={draft.statsPosition ?? "right"}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         update({
-                          statsPosition: event.target.value as NonNullable<
-                            ChartDrawing["statsPosition"]
-                          >,
+                          statsPosition: value as NonNullable<ChartDrawing["statsPosition"]>,
                         })
                       }
-                      className={cn(inputClass, "w-44 bg-[#202020]")}
-                    >
-                      {["left", "center", "right"].map((position) => (
-                        <option key={position} value={position}>
-                          {position[0]!.toUpperCase() + position.slice(1)}
-                        </option>
-                      ))}
-                    </select>
+                      options={[
+                        ["left", "Left"],
+                        ["center", "Center"],
+                        ["right", "Right"],
+                      ]}
+                      className="w-44"
+                    />
                   </label>
                   <Check
                     label="Always show stats"
@@ -399,17 +399,18 @@ function DrawingSettings({
                   label="Text color"
                   value={draft.textColor ?? draft.color}
                   onChange={(textColor) => update({ textColor })}
+                  opacity={draft.textOpacity ?? 1}
+                  onOpacityChange={(textOpacity) => update({ textOpacity })}
                 />
-                <select
-                  aria-label="Text size"
-                  value={draft.textFontSize ?? 14}
-                  onChange={(event) => update({ textFontSize: Number(event.target.value) })}
-                  className={cn(inputClass, "bg-[#1f1f1f]")}
-                >
-                  {[8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48].map((size) => (
-                    <option key={size}>{size}</option>
-                  ))}
-                </select>
+                <DrawingSelect
+                  label="Text size"
+                  value={String(draft.textFontSize ?? 14)}
+                  onChange={(value) => update({ textFontSize: Number(value) })}
+                  options={[8, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 40, 48].map(
+                    (size) => [String(size), String(size)] as const,
+                  )}
+                  className="w-20"
+                />
                 <button
                   type="button"
                   aria-label="Bold text"
@@ -438,46 +439,32 @@ function DrawingSettings({
               />
               <div className="flex items-center gap-3">
                 <span className="mr-auto text-sm">Alignment</span>
-                <select
-                  aria-label="Text vertical alignment"
+                <DrawingSelect
+                  label="Text vertical alignment"
                   value={draft.textPosition ?? "above"}
-                  onChange={(event) =>
-                    update({
-                      textPosition: event.target.value as NonNullable<ChartDrawing["textPosition"]>,
-                    })
+                  onChange={(value) =>
+                    update({ textPosition: value as NonNullable<ChartDrawing["textPosition"]> })
                   }
-                  className={cn(inputClass, "bg-[#1f1f1f]")}
-                >
-                  {["above", "center", "below"].map((value) => (
-                    <option key={value} value={value}>
-                      {value === "above"
-                        ? "Top"
-                        : value === "below"
-                          ? "Bottom"
-                          : value === "center"
-                            ? "Middle"
-                            : value}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  aria-label="Text horizontal alignment"
+                  options={[
+                    ["above", "Top"],
+                    ["center", "Middle"],
+                    ["below", "Bottom"],
+                  ]}
+                  className="w-24"
+                />
+                <DrawingSelect
+                  label="Text horizontal alignment"
                   value={draft.textAlignment ?? "center"}
-                  onChange={(event) =>
-                    update({
-                      textAlignment: event.target.value as NonNullable<
-                        ChartDrawing["textAlignment"]
-                      >,
-                    })
+                  onChange={(value) =>
+                    update({ textAlignment: value as NonNullable<ChartDrawing["textAlignment"]> })
                   }
-                  className={cn(inputClass, "bg-[#1f1f1f]")}
-                >
-                  {["left", "center", "right"].map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    ["left", "Left"],
+                    ["center", "Center"],
+                    ["right", "Right"],
+                  ]}
+                  className="w-24"
+                />
               </div>
             </>
           ) : null}
@@ -506,6 +493,7 @@ function DrawingSettings({
                       <input
                         type="number"
                         aria-label={`${unit} minimum`}
+                        disabled={!range.enabled}
                         min={1}
                         max={range.max}
                         value={range.min}
@@ -514,12 +502,16 @@ function DrawingSettings({
                           if (Number.isFinite(min))
                             setRange({ min: Math.max(1, Math.min(range.max, min)) });
                         }}
-                        className={cn(inputClass, "w-16")}
+                        className={cn(
+                          inputClass,
+                          "w-16 disabled:cursor-not-allowed disabled:opacity-40",
+                        )}
                       />
                       <span className="text-zinc-500">—</span>
                       <input
                         type="number"
                         aria-label={`${unit} maximum`}
+                        disabled={!range.enabled}
                         min={range.min}
                         max={limit}
                         value={range.max}
@@ -528,15 +520,19 @@ function DrawingSettings({
                           if (Number.isFinite(max))
                             setRange({ max: Math.min(limit, Math.max(range.min, max)) });
                         }}
-                        className={cn(inputClass, "w-16")}
+                        className={cn(
+                          inputClass,
+                          "w-16 disabled:cursor-not-allowed disabled:opacity-40",
+                        )}
                       />
                     </div>
                     <Slider.Root
+                      disabled={!range.enabled}
                       min={1}
                       max={limit}
                       value={[range.min, range.max]}
                       onValueChange={(values) => setRange({ min: values[0]!, max: values[1]! })}
-                      className="ml-32"
+                      className={cn("ml-32", !range.enabled && "opacity-40")}
                     >
                       <Slider.Control className="relative flex h-5 w-full touch-none items-center">
                         <Slider.Track className="relative h-0.5 w-full rounded bg-zinc-600">
@@ -722,6 +718,7 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
             )}
           </svg>
         </button>
+        <DrawingTemplateMenu compact drawing={selected} onApply={drawings.applySelectedTemplate} />
         {selected.kind === "regression-trend" ? (
           <WidthPicker
             drawing={{ ...selected, width: regression!.regressionBaseLine.width }}
@@ -748,8 +745,21 @@ export function DrawingSelectionOverlay({ drawings }: { drawings: ChartDrawingsC
           <>
             <ColorPicker
               value={selected.color}
+              icon="pencil"
+              opacity={selected.lineOpacity ?? 1}
+              onOpacityChange={(lineOpacity) => drawings.updateSelected({ lineOpacity })}
               onChange={(color) => drawings.updateSelected({ color })}
             />
+            {supportsInlineDrawingText(selected.kind) ? (
+              <ColorPicker
+                label="Text color"
+                icon="letter-t"
+                value={selected.textColor ?? selected.color}
+                onChange={(textColor) => drawings.updateSelected({ textColor })}
+                opacity={selected.textOpacity ?? 1}
+                onOpacityChange={(textOpacity) => drawings.updateSelected({ textOpacity })}
+              />
+            ) : null}
             <WidthPicker drawing={selected} onChange={drawings.updateSelected} />
             <LineStylePicker drawing={selected} onChange={drawings.updateSelected} />
           </>
