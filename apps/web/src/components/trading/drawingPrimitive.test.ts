@@ -772,7 +772,7 @@ describe("additional line primitive behavior", () => {
     expect(f.ctx.fillText).not.toHaveBeenCalled();
   });
 
-  it.each(["trend", "info-line", "extended-line", "trend-angle"] as const)(
+  it.each(["trend", "info-line", "extended-line", "trend-angle", "ray", "arrow"] as const)(
     "groups %s measurements into fixed price, range and angle rows with panel icons",
     (kind) => {
       const drawing: ChartDrawing = {
@@ -865,7 +865,7 @@ describe("additional line primitive behavior", () => {
     },
   );
 
-  it("clamps Auto at viewport edges, handles vertical segments, and leaves Center unbounded", () => {
+  it("clamps Auto at viewport edges, handles vertical segments, and leaves fixed positions unbounded", () => {
     const drawing: ChartDrawing = {
       ...line("trend"),
       anchors: [
@@ -901,49 +901,122 @@ describe("additional line primitive behavior", () => {
     ];
     f.draw();
     expect(f.ctx.fillRect.mock.calls.at(-1)).toEqual([2512, -76, 237, 94]);
-    // The canvas pane clip, rather than a position clamp, removes an offscreen Center panel.
+    // The canvas pane clip, rather than a position clamp, removes offscreen fixed panels.
     expect(f.ctx.rect).toHaveBeenCalledWith(0, 0, 828, 500);
     drawing.statsPosition = "left";
     f.draw();
-    expect(f.ctx.fillRect.mock.calls.at(-1)).toEqual([591, 0, 237, 94]);
+    expect(f.ctx.fillRect.mock.calls.at(-1)).toEqual([2012, -96, 237, 94]);
     drawing.statsPosition = "right";
     f.draw();
-    expect(f.ctx.fillRect.mock.calls.at(-1)).toEqual([591, 0, 237, 94]);
+    expect(f.ctx.fillRect.mock.calls.at(-1)).toEqual([3012, -56, 237, 94]);
   });
 
-  it("retains ordinary-line panel visibility for hover, lock and provisional placement", () => {
-    const drawing: ChartDrawing = {
-      ...line("trend"),
-      stats: ["price", "bars", "angle"],
-      alwaysShowStats: false,
-    };
-    const f = renderFixture(drawing);
-    f.draw();
-    expect(f.ctx.fillText).not.toHaveBeenCalled();
-    f.hover(drawing.id);
-    f.draw();
-    expect(f.ctx.fillText).toHaveBeenCalledTimes(3);
-    drawing.locked = true;
-    f.ctx.arc.mockClear();
-    f.draw();
-    expect(f.ctx.fillText).toHaveBeenCalledTimes(3);
-    expect(f.ctx.arc.mock.calls.map((call) => call[2])).toEqual([5]);
-    f.hover(null);
-    f.draw();
-    expect(f.ctx.fillText).not.toHaveBeenCalled();
-    f.preview({ ...drawing, id: "provisional", locked: false });
-    f.draw();
-    expect(f.ctx.fillText).toHaveBeenCalledTimes(3);
-    f.preview(null);
-    f.draw();
-    expect(f.ctx.fillText).not.toHaveBeenCalled();
-    f.select();
-    f.draw();
-    expect(f.ctx.fillText).toHaveBeenCalledTimes(3);
-    drawing.hidden = true;
-    f.draw();
-    expect(f.ctx.fillText).not.toHaveBeenCalled();
-  });
+  it.each(["left", "right"] as const)(
+    "keeps a fixed %s panel anchored outside the viewport in either anchor order",
+    (statsPosition) => {
+      for (const reversed of [false, true]) {
+        const anchors =
+          statsPosition === "left"
+            ? [
+                { time: -370 as Time, price: 190 },
+                { time: 450 as Time, price: 80 },
+              ]
+            : [
+                { time: 275 as Time, price: 190 },
+                { time: 1271 as Time, price: 80 },
+              ];
+        const drawing: ChartDrawing = {
+          ...line("trend"),
+          anchors: reversed ? anchors.toReversed() : anchors,
+          stats: ["price", "bars", "angle"],
+          statsPosition,
+          alwaysShowStats: true,
+        };
+        const f = renderFixture(drawing);
+        f.ctx.measureText.mockReturnValue({ width: 189 });
+        f.draw();
+        const expected = statsPosition === "left" ? [-358, 204, 237, 94] : [1283, 314, 237, 94];
+        expect(f.ctx.fillRect.mock.calls[0]).toEqual(expected);
+        expect(f.ctx.fillText.mock.calls.map((call) => call[1])).toEqual([
+          expected[0]! + 40,
+          expected[0]! + 40,
+          expected[0]! + 40,
+        ]);
+        expect(f.ctx.rect).toHaveBeenCalledWith(0, 0, 1000, 500);
+      }
+    },
+  );
+
+  it.each(["trend", "ray", "arrow"] as const)(
+    "retains %s panel visibility for hover, lock, persistent display and provisional placement",
+    (kind) => {
+      const drawing: ChartDrawing = {
+        ...line(kind),
+        stats: ["price", "bars", "angle"],
+        alwaysShowStats: false,
+      };
+      const f = renderFixture(drawing);
+      f.draw();
+      expect(f.ctx.fillText).not.toHaveBeenCalled();
+      f.hover(drawing.id);
+      f.draw();
+      expect(f.ctx.fillText).toHaveBeenCalledTimes(3);
+      drawing.locked = true;
+      f.ctx.arc.mockClear();
+      f.draw();
+      expect(f.ctx.fillText).toHaveBeenCalledTimes(3);
+      expect(f.ctx.arc.mock.calls.map((call) => call[2])).toEqual([5]);
+      f.hover(null);
+      f.draw();
+      expect(f.ctx.fillText).not.toHaveBeenCalled();
+      f.preview({ ...drawing, id: "provisional", locked: false });
+      f.draw();
+      expect(f.ctx.fillText).toHaveBeenCalledTimes(3);
+      f.preview(null);
+      f.draw();
+      expect(f.ctx.fillText).not.toHaveBeenCalled();
+      drawing.alwaysShowStats = true;
+      f.draw();
+      expect(f.ctx.fillText).toHaveBeenCalledTimes(3);
+      drawing.alwaysShowStats = false;
+      f.select();
+      f.draw();
+      expect(f.ctx.fillText).toHaveBeenCalledTimes(3);
+      drawing.hidden = true;
+      f.draw();
+      expect(f.ctx.fillText).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["ray", "arrow"] as const)(
+    "measures the original %s anchors and midpoint independently of its extended body",
+    (kind) => {
+      const drawing: ChartDrawing = { ...line(kind), extendRight: true, showMiddlePoint: true };
+      const f = renderFixture(drawing);
+      f.draw();
+      expect(f.ctx.fillText).not.toHaveBeenCalled();
+      expect(f.ctx.arc).toHaveBeenCalledWith(150, 150, 3, 0, Math.PI * 2);
+      expect(f.ctx.lineTo).toHaveBeenCalledWith(500, 500);
+      drawing.stats = ["price", "percent", "ticks", "bars", "datetime", "distance", "angle"];
+      f.select();
+      f.draw();
+      expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual([
+        "-100.00 (-25.00%), -400",
+        "1 bars (1m 40s), distance: 141 px",
+        "-45.00°",
+      ]);
+      expect(f.ctx.fillRect.mock.calls.at(-1)).toEqual([212, 94, 246, 94]);
+      const before = f.ctx.fillText.mock.calls.map((call) => [...call]);
+      drawing.extendLeft = true;
+      drawing.extendRight = false;
+      f.draw();
+      expect(f.ctx.fillText.mock.calls).toEqual(before);
+      drawing.showMiddlePoint = false;
+      f.ctx.arc.mockClear();
+      f.draw();
+      expect(f.ctx.arc).not.toHaveBeenCalledWith(150, 150, 3, 0, Math.PI * 2);
+    },
+  );
 
   it("shows default Info line statistics only while the unselected line is hovered when always-show is off", () => {
     const drawing = { ...line("info-line"), alwaysShowStats: false };
@@ -972,7 +1045,7 @@ describe("additional line primitive behavior", () => {
     expect(f.ctx.fillText).toHaveBeenCalledTimes(3);
   });
 
-  it.each(["trend", "info-line", "extended-line", "trend-angle"] as const)(
+  it.each(["trend", "info-line", "extended-line", "trend-angle", "ray", "arrow"] as const)(
     "honors the chosen statistics for a hovered %s without revealing hidden drawings",
     (kind) => {
       const drawing: ChartDrawing = {

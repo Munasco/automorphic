@@ -497,8 +497,8 @@ export function createDrawingPrimitive(
                   const clampY = (y: number) => Math.max(0, Math.min(height - panelHeight, y));
                   const below = position === "auto" && right.y < left.y;
                   const preferredY = below ? point.y + 12 : point.y - panelHeight - 12;
-                  let panelX = position === "center" ? point.x + 12 : clampX(point.x + 12);
-                  let panelY = position === "center" ? preferredY : clampY(preferredY);
+                  let panelX = position === "auto" ? clampX(point.x + 12) : point.x + 12;
+                  let panelY = position === "auto" ? clampY(preferredY) : preferredY;
                   if (position === "auto" && panelX < point.x + 12) {
                     // Only the actual segment can obstruct the right-clamped panel, not its extensions.
                     const overlapLeft = Math.max(left.x, panelX);

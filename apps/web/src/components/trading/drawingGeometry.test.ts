@@ -524,6 +524,25 @@ describe("native drawing geometry", () => {
     );
   });
 
+  it.each(["ray", "arrow"] as const)(
+    "round-trips %s midpoint and configurable statistics",
+    (kind) => {
+      const shape: ChartDrawing = {
+        ...drawing(kind, [
+          [100, 400],
+          [300, 300],
+        ]),
+        showMiddlePoint: true,
+        stats: ["price", "percent", "ticks", "bars", "datetime", "distance", "angle"],
+        statsPosition: "auto",
+        alwaysShowStats: false,
+      };
+      const reloaded = parseChartDrawings(JSON.stringify([shape]));
+      expect(reloaded).toEqual([shape]);
+      expect(geometry(reloaded[0]!)).toEqual(geometry(shape));
+    },
+  );
+
   it("persists automatic statistics positioning and rejects unknown modes", () => {
     const shape = {
       ...drawing("trend", [

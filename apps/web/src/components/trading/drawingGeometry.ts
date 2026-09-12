@@ -482,7 +482,7 @@ export function defaultChannelDrawingSettings(kind: DrawingKind): DrawingSetting
     : {};
 }
 export const supportsLineStatistics = (kind: DrawingKind) =>
-  ["trend", "info-line", "extended-line", "trend-angle"].includes(kind);
+  ["trend", "info-line", "extended-line", "trend-angle", "ray", "arrow"].includes(kind);
 export const defaultDrawingStats = (kind: DrawingKind): NonNullable<DrawingSettings["stats"]> =>
   kind === "info-line"
     ? ["price", "percent", "ticks", "bars", "datetime", "distance", "angle"]
