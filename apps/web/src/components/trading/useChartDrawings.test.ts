@@ -1,3 +1,5 @@
+import { DRAWING_DEFAULTS_KEY } from "./drawingDefaults";
+import { defaultDrawingTemplateSettings } from "./drawingTemplates";
 import { describe, expect, it, vi } from "vite-plus/test";
 import type {
   CandlestickData,
@@ -68,9 +70,12 @@ function fixture(symbol: string, initial: string | null = null, candles: Candles
   const controls = new Map<string, string>();
   const storage = {
     getItem: (key: string) =>
-      key === "automorphic:drawing-controls:v1" ? (controls.get(key) ?? null) : saved,
+      key === "automorphic:drawing-controls:v1" || key === DRAWING_DEFAULTS_KEY
+        ? (controls.get(key) ?? null)
+        : saved,
     setItem: (key: string, value: string) => {
-      if (key === "automorphic:drawing-controls:v1") controls.set(key, value);
+      if (key === "automorphic:drawing-controls:v1" || key === DRAWING_DEFAULTS_KEY)
+        controls.set(key, value);
       else {
         saved = value;
         savedWrites++;
@@ -999,7 +1004,7 @@ describe("drawing settings preview transactions", () => {
     expect(f.change).toHaveBeenLastCalledWith(
       expect.objectContaining({
         selected: expect.objectContaining({ color: "#ff0000" }),
-        objects: [expect.objectContaining({ color: "#729bff" })],
+        objects: [expect.objectContaining({ color: "#2962ff" })],
       }),
     );
     expect(f.saved()).toBe(before);
@@ -1043,7 +1048,7 @@ describe("drawing settings preview transactions", () => {
       else session.undo();
       expect(f.saved()).toBe(before);
       expect(f.writes()).toBe(beforeWrites);
-      expect(f.priceLines).toMatchObject([{ color: "#729bff", axisLabelVisible: true }]);
+      expect(f.priceLines).toMatchObject([{ color: "#2962ff", axisLabelVisible: true }]);
       expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ settingsOpen: false }));
       session.undo();
       expect(JSON.parse(f.saved()!)).toEqual([]);
@@ -1076,7 +1081,7 @@ describe("drawing settings preview transactions", () => {
     ).toBe(true);
     expect(f.writes()).toBe(beforeWrites);
     session.undo();
-    expect(JSON.parse(f.saved()!)[0].color).toBe("#729bff");
+    expect(JSON.parse(f.saved()!)[0].color).toBe("#2962ff");
     f.click(100, 100);
     session.openSettings();
     session.previewSettings({ color: "#00ff00" });
@@ -1102,7 +1107,7 @@ describe("drawing settings preview transactions", () => {
       }),
     ).toBe(false);
     expect(f.change).toHaveBeenLastCalledWith(
-      expect.objectContaining({ selected: expect.objectContaining({ color: "#729bff" }) }),
+      expect.objectContaining({ selected: expect.objectContaining({ color: "#2962ff" }) }),
     );
     expect(session.previewSettings({ color: "#ff0000", textFontSize: 999 })).toBe(true);
     expect(
@@ -1124,7 +1129,7 @@ describe("drawing settings preview transactions", () => {
     session.dispose();
     const restored = f.open();
     expect(f.change).toHaveBeenLastCalledWith(
-      expect.objectContaining({ objects: [expect.objectContaining({ color: "#729bff" })] }),
+      expect.objectContaining({ objects: [expect.objectContaining({ color: "#2962ff" })] }),
     );
     restored.dispose();
   });
@@ -1139,16 +1144,16 @@ describe("drawing settings preview transactions", () => {
     session.previewSettings({ color: "#ff0000" });
     session.duplicateDrawing(id);
     expect(JSON.parse(f.saved()!).map((drawing: { color: string }) => drawing.color)).toEqual([
-      "#729bff",
-      "#729bff",
+      "#2962ff",
+      "#2962ff",
     ]);
     session.openSettings();
     session.previewSettings({ color: "#ff0000" });
     session.clear();
     session.undo();
     expect(JSON.parse(f.saved()!).map((drawing: { color: string }) => drawing.color)).toEqual([
-      "#729bff",
-      "#729bff",
+      "#2962ff",
+      "#2962ff",
     ]);
     session.selectDrawing(id);
     session.openSettings();
@@ -1157,7 +1162,7 @@ describe("drawing settings preview transactions", () => {
     session.dispose();
     expect(f.saved()).toBe(beforeDispose);
     const restored = f.open();
-    expect(f.priceLines.every((line) => (line as { color: string }).color === "#729bff")).toBe(
+    expect(f.priceLines.every((line) => (line as { color: string }).color === "#2962ff")).toBe(
       true,
     );
     restored.dispose();
@@ -1843,5 +1848,117 @@ describe("native horizontal opacity", () => {
       axisLabelColor: "#123456",
     });
     restored.dispose();
+  });
+});
+
+describe("drawing tool appearance inheritance", () => {
+  it("does not replace recent defaults when an older differently styled object's coordinates or lock change", () => {
+    const f = fixture("defaults-old-object"),
+      session = f.open();
+    session.setTool("trend");
+    f.click(100, 100);
+    f.click(200, 200);
+    session.setTool("trend");
+    f.click(300, 100);
+    f.click(400, 200);
+    session.updateSelected({ color: "#00ff00", width: 4 });
+    const remembered = f.controls.get(DRAWING_DEFAULTS_KEY);
+    expect(session.openSettings({ x: 150, y: 150 })).toBe(true);
+    session.applySettings({
+      locked: true,
+      anchors: [
+        { time: 120 as UTCTimestamp, price: 4900 },
+        { time: 220 as UTCTimestamp, price: 4800 },
+      ],
+    });
+    expect(f.controls.get(DRAWING_DEFAULTS_KEY)).toBe(remembered);
+    session.dispose();
+  });
+  it("inherits committed appearance on the next object without copying text or identity", () => {
+    const f = fixture("defaults-inherit"),
+      session = f.open();
+    session.setTool("trend");
+    f.click(100, 100);
+    f.click(200, 200);
+    const first = JSON.parse(f.saved()!)[0];
+    expect(first.color).toBe("#2962ff");
+    session.updateSelected({
+      color: "#ff0000",
+      width: 4,
+      lineStyle: "dotted",
+      text: "Secret note",
+      name: "Named",
+      locked: true,
+      textBold: true,
+      textFontSize: 22,
+    });
+    session.setTool("trend");
+    f.click(300, 100);
+    f.click(400, 200);
+    const next = JSON.parse(f.saved()!)[1];
+    expect(next).toMatchObject({
+      kind: "trend",
+      color: "#ff0000",
+      width: 4,
+      lineStyle: "dotted",
+      textBold: true,
+      textFontSize: 22,
+    });
+    expect(next.id).not.toBe(first.id);
+    expect(next.text).toBeUndefined();
+    expect(next.name).toBeUndefined();
+    expect(next.locked).toBeUndefined();
+    expect(next.hidden).toBeUndefined();
+    session.setTool("horizontal");
+    f.click(500, 150);
+    expect(JSON.parse(f.saved()!).at(-1).color).toBe("#2962ff");
+    session.dispose();
+    const restored = f.open();
+    restored.setTool("trend");
+    f.click(600, 100);
+    f.click(700, 200);
+    expect(JSON.parse(f.saved()!).at(-1).color).toBe("#ff0000");
+    restored.dispose();
+  });
+  it("remembers explicit templates/reset only on apply and ignores cancelled edits and placement changes", () => {
+    const f = fixture("defaults-transactions"),
+      session = f.open();
+    session.setTool("trend");
+    f.click(100, 100);
+    f.click(200, 200);
+    session.updateSelected({ color: "#ff0000", width: 3 });
+    const remembered = f.controls.get(DRAWING_DEFAULTS_KEY);
+    session.openSettings();
+    session.previewSettings({ color: "#00ff00", width: 4 });
+    session.closeSettings();
+    expect(f.controls.get(DRAWING_DEFAULTS_KEY)).toBe(remembered);
+    session.updateSelected({
+      locked: true,
+      name: "Renamed",
+      text: "Only note",
+      anchors: [
+        { time: 150 as UTCTimestamp, price: 4900 },
+        { time: 250 as UTCTimestamp, price: 4800 },
+      ],
+    });
+    expect(f.controls.get(DRAWING_DEFAULTS_KEY)).toBe(remembered);
+    session.applySelectedTemplate({ color: "#123456", width: 1, lineStyle: "dashed" });
+    expect(JSON.parse(f.controls.get(DRAWING_DEFAULTS_KEY)!).trend.color).toBe("#123456");
+    session.openSettings();
+    session.previewSettings(defaultDrawingTemplateSettings("trend"), { replace: true });
+    session.closeSettings();
+    expect(JSON.parse(f.controls.get(DRAWING_DEFAULTS_KEY)!).trend.color).toBe("#123456");
+    session.openSettings();
+    session.applySettings(defaultDrawingTemplateSettings("trend"), { replace: true });
+    expect(JSON.parse(f.controls.get(DRAWING_DEFAULTS_KEY)!).trend.color).toBe("#2962ff");
+    session.setTool("trend");
+    f.click(300, 100);
+    f.click(400, 200);
+    expect(JSON.parse(f.saved()!).at(-1)).toMatchObject({
+      color: "#2962ff",
+      width: 2,
+      lineStyle: "solid",
+    });
+    session.dispose();
   });
 });

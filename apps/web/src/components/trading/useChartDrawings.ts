@@ -1,3 +1,4 @@
+import { createDrawingDefaults, drawingAppearanceChanged } from "./drawingDefaults";
 import type { ChartInterval } from "./tradingIntervals";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { randomUUID } from "../../lib/utils";
@@ -90,6 +91,7 @@ export function createChartDrawingSession(
   regressionSeries: ISeriesApi<SeriesType> = series,
 ) {
   const key = `automorphic:chart-drawings:v1:${encodeURIComponent(symbol)}`;
+  const defaults = createDrawingDefaults(storage);
   let drawings: ChartDrawing[] = [];
   try {
     drawings = parseChartDrawings(storage?.getItem(key) ?? null);
@@ -102,7 +104,11 @@ export function createChartDrawingSession(
   let hoveredId: string | null = null;
   let settingsOpen = false;
   let textEditing = false;
-  let settingsDraft: { original: ChartDrawing; drawing: ChartDrawing } | null = null;
+  let settingsDraft: {
+    original: ChartDrawing;
+    drawing: ChartDrawing;
+    appearanceReplaced?: boolean;
+  } | null = null;
   let contextPoint: DrawingPoint | null = null;
   let replacingId: string | null = null;
   let disposed = false;
@@ -515,13 +521,11 @@ export function createChartDrawingSession(
     if (tool === "cursor") return;
     const previous = drawings.find((drawing) => drawing.id === replacingId);
     preview = {
+      ...(previous ?? defaults.get(tool)),
       id: "preview",
       kind: tool,
       anchors: points,
-      color: previous?.color ?? "#729bff",
-      width: previous?.width ?? 2,
-      lineStyle: isFreehandDrawingTool(tool) ? "solid" : "dashed",
-      text: previous?.text ?? "Text",
+      ...(tool === "text" ? { text: previous?.text ?? "Text" } : {}),
     };
   };
   const commitDrawing = () => {
@@ -529,13 +533,10 @@ export function createChartDrawingSession(
     remember();
     const previous = drawings.find((drawing) => drawing.id === replacingId);
     const drawing: ChartDrawing = {
-      ...previous,
+      ...(previous ?? defaults.get(tool)),
       id: previous?.id ?? randomUUID(),
       kind: tool,
       anchors,
-      color: previous?.color ?? "#729bff",
-      width: previous?.width ?? 2,
-      ...(previous?.lineStyle ? { lineStyle: previous.lineStyle } : {}),
       ...(tool === "text" ? { text: previous?.text ?? "Text" } : {}),
     };
     drawings = replacingId
@@ -683,6 +684,7 @@ export function createChartDrawingSession(
       return;
     }
     remember();
+    if (drawingAppearanceChanged(current, next)) defaults.remember(next);
     drawings = drawings.map((drawing) => (drawing.id === id ? next : drawing));
     changed();
   };
@@ -695,6 +697,7 @@ export function createChartDrawingSession(
     const current = drawings.find((drawing) => drawing.id === selectedId);
     if (!current) return false;
     const next = applyDrawingTemplate(current, patch);
+    defaults.remember(next);
     // Normalize both sides so optional defaults and property order cannot create spurious undo entries.
     if (JSON.stringify(applyDrawingTemplate(current, current)) === JSON.stringify(next))
       return false;
@@ -721,6 +724,7 @@ export function createChartDrawingSession(
     const next = settingsResult(patch, options);
     if (!next) return false;
     settingsDraft.drawing = next;
+    if (options.replace) settingsDraft.appearanceReplaced = true;
     render();
     emit();
     return true;
@@ -730,11 +734,18 @@ export function createChartDrawingSession(
       return false;
     const next = settingsResult(patch, options);
     if (!next) return false;
-    return finishSettingsDraft(next);
+    return finishSettingsDraft(next, options.replace);
   };
-  const finishSettingsDraft = (next: ChartDrawing) => {
+  const finishSettingsDraft = (next: ChartDrawing, forceAppearance = false) => {
     if (!settingsDraft) return false;
     const { original } = settingsDraft;
+    if (
+      !textEditing &&
+      (forceAppearance ||
+        settingsDraft.appearanceReplaced ||
+        drawingAppearanceChanged(original, next))
+    )
+      defaults.remember(next);
     settingsDraft = null;
     settingsOpen = false;
     textEditing = false;

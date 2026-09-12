@@ -31,6 +31,23 @@ function legacyStorage(values: Record<string, string>) {
 }
 
 describe("trading workspace persistence", () => {
+  it("loads and saves remembered drawing appearance through workspace storage", async () => {
+    const key = "automorphic:drawing-defaults:v1";
+    const saved = JSON.stringify({ trend: { color: "#2962ff", width: 2 } });
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(json(payload({ [key]: saved })))
+      .mockResolvedValue(json({}));
+    const store = createTradingWorkspaceStorage(request, () => undefined);
+    await store.initialize();
+    expect(store.getSnapshot().ready).toBe(true);
+    expect(store.getItem(key)).toBe(saved);
+    const changed = JSON.stringify({ trend: { color: "#ff0000", width: 3 } });
+    store.setItem(key, changed);
+    await store.flush();
+    expect(JSON.parse(request.mock.calls[1]![1]!.body as string)).toEqual({ key, value: changed });
+  });
+
   it("hydrates before becoming ready and imports only absent server values", async () => {
     const legacy = legacyStorage({
       [chartKey]: "old chart",
