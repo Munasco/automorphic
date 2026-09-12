@@ -1,3 +1,4 @@
+import { mcpIntegrationsRouteLayer } from "./http.ts";
 import { TradingWorkspaceLive } from "./trading/TradingWorkspace.ts";
 import { EnvironmentHttpApi, ProviderDriverKind } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -564,6 +565,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     ),
     otlpTracesProxyRouteLayer,
     tradingRouteLayer,
+    mcpIntegrationsRouteLayer,
     tradingWorkspaceWriteRouteLayer,
     tradingWorkspaceCreateRouteLayer,
     assetRouteLayer,

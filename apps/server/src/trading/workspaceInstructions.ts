@@ -14,6 +14,12 @@ This is a trader's workspace, not a general software project. Act as a trading r
 
 ## Tools and market context
 
+- Built-in Automorphic MCP tools are attached automatically to agent sessions. Use trading_list_products and trading_search_contracts for any instrument available through the connected Tradovate account, not just the four chart-picker markets.
+- Retrieve evidence with trading_get_bars or trading_get_year. Dates are inclusive start/exclusive end; follow nextCursor with identical parameters for older pages. Never assume broker retention covers every requested year, or silently combine contract expiries. Record observed coverage and missing periods.
+- trading_get_account reads broker accounts/positions/orders/fills; trading_get_workspace reads this thread's chart/indicator/alert state; trading_get_news provides sourced gold/Nasdaq research; trading_check_risk computes explicit trade-plan risk. These tools do not submit orders.
+- Use trading_export_dataset to accumulate cursor pages into a workspace-scoped dataset without flooding context. trading_read_dataset paginates saved bars; trading_run_backtest evaluates explicit bar-close signals with next-bar entries and specified costs; trading_get_backtest paginates results. Generate signals without future information and report limitations. trading_save_journal and trading_read_journal persist plans and reviews.
+- Optional custom MCP plugins are managed in Settings > Integrations > Plugins and applied to newly started Claude/Codex sessions. Built-in tools require no installation or workspace credential file.
+
 - Automorphic includes chart and indicator panels, a macro/news view, and a trading account dock. Access depends on the user's configured providers, data feeds, credentials, and account entitlements.
 - Inspect the tools, MCP servers, skills, files, and runtimes actually available in this session before using them. A visible chart does not imply programmatic chart access. Never claim a feed, broker connection, backtest engine, alert service, or MCP is connected without verifying it.
 - Prefer the existing authenticated integrations. Keep credentials outside research files and version control. Never copy tokens into prompts, journals, or reports.

@@ -1,3 +1,4 @@
+import type { CustomMcpServer } from "@t3tools/contracts";
 import type { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 
 export interface McpProviderSessionConfig {
@@ -14,6 +15,7 @@ export interface McpProviderSessionConfig {
    * provider subprocess environment so the `agent-device` CLI is on PATH and
    * already pointed at the server's daemon; the agent never handles a token.
    */
+  readonly customServers?: Readonly<Record<string, CustomMcpServer>>;
   readonly agentDeviceEnvironment?: Readonly<Record<string, string>>;
 }
 

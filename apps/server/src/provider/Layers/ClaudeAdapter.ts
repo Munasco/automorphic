@@ -1,3 +1,4 @@
+import { claudeMcpConfiguration } from "../../mcp/customProviderConfig.ts";
 /**
  * ClaudeAdapterLive - Scoped live implementation for the Claude Agent provider adapter.
  *
@@ -4714,6 +4715,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(mcpSession
           ? {
               mcpServers: {
+                ...claudeMcpConfiguration(mcpSession.customServers, claudeEnvironment),
                 "t3-code": {
                   type: "http",
                   url: mcpSession.endpoint,

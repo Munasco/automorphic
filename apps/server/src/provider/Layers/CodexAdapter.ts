@@ -1,3 +1,4 @@
+import { codexMcpArguments } from "../../mcp/customProviderConfig.ts";
 /**
  * CodexAdapterLive - Scoped live implementation for the Codex provider adapter.
  *
@@ -2285,6 +2286,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                   `mcp_servers.t3-code.url=${mcpSession.endpoint}`,
                   "-c",
                   'mcp_servers.t3-code.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
+                  ...codexMcpArguments(mcpSession.customServers),
                 ],
                 mcpCapabilities: mcpSession.capabilities,
               }

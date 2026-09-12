@@ -1,3 +1,5 @@
+import { ResearchToolkitRegistrationLive } from "./toolkits/trading/research.ts";
+import { TradingToolkitRegistrationLive } from "./toolkits/trading/index.ts";
 import * as NodeCrypto from "node:crypto";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -629,6 +631,8 @@ const McpTransportLive = McpServer.layerHttp({
 }).pipe(Layer.provide(McpAuthMiddlewareLive));
 
 export const layer = Layer.mergeAll(
+  TradingToolkitRegistrationLive,
+  ResearchToolkitRegistrationLive,
   PreviewToolkitRegistrationLive,
   PullRequestsToolkitRegistrationLive,
   DeviceToolkitRegistrationLive,

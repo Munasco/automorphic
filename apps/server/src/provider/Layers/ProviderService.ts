@@ -1,3 +1,5 @@
+import { effectiveMcpServers } from "@t3tools/contracts";
+import { readMcpIntegrations } from "../../mcp/McpIntegrations.ts";
 /**
  * ProviderServiceLive - Cross-provider orchestration layer.
  *
@@ -906,7 +908,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const agentAccessCapabilities = Effect.fn("ProviderService.agentAccessCapabilities")(function* (
     threadId: ThreadId,
   ) {
-    const capabilities = new Set<McpInvocationContext.McpCapability>(["pull-requests"]);
+    const capabilities = new Set<McpInvocationContext.McpCapability>(["pull-requests", "trading"]);
     const access = yield* agentAccessSettings(threadId);
     if (access.browser) capabilities.add("preview");
     if (access.device) capabilities.add("device");
@@ -945,12 +947,32 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const capabilities = yield* agentAccessCapabilities(threadId);
       const credential = yield* issueMcpCredential({ threadId, providerInstanceId, capabilities });
       if (credential) {
+        const integrations = yield* readMcpIntegrations.pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, pathService),
+          Effect.provideService(ServerConfig.ServerConfig, serverConfig),
+          Effect.catch(() =>
+            Effect.logWarning(
+              "Custom MCP configuration unavailable; built-in tools remain enabled.",
+            ).pipe(Effect.as({ plugins: [] })),
+          ),
+        );
+        const thread = Option.isSome(projectionQuery)
+          ? yield* projectionQuery.value
+              .getThreadShellById(threadId)
+              .pipe(Effect.orElseSucceed(() => Option.none()))
+          : Option.none();
+        const customServers = effectiveMcpServers(
+          integrations.plugins,
+          Option.isSome(thread) ? thread.value.projectId : null,
+        );
         const deviceEnvironment = capabilities.has("device")
           ? yield* agentDeviceEnvironment
           : undefined;
         yield* Effect.sync(() =>
           McpProviderSession.setMcpProviderSession({
             ...credential.config,
+            customServers,
             ...(deviceEnvironment ? { agentDeviceEnvironment: deviceEnvironment } : {}),
           }),
         );

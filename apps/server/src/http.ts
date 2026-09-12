@@ -1,3 +1,5 @@
+import { McpIntegrationDocument, AuthAccessWriteScope } from "@t3tools/contracts";
+import { readMcpIntegrations, writeMcpIntegrations } from "./mcp/McpIntegrations.ts";
 import { contracts, chartStream } from "./trading/marketData.ts";
 import { watchlistStream } from "./trading/watchlistData.ts";
 import { ChartIntervalError } from "./trading/chartInterval.ts";
@@ -276,7 +278,10 @@ export function resolveDevRedirectUrl(devUrl: URL, requestUrl: URL): string {
 }
 
 const authenticateRawRouteWithScope = (
-  scope: typeof AuthOrchestrationReadScope | typeof AuthOrchestrationOperateScope,
+  scope:
+    | typeof AuthOrchestrationReadScope
+    | typeof AuthOrchestrationOperateScope
+    | typeof AuthAccessWriteScope,
 ) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
@@ -829,4 +834,53 @@ export const staticAndDevRouteLayer = Layer.unwrap(
   loadImmutableBuildAssets.pipe(
     Effect.map((assets) => HttpRouter.add("GET", "*", handleStaticAndDevRequest(assets))),
   ),
+);
+
+const decodeMcpIntegrationDocument = Schema.decodeUnknownEffect(McpIntegrationDocument);
+const mcpIntegrationsRoute = (method: "GET" | "PUT") =>
+  HttpRouter.add(
+    method,
+    "/api/trading/plugins",
+    Effect.gen(function* () {
+      yield* authenticateRawRouteWithScope(
+        method === "PUT" ? AuthAccessWriteScope : AuthOrchestrationReadScope,
+      );
+      if (method === "GET")
+        return HttpServerResponse.jsonUnsafe(yield* readMcpIntegrations, {
+          headers: { "cache-control": "no-store" },
+        });
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const raw = yield* request.json;
+      const decoded = yield* decodeMcpIntegrationDocument(raw).pipe(Effect.option);
+      if (Option.isNone(decoded))
+        return HttpServerResponse.jsonUnsafe(
+          { error: "Invalid plugin configuration." },
+          { status: 400 },
+        );
+      return yield* writeMcpIntegrations(decoded.value).pipe(
+        Effect.map((value) => HttpServerResponse.jsonUnsafe(value)),
+        Effect.orElseSucceed(() =>
+          HttpServerResponse.jsonUnsafe(
+            {
+              error:
+                "Could not save plugins. Check the configuration or refresh if another client changed it.",
+            },
+            { status: 409 },
+          ),
+        ),
+      );
+    }).pipe(
+      Effect.catchTags({
+        EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+        EnvironmentInternalError: HttpServerRespondable.toResponse,
+        EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+      }),
+      Effect.orElseSucceed(() =>
+        HttpServerResponse.jsonUnsafe({ error: "Plugins are unavailable." }, { status: 503 }),
+      ),
+    ),
+  );
+export const mcpIntegrationsRouteLayer = Layer.mergeAll(
+  mcpIntegrationsRoute("GET"),
+  mcpIntegrationsRoute("PUT"),
 );
