@@ -6,13 +6,8 @@ import {
   defaultFibTimeDrawingSettings,
   type ChartDrawing,
 } from "./drawingGeometry";
-import {
-  Check,
-  ColorPicker,
-  DrawingSelect,
-  inputClass,
-  LineAppearancePicker,
-} from "./DrawingStyleControls";
+import { Check, ColorPicker, DrawingSelect, LineAppearancePicker } from "./DrawingStyleControls";
+import { DrawingNumberField } from "./DrawingNumberField";
 import type { DrawingPatch } from "./useChartDrawings";
 
 export function DrawingFibTimeSettings({
@@ -64,19 +59,17 @@ export function DrawingFibTimeSettings({
             onChange={(event) => changeLevel(index, { visible: event.target.checked })}
             className="size-4 shrink-0 accent-white"
           />
-          <input
-            type="number"
-            aria-label={`Level ${index + 1} value`}
-            step="0.001"
+          <DrawingNumberField
+            label={`Level ${index + 1} value`}
+            step={0.001}
             min={-100}
             max={100}
             value={level.value}
             disabled={!level.visible}
-            onChange={(event) => {
-              const value = event.target.valueAsNumber;
-              if (Number.isFinite(value) && Math.abs(value) <= 100) changeLevel(index, { value });
+            onValueChange={(value) => {
+              if (Math.abs(value) <= 100) changeLevel(index, { value });
             }}
-            className={cn(inputClass, "h-[34px] w-[100px] disabled:opacity-40")}
+            className="w-[100px]"
           />
           <div inert={!level.visible} className={cn(!level.visible && "opacity-40")}>
             <LineAppearancePicker

@@ -6,11 +6,10 @@ import {
   WidthPicker,
   LineStylePicker,
   Check,
-  inputClass,
 } from "./DrawingStyleControls";
+import { DrawingNumberField } from "./DrawingNumberField";
 import { defaultDrawingLevels, isPitchforkDrawingTool, type ChartDrawing } from "./drawingGeometry";
 import type { DrawingPatch } from "./useChartDrawings";
-import { cn } from "../../lib/utils";
 
 export function DrawingLevelSettings({
   drawing,
@@ -96,18 +95,16 @@ export function DrawingLevelSettings({
               onChange={(event) => changeLevel(index, { visible: event.target.checked })}
               className="size-4 shrink-0 accent-white"
             />
-            <input
-              aria-label={`Level ${index + 1} value`}
-              type="number"
-              step="0.001"
+            <DrawingNumberField
+              label={`Level ${index + 1} value`}
+              step={0.001}
               min={-100}
               max={100}
               value={level.value}
-              onChange={(event) => {
-                const value = event.target.valueAsNumber;
-                if (Number.isFinite(value) && Math.abs(value) <= 100) changeLevel(index, { value });
+              onValueChange={(value) => {
+                if (Math.abs(value) <= 100) changeLevel(index, { value });
               }}
-              className={cn(inputClass, "min-w-0 w-full px-2")}
+              className="min-w-0 w-full shrink"
             />
             <ColorPicker
               label={`Level ${index + 1} color`}

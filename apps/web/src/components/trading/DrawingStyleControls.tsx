@@ -1,4 +1,5 @@
 import { Slider } from "@base-ui/react/slider";
+import { NumberField } from "@base-ui/react/number-field";
 import { DrawingToolIcon } from "./DrawingToolIcon";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import type { ChartDrawing } from "./drawingGeometry";
@@ -212,21 +213,23 @@ export function OpacityControl({
             </Slider.Track>
           </Slider.Control>
         </Slider.Root>
-        <div className="flex h-8 items-center gap-1 rounded border border-white/15 px-2 text-xs text-zinc-300">
-          <input
-            type="number"
-            min={0}
-            max={100}
+        <NumberField.Root
+          value={percent}
+          min={0}
+          max={100}
+          allowWheelScrub={false}
+          onValueChange={(next) => {
+            if (next !== null && Number.isFinite(next) && next !== percent)
+              onChange(Math.min(100, Math.max(0, next)) / 100);
+          }}
+          className="flex h-8 items-center gap-1 rounded border border-white/15 px-2 text-xs text-zinc-300"
+        >
+          <NumberField.Input
             aria-label={label}
-            value={percent}
-            onChange={(event) => {
-              const next = event.target.valueAsNumber;
-              if (Number.isFinite(next)) onChange(Math.min(100, Math.max(0, next)) / 100);
-            }}
-            className="w-8 bg-transparent text-right outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+            className="w-8 bg-transparent text-right outline-none"
           />
           %
-        </div>
+        </NumberField.Root>
       </div>
     </div>
   );

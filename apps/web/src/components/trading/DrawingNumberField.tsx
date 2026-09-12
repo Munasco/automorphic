@@ -15,6 +15,7 @@ export function DrawingNumberField({
   min,
   max,
   disabled = false,
+  readOnly = false,
   className,
 }: {
   label: string;
@@ -24,6 +25,7 @@ export function DrawingNumberField({
   min?: number;
   max?: number;
   disabled?: boolean;
+  readOnly?: boolean;
   className?: string;
 }) {
   return (
@@ -38,6 +40,7 @@ export function DrawingNumberField({
       min={min}
       max={max}
       disabled={disabled}
+      readOnly={readOnly}
       format={numberFormat}
       allowWheelScrub={false}
       className={cn(
@@ -51,12 +54,14 @@ export function DrawingNumberField({
       />
       <div className="absolute inset-y-0 right-0 flex w-[18px] flex-col">
         <NumberField.Increment
+          disabled={readOnly}
           aria-label={`Increase ${label}`}
           className="flex min-h-0 flex-1 items-center justify-center rounded-tr text-zinc-400 hover:bg-white/10 hover:text-zinc-200 focus-visible:outline focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <ChartIcon name="chevron-down" className="size-3 rotate-180" />
         </NumberField.Increment>
         <NumberField.Decrement
+          disabled={readOnly}
           aria-label={`Decrease ${label}`}
           className="flex min-h-0 flex-1 items-center justify-center rounded-br text-zinc-400 hover:bg-white/10 hover:text-zinc-200 focus-visible:outline focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
         >

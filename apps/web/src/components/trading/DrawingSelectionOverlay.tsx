@@ -1185,19 +1185,13 @@ function ChannelAppearance({
             value={drawing.priceLabelColor ?? drawing.color}
             onChange={(priceLabelColor) => onChange({ priceLabelColor })}
           />
-          <input
-            aria-label="Price label font size"
-            type="number"
+          <DrawingNumberField
+            label="Price label font size"
             min={8}
             max={48}
             value={drawing.priceLabelFontSize ?? 12}
-            onChange={(event) => {
-              if (Number.isFinite(event.target.valueAsNumber))
-                onChange({
-                  priceLabelFontSize: Math.max(8, Math.min(48, event.target.valueAsNumber)),
-                });
-            }}
-            className={cn(inputClass, "w-14 px-1")}
+            onValueChange={(priceLabelFontSize) => onChange({ priceLabelFontSize })}
+            className="w-14"
           />
           <button
             type="button"

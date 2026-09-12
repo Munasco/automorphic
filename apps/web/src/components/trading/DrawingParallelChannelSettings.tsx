@@ -5,13 +5,8 @@ import {
   type ChartDrawing,
   type DrawingLevel,
 } from "./drawingGeometry";
-import {
-  Check,
-  ColorPicker,
-  DrawingSelect,
-  inputClass,
-  LineAppearancePicker,
-} from "./DrawingStyleControls";
+import { Check, ColorPicker, DrawingSelect, LineAppearancePicker } from "./DrawingStyleControls";
+import { DrawingNumberField } from "./DrawingNumberField";
 import type { DrawingPatch } from "./useChartDrawings";
 
 export function DrawingParallelChannelSettings({
@@ -42,20 +37,18 @@ export function DrawingParallelChannelSettings({
               className="size-4 shrink-0 accent-white"
             />
           )}
-          <input
-            type="number"
-            aria-label={`Level ${index + 1} ratio`}
-            step="0.001"
+          <DrawingNumberField
+            label={`Level ${index + 1} ratio`}
+            step={0.001}
             min={-100}
             max={100}
             value={level.value}
             disabled={!level.visible}
             readOnly={index === 1 || index === 5}
-            onChange={(event) => {
-              const value = event.target.valueAsNumber;
-              if (Number.isFinite(value) && Math.abs(value) <= 100) changeLevel(index, { value });
+            onValueChange={(value) => {
+              if (Math.abs(value) <= 100) changeLevel(index, { value });
             }}
-            className={cn(inputClass, "h-[34px] w-24 disabled:opacity-40")}
+            className="w-24"
           />
           <div inert={!level.visible} className={cn(!level.visible && "opacity-40")}>
             <LineAppearancePicker

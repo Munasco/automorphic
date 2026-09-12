@@ -1,7 +1,8 @@
 import { defaultRegressionDrawingSettings, type ChartDrawing } from "./drawingGeometry";
 import type { DrawingPatch } from "./useChartDrawings";
 import type { RegressionSource } from "./chartRegression";
-import { Check, DrawingSelect, inputClass, LineAppearancePicker } from "./DrawingStyleControls";
+import { Check, DrawingSelect, LineAppearancePicker } from "./DrawingStyleControls";
+import { DrawingNumberField } from "./DrawingNumberField";
 import { cn } from "../../lib/utils";
 
 export function DrawingRegressionSettings({
@@ -26,16 +27,12 @@ export function DrawingRegressionSettings({
             <div key={side} className="space-y-4">
               <label className="flex items-center justify-between gap-4 text-sm">
                 {side} Deviation
-                <input
-                  type="number"
-                  aria-label={`${side} deviation`}
-                  step="0.1"
+                <DrawingNumberField
+                  label={`${side} deviation`}
+                  step={0.1}
                   value={settings[valueKey]}
-                  onChange={(event) => {
-                    const value = event.target.valueAsNumber;
-                    if (Number.isFinite(value)) onChange({ [valueKey]: value });
-                  }}
-                  className={cn(inputClass, "w-28")}
+                  onValueChange={(value) => onChange({ [valueKey]: value })}
+                  className="w-28"
                 />
               </label>
               <Check
