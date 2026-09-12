@@ -61,6 +61,8 @@ export type ChartToolbarProps = {
   onScreenshot: () => void;
   panelActions?: ReactNode;
   navigationControl?: ReactNode;
+  replayControl?: ReactNode;
+  historyControls?: ReactNode;
 };
 const control =
   "inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded px-2.5 text-[13px] text-zinc-400 outline-none hover:bg-white/5 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-blue-400/70 data-popup-open:bg-white/5 data-popup-open:text-zinc-100 [&>svg]:size-[18px]";
@@ -83,6 +85,8 @@ export function ChartToolbar({
   onScreenshot,
   panelActions,
   navigationControl,
+  replayControl,
+  historyControls,
 }: ChartToolbarProps) {
   const id = useId();
   const intervalGroups = (
@@ -120,7 +124,7 @@ export function ChartToolbar({
     <div
       role="group"
       aria-label="Chart tools"
-      className="flex min-w-0 shrink-0 items-center border-b border-white/10 bg-[#101013] [&_svg]:block [&_svg]:shrink-0"
+      className="@container/chart-toolbar flex min-w-0 shrink-0 items-center border-b border-white/10 bg-[#101013] [&_svg]:block [&_svg]:shrink-0"
     >
       {navigationControl ? (
         <div className="relative flex shrink-0 self-stretch items-stretch after:absolute after:right-0 after:top-1/2 after:h-4 after:w-px after:-translate-y-1/2 after:bg-white/10 [&_button]:h-full [&_button]:w-8 [&_button]:p-0 [&_button>svg]:size-[18px]">
@@ -213,10 +217,23 @@ export function ChartToolbar({
                 />
               }
             >
-              <ChartIcon name="sum" className="size-4" aria-hidden="true" />
-              <span>Indicators</span>
+              <svg viewBox="4 3 21 22" fill="none" aria-hidden="true">
+                <path
+                  stroke="currentColor"
+                  d="M6 12l4.8-4.8a1 1 0 0 1 1.4 0l2.7 2.7a1 1 0 0 0 1.3.1L23 5"
+                />
+                <path
+                  fill="currentColor"
+                  fillRule="evenodd"
+                  d="M19 12a1 1 0 0 0-1 1v4h-3v-1a1 1 0 0 0-1-1h-3a1 1 0 0 0-1 1v2H7a1 1 0 0 0-1 1v4h17V13a1 1 0 0 0-1-1h-3zm0 10h3v-9h-3v9zm-1 0v-4h-3v4h3zm-4-4.5V22h-3v-6h3v1.5zM10 22v-3H7v3h3z"
+                />
+              </svg>
+              <span className="hidden @min-[900px]/chart-toolbar:inline">Indicators</span>
               {activeCount > 0 && (
-                <span className="min-w-3 text-[9px] text-blue-400" aria-hidden="true">
+                <span
+                  className="hidden min-w-3 text-[9px] text-blue-400 @min-[900px]/chart-toolbar:inline"
+                  aria-hidden="true"
+                >
                   {activeCount}
                 </span>
               )}
@@ -390,6 +407,15 @@ export function ChartToolbar({
             </div>
           </DialogPopup>
         </Dialog>
+        <span className="mx-1 h-4 w-px shrink-0 bg-white/10" aria-hidden="true" />
+        {replayControl}
+        {replayControl ? (
+          <span className="mx-1 h-4 w-px shrink-0 bg-white/10" aria-hidden="true" />
+        ) : null}
+        {historyControls}
+        {historyControls ? (
+          <span className="mx-1 h-4 w-px shrink-0 bg-white/10" aria-hidden="true" />
+        ) : null}
         <Popover>
           <Tooltip>
             <TooltipTrigger

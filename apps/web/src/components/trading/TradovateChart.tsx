@@ -61,6 +61,9 @@ import { ChartContextMenu } from "./ChartContextMenu";
 import { DrawingObjectTree } from "./DrawingObjectTree";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
+import { ObjectTreeIcon } from "./ObjectTreeIcon";
+import { ChartReplayControls, useChartReplay } from "./ChartReplay";
+import { replayMinuteHistory } from "./replayHistory";
 
 type ChartEngine = {
   symbol: string;
@@ -71,6 +74,7 @@ type ChartEngine = {
   indicators: ReturnType<typeof createIndicatorRenderer>;
   bars: Map<number, Candle>;
   refreshIndicators: () => void;
+  showReplay: (bars: readonly Candle[] | null) => void;
   disposed: boolean;
 };
 
@@ -210,6 +214,9 @@ export function TradovateChart({
     tradingWorkspaceStorage.getSnapshot,
   );
   const environmentBase = tradingQueryScope()[1];
+  const replay = useChartReplay(
+    `${environmentBase}:${workspace.projectId}:${symbol}:${chartIntervalKey(interval)}:${technicals}`,
+  );
   const marketOptions = useMemo(
     () =>
       chartMarketQueryOptions(
@@ -295,6 +302,12 @@ export function TradovateChart({
   }, [drawingAlerts, onDrawingAlertsChange]);
   useEffect(() => () => onDrawingAlertsChange?.(null), [onDrawingAlertsChange]);
   const shown = hovered ?? last;
+
+  useEffect(() => {
+    if (!activeEngine) return;
+    drawingAlertsRef.current.reset();
+    activeEngine.showReplay(replay.visible);
+  }, [activeEngine, replay.visible]);
 
   useEffect(() => {
     auxiliaryHistoryRef.current = auxiliaryHistory;
@@ -390,6 +403,7 @@ export function TradovateChart({
     volume.priceScale().applyOptions({ scaleMargins: { top: 0.86, bottom: 0 } });
     const indicators = createIndicatorRenderer(chart, priceFormat.minMove);
     let appliedVolumeColors = "";
+    let replaying = false;
     const state: ChartEngine = {
       symbol,
       interval,
@@ -399,6 +413,27 @@ export function TradovateChart({
       indicators,
       bars,
       disposed: false,
+      showReplay: (history) => {
+        if (state.disposed) return;
+        if (!history && !replaying) return;
+        replaying = history !== null;
+        if (render !== undefined) cancelAnimationFrame(render);
+        render = undefined;
+        pending.clear();
+        setHovered(null);
+        setHoverReadings(null);
+        replaceHistory = true;
+        renderedTime = -Infinity;
+        fitted = false;
+        if (history) {
+          applyChartBarBatch(bars, pending, history, true);
+          renderBars();
+        } else {
+          revision = null;
+          previousQuote = null;
+          syncCache();
+        }
+      },
       refreshIndicators: () => {
         if (state.disposed) return;
         const sorted = [...bars.values()].sort((a, b) => a.time - b.time);
@@ -410,7 +445,19 @@ export function TradovateChart({
           chartIntervalMinutes(interval) ?? 0,
           appearanceSettings.current,
           inputSettings.current,
-          interval.unit !== "minute" ? auxiliaryHistoryRef.current : undefined,
+          interval.unit !== "minute"
+            ? replaying && auxiliaryHistoryRef.current
+              ? {
+                  ...auxiliaryHistoryRef.current,
+                  bars: replayMinuteHistory(
+                    auxiliaryHistoryRef.current.bars,
+                    sorted.at(-1)?.actualEndTime ??
+                      (sorted.at(-1)?.actualTime ?? sorted.at(-1)?.time ?? -Infinity) +
+                        (chartIntervalMinutes(interval) ?? 0) * 60,
+                  ),
+                }
+              : auxiliaryHistoryRef.current
+            : undefined,
         );
         const latestVolume = sorted.at(-1)?.volume;
         if (latestVolume !== undefined) result.readings.volume = latestVolume;
@@ -508,8 +555,8 @@ export function TradovateChart({
       }
       const latest = bars.get(renderedTime) ?? null;
       setLast(latest);
-      if (alertSnapshot) drawingAlertsRef.current.consume(alertSnapshot);
-      if (latest && !receivedQuote)
+      if (alertSnapshot && !replaying) drawingAlertsRef.current.consume(alertSnapshot);
+      if (latest && (replaying || !receivedQuote))
         onQuote?.({
           symbol,
           last: latest.close,
@@ -528,6 +575,9 @@ export function TradovateChart({
     const syncCache = () => {
       const snapshot = queryClient.getQueryData<ChartMarketSnapshot>(marketOptions.queryKey);
       if (!snapshot || state.disposed) return;
+      // Keep the live cache running, but never merge it into the frozen replay
+      // timeline or evaluate its alerts against historical chart geometry.
+      if (replaying) return;
       alertSnapshot = snapshot;
       setStatus(snapshot.status);
       setTickHistory(snapshot.tickHistory);
@@ -639,6 +689,55 @@ export function TradovateChart({
         logScale={settings.logScale}
         onToggleLogScale={settings.toggleLogScale}
         onScreenshot={screenshot}
+        historyControls={
+          <div className="flex shrink-0 items-center">
+            <ChartAction
+              label="Undo drawing edit"
+              disabled={!drawings.canUndo}
+              onClick={drawings.undo}
+            >
+              <ChartIcon name="arrow-back-up" className="size-[18px]" />
+            </ChartAction>
+            <ChartAction
+              label="Redo drawing edit"
+              disabled={!drawings.canRedo}
+              onClick={drawings.redo}
+            >
+              <ChartIcon name="arrow-back-up" className="size-[18px] -scale-x-100" />
+            </ChartAction>
+          </div>
+        }
+        replayControl={
+          <Tooltip>
+            <TooltipTrigger
+              type="button"
+              aria-label={replay.session ? "Exit bar replay" : "Start bar replay"}
+              aria-pressed={!!replay.session}
+              disabled={!last || technicals}
+              onClick={() => {
+                if (replay.session) replay.exit();
+                else {
+                  const snapshot = queryClient.getQueryData<ChartMarketSnapshot>(
+                    marketOptions.queryKey,
+                  );
+                  if (!replay.start(snapshot?.bars ?? [...(activeEngine?.bars.values() ?? [])]))
+                    setNotice(
+                      "Replay needs at least two completed candles. Wait for chart history to load.",
+                    );
+                }
+              }}
+              className={cn(
+                "inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded px-2.5 text-[13px] text-zinc-400 hover:bg-white/5 disabled:opacity-30",
+                replay.session && "bg-blue-400/10 text-blue-400",
+              )}
+            >
+              <svg className="size-[18px]" viewBox="5 5 19 19" fill="none" aria-hidden="true">
+                <path stroke="currentColor" d="M13.5 20V9l-6 5.5 6 5.5zM21.5 20V9l-6 5.5 6 5.5z" />
+              </svg>
+            </TooltipTrigger>
+            <TooltipPopup>Replay loaded historical candles</TooltipPopup>
+          </Tooltip>
+        }
         panelActions={
           <>
             <ChartAction
@@ -646,13 +745,14 @@ export function TradovateChart({
               active={objectTreeOpen}
               onClick={() => setObjectTreeOpen((open) => !open)}
             >
-              <ChartIcon name="list-details" className="size-[18px]" />
+              <ObjectTreeIcon className="size-[18px]" />
             </ChartAction>
             {panelActions}
           </>
         }
         navigationControl={navigationControl}
       />
+      <ChartReplayControls replay={replay} />
       <div className="relative flex min-h-0 min-w-0 flex-1">
         <DrawingSelectionOverlay
           drawings={drawings}

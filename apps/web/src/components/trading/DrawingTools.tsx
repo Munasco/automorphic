@@ -357,12 +357,6 @@ export function DrawingTools({
       >
         <DrawingToolIcon name="pencil" className="size-[22px]" />
       </Action>
-      <Action label="Undo drawing edit" disabled={!drawings.canUndo} onClick={drawings.undo}>
-        <ChartIcon name="arrow-back-up" className="size-[18px]" />
-      </Action>
-      <Action label="Redo drawing edit" disabled={!drawings.canRedo} onClick={drawings.redo}>
-        <DrawingToolIcon name="arrow-forward-up" className="size-[18px]" />
-      </Action>
       <Action
         label={drawings.allLocked ? "Unlock drawings" : "Lock drawings"}
         active={drawings.allLocked}
