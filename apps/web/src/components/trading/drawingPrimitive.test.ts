@@ -578,11 +578,13 @@ describe("additional line primitive behavior", () => {
   ) {
     const { chart, series } = fixture();
     let selected: string | null = null,
-      hovered: string | null = null;
+      hovered: string | null = null,
+      preview: ChartDrawing | null = null,
+      hidden = false;
     const plugin = createDrawingPrimitive(
       chart,
       series,
-      () => ({ drawings: [drawing, ...extraDrawings], selected, hovered }),
+      () => ({ drawings: [drawing, ...extraDrawings], selected, hovered, preview, hidden }),
       regressionSeries ?? series,
     );
     const ctx = {
@@ -623,6 +625,12 @@ describe("additional line primitive behavior", () => {
       },
       hover: (id: string | null) => {
         hovered = id;
+      },
+      preview: (value: ChartDrawing | null) => {
+        preview = value;
+      },
+      hide: (value: boolean) => {
+        hidden = value;
       },
     };
   }
@@ -813,6 +821,65 @@ describe("additional line primitive behavior", () => {
       expect(f.ctx.fillText).not.toHaveBeenCalled();
     },
   );
+
+  it("measures an Info line during placement without showing an unrelated committed line's stats", () => {
+    const drawing: ChartDrawing = {
+      ...line("info-line"),
+      id: "existing-line",
+      alwaysShowStats: false,
+      anchors: [
+        { time: 100 as Time, price: 200 },
+        { time: 200 as Time, price: 400 },
+      ],
+    };
+    const preview = { ...line("info-line"), id: "preview", alwaysShowStats: false };
+    const f = renderFixture(drawing);
+    f.preview(preview);
+    f.draw();
+    expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual([
+      "-100.00 (-25.00%), -400",
+      "1 bars (1m 40s), distance: 141 px",
+      "-45.00°",
+    ]);
+    preview.anchors[1] = { time: 200 as Time, price: 450 };
+    f.draw();
+    expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual([
+      "50.00 (12.50%), 200",
+      "1 bars (1m 40s), distance: 112 px",
+      "26.57°",
+    ]);
+    f.preview(null);
+    f.draw();
+    expect(f.ctx.fillText).not.toHaveBeenCalled();
+  });
+
+  it("honors explicit, empty and hidden statistics while placing a line", () => {
+    const drawing = { ...line("info-line"), id: "existing-line", alwaysShowStats: false };
+    const preview: ChartDrawing = {
+      ...line("info-line"),
+      id: "preview",
+      alwaysShowStats: false,
+      stats: ["ticks"],
+    };
+    const f = renderFixture(drawing);
+    f.preview(preview);
+    f.draw();
+    expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual(["-400"]);
+    preview.stats = [];
+    f.draw();
+    expect(f.ctx.fillText).not.toHaveBeenCalled();
+    preview.stats = ["ticks"];
+    preview.hidden = true;
+    f.draw();
+    expect(f.ctx.fillText).not.toHaveBeenCalled();
+    preview.hidden = false;
+    f.hide(true);
+    f.draw();
+    expect(f.ctx.fillText).not.toHaveBeenCalled();
+    f.hide(false);
+    f.draw();
+    expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual(["-400"]);
+  });
 
   it("shows a locked Info line's hover statistics without drawing editable anchor handles", () => {
     const drawing = { ...line("info-line"), alwaysShowStats: false, locked: true };
