@@ -21,14 +21,14 @@ export function MarketStatusIcon({ open }: { open: boolean }) {
         </>
       ) : (
         <g stroke="none">
-          <rect x="2" y="2" width="20" height="20" rx="4" fill="#818cf8" />
-          <rect x="4" y="4" width="16" height="17" rx="2" fill="#312e81" />
-          <path d="M7 4h2v17H7zm4 0h2v17h-2zm4 0h2v17h-2z" fill="#c7d2fe" />
-          <path d="M4 8h16v2H4zm0 7h16v2H4z" fill="#a5b4fc" />
-          <rect x="14" y="10" width="7" height="6" rx="1.5" fill="#fbbf24" />
-          <circle cx="17.5" cy="12.5" r="1" fill="#78350f" />
-          <path d="M17 12.5h1v2h-1z" fill="#78350f" />
-          <path d="M3 2h18v2H3z" fill="#e0e7ff" />
+          <rect x="2" y="2" width="20" height="20" rx="4" fill="#f87171" />
+          <rect x="4" y="4" width="16" height="17" rx="2" fill="#7f1d1d" />
+          <path d="M7 4h2v17H7zm4 0h2v17h-2zm4 0h2v17h-2z" fill="#fecaca" />
+          <path d="M4 8h16v2H4zm0 7h16v2H4z" fill="#fca5a5" />
+          <rect x="14" y="10" width="7" height="6" rx="1.5" fill="#ef4444" />
+          <circle cx="17.5" cy="12.5" r="1" fill="#450a0a" />
+          <path d="M17 12.5h1v2h-1z" fill="#450a0a" />
+          <path d="M3 2h18v2H3z" fill="#fee2e2" />
         </g>
       )}
     </svg>

@@ -30,6 +30,7 @@ function ReadyTradingPanel({
 }) {
   const settings = useTradingPreferences();
   const [view, setView] = useState<"chart" | "news">("chart");
+  const activeView = expanded ? "chart" : view;
   const [contracts, setContracts] = useState<FuturesContract[]>([]);
   const selected = settings.selectedSymbol;
   const [errors, setErrors] = useState<Partial<Record<"MGC" | "NQ", string>>>({});
@@ -170,25 +171,21 @@ function ReadyTradingPanel({
           <TooltipPopup>AI chat</TooltipPopup>
         </Tooltip>
       ) : null}
-      {onToggleExpand ? (
+      {onToggleExpand && !expanded ? (
         <Tooltip>
           <TooltipTrigger
             render={
               <button
                 type="button"
                 onClick={onToggleExpand}
-                aria-label={expanded ? "Restore chat and chart" : "Expand chart"}
+                aria-label="Expand chart"
                 className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
               />
             }
           >
-            {expanded ? (
-              <ChartIcon name="minimize" className="size-5" />
-            ) : (
-              <ChartIcon name="maximize" className="size-5" />
-            )}
+            <ChartIcon name="maximize" className="size-5" />
           </TooltipTrigger>
-          <TooltipPopup>{expanded ? "Restore chat and chart" : "Expand chart"}</TooltipPopup>
+          <TooltipPopup>Expand chart</TooltipPopup>
         </Tooltip>
       ) : null}
     </div>
@@ -198,7 +195,7 @@ function ReadyTradingPanel({
       aria-label="Trading panel"
       className="trading-surface @container flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background"
     >
-      {!settings.useTradingView ? (
+      {!expanded && !settings.useTradingView ? (
         <InstrumentHeader
           root={settings.root}
           symbol={symbol}
@@ -217,41 +214,48 @@ function ReadyTradingPanel({
           settings.setSelectedSymbol(contract.name);
         }}
       />
-      <nav
-        className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1"
-        aria-label="Trading views"
-      >
-        <button
-          type="button"
-          aria-pressed={view === "chart"}
-          onClick={() => setView("chart")}
-          className={cn(
-            "rounded px-3 py-1.5 text-xs font-semibold",
-            view === "chart" ? "bg-accent" : "text-muted-foreground",
-          )}
+      {!expanded && (
+        <nav
+          className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1"
+          aria-label="Trading views"
         >
-          Chart
-        </button>
-        <button
-          type="button"
-          aria-pressed={view === "news"}
-          onClick={() => setView("news")}
-          className={cn(
-            "rounded px-3 py-1.5 text-xs font-semibold",
-            view === "news" ? "bg-accent" : "text-muted-foreground",
-          )}
-        >
-          Live Wires
-        </button>
-        {view === "news" ? (
-          <div className="ml-auto flex items-center">
-            {settingsControl}
-            {panelActions}
-          </div>
-        ) : settings.useTradingView ? (
-          panelActions
-        ) : null}
-      </nav>
+          <button
+            type="button"
+            aria-pressed={activeView === "chart"}
+            onClick={() => setView("chart")}
+            className={cn(
+              "rounded px-3 py-1.5 text-xs font-semibold",
+              activeView === "chart" ? "bg-accent" : "text-muted-foreground",
+            )}
+          >
+            Chart
+          </button>
+          <button
+            type="button"
+            aria-pressed={activeView === "news"}
+            onClick={() => setView("news")}
+            className={cn(
+              "rounded px-3 py-1.5 text-xs font-semibold",
+              activeView === "news" ? "bg-accent" : "text-muted-foreground",
+            )}
+          >
+            Live Wires
+          </button>
+          {activeView === "news" ? (
+            <div className="ml-auto flex items-center">
+              {settingsControl}
+              {panelActions}
+            </div>
+          ) : settings.useTradingView ? (
+            panelActions
+          ) : null}
+        </nav>
+      )}
+      {expanded && settings.useTradingView ? (
+        <div className="flex shrink-0 items-center justify-end border-b border-border px-2 py-1">
+          {panelActions}
+        </div>
+      ) : null}
       {error && !settings.useTradingView ? (
         <div
           role="alert"
@@ -273,7 +277,12 @@ function ReadyTradingPanel({
           </Button>
         </div>
       ) : null}
-      <div className={cn("relative min-h-0 min-w-0 flex-1", view === "chart" ? "flex" : "hidden")}>
+      <div
+        className={cn(
+          "relative min-h-0 min-w-0 flex-1",
+          activeView === "chart" ? "flex" : "hidden",
+        )}
+      >
         <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
           {settings.useTradingView ? (
             <TradingViewEmbedPanel expanded={expanded} settingsControl={settingsControl} />
@@ -351,7 +360,7 @@ function ReadyTradingPanel({
           </aside>
         ) : null}
       </div>
-      {view === "news" ? (
+      {activeView === "news" ? (
         <div className="min-h-0 flex-1 overflow-hidden">
           <LiveWires root={settings.root} projectId={projectId} />
         </div>
