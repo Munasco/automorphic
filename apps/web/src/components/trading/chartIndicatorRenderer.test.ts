@@ -83,7 +83,7 @@ describe("native indicator renderer", () => {
     expect(
       harness.series
         .slice(1)
-        .every((series) => series.options.color === "#4caf50" && series.data.length === 4),
+        .every((series) => series.options.color === "#81c784" && series.data.length === 4),
     ).toBe(true);
     expect(harness.series.flatMap((series) => series.primitives)).toHaveLength(1);
     const host = harness.series[0]!;
