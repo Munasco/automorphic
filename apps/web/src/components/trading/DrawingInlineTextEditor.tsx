@@ -44,6 +44,29 @@ function TextInput({
     input.current?.focus({ preventScroll: true });
     input.current?.setSelectionRange(valueRef.current.length, valueRef.current.length);
   }, []);
+  useLayoutEffect(() => {
+    const element = input.current;
+    const context = document.createElement("canvas").getContext("2d");
+    if (!element || !context) return;
+    const resize = () => {
+      context.font = `${drawing.textItalic ? "italic " : ""}${drawing.textBold ? "bold " : ""}${size}px ${placement.fontFamily}`;
+      const width = Math.ceil(
+        Math.max(...value.split(/\r?\n/).map((row) => context.measureText(row).width)),
+      );
+      // Change only dimensions so typing and late font loads preserve the caret.
+      element.style.width = `${Math.min(Math.max(60, width + 4), Math.max(60, placement.paneWidth - 12))}px`;
+    };
+    resize();
+    document.fonts.addEventListener("loadingdone", resize);
+    return () => document.fonts.removeEventListener("loadingdone", resize);
+  }, [
+    value,
+    size,
+    drawing.textBold,
+    drawing.textItalic,
+    placement.fontFamily,
+    placement.paneWidth,
+  ]);
   useEffect(() => {
     const outside = (event: PointerEvent) => {
       if (event.target instanceof Node && !input.current?.contains(event.target)) finish();
@@ -65,6 +88,7 @@ function TextInput({
       aria-label="Drawing text"
       placeholder="Add text"
       rows={rows.length}
+      wrap="off"
       value={value}
       onChange={(event) => {
         const next = event.target.value;
@@ -91,10 +115,7 @@ function TextInput({
       style={{
         ...style,
         color: drawing.textColor ?? drawing.color,
-        width: Math.min(
-          Math.max(60, ...rows.map((row) => row.length * size * 0.65 + 4)),
-          Math.max(60, placement.paneWidth - 12),
-        ),
+        width: 60,
         height: rows.length * size * 1.2 + 2,
       }}
     />
