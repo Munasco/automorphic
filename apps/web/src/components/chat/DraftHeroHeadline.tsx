@@ -137,12 +137,12 @@ export function DraftHeroHeadline({
         <TooltipTrigger
           render={
             <MenuTrigger
-              aria-label={hasResolvedProject ? "Change project" : "Choose a project"}
+              aria-label={hasResolvedProject ? "Change workspace" : "Choose a workspace"}
               className="pointer-events-auto inline-block max-w-64 truncate border-foreground/60 border-b border-dotted align-baseline text-foreground transition-colors hover:border-foreground/80 focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             />
           }
         >
-          {activeProjectDisplayName ?? "Choose a project"}
+          {activeProjectDisplayName ?? "Choose a workspace"}
         </TooltipTrigger>
         {activeProjectDisplayName ? (
           <TooltipPopup side="top" className="max-w-80">
@@ -234,14 +234,11 @@ export function DraftHeroHeadline({
   );
 
   return (
-    <h1 className="mx-auto w-full max-w-5xl text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl">
-      {hasResolvedProject ? (
-        <>What should we build in {projectSelector}?</>
-      ) : canChooseProject ? (
-        <>{projectSelector} to start</>
-      ) : (
-        <>Add a project to start</>
-      )}
-    </h1>
+    <div className="mx-auto flex w-full max-w-5xl flex-col items-center gap-3 text-center">
+      <h1 className="font-normal text-2xl text-foreground tracking-tight sm:text-3xl">
+        Ready to supercharge your trading with AI?
+      </h1>
+      <div className="text-sm text-muted-foreground">{projectSelector}</div>
+    </div>
   );
 }
