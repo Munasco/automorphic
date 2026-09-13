@@ -1,4 +1,5 @@
 import { TradingSelect } from "./TradingSelect";
+import type { ChartCrosshairMode } from "./chartPreferences";
 
 import {
   CHART_INTERVALS,
@@ -53,6 +54,8 @@ export type ChartToolbarProps = {
   indicatorLimitReached?: boolean;
   showGrid: boolean;
   onToggleGrid: () => void;
+  crosshairMode: ChartCrosshairMode;
+  onCrosshairModeChange: (value: ChartCrosshairMode) => void;
   logScale: boolean;
   onToggleLogScale: () => void;
   onScreenshot: () => void;
@@ -79,6 +82,8 @@ export function ChartToolbar({
   indicatorLimitReached = false,
   showGrid,
   onToggleGrid,
+  crosshairMode,
+  onCrosshairModeChange,
   logScale,
   onToggleLogScale,
   onScreenshot,
@@ -400,6 +405,24 @@ export function ChartToolbar({
           </Tooltip>
           <PopoverPopup align="end" className="w-56" viewportClassName="px-3 py-3">
             <PopoverTitle className="px-1 pb-2 text-xs">Chart display</PopoverTitle>
+            <div className="flex flex-col gap-2 px-2 pb-2">
+              <label htmlFor={`${id}-crosshair`} className="text-xs">
+                Crosshair
+              </label>
+              <TradingSelect
+                id={`${id}-crosshair`}
+                label="Crosshair mode"
+                value={crosshairMode}
+                options={[
+                  ["normal", "Free"],
+                  ["magnet", "Snap to close"],
+                  ["ohlc", "Snap to OHLC"],
+                  ["hidden", "Hidden"],
+                ]}
+                onChange={(value) => onCrosshairModeChange(value as ChartCrosshairMode)}
+                className="w-full"
+              />
+            </div>
             <label
               htmlFor={`${id}-grid`}
               className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"

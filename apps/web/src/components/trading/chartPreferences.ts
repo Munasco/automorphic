@@ -39,6 +39,9 @@ export type {
 import { normalizeIndicatorAppearance, type IndicatorAppearance } from "./indicatorStyles";
 export type { IndicatorAppearance } from "./indicatorStyles";
 export type ChartAppearance = Partial<Record<IndicatorKey, IndicatorAppearance>>;
+export type ChartCrosshairMode = "normal" | "magnet" | "ohlc" | "hidden";
+const validCrosshairMode = (value: unknown): value is ChartCrosshairMode =>
+  value === "normal" || value === "magnet" || value === "ohlc" || value === "hidden";
 const validColor = (value: unknown): value is string =>
   typeof value === "string" && /^#[a-f0-9]{6}$/i.test(value);
 const hiddenDefaults = () =>
@@ -58,6 +61,7 @@ function mergeAppearance(
 
 type SavedChartPreferences = {
   style: ChartStyle;
+  crosshairMode: ChartCrosshairMode;
   indicators: ChartIndicators;
   hiddenIndicators: ChartIndicators;
   appearance: ChartAppearance;
@@ -95,6 +99,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
       saved.style === "area"
         ? saved.style
         : "candles",
+    crosshairMode: validCrosshairMode(saved.crosshairMode) ? saved.crosshairMode : "normal",
     indicators,
     hiddenIndicators,
     appearance,
@@ -121,6 +126,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
 }
 export const useChartPreferences = create<{
   style: ChartStyle;
+  crosshairMode: ChartCrosshairMode;
   indicators: ChartIndicators;
   hiddenIndicators: ChartIndicators;
   appearance: ChartAppearance;
@@ -133,6 +139,7 @@ export const useChartPreferences = create<{
   showGrid: boolean;
   logScale: boolean;
   setStyle: (style: ChartStyle) => void;
+  setCrosshairMode: (mode: ChartCrosshairMode) => void;
   toggleIndicator: (key: IndicatorKey) => void;
   toggleFavoriteIndicator: (key: IndicatorKey) => void;
   toggleIndicatorVisibility: (key: IndicatorKey) => void;
@@ -159,6 +166,7 @@ export const useChartPreferences = create<{
   persist(
     (set, get) => ({
       style: "candles",
+      crosshairMode: "normal",
       indicators: { ...DEFAULT_INDICATORS },
       hiddenIndicators: hiddenDefaults(),
       appearance: {},
@@ -174,6 +182,10 @@ export const useChartPreferences = create<{
       showGrid: true,
       logScale: false,
       setStyle: (style) => set({ style }),
+      setCrosshairMode: (crosshairMode) => {
+        if (validCrosshairMode(crosshairMode) && crosshairMode !== get().crosshairMode)
+          set({ crosshairMode });
+      },
       toggleFavoriteIndicator: (key) => {
         if (!isIndicatorKey(key)) return;
         set((state) => ({

@@ -9,7 +9,11 @@ vi.mock("./workspaceStorage", () => ({
   },
 }));
 
-import { useChartPreferences, normalizeChartPreferences } from "./chartPreferences";
+import {
+  useChartPreferences,
+  normalizeChartPreferences,
+  type ChartCrosshairMode,
+} from "./chartPreferences";
 import { DEFAULT_INITIAL_BALANCE } from "./initialBalanceSettings";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
 import { getIndicatorInputs } from "./indicatorCatalog";
@@ -1024,4 +1028,75 @@ it("persists independent AO periods, momentum colors and visibility", async () =
     getChartIndicatorInstances(useChartPreferences.getState()).find((i) => i.id === duplicate)!
       .inputs,
   ).toEqual({ fast: 5, slow: 34 });
+});
+
+describe("chart crosshair preferences", () => {
+  it("defaults older charts and invalid saved modes to the existing normal crosshair", () => {
+    expect(useChartPreferences.getInitialState().crosshairMode).toBe("normal");
+    for (const invalid of [
+      undefined,
+      null,
+      "",
+      "Normal",
+      "strong",
+      0,
+      1,
+      2,
+      3,
+      true,
+      {},
+      ["magnet"],
+    ]) {
+      const restored = normalizeChartPreferences({
+        style: "heikin-ashi",
+        showGrid: false,
+        logScale: true,
+        crosshairMode: invalid,
+        indicatorInputs: { sma: { period: 42 } },
+      });
+      expect(restored.crosshairMode).toBe("normal");
+      expect(restored.style).toBe("heikin-ashi");
+      expect(restored.showGrid).toBe(false);
+      expect(restored.logScale).toBe(true);
+      expect(restored.indicatorInputs.sma?.period).toBe(42);
+    }
+    expect(normalizeChartPreferences({}).crosshairMode).toBe("normal");
+  });
+
+  it.each(["normal", "magnet", "ohlc", "hidden"] as const)(
+    "persists and restores %s without changing other chart choices",
+    async (mode) => {
+      const configured = configure();
+      configured.setStyle("heikin-ashi");
+      configured.toggleGrid();
+      configured.toggleLogScale();
+      // Ensure normal also exercises a real transition/save.
+      configured.setCrosshairMode(mode === "normal" ? "hidden" : "normal");
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      useChartPreferences.getState().setCrosshairMode(mode);
+      const expected = { ...before, crosshairMode: mode };
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+      expect(JSON.parse(saved[1]).state.crosshairMode).toBe(mode);
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      expect(typeof useChartPreferences.getState().setCrosshairMode).toBe("function");
+    },
+  );
+
+  it("rejects invalid runtime values and repeated selections without changing state or writing storage", () => {
+    configure().setCrosshairMode("ohlc");
+    const before = useChartPreferences.getState();
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    for (const invalid of [undefined, null, "OHLC", "snap", 0, 3, false, {}, ["hidden"]])
+      before.setCrosshairMode(invalid as ChartCrosshairMode);
+    before.setCrosshairMode("ohlc");
+    expect(useChartPreferences.getState()).toBe(before);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+    before.setCrosshairMode("hidden");
+    expect(useChartPreferences.getState().crosshairMode).toBe("hidden");
+    expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(1);
+  });
 });

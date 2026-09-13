@@ -29,6 +29,7 @@ import {
   AreaSeries,
   HistogramSeries,
   ColorType,
+  CrosshairMode,
   PriceScaleMode,
   type UTCTimestamp,
   type IChartApi,
@@ -752,6 +753,16 @@ export function TradovateChart({
     // The shared scale takes its formatter from the first series, including hidden ones.
     engine.prices[settings.style].setSeriesOrder(0);
     engine.chart.applyOptions({
+      crosshair: {
+        mode:
+          settings.crosshairMode === "magnet"
+            ? CrosshairMode.Magnet
+            : settings.crosshairMode === "ohlc"
+              ? CrosshairMode.MagnetOHLC
+              : settings.crosshairMode === "hidden"
+                ? CrosshairMode.Hidden
+                : CrosshairMode.Normal,
+      },
       grid: {
         vertLines: { visible: settings.showGrid },
         horzLines: { visible: settings.showGrid },
@@ -760,7 +771,7 @@ export function TradovateChart({
     engine.chart.priceScale("right", 0).applyOptions({
       mode: settings.logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
     });
-  }, [engine, settings.style, settings.showGrid, settings.logScale]);
+  }, [engine, settings.style, settings.showGrid, settings.logScale, settings.crosshairMode]);
 
   const zoom = (factor: number) => {
     const scale = engine?.chart.timeScale();
@@ -819,6 +830,8 @@ export function TradovateChart({
         indicatorLimitReached={indicatorInstances.length >= MAX_CHART_INDICATORS}
         showGrid={settings.showGrid}
         onToggleGrid={settings.toggleGrid}
+        crosshairMode={settings.crosshairMode}
+        onCrosshairModeChange={settings.setCrosshairMode}
         logScale={settings.logScale}
         onToggleLogScale={settings.toggleLogScale}
         onScreenshot={screenshot}
