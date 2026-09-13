@@ -71,5 +71,8 @@ export function drawingColorAtPoint(
     return null;
   const x = Math.max(0, Math.min(1, point.x / size.width));
   const y = Math.max(0, Math.min(1, point.y / size.height));
-  return control === "plane" ? { ...current, s: x, v: 1 - y } : { ...current, h: (1 - y) * 360 };
+  if (control === "plane") return { ...current, s: x, v: 1 - y };
+  // The hue handle travels within a three-pixel inset at each end of the strip.
+  if (size.height <= 6) return null;
+  return { ...current, h: Math.max(0, Math.min(1, (point.y - 3) / (size.height - 6))) * 360 };
 }

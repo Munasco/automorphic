@@ -190,7 +190,10 @@ export function ColorPicker({
         style={{ background: "#1f1f1f", backdropFilter: "none", border: 0 }}
         align="start"
         sideOffset={variant === "toolbar" ? 2 : 0}
-        className={cn("w-[250px] rounded border-0", variant === "toolbar" && "w-[248px]")}
+        className={cn(
+          "w-[250px] rounded border-0 has-[form]:w-[248px]",
+          variant === "toolbar" && "w-[248px]",
+        )}
         viewportClassName="p-0"
       >
         <PopoverTitle className="sr-only">{label}</PopoverTitle>
@@ -923,7 +926,7 @@ export function LineAppearancePicker({
         style={{ background: "#202020", backdropFilter: "none", border: 0 }}
         align="start"
         sideOffset={0}
-        className="w-[250px] rounded border-0"
+        className="w-[250px] rounded border-0 has-[form]:w-[248px]"
         viewportClassName="p-0"
       >
         <PopoverTitle className="sr-only">{label}</PopoverTitle>

@@ -72,14 +72,10 @@ export function DrawingCustomColorEditor({
     updateHsv(next);
   };
   const hueKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
     let h = draft.hsv.h;
-    const step = event.shiftKey ? 10 : 1;
-    if (event.key === "ArrowUp" || event.key === "ArrowRight") h += step;
-    else if (event.key === "ArrowDown" || event.key === "ArrowLeft") h -= step;
-    else if (event.key === "PageUp") h += 10;
-    else if (event.key === "PageDown") h -= 10;
-    else if (event.key === "Home") h = 0;
-    else if (event.key === "End") h = 360;
+    if (event.key === "ArrowUp") h -= 3.6;
+    else if (event.key === "ArrowDown") h += 3.6;
     else return;
     event.preventDefault();
     updateHsv({ ...draft.hsv, h: Math.max(0, Math.min(360, h)) });
@@ -97,39 +93,48 @@ export function DrawingCustomColorEditor({
         if (event.key === "Enter") event.stopPropagation();
       }}
     >
-      <div className="mb-3 flex h-[26px] items-center gap-2">
+      <div className="mb-3 flex h-[26px] items-start">
         <span
           aria-label={`Color preview ${preview}`}
-          className="h-[26px] min-w-0 flex-1 rounded-sm border border-white/15"
+          className="size-[26px] shrink-0 rounded border border-transparent"
           style={{ background: preview }}
         />
-        <input
-          aria-label="Hex color"
-          aria-invalid={!validHex}
-          autoComplete="off"
-          spellCheck={false}
-          value={draft.hex}
-          maxLength={7}
-          onChange={(event) => {
-            const hex = event.target.value,
-              parsed = drawingHexToHsv(hex);
-            setDraft((current) => ({
-              hex,
-              hsv: parsed
-                ? {
-                    ...parsed,
-                    h: parsed.s === 0 ? current.hsv.h : parsed.h,
-                    s: parsed.v === 0 ? current.hsv.s : parsed.s,
-                  }
-                : current.hsv,
-            }));
-          }}
-          className="h-[26px] w-[68px] shrink-0 rounded border border-white/20 bg-transparent px-1 text-xs outline-none focus:border-blue-500 aria-invalid:border-red-400"
-        />
+        <div className="relative ml-2 h-[26px] w-[68px] shrink-0">
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute left-[3px] top-1/2 -translate-y-1/2 text-sm leading-normal text-[#dbdbdb]"
+          >
+            #
+          </span>
+          <input
+            aria-label="Hex color"
+            aria-invalid={!validHex}
+            autoComplete="off"
+            spellCheck={false}
+            autoFocus
+            value={draft.hex.replace(/^#/, "")}
+            maxLength={7}
+            onChange={(event) => {
+              const hex = event.target.value,
+                parsed = drawingHexToHsv(hex);
+              setDraft((current) => ({
+                hex,
+                hsv: parsed
+                  ? {
+                      ...parsed,
+                      h: parsed.s === 0 ? current.hsv.h : parsed.h,
+                      s: parsed.v === 0 ? current.hsv.s : parsed.s,
+                    }
+                  : current.hsv,
+              }));
+            }}
+            className="h-[26px] w-full rounded border border-[#575757] bg-transparent pl-3 pr-[5px] text-sm leading-6 text-[#dbdbdb] outline-none focus:border-[#2962ff] aria-invalid:border-red-400"
+          />
+        </div>
         <button
           type="submit"
           disabled={!validHex}
-          className="h-[26px] shrink-0 rounded border border-white/20 px-3 text-xs hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+          className="ml-auto h-7 shrink-0 rounded-[6px] border border-[#f2f2f2] bg-[#f2f2f2] px-[7px] text-sm leading-[18px] text-[#0f0f0f] hover:border-white hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
         >
           Add
         </button>
@@ -148,7 +153,7 @@ export function DrawingCustomColorEditor({
           aria-valuemax={100}
           aria-valuenow={Math.round(draft.hsv.s * 100)}
           aria-valuetext={`Saturation ${Math.round(draft.hsv.s * 100)}%, brightness ${Math.round(draft.hsv.v * 100)}%`}
-          className="relative h-[184px] w-[200px] shrink-0 cursor-crosshair touch-none outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="relative h-[184px] w-[200px] shrink-0 cursor-crosshair touch-none rounded-[2px] outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           style={{
             backgroundColor: `hsl(${draft.hsv.h} 100% 50%)`,
             backgroundImage:
@@ -158,7 +163,7 @@ export function DrawingCustomColorEditor({
           onKeyDown={planeKeyDown}
         >
           <span
-            className="pointer-events-none absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_#000]"
+            className="pointer-events-none absolute -mt-[6px] -ml-[6px] size-[14px] rounded-full border-2 border-white shadow-[0_1px_2px_rgb(0_0_0/50%)]"
             style={{ left: `${draft.hsv.s * 100}%`, top: `${(1 - draft.hsv.v) * 100}%` }}
           />
         </div>
@@ -170,17 +175,20 @@ export function DrawingCustomColorEditor({
           aria-valuemin={0}
           aria-valuemax={360}
           aria-valuenow={Math.round(draft.hsv.h)}
-          className="relative h-[184px] w-[17px] shrink-0 cursor-pointer touch-none outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="relative h-[184px] w-[17px] shrink-0 cursor-pointer touch-none rounded-[2px] outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           style={{
-            background: "linear-gradient(to bottom, #f00, #f0f, #00f, #0ff, #0f0, #ff0, #f00)",
+            background:
+              "linear-gradient(to bottom, #f00 0, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00)",
           }}
           {...pointerHandlers("hue")}
           onKeyDown={hueKeyDown}
         >
-          <span
-            className="pointer-events-none absolute -left-px h-1.5 w-[19px] -translate-y-1/2 border-2 border-white shadow-[0_0_0_1px_#000]"
-            style={{ top: `${(1 - draft.hsv.h / 360) * 100}%` }}
-          />
+          <span className="pointer-events-none absolute inset-x-0 inset-y-[3px]">
+            <span
+              className="absolute -left-0.5 -mt-1 h-[9px] w-[21px] rounded-[2px] border-2 border-white shadow-[0_1px_2px_rgb(0_0_0/50%)]"
+              style={{ top: `${(draft.hsv.h / 360) * 100}%` }}
+            />
+          </span>
         </div>
       </div>
     </form>

@@ -69,7 +69,7 @@ describe("drawing custom color conversion", () => {
       v: 0.75,
     });
     expect(drawingColorAtPoint(current, "hue", { x: 0, y: -20 }, size)).toEqual({
-      h: 360,
+      h: 0,
       s: 0.5,
       v: 0.75,
     });
@@ -77,5 +77,25 @@ describe("drawing custom color conversion", () => {
       drawingColorAtPoint(current, "plane", { x: 0, y: 0 }, { width: 0, height: 184 }),
     ).toBeNull();
     expect(current).toEqual({ h: 120, s: 0.5, v: 0.75 });
+  });
+  it("follows the hue strip from red through yellow, green and blue inside its end insets", () => {
+    const current = { h: 210, s: 1, v: 1 };
+    const size = { width: 17, height: 184 };
+    for (const [fraction, hex] of [
+      [0, "#ff0000"],
+      [1 / 6, "#ffff00"],
+      [1 / 3, "#00ff00"],
+      [1 / 2, "#00ffff"],
+      [2 / 3, "#0000ff"],
+      [5 / 6, "#ff00ff"],
+      [1, "#ff0000"],
+    ] as const) {
+      const picked = drawingColorAtPoint(current, "hue", { x: 8, y: 3 + 178 * fraction }, size)!;
+      expect(drawingHsvToHex(picked)).toBe(hex);
+    }
+    expect(drawingColorAtPoint(current, "hue", { x: 8, y: 200 }, size)?.h).toBe(360);
+    expect(
+      drawingColorAtPoint(current, "hue", { x: 8, y: 0 }, { width: 17, height: 6 }),
+    ).toBeNull();
   });
 });
