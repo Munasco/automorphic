@@ -1167,3 +1167,66 @@ describe("current price display preferences", () => {
     },
   );
 });
+
+describe("inverted price scale preferences", () => {
+  it("retains normal orientation for legacy or nonboolean saved settings", () => {
+    expect(useChartPreferences.getInitialState().invertScale).toBe(false);
+    expect(normalizeChartPreferences({ logScale: true })).toMatchObject({
+      invertScale: false,
+      logScale: true,
+    });
+    for (const invalid of [undefined, null, 0, 1, "true", "false", [], {}, [true]])
+      expect(
+        normalizeChartPreferences({ invertScale: invalid, logScale: true, showPriceLine: false }),
+      ).toMatchObject({ invertScale: false, logScale: true, showPriceLine: false });
+    expect(normalizeChartPreferences({ invertScale: true })).toMatchObject({
+      invertScale: true,
+      logScale: false,
+    });
+    expect(normalizeChartPreferences({ invertScale: false })).toMatchObject({ invertScale: false });
+  });
+
+  it.each([
+    { inverted: false, logarithmic: false },
+    { inverted: true, logarithmic: false },
+    { inverted: false, logarithmic: true },
+    { inverted: true, logarithmic: true },
+  ])(
+    "persists inverted=$inverted independently from logarithmic=$logarithmic",
+    async ({ inverted, logarithmic }) => {
+      const configured = configure();
+      configured.setStyle("heikin-ashi");
+      configured.setCrosshairMode("magnet");
+      configured.togglePriceLine();
+      configured.togglePriceLabel();
+      if (logarithmic) configured.toggleLogScale();
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      const { toggleInvertScale, toggleLogScale } = useChartPreferences.getState();
+      if (inverted) toggleInvertScale();
+      toggleLogScale();
+      expect(useChartPreferences.getState()).toMatchObject({
+        invertScale: inverted,
+        logScale: !logarithmic,
+      });
+      toggleLogScale();
+      toggleInvertScale();
+      expect(useChartPreferences.getState()).toMatchObject({
+        invertScale: !inverted,
+        logScale: logarithmic,
+      });
+      toggleInvertScale();
+      const expected = { ...before, invertScale: inverted };
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+      expect(JSON.parse(saved[1]).state).toMatchObject({
+        invertScale: inverted,
+        logScale: logarithmic,
+      });
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      expect(typeof useChartPreferences.getState().toggleInvertScale).toBe("function");
+    },
+  );
+});

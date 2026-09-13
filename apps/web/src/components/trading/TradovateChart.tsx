@@ -774,12 +774,14 @@ export function TradovateChart({
     });
     engine.chart.priceScale("right", 0).applyOptions({
       mode: settings.logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+      invertScale: settings.invertScale,
     });
   }, [
     engine,
     settings.style,
     settings.showGrid,
     settings.logScale,
+    settings.invertScale,
     settings.crosshairMode,
     settings.showPriceLine,
     settings.showPriceLabel,
@@ -859,6 +861,8 @@ export function TradovateChart({
         onCrosshairModeChange={settings.setCrosshairMode}
         logScale={settings.logScale}
         onToggleLogScale={settings.toggleLogScale}
+        invertScale={settings.invertScale}
+        onToggleInvertScale={settings.toggleInvertScale}
         onScreenshot={screenshot}
         historyControls={
           <div className="flex shrink-0 items-center">

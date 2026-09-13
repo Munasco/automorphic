@@ -74,6 +74,7 @@ type SavedChartPreferences = {
   showPriceLine: boolean;
   showPriceLabel: boolean;
   logScale: boolean;
+  invertScale: boolean;
 };
 
 /** Old saved charts keep their choices while newly introduced indicators stay disabled. */
@@ -126,6 +127,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     showPriceLine: typeof saved.showPriceLine === "boolean" ? saved.showPriceLine : true,
     showPriceLabel: typeof saved.showPriceLabel === "boolean" ? saved.showPriceLabel : true,
     logScale: typeof saved.logScale === "boolean" ? saved.logScale : false,
+    invertScale: typeof saved.invertScale === "boolean" ? saved.invertScale : false,
   };
 }
 export const useChartPreferences = create<{
@@ -144,6 +146,7 @@ export const useChartPreferences = create<{
   showPriceLine: boolean;
   showPriceLabel: boolean;
   logScale: boolean;
+  invertScale: boolean;
   setStyle: (style: ChartStyle) => void;
   setCrosshairMode: (mode: ChartCrosshairMode) => void;
   toggleIndicator: (key: IndicatorKey) => void;
@@ -170,6 +173,7 @@ export const useChartPreferences = create<{
   togglePriceLine: () => void;
   togglePriceLabel: () => void;
   toggleLogScale: () => void;
+  toggleInvertScale: () => void;
 }>()(
   persist(
     (set, get) => ({
@@ -191,6 +195,7 @@ export const useChartPreferences = create<{
       showPriceLine: true,
       showPriceLabel: true,
       logScale: false,
+      invertScale: false,
       setStyle: (style) => set({ style }),
       setCrosshairMode: (crosshairMode) => {
         if (validCrosshairMode(crosshairMode) && crosshairMode !== get().crosshairMode)
@@ -411,6 +416,7 @@ export const useChartPreferences = create<{
       togglePriceLine: () => set((state) => ({ showPriceLine: !state.showPriceLine })),
       togglePriceLabel: () => set((state) => ({ showPriceLabel: !state.showPriceLabel })),
       toggleLogScale: () => set((state) => ({ logScale: !state.logScale })),
+      toggleInvertScale: () => set((state) => ({ invertScale: !state.invertScale })),
     }),
     {
       name: "automorphic:chart:v1",

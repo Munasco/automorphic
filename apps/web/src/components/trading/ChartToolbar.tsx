@@ -62,6 +62,8 @@ export type ChartToolbarProps = {
   onCrosshairModeChange: (value: ChartCrosshairMode) => void;
   logScale: boolean;
   onToggleLogScale: () => void;
+  invertScale: boolean;
+  onToggleInvertScale: () => void;
   onScreenshot: () => void;
   panelActions?: ReactNode;
   navigationControl?: ReactNode;
@@ -94,6 +96,8 @@ export function ChartToolbar({
   onCrosshairModeChange,
   logScale,
   onToggleLogScale,
+  invertScale,
+  onToggleInvertScale,
   onScreenshot,
   panelActions,
   navigationControl,
@@ -466,6 +470,17 @@ export function ChartToolbar({
             >
               <Checkbox id={`${id}-log`} checked={logScale} onCheckedChange={onToggleLogScale} />
               Logarithmic price scale
+            </label>
+            <label
+              htmlFor={`${id}-invert`}
+              className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"
+            >
+              <Checkbox
+                id={`${id}-invert`}
+                checked={invertScale}
+                onCheckedChange={onToggleInvertScale}
+              />
+              Invert price scale
             </label>
           </PopoverPopup>
         </Popover>
