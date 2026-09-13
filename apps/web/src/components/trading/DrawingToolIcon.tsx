@@ -1,6 +1,7 @@
 import type { SVGProps } from "react";
 // Tabler icons retrieved from Iconify; MIT notice in apps/web/THIRD_PARTY_NOTICES.md.
 const paths = {
+  nut: "M19 6.84a2.01 2.01 0 0 1 1 1.754v6.555c0 .728-.394 1.4-1.03 1.753l-6 3.844a2 2 0 0 1-1.94 0l-6-3.844A2 2 0 0 1 4 15.15V8.593c0-.728.394-1.399 1.03-1.753l6-3.582a2.05 2.05 0 0 1 2 0l6 3.582zM9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0",
   magnet: "M4 4h5v9a3 3 0 0 0 6 0V4h5v9a8 8 0 0 1-16 0zM4 8h5m6 0h5",
   eye: "M10 12a2 2 0 1 0 4 0a2 2 0 0 0-4 0M21 12q-3.6 6-9 6t-9-6q3.6-6 9-6t9 6",
   "eye-off":

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { Time } from "lightweight-charts";
 import type { ChartDrawing } from "./drawingGeometry";
-import { parseDrawingClipboard, serializeDrawingClipboard } from "./drawingClipboard";
+import {
+  parseDrawingClipboard,
+  serializeDrawingClipboard,
+  parseDrawingsClipboard,
+  serializeDrawingsClipboard,
+} from "./drawingClipboard";
 
 const drawing: ChartDrawing = {
   id: "source",
@@ -93,5 +98,110 @@ describe("drawing clipboard format", () => {
       parseDrawingClipboard(JSON.stringify({ ...envelope, padding: "x".repeat(256 * 1024) })),
     ).toBeNull();
     expect(serializeDrawingClipboard({ ...drawing, anchors: [] })).toBeNull();
+  });
+});
+
+describe("drawing selection clipboard", () => {
+  const front: ChartDrawing = {
+    id: "front",
+    kind: "trend",
+    anchors: [
+      { time: 125 as Time, price: 25 },
+      { time: 250 as Time, price: 40 },
+    ],
+    color: "#abcdef",
+    width: 1,
+    text: "Front line",
+  };
+  const envelope = (drawings: unknown) =>
+    JSON.stringify({
+      type: "automorphic.chart-drawings",
+      version: 1,
+      drawings,
+    });
+
+  it("reads legacy single copies and emits the unchanged single format for one selection", () => {
+    const legacy = serializeDrawingClipboard(drawing)!;
+    expect(serializeDrawingsClipboard([drawing])).toBe(legacy);
+    expect(parseDrawingsClipboard(legacy)).toEqual([drawing]);
+    expect(parseDrawingClipboard(serializeDrawingsClipboard([drawing, front])!)).toBeNull();
+  });
+
+  it("retains stacking order, relative coordinates and independent nested settings for every object", () => {
+    const source = [drawing, front];
+    const text = serializeDrawingsClipboard(source)!;
+    const first = parseDrawingsClipboard(text)!;
+    const second = parseDrawingsClipboard(text)!;
+    expect(first).toEqual(source);
+    expect(second).toEqual(source);
+    expect(first.map(({ id }) => id)).toEqual(["source", "front"]);
+    expect(first[1]!.anchors[0]!.price - first[0]!.anchors[0]!.price).toBe(5);
+    first[0]!.anchors[0]!.price = 999;
+    first[0]!.levels![0]!.color = "#000000";
+    first[1]!.anchors[1]!.price = -100;
+    expect(second).toEqual(source);
+    expect(drawing.anchors[0]!.price).toBe(20);
+    expect(front.anchors[1]!.price).toBe(40);
+  });
+
+  it.each([
+    null,
+    {},
+    [],
+    [drawing, null],
+    [drawing, { ...front, anchors: [] }],
+    [drawing, { ...front, kind: "unknown" }],
+    [drawing, { ...front, id: drawing.id }],
+  ])("rejects the entire malformed selection %j", (objects) => {
+    expect(parseDrawingsClipboard(envelope(objects))).toBeNull();
+  });
+
+  it("rejects IDs that collide after normalization and does not silently truncate oversized groups", () => {
+    const longId = "x".repeat(100);
+    expect(
+      parseDrawingsClipboard(
+        envelope([
+          { ...drawing, id: `${longId}a` },
+          { ...front, id: `${longId}b` },
+        ]),
+      ),
+    ).toBeNull();
+    const maximum = Array.from({ length: 100 }, (_, index) => ({ ...front, id: `line-${index}` }));
+    expect(parseDrawingsClipboard(serializeDrawingsClipboard(maximum)!)).toEqual(maximum);
+    const oversized = [...maximum, { ...front, id: "extra" }];
+    expect(parseDrawingsClipboard(envelope(oversized))).toBeNull();
+    expect(serializeDrawingsClipboard(oversized)).toBeNull();
+    expect(serializeDrawingsClipboard([])).toBeNull();
+    expect(serializeDrawingsClipboard([drawing, { ...front, anchors: [] }])).toBeNull();
+  });
+
+  it("bounds group text, rejects unsupported envelopes and strips unknown drawing fields", () => {
+    const text = envelope([{ ...drawing, executable: "untrusted" }, front]);
+    expect(parseDrawingsClipboard(text)).toEqual([drawing, front]);
+    expect(
+      parseDrawingsClipboard(
+        JSON.stringify({
+          type: "automorphic.chart-drawings",
+          version: 1,
+          drawings: [drawing, front],
+          padding: "x".repeat(256 * 1024),
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      serializeDrawingsClipboard([drawing, { ...front, text: "x".repeat(256 * 1024) }]),
+    ).toBeNull();
+    for (const invalid of [
+      "ordinary text",
+      "[]",
+      "null",
+      "{}",
+      JSON.stringify({
+        type: "automorphic.chart-drawings",
+        version: 2,
+        drawings: [drawing, front],
+      }),
+    ])
+      expect(parseDrawingsClipboard(invalid)).toBeNull();
   });
 });

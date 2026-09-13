@@ -175,6 +175,7 @@ export function createDrawingPrimitive(
   read: () => {
     drawings: ChartDrawing[];
     selected: string | null;
+    selectedIds?: readonly string[];
     preview?: ChartDrawing | null;
     hidden?: boolean;
     hovered?: string | null;
@@ -269,7 +270,11 @@ export function createDrawingPrimitive(
         const anchor = geometry.handles[handle]!;
         candidate = {
           drawing,
-          handle: drawing.locked ? -1 : (geometry.handleAnchorIndices?.[handle] ?? handle),
+          handle:
+            drawing.locked ||
+            ((state.selectedIds?.length ?? 0) > 1 && state.selectedIds?.includes(drawing.id))
+              ? -1
+              : (geometry.handleAnchorIndices?.[handle] ?? handle),
           handlePoint: anchor,
           cursorStyle: "default",
           distance: Math.hypot(point.x - anchor.x, point.y - anchor.y),
@@ -522,6 +527,7 @@ export function createDrawingPrimitive(
               if (
                 statKinds.length &&
                 (drawing.id === state.selected ||
+                  state.selectedIds?.includes(drawing.id) ||
                   drawing.id === state.hovered ||
                   drawing === state.preview ||
                   (drawing.alwaysShowStats ?? drawing.kind === "info-line"))
@@ -647,14 +653,30 @@ export function createDrawingPrimitive(
               }
             }
           }
+          if ((state.selectedIds?.length ?? 0) > 1 && state.selectedIds?.includes(drawing.id)) {
+            ctx.save();
+            ctx.strokeStyle = SELECTION_COLOR;
+            ctx.lineWidth = drawing.width + 3;
+            ctx.globalAlpha = 0.35;
+            ctx.setLineDash([]);
+            for (const line of geometry.lines) {
+              ctx.beginPath();
+              ctx.moveTo(line.from.x, line.from.y);
+              ctx.lineTo(line.to.x, line.to.y);
+              ctx.stroke();
+            }
+            ctx.restore();
+          }
           if (
-            drawing.id === state.selected ||
-            (drawing.id === state.hovered && !drawing.locked) ||
-            drawing === state.preview
+            (state.selectedIds?.length ?? 0) <= 1 &&
+            (drawing.id === state.selected ||
+              state.selectedIds?.includes(drawing.id) ||
+              (drawing.id === state.hovered && !drawing.locked) ||
+              drawing === state.preview)
           ) {
             const hovering =
               drawing.id === state.hovered &&
-              drawing.id !== state.selected &&
+              !(drawing.id === state.selected || state.selectedIds?.includes(drawing.id)) &&
               drawing !== state.preview;
             ctx.setLineDash([]);
             ctx.globalAlpha = hovering ? 0.6 : 1;
@@ -673,7 +695,9 @@ export function createDrawingPrimitive(
               ctx.fillStyle = "#15171a";
               ctx.fill();
               ctx.strokeStyle =
-                drawing.id === state.selected || drawing.id === state.hovered
+                drawing.id === state.selected ||
+                state.selectedIds?.includes(drawing.id) ||
+                drawing.id === state.hovered
                   ? SELECTION_COLOR
                   : drawing.color;
               ctx.stroke();
@@ -699,7 +723,7 @@ export function createDrawingPrimitive(
             (axis === "time" && drawing.kind === "horizontal")
           )
             return [];
-          const selected = drawing.id === state.selected;
+          const selected = drawing.id === state.selected || state.selectedIds?.includes(drawing.id);
           const persistent =
             axis === "price"
               ? drawingPriceLabelVisible(drawing) &&

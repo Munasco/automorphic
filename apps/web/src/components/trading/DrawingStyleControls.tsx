@@ -410,8 +410,10 @@ export function LineStylePicker({
   drawing,
   onChange,
   variant = "default",
+  mixed = false,
 }: {
   drawing: ChartDrawing;
+  mixed?: boolean;
   onChange: (patch: DrawingPatch) => void;
   variant?: "default" | "toolbar";
 }) {
@@ -425,23 +427,27 @@ export function LineStylePicker({
           variant === "toolbar" && "size-[38px]",
         )}
       >
-        <svg width="22" height="12" aria-hidden="true">
-          <line
-            x1="1"
-            y1="6"
-            x2="21"
-            y2="6"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeDasharray={
-              drawing.lineStyle === "dashed"
-                ? "6 3"
-                : drawing.lineStyle === "dotted"
-                  ? "2 3"
-                  : undefined
-            }
-          />
-        </svg>
+        {mixed ? (
+          <span aria-hidden="true">—</span>
+        ) : (
+          <svg width="22" height="12" aria-hidden="true">
+            <line
+              x1="1"
+              y1="6"
+              x2="21"
+              y2="6"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeDasharray={
+                drawing.lineStyle === "dashed"
+                  ? "6 3"
+                  : drawing.lineStyle === "dotted"
+                    ? "2 3"
+                    : undefined
+              }
+            />
+          </svg>
+        )}
       </PopoverTrigger>
       <PopoverPopup
         instant
@@ -467,7 +473,7 @@ export function LineStylePicker({
           <button
             type="button"
             key={style}
-            aria-pressed={(drawing.lineStyle ?? "solid") === style}
+            aria-pressed={!mixed && (drawing.lineStyle ?? "solid") === style}
             onClick={() => {
               onChange({ lineStyle: style });
               setOpen(false);

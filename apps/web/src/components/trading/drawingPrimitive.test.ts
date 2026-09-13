@@ -2213,3 +2213,63 @@ describe("Fibonacci time logical projection", () => {
     expect(plugin.hitTest({ x: 300, y: 200 })).toMatchObject({ handle: 1 });
   });
 });
+
+describe("multiple selected drawing rendering", () => {
+  it("highlights every member without resize handles and restores individual handles when selection becomes singular", () => {
+    const { chart, series } = fixture();
+    const drawings: ChartDrawing[] = ["a", "b"].map((id, index) => ({
+      id,
+      kind: "trend",
+      color: "#ff0000",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 400 - index * 100 },
+        { time: 200 as Time, price: 400 - index * 100 },
+      ],
+    }));
+    let selectedIds = ["a", "b"];
+    const plugin = createDrawingPrimitive(chart, series, () => ({
+      drawings,
+      selected: "b",
+      selectedIds,
+    }));
+    expect(plugin.hitTest({ x: 100, y: 100 })?.handle).toBe(-1);
+    expect(plugin.hitTest({ x: 200, y: 200 })?.handle).toBe(-1);
+    const strokes: Array<{ color: string; width: number }> = [];
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      clip: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      arc: vi.fn(),
+      fill: vi.fn(),
+      setLineDash: vi.fn(),
+      strokeStyle: "",
+      lineWidth: 0,
+      stroke: () => strokes.push({ color: ctx.strokeStyle, width: ctx.lineWidth }),
+    };
+    const renderer = plugin.primitive.paneViews!()[0]!.renderer()!;
+    const draw = () =>
+      renderer.draw({
+        useMediaCoordinateSpace: (callback: (scope: { context: typeof ctx }) => void) =>
+          callback({ context: ctx }),
+      } as unknown as Parameters<typeof renderer.draw>[0]);
+    draw();
+    expect(ctx.arc).not.toHaveBeenCalled();
+    expect(
+      strokes.filter((stroke) => stroke.color === "#2962ff" && stroke.width === 5),
+    ).toHaveLength(2);
+    expect(plugin.primitive.priceAxisViews!().map((view) => view.text())).toEqual([
+      "400.00",
+      "300.00",
+    ]);
+    selectedIds = ["b"];
+    draw();
+    expect(ctx.arc).toHaveBeenCalled();
+    expect(plugin.hitTest({ x: 200, y: 200 })?.handle).toBe(1);
+  });
+});

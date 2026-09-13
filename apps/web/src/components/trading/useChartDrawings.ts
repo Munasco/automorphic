@@ -16,6 +16,8 @@ import {
 } from "lightweight-charts";
 import {
   DRAWING_ANCHORS,
+  defaultDrawingLevels,
+  defaultRegressionDrawingSettings,
   drawingTimeValue,
   isVariableDrawingTool,
   isSpecialChannelDrawing,
@@ -35,9 +37,17 @@ import {
   drawingTimeCoordinate,
   supportsInlineDrawingText,
 } from "./drawingPrimitive";
-import { isDrawingVisibleAtInterval } from "./drawingVisibility";
+import {
+  isDrawingVisibleAtInterval,
+  sanitizeDrawingVisibility,
+  type DrawingVisibility,
+} from "./drawingVisibility";
 import { applyDrawingTemplate } from "./drawingTemplates";
-import { parseDrawingClipboard, serializeDrawingClipboard } from "./drawingClipboard";
+import {
+  parseDrawingsClipboard,
+  serializeDrawingClipboard,
+  serializeDrawingsClipboard,
+} from "./drawingClipboard";
 export type ChartDrawingTool = "cursor" | DrawingKind;
 export type DrawingOrderDirection = "front" | "forward" | "backward" | "back";
 export type DrawingMagnetMode = "off" | "weak" | "strong";
@@ -55,6 +65,8 @@ export type DrawingState = {
   allLocked: boolean;
   alwaysRemoveLocked: boolean;
   selected: ChartDrawing | null;
+  selectedIds: readonly string[];
+  selectedObjects: readonly ChartDrawing[];
   hovered: ChartDrawing | null;
   instruction: string;
   settingsOpen: boolean;
@@ -63,6 +75,12 @@ export type DrawingState = {
 };
 export type DrawingPatch = Partial<Omit<ChartDrawing, "id" | "kind">>;
 export type DrawingSettingsOptions = { replace?: boolean };
+export type DrawingVisibilityPatch = {
+  [K in keyof DrawingVisibility]?: DrawingVisibility[K] extends boolean
+    ? boolean
+    : Partial<DrawingVisibility[K]>;
+};
+export type DrawingDisplacement = { bars: number; price: number; priceMultiplier?: number };
 type DrawingStorage = Pick<Storage, "getItem" | "setItem">;
 const EMPTY: DrawingState = {
   tool: "cursor",
@@ -78,6 +96,8 @@ const EMPTY: DrawingState = {
   allLocked: false,
   alwaysRemoveLocked: false,
   selected: null,
+  selectedIds: [],
+  selectedObjects: [],
   hovered: null,
   instruction: "",
   settingsOpen: false,
@@ -107,6 +127,7 @@ export function createChartDrawingSession(
   let tool: ChartDrawingTool = "cursor";
   let anchors: DrawingAnchor[] = [];
   let selectedId: string | null = null;
+  let selectedIds: string[] = [];
   let hoveredId: string | null = null;
   let settingsOpen = false;
   let textEditing = false;
@@ -116,6 +137,7 @@ export function createChartDrawingSession(
     appearanceReplaced?: boolean;
     created?: boolean;
   } | null = null;
+  let groupSettingsDraft: { originals: ChartDrawing[]; drawings: ChartDrawing[] } | null = null;
   let contextPoint: DrawingPoint | null = null;
   let replacingId: string | null = null;
   let disposed = false;
@@ -166,6 +188,10 @@ export function createChartDrawingSession(
     moved: boolean;
     clone: boolean;
     cloneId: string | null;
+    before: ChartDrawing[];
+    selectionBefore: string[];
+    additive: boolean;
+    group: Array<{ drawing: ChartDrawing; points: DrawingPoint[]; cloneId: string }>;
   } | null = null;
   const history: ChartDrawing[][] = [];
   const future: ChartDrawing[][] = [];
@@ -194,13 +220,18 @@ export function createChartDrawingSession(
     return price === anchor.price ? anchor : { ...anchor, price };
   };
   const displayedDrawings = () =>
-    settingsDraft
-      ? settingsDraft.created
-        ? [...drawings, settingsDraft.drawing]
-        : drawings.map((drawing) =>
-            drawing.id === settingsDraft!.original.id ? settingsDraft!.drawing : drawing,
-          )
-      : drawings;
+    groupSettingsDraft
+      ? drawings.map(
+          (drawing) =>
+            groupSettingsDraft!.drawings.find((item) => item.id === drawing.id) ?? drawing,
+        )
+      : settingsDraft
+        ? settingsDraft.created
+          ? [...drawings, settingsDraft.drawing]
+          : drawings.map((drawing) =>
+              drawing.id === settingsDraft!.original.id ? settingsDraft!.drawing : drawing,
+            )
+        : drawings;
   const isVisible = (drawing: ChartDrawing) =>
     !hidden && !drawing.hidden && isDrawingVisibleAtInterval(drawing.visibility, intervalMinutes);
   const primitive = createDrawingPrimitive(
@@ -213,6 +244,7 @@ export function createChartDrawingSession(
           textEditing && drawing.id === selectedId ? { ...drawing, text: "" } : drawing,
         ),
       selected: selectedId,
+      selectedIds,
       hovered: hoveredId,
       interactive: tool === "cursor" && !settingsOpen && !textEditing,
       preview,
@@ -231,7 +263,18 @@ export function createChartDrawingSession(
           null)
         : null;
     hoveredId = hovered?.id ?? null;
-    const selected = displayedDrawings().find((drawing) => drawing.id === selectedId) ?? null;
+    if (selectedId === null) selectedIds = [];
+    else if (!selectedIds.includes(selectedId)) selectedIds = [selectedId];
+    const selectedObjects = selectedIds.flatMap((id) => {
+      const drawing = displayedDrawings().find(
+        (item) =>
+          item.id === id && (groupSettingsDraft || selectedIds.length === 1 || isVisible(item)),
+      );
+      return drawing ? [drawing] : [];
+    });
+    selectedIds = selectedObjects.map((drawing) => drawing.id);
+    if (!selectedIds.includes(selectedId ?? "")) selectedId = selectedIds.at(-1) ?? null;
+    const selected = selectedObjects.find((drawing) => drawing.id === selectedId) ?? null;
     const remaining = tool === "cursor" ? 0 : DRAWING_ANCHORS[tool] - anchors.length;
     const instruction =
       tool === "cursor"
@@ -265,6 +308,8 @@ export function createChartDrawingSession(
       allLocked: drawings.length > 0 && drawings.every((drawing) => drawing.locked === true),
       alwaysRemoveLocked,
       selected,
+      selectedIds,
+      selectedObjects,
       hovered,
       instruction,
       settingsOpen: settingsOpen && !!selected,
@@ -330,7 +375,8 @@ export function createChartDrawingSession(
     paneExtensions.redraw();
   };
   const discardSettings = () => {
-    const hadDraft = settingsDraft !== null;
+    const hadDraft = settingsDraft !== null || groupSettingsDraft !== null;
+    groupSettingsDraft = null;
     if (settingsDraft?.created) selectedId = null;
     settingsDraft = null;
     settingsOpen = false;
@@ -373,7 +419,20 @@ export function createChartDrawingSession(
     hoveredId = next;
     emit();
   };
-  const beginDrag = (point: DrawingPoint, options?: { clone?: boolean; paneIndex?: number }) => {
+  const chooseDrawing = (id: string | null, additive = false) => {
+    if (id === null) {
+      if (!additive) selectedIds = [];
+    } else if (additive) {
+      selectedIds = selectedIds.includes(id)
+        ? selectedIds.filter((item) => item !== id)
+        : [...selectedIds, id];
+    } else if (!selectedIds.includes(id)) selectedIds = [id];
+    selectedId = id && selectedIds.includes(id) ? id : (selectedIds.at(-1) ?? null);
+  };
+  const beginDrag = (
+    point: DrawingPoint,
+    options?: { clone?: boolean; additive?: boolean; paneIndex?: number },
+  ) => {
     if (disposed || hidden) return false;
     if (drag) endDrag(false);
     if (discardSettings()) emit();
@@ -397,14 +456,34 @@ export function createChartDrawingSession(
         : null
       : primitive.hitTest(point);
     const drawing = target?.drawing;
-    const handle = target?.handle ?? -1;
-    if (!drawing) return false;
-    selectedId = drawing.id;
+    if (!drawing) {
+      chooseDrawing(null, options?.additive);
+      emit();
+      return false;
+    }
+    const selectionBefore = selectedIds.slice();
+    if (!options?.additive || !selectedIds.includes(drawing.id)) chooseDrawing(drawing.id);
+    const handle = selectedIds.length > 1 ? -1 : (target?.handle ?? -1);
     hoveredId = null;
     emit();
-    if (drawing.locked) return false;
+    if (drawing.locked) {
+      if (options?.additive) {
+        selectedIds = selectionBefore;
+        chooseDrawing(drawing.id, true);
+        emit();
+      }
+      return false;
+    }
     const clone = options?.clone === true && handle < 0;
-    if (clone && drawings.length >= 100) return false;
+    const moving = drawings.filter((item) => selectedIds.includes(item.id) && !item.locked);
+    if (clone && drawings.length + moving.length > 100) {
+      if (options?.additive) {
+        selectedIds = selectionBefore;
+        chooseDrawing(drawing.id, true);
+        emit();
+      }
+      return false;
+    }
     const points = drawing.anchors.map((anchor) => {
       if (drawing.kind !== "vertical") return drawingProjection(chart, series).project(anchor);
       const x = drawingTimeCoordinate(chart, series, anchor.time);
@@ -420,7 +499,30 @@ export function createChartDrawingSession(
       moved: false,
       clone,
       cloneId: null,
+      before: drawings.slice(),
+      selectionBefore,
+      additive: options?.additive === true,
+      group:
+        selectedIds.length > 1
+          ? moving.map((item) => ({
+              drawing: item,
+              cloneId: randomUUID(),
+              points: item.anchors.map((anchor) =>
+                item.kind === "vertical"
+                  ? { x: drawingTimeCoordinate(chart, series, anchor.time)!, y: point.y }
+                  : drawingProjection(chart, series).project(anchor)!,
+              ),
+            }))
+          : [],
     };
+    if (
+      drag.group.some((item) =>
+        item.points.some((p) => !p || !Number.isFinite(p.x) || !Number.isFinite(p.y)),
+      )
+    ) {
+      drag = null;
+      return false;
+    }
     return true;
   };
   const snapAnchor = (anchor: DrawingAnchor, point: DrawingPoint): DrawingAnchor => {
@@ -463,6 +565,74 @@ export function createChartDrawingSession(
       dy = point.y - activeDrag.origin.y;
     if (!activeDrag.moved && Math.hypot(dx, dy) < 3) return;
     const projection = drawingProjection(chart, series);
+    if (activeDrag.group.length) {
+      const reference = activeDrag.points[0]!;
+      const destinationPoint = { x: reference.x + dx, y: reference.y + dy };
+      const destination = projection.unproject(destinationPoint);
+      if (destination && magnetMode !== "off") {
+        const snapped = projection.project(snapAnchor(destination, destinationPoint));
+        if (snapped) {
+          dx = snapped.x - reference.x;
+          dy = snapped.y - reference.y;
+        }
+      }
+      const translated = activeDrag.group.map(({ drawing, points, cloneId }) => {
+        const anchors = drawing.anchors.map((anchor, index) => {
+          const old = points[index]!;
+          if (drawing.kind === "horizontal") {
+            const price = series.coordinateToPrice(old.y + dy);
+            return price === null ? null : quantizePointerAnchor({ ...anchor, price });
+          }
+          const moved = projection.unproject({
+            x: old.x + dx,
+            y:
+              old.y + (drawing.kind === "vertical" || drawing.kind === "regression-trend" ? 0 : dy),
+          });
+          if (!moved) return null;
+          if (drawing.kind === "vertical" || drawing.kind === "regression-trend")
+            return { ...anchor, time: Math.abs(dx) < 1 ? anchor.time : moved.time };
+          return quantizePointerAnchor({
+            ...moved,
+            time: Math.abs(dx) < 1 ? anchor.time : moved.time,
+          });
+        });
+        if (
+          anchors.some((anchor) => anchor === null) ||
+          !validDrawingAnchors(drawing.kind, anchors as DrawingAnchor[])
+        )
+          return null;
+        return {
+          ...drawing,
+          anchors: anchors as DrawingAnchor[],
+          ...(activeDrag.clone
+            ? {
+                id: cloneId,
+                name: `${drawing.name || drawing.text || drawing.kind} copy`.slice(0, 80),
+                locked: false,
+              }
+            : {}),
+        };
+      });
+      if (translated.some((drawing) => drawing === null)) return;
+      const next = translated as ChartDrawing[];
+      activeDrag.moved = next.some((drawing, index) =>
+        drawing.anchors.some(
+          (anchor, i) => !sameAnchor(activeDrag.group[index]!.drawing.anchors[i], anchor),
+        ),
+      );
+      if (activeDrag.clone && !activeDrag.moved) return;
+      const byId = new Map(next.map((drawing) => [drawing.id, drawing]));
+      drawings = activeDrag.clone
+        ? [...activeDrag.before, ...next]
+        : activeDrag.before.map((drawing) => byId.get(drawing.id) ?? drawing);
+      if (activeDrag.clone) {
+        selectedIds = next.map((drawing) => drawing.id);
+        selectedId = selectedIds.at(-1) ?? null;
+      }
+      render();
+      emit();
+      return;
+    }
     // Snap one reference point, then translate the entire shape by that same offset.
     const reference = activeDrag.handlePoint ?? activeDrag.points[Math.max(0, activeDrag.handle)]!;
     const regression = activeDrag.drawing.kind === "regression-trend";
@@ -630,18 +800,15 @@ export function createChartDrawingSession(
     drag = null;
     if (original.moved && commit) {
       future.length = 0;
-      history.push(
-        original.clone
-          ? drawings.filter((item) => item.id !== original.cloneId)
-          : drawings.map((item) => (item.id === original.drawing.id ? original.drawing : item)),
-      );
+      history.push(original.before);
       if (history.length > 50) history.shift();
       persist();
     } else {
-      drawings = original.clone
-        ? drawings.filter((item) => item.id !== original.cloneId)
-        : drawings.map((item) => (item.id === original.drawing.id ? original.drawing : item));
-      if (original.clone) selectedId = original.drawing.id;
+      drawings = original.before;
+      selectedIds = original.selectionBefore;
+      selectedId = selectedIds.at(-1) ?? null;
+      if (commit && original.additive) chooseDrawing(original.drawing.id, true);
+      else if (commit || original.clone) chooseDrawing(original.drawing.id);
     }
     render();
     emit();
@@ -733,7 +900,7 @@ export function createChartDrawingSession(
     if (disposed || !event.point) return;
     if (tool === "cursor") {
       discardSettings();
-      selectedId = hit(event.point, event.paneIndex)?.id ?? null;
+      chooseDrawing(hit(event.point, event.paneIndex)?.id ?? null);
       contextPoint = null;
       emit();
       return;
@@ -833,40 +1000,56 @@ export function createChartDrawingSession(
       return false;
     // Reordering commits only object order, never provisional coordinates or settings.
     setTool("cursor");
-    const from = drawings.findIndex((drawing) => drawing.id === selectedId);
-    if (from < 0) return false;
-    const to =
+    const ids = new Set(selectedIds);
+    const selected = drawings.filter((drawing) => ids.has(drawing.id));
+    const others = drawings.filter((drawing) => !ids.has(drawing.id));
+    const reordered =
       direction === "front"
-        ? drawings.length - 1
+        ? [...others, ...selected]
         : direction === "back"
-          ? 0
-          : direction === "forward"
-            ? Math.min(drawings.length - 1, from + 1)
-            : Math.max(0, from - 1);
-    if (from === to) return false;
+          ? [...selected, ...others]
+          : drawings.slice();
+    if (direction === "forward") {
+      for (let i = reordered.length - 2; i >= 0; i--) {
+        if (ids.has(reordered[i]!.id) && !ids.has(reordered[i + 1]!.id))
+          [reordered[i], reordered[i + 1]] = [reordered[i + 1]!, reordered[i]!];
+      }
+    } else if (direction === "backward") {
+      for (let i = 1; i < reordered.length; i++) {
+        if (ids.has(reordered[i]!.id) && !ids.has(reordered[i - 1]!.id))
+          [reordered[i], reordered[i - 1]] = [reordered[i - 1]!, reordered[i]!];
+      }
+    }
+    if (reordered.every((drawing, index) => drawing === drawings[index])) return false;
     remember();
-    const reordered = drawings.slice();
-    const [drawing] = reordered.splice(from, 1);
-    reordered.splice(to, 0, drawing!);
     drawings = reordered;
     changed();
     return true;
   };
   const applySelectedTemplate = (patch: DrawingPatch) => {
     if (disposed) return false;
-    const target = drawings.find((drawing) => drawing.id === selectedId);
-    if (!target || applyDrawingTemplate(target, patch) === target) return false;
-    // Restore any drag or draft first; templates replace appearance, never provisional placement.
-    setTool("cursor");
-    const current = drawings.find((drawing) => drawing.id === selectedId);
-    if (!current) return false;
-    const next = applyDrawingTemplate(current, patch);
-    defaults.remember(next);
-    // Normalize both sides so optional defaults and property order cannot create spurious undo entries.
-    if (JSON.stringify(applyDrawingTemplate(current, current)) === JSON.stringify(next))
+    const targets = drawings.filter((drawing) => selectedIds.includes(drawing.id));
+    if (
+      !targets.length ||
+      targets.every((drawing) => applyDrawingTemplate(drawing, patch) === drawing)
+    )
       return false;
+    setTool("cursor");
+    const changes = new Map<string, ChartDrawing>();
+    for (const current of drawings) {
+      if (!selectedIds.includes(current.id)) continue;
+      const applied = applyDrawingTemplate(current, patch);
+      const next =
+        selectedIds.length > 1 && current.text !== undefined
+          ? { ...applied, text: current.text }
+          : applied;
+      defaults.remember(next);
+      if (JSON.stringify(applyDrawingTemplate(current, current)) !== JSON.stringify(next))
+        changes.set(current.id, next);
+    }
+    if (!changes.size) return false;
     remember();
-    drawings = drawings.map((drawing) => (drawing.id === current.id ? next : drawing));
+    drawings = drawings.map((drawing) => changes.get(drawing.id) ?? drawing);
     changed();
     return true;
   };
@@ -882,7 +1065,136 @@ export function createChartDrawingSession(
     const normalized = normalizePatch(settingsDraft.original, patch);
     return normalized ? { ...settingsDraft.drawing, ...normalized } : null;
   };
+  const commonGroupPatch = (patch: DrawingPatch) => {
+    const common = { ...patch };
+    delete common.anchors;
+    delete common.text;
+    delete common.name;
+    delete common.levels;
+    delete common.regressionBaseLine;
+    delete common.regressionUpperLine;
+    delete common.regressionLowerLine;
+    return common;
+  };
+  const normalizedGroupPatch = (drawing: ChartDrawing, common: DrawingPatch) => {
+    const normalized = normalizePatch(drawing, common);
+    if (!normalized) return null;
+    const linePatch = {
+      ...(common.color === undefined ? {} : { color: common.color }),
+      ...(common.width === undefined ? {} : { width: common.width }),
+      ...(common.lineStyle === undefined ? {} : { lineStyle: common.lineStyle }),
+      ...(common.lineOpacity === undefined ? {} : { opacity: common.lineOpacity }),
+    };
+    if (!Object.keys(linePatch).length) return normalized;
+    if (drawing.kind === "channel")
+      normalized.levels = (drawing.levels ?? defaultDrawingLevels("channel")).map((level) => ({
+        ...level,
+        ...linePatch,
+      }));
+    if (drawing.kind === "regression-trend") {
+      const settings = { ...defaultRegressionDrawingSettings(), ...drawing };
+      for (const key of [
+        "regressionBaseLine",
+        "regressionUpperLine",
+        "regressionLowerLine",
+      ] as const)
+        normalized[key] = { ...settings[key], ...linePatch };
+    }
+    return normalized;
+  };
+  const previewGroupSettings = (patch: DrawingPatch) => {
+    if (!groupSettingsDraft || !settingsOpen) return false;
+    const common = commonGroupPatch(patch);
+    const next = groupSettingsDraft.drawings.map((drawing) => {
+      if (drawing.locked && common.locked !== false) return drawing;
+      const normalized = normalizedGroupPatch(drawing, common);
+      return normalized ? { ...drawing, ...normalized } : null;
+    });
+    if (next.some((drawing) => drawing === null)) return false;
+    groupSettingsDraft.drawings = next as ChartDrawing[];
+    render();
+    emit();
+    return true;
+  };
+  const previewSelectedVisibility = (patch: DrawingVisibilityPatch): boolean => {
+    if (disposed || !settingsOpen || !groupSettingsDraft) return false;
+    groupSettingsDraft.drawings = groupSettingsDraft.drawings.map((drawing) => {
+      if (drawing.locked) return drawing;
+      const visibility = sanitizeDrawingVisibility(drawing.visibility);
+      for (const key of Object.keys(patch) as Array<keyof DrawingVisibility>) {
+        const value = patch[key];
+        if (key === "ticks" || key === "ranges") {
+          if (typeof value === "boolean") visibility[key] = value;
+        } else if (value && typeof value === "object")
+          visibility[key] = { ...visibility[key], ...value };
+      }
+      return { ...drawing, visibility: sanitizeDrawingVisibility(visibility) };
+    });
+    render();
+    emit();
+    return true;
+  };
+  const previewSelectedDisplacement = ({
+    bars,
+    price,
+    priceMultiplier = 1,
+  }: DrawingDisplacement): boolean => {
+    if (
+      disposed ||
+      !settingsOpen ||
+      !groupSettingsDraft ||
+      !Number.isSafeInteger(bars) ||
+      !Number.isFinite(price) ||
+      !Number.isFinite(priceMultiplier)
+    )
+      return false;
+    const projection = drawingProjection(chart, series);
+    const next = groupSettingsDraft.drawings.map((drawing, index) => {
+      const original = groupSettingsDraft!.originals[index]!;
+      if (original.locked) return drawing;
+      const anchors = original.anchors.map((anchor) => {
+        let time = anchor.time;
+        if (bars !== 0 && drawing.kind !== "horizontal") {
+          try {
+            const x = drawingTimeCoordinate(chart, series, anchor.time);
+            const logical = x === null ? null : chart.timeScale().coordinateToLogical(x);
+            const shifted =
+              logical === null
+                ? null
+                : chart.timeScale().logicalToCoordinate((logical + bars) as Logical);
+            if (shifted === null || !Number.isFinite(shifted)) return null;
+            const projected = projection.unproject({
+              x: shifted,
+              y: series.priceToCoordinate(anchor.price) ?? 0,
+            });
+            if (!projected) return null;
+            time = projected.time;
+          } catch {
+            return null;
+          }
+        }
+        const nextPrice =
+          drawing.kind === "vertical" || drawing.kind === "regression-trend"
+            ? anchor.price
+            : anchor.price * priceMultiplier + price;
+        if (!Number.isFinite(nextPrice)) return null;
+        if (nextPrice === anchor.price) return time === anchor.time ? anchor : { ...anchor, time };
+        return quantizePointerAnchor({ time, price: nextPrice });
+      });
+      return anchors.some((anchor) => anchor === null) ||
+        !validDrawingAnchors(drawing.kind, anchors as DrawingAnchor[])
+        ? null
+        : { ...drawing, anchors: anchors as DrawingAnchor[] };
+    });
+    if (next.some((drawing) => drawing === null)) return false;
+    groupSettingsDraft.drawings = next as ChartDrawing[];
+    render();
+    emit();
+    return true;
+  };
   const previewSettings = (patch: DrawingPatch, options: DrawingSettingsOptions = {}) => {
+    if (disposed) return false;
+    if (groupSettingsDraft) return previewGroupSettings(patch);
     if (disposed || !settingsOpen || !settingsDraft || selectedId !== settingsDraft.original.id)
       return false;
     const next = settingsResult(patch, options);
@@ -894,6 +1206,23 @@ export function createChartDrawingSession(
     return true;
   };
   const applySettings = (patch: DrawingPatch, options: DrawingSettingsOptions = {}) => {
+    if (disposed) return false;
+    if (groupSettingsDraft) {
+      if (!previewGroupSettings(patch)) return false;
+      const { originals, drawings: drafts } = groupSettingsDraft;
+      groupSettingsDraft = null;
+      settingsOpen = false;
+      if (JSON.stringify(originals) === JSON.stringify(drafts)) {
+        render();
+        emit();
+        return true;
+      }
+      remember();
+      const next = new Map(drafts.map((drawing) => [drawing.id, drawing]));
+      drawings = drawings.map((drawing) => next.get(drawing.id) ?? drawing);
+      changed();
+      return true;
+    }
     if (disposed || !settingsOpen || !settingsDraft || selectedId !== settingsDraft.original.id)
       return false;
     const next = settingsResult(patch, options);
@@ -935,7 +1264,15 @@ export function createChartDrawingSession(
     return true;
   };
   const beginTextEdit = () => {
-    if (disposed || tool !== "cursor" || settingsOpen || contextPoint || drag) return false;
+    if (
+      disposed ||
+      tool !== "cursor" ||
+      selectedIds.length > 1 ||
+      settingsOpen ||
+      contextPoint ||
+      drag
+    )
+      return false;
     if (textEditing) return true;
     const original = drawings.find((drawing) => drawing.id === selectedId);
     if (!original || !isVisible(original) || !supportsInlineDrawingText(original.kind))
@@ -979,7 +1316,8 @@ export function createChartDrawingSession(
     setTool("cursor");
     remember();
     drawings = drawings.filter((drawing) => drawing.id !== id);
-    if (selectedId === id) selectedId = null;
+    selectedIds = selectedIds.filter((item) => item !== id);
+    if (selectedId === id) selectedId = selectedIds.at(-1) ?? null;
     changed();
   };
   const serializedDrawing = (id: string | null) => {
@@ -987,7 +1325,40 @@ export function createChartDrawingSession(
     const drawing = drawings.find((item) => item.id === id);
     return drawing ? serializeDrawingClipboard(drawing) : null;
   };
-  const copySelectedSerialized = () => serializedDrawing(selectedId);
+  const copySelectedSerialized = () =>
+    disposed || drag
+      ? null
+      : serializeDrawingsClipboard(drawings.filter((drawing) => selectedIds.includes(drawing.id)));
+  const copySelected = async (): Promise<boolean> => {
+    const text = copySelectedSerialized();
+    if (!text) return false;
+    try {
+      if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) return false;
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const duplicateSelected = () => {
+    if (disposed) return;
+    const committed = drag?.before ?? drawings;
+    const ids = drag ? drag.selectionBefore : selectedIds;
+    const originals = committed.filter((drawing) => ids.includes(drawing.id));
+    if (!originals.length || committed.length + originals.length > 100) return;
+    setTool("cursor");
+    const copies = originals.map((drawing) => ({
+      ...structuredClone(drawing),
+      id: randomUUID(),
+      name: `${drawing.name || drawing.text || drawing.kind} copy`.slice(0, 80),
+      locked: false,
+    }));
+    remember();
+    drawings = [...drawings, ...copies];
+    selectedIds = copies.map((drawing) => drawing.id);
+    selectedId = selectedIds.at(-1) ?? null;
+    changed();
+  };
   const copyDrawing = async (id: string): Promise<boolean> => {
     const text = serializedDrawing(id);
     if (!text) return false;
@@ -1001,37 +1372,38 @@ export function createChartDrawingSession(
   };
   const pasteDrawing = (text: string): boolean => {
     if (disposed) return false;
-    const original = parseDrawingClipboard(text);
-    if (!original) return false;
-    // A drag preview does not consume a committed-object slot.
-    if (drawings.length - (drag?.cloneId ? 1 : 0) >= 100) return false;
-    const pastedAnchors: DrawingAnchor[] = [];
+    const originals = parseDrawingsClipboard(text);
+    if (!originals || (drag?.before.length ?? drawings.length) + originals.length > 100)
+      return false;
+    const copies: ChartDrawing[] = [];
     try {
-      // Each paste offsets the clipboard source by 40 CSS pixels, including on log scales.
-      // Never infer a price delta or change times when the chart cannot project an anchor.
-      for (const anchor of original.anchors) {
-        const y = series.priceToCoordinate(anchor.price);
-        if (y === null || !Number.isFinite(y)) return false;
-        const price = series.coordinateToPrice(y - 40);
-        if (price === null || !Number.isFinite(price)) return false;
-        pastedAnchors.push({ ...anchor, price });
+      for (const original of originals) {
+        const anchors: DrawingAnchor[] = [];
+        for (const anchor of original.anchors) {
+          const y = series.priceToCoordinate(anchor.price);
+          if (y === null || !Number.isFinite(y)) return false;
+          const price = series.coordinateToPrice(y - 40);
+          if (price === null || !Number.isFinite(price)) return false;
+          anchors.push({ ...anchor, price });
+        }
+        if (!validDrawingAnchors(original.kind, anchors)) return false;
+        copies.push({
+          ...original,
+          anchors,
+          id: randomUUID(),
+          name: `${original.name || original.text || original.kind} copy`.slice(0, 80),
+          locked: false,
+          hidden: false,
+        });
       }
     } catch {
       return false;
     }
-    if (!validDrawingAnchors(original.kind, pastedAnchors)) return false;
     setTool("cursor");
-    const copy: ChartDrawing = {
-      ...original,
-      anchors: pastedAnchors,
-      id: randomUUID(),
-      name: `${original.name || original.text || original.kind} copy`.slice(0, 80),
-      locked: false,
-      hidden: false,
-    };
     remember();
-    drawings = [...drawings, copy];
-    selectedId = copy.id;
+    drawings = [...drawings, ...copies];
+    selectedIds = copies.map((drawing) => drawing.id);
+    selectedId = selectedIds.at(-1) ?? null;
     changed();
     return true;
   };
@@ -1182,7 +1554,7 @@ export function createChartDrawingSession(
   // The chart library suppresses a second quick click even at a different position.
   // DOM placement handles every anchor; the chart retains its cursor-selection behavior.
   const chartClick = (event: MouseEventParams<Time>) => {
-    if (!directPlacement || tool === "cursor") click(event);
+    if (!directPlacement) click(event);
   };
   chart.subscribeClick(chartClick);
   chart.subscribeCrosshairMove(move);
@@ -1198,6 +1570,8 @@ export function createChartDrawingSession(
     },
     beginDrag,
     copyDrawing,
+    copySelected,
+    duplicateSelected,
     copySelectedSerialized,
     pasteDrawing,
     hover,
@@ -1208,6 +1582,8 @@ export function createChartDrawingSession(
     finishDrawing,
     isVisible,
     previewSettings,
+    previewSelectedDisplacement,
+    previewSelectedVisibility,
     applySettings,
     applySelectedTemplate,
     reorderSelected,
@@ -1256,7 +1632,15 @@ export function createChartDrawingSession(
       if (disposed || tool !== "cursor") return false;
       endDrag(false);
       discardSettings();
-      if (point) selectedId = hit(point, paneIndex)?.id ?? null;
+      if (point) chooseDrawing(hit(point, paneIndex)?.id ?? null);
+      if (selectedIds.length > 1) {
+        const originals = drawings.filter((drawing) => selectedIds.includes(drawing.id));
+        groupSettingsDraft = { originals, drawings: originals.slice() };
+        settingsOpen = true;
+        contextPoint = null;
+        emit();
+        return true;
+      }
       const original = drawings.find((drawing) => drawing.id === selectedId);
       if (!original) {
         emit();
@@ -1287,10 +1671,15 @@ export function createChartDrawingSession(
       contextPoint = null;
       emit();
     },
-    cancel: () => setTool("cursor"),
+    cancel: () => {
+      setTool("cursor");
+      selectedId = null;
+      selectedIds = [];
+      emit();
+    },
     undo: () => {
       if (disposed) return;
-      if (settingsDraft) {
+      if (settingsDraft || groupSettingsDraft) {
         discardSettings();
         emit();
         return;
@@ -1370,6 +1759,10 @@ export function createChartDrawingSession(
       endDrag(false);
       discardSettings();
       hidden = !hidden;
+      if (hidden) {
+        selectedId = null;
+        selectedIds = [];
+      }
       preview = null;
       tool = "cursor";
       anchors = [];
@@ -1390,10 +1783,14 @@ export function createChartDrawingSession(
       preview = null;
       changed();
     },
-    selectDrawing: (id: string) => {
-      if (disposed || !drawings.some((drawing) => drawing.id === id)) return;
+    selectDrawing: (id: string, options?: { additive?: boolean }) => {
+      if (
+        disposed ||
+        !drawings.some((drawing) => drawing.id === id && (!options?.additive || isVisible(drawing)))
+      )
+        return;
       setTool("cursor");
-      selectedId = id;
+      chooseDrawing(id, options?.additive);
       emit();
     },
     updateDrawing,
@@ -1416,7 +1813,19 @@ export function createChartDrawingSession(
       changed();
     },
     deleteSelected: () => {
-      if (selectedId) deleteDrawing(selectedId);
+      if (disposed) return;
+      setTool("cursor");
+      const ids = new Set(
+        selectedIds.filter((id) =>
+          drawings.some((drawing) => drawing.id === id && (!drawing.locked || alwaysRemoveLocked)),
+        ),
+      );
+      if (!ids.size) return;
+      remember();
+      drawings = drawings.filter((drawing) => !ids.has(drawing.id));
+      selectedIds = selectedIds.filter((id) => !ids.has(id));
+      selectedId = selectedIds.at(-1) ?? null;
+      changed();
     },
     redrawSelected: () => {
       if (disposed) return;
@@ -1429,11 +1838,33 @@ export function createChartDrawingSession(
       emit();
     },
     updateSelected: (patch: DrawingPatch) => {
-      if (selectedId) updateDrawing(selectedId, patch);
+      if (disposed) return;
+      if (selectedIds.length < 2) {
+        if (selectedId) updateDrawing(selectedId, patch);
+        return;
+      }
+      endDrag(false);
+      discardSettings();
+      // Group edits share appearance and visibility, never coordinates or drawing-specific text.
+      const common = commonGroupPatch(patch);
+      const changes = new Map<string, ChartDrawing>();
+      for (const drawing of drawings) {
+        if (!selectedIds.includes(drawing.id) || (drawing.locked && common.locked !== false))
+          continue;
+        const normalized = normalizedGroupPatch(drawing, common);
+        if (!normalized) return;
+        const next = { ...drawing, ...normalized };
+        if (JSON.stringify(next) !== JSON.stringify(drawing)) changes.set(drawing.id, next);
+      }
+      if (!changes.size) return;
+      remember();
+      drawings = drawings.map((drawing) => changes.get(drawing.id) ?? drawing);
+      changed();
     },
     dispose: () => {
       if (disposed) return;
       settingsDraft = null;
+      groupSettingsDraft = null;
       settingsOpen = false;
       textEditing = false;
       disposed = true;
@@ -1513,6 +1944,7 @@ export function useChartDrawings(
       if (
         !current.beginDrag(point, {
           clone: event.metaKey || event.ctrlKey,
+          additive: event.metaKey || event.ctrlKey,
           paneIndex: point.paneIndex,
         }) &&
         !current.blocksChartPan(point, point.paneIndex)
@@ -1719,7 +2151,10 @@ export function useChartDrawings(
   const clear = useCallback(() => session.current?.clear(), []);
   const deleteSelected = useCallback(() => session.current?.deleteSelected(), []);
   const redrawSelected = useCallback(() => session.current?.redrawSelected(), []);
-  const selectDrawing = useCallback((id: string) => session.current?.selectDrawing(id), []);
+  const selectDrawing = useCallback(
+    (id: string, options?: { additive?: boolean }) => session.current?.selectDrawing(id, options),
+    [],
+  );
   const updateDrawing = useCallback(
     (id: string, patch: DrawingPatch) => session.current?.updateDrawing(id, patch),
     [],
@@ -1785,6 +2220,19 @@ export function useChartDrawings(
       session.current?.previewSettings(patch, options) ?? false,
     [],
   );
+  const previewSelectedDisplacement = useCallback(
+    (offset: DrawingDisplacement) => session.current?.previewSelectedDisplacement(offset) ?? false,
+    [],
+  );
+  const previewSelectedVisibility = useCallback(
+    (patch: DrawingVisibilityPatch) => session.current?.previewSelectedVisibility(patch) ?? false,
+    [],
+  );
+  const copySelected = useCallback(
+    () => session.current?.copySelected() ?? Promise.resolve(false),
+    [],
+  );
+  const duplicateSelected = useCallback(() => session.current?.duplicateSelected(), []);
   const reorderSelected = useCallback(
     (direction: DrawingOrderDirection) => session.current?.reorderSelected(direction) ?? false,
     [],
@@ -1834,6 +2282,8 @@ export function useChartDrawings(
     openSettings,
     closeSettings,
     previewSettings,
+    previewSelectedDisplacement,
+    previewSelectedVisibility,
     applySettings,
     applySelectedTemplate,
     reorderSelected,
@@ -1848,6 +2298,8 @@ export function useChartDrawings(
     deleteDrawing,
     duplicateDrawing,
     copyDrawing,
+    copySelected,
+    duplicateSelected,
     copySelectedSerialized,
     pasteDrawing,
     setTool,

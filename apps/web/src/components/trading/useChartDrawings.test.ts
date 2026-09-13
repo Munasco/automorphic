@@ -18,7 +18,11 @@ import type {
 import { createChartDrawingSession } from "./useChartDrawings";
 import { sanitizeDrawingVisibility } from "./drawingVisibility";
 import type { ChartDrawing } from "./drawingGeometry";
-import { parseDrawingClipboard, serializeDrawingClipboard } from "./drawingClipboard";
+import {
+  parseDrawingsClipboard,
+  parseDrawingClipboard,
+  serializeDrawingClipboard,
+} from "./drawingClipboard";
 import { drawingProjection } from "./drawingPrimitive";
 
 function fixture(symbol: string, initial: string | null = null, candles: CandlestickData[] = []) {
@@ -736,19 +740,22 @@ describe("direct drawing placement", () => {
     session.dispose();
   });
 
-  it("leaves cursor selection to chart clicks while direct cursor placement is inert", () => {
+  it("uses pointer selection and ignores duplicate chart clicks in direct-placement mode", () => {
     const f = fixture("direct-cursor"),
       session = f.open(1, true);
     session.setTool("rectangle");
     session.placeAt({ x: 100, y: 100 });
     session.placeAt({ x: 200, y: 200 });
     const saved = f.saved();
+    session.beginDrag({ x: 800, y: 400 });
     f.click(800, 400, 0, 800);
     expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ selected: null }));
     const emissions = f.change.mock.calls.length;
     expect(session.placeAt({ x: 100, y: 100 })).toBe(false);
     expect(f.change.mock.calls).toHaveLength(emissions);
-    f.click(100, 100, 0, 100);
+    session.beginDrag({ x: 100, y: 100 });
+    session.endDrag();
+    f.click(800, 400, 0, 800);
     expect(f.change).toHaveBeenLastCalledWith(
       expect.objectContaining({ selected: expect.objectContaining({ kind: "rectangle" }) }),
     );
@@ -3697,6 +3704,523 @@ describe("drawing visual order", () => {
       "b",
     ]);
     expect(JSON.parse(f.saved()!).at(-1)).toEqual(objects[1]);
+    session.dispose();
+  });
+});
+
+describe("drawing multiselection", () => {
+  const line = (id: string, y: number, patch: Partial<ChartDrawing> = {}): ChartDrawing => ({
+    id,
+    kind: "trend",
+    color: "#2962ff",
+    width: 2,
+    anchors: [
+      { time: 100 as Time, price: 5000 - y },
+      { time: 300 as Time, price: 5000 - y },
+    ],
+    ...patch,
+  });
+  const setup = (objects = [line("a", 100), line("b", 200)]) => {
+    const f = fixture("multiselect", JSON.stringify(objects)),
+      session = f.open();
+    const state = () => f.change.mock.calls.at(-1)![0];
+    session.selectDrawing("a");
+    session.selectDrawing("b", { additive: true });
+    return { f, session, state, objects };
+  };
+  it("toggles membership, preserves a group on ordinary member selection, and clears on empty click and Escape", () => {
+    const { f, session, state } = setup();
+    expect(state().selectedIds).toEqual(["a", "b"]);
+    expect(state().selectedObjects.map((drawing: ChartDrawing) => drawing.id)).toEqual(["a", "b"]);
+    session.selectDrawing("a");
+    expect(state().selectedIds).toEqual(["a", "b"]);
+    expect(state().selected.id).toBe("a");
+    session.selectDrawing("a", { additive: true });
+    expect(state().selectedIds).toEqual(["b"]);
+    session.selectDrawing("a", { additive: true });
+    f.click(700, 450, 0, 700);
+    expect(state().selectedIds).toEqual([]);
+    session.selectDrawing("a");
+    session.cancel();
+    expect(state().selectedIds).toEqual([]);
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+  it("modifier clicks add and remove membership without cloning or persisting, including jitter", () => {
+    const { f, session, state } = setup();
+    session.selectDrawing("b", { additive: true });
+    expect(session.beginDrag({ x: 200, y: 200 }, { clone: true, additive: true })).toBe(true);
+    session.dragTo({ x: 201, y: 201 });
+    session.endDrag();
+    expect(state().selectedIds).toEqual(["a", "b"]);
+    session.beginDrag({ x: 200, y: 100 }, { clone: true, additive: true });
+    session.endDrag();
+    expect(state().selectedIds).toEqual(["b"]);
+    expect(state().count).toBe(2);
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+  it("moves a group from a former endpoint with one undo/write and keeps locked members fixed", () => {
+    const { f, session, state, objects } = setup([
+      line("a", 100),
+      line("b", 200),
+      line("locked", 300, { locked: true }),
+    ]);
+    session.selectDrawing("locked", { additive: true });
+    expect(session.beginDrag({ x: 100, y: 100 })).toBe(true);
+    session.dragTo({ x: 120, y: 110 });
+    session.dragTo({ x: 140, y: 130 });
+    expect(f.writes()).toBe(0);
+    session.endDrag();
+    expect(f.writes()).toBe(1);
+    const moved = JSON.parse(f.saved()!);
+    expect(moved[0].anchors).toEqual([
+      { time: 140, price: 4870 },
+      { time: 340, price: 4870 },
+    ]);
+    expect(moved[1].anchors).toEqual([
+      { time: 140, price: 4770 },
+      { time: 340, price: 4770 },
+    ]);
+    expect(moved[2]).toEqual(objects[2]);
+    expect(state().selectedIds).toEqual(["a", "b", "locked"]);
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toEqual(objects);
+    session.redo();
+    expect(JSON.parse(f.saved()!)).toEqual(moved);
+    session.dispose();
+  });
+  it("clones a group after dragging, preserves originals, and restores originals and selection on cancellation", () => {
+    const { f, session, state, objects } = setup();
+    session.beginDrag({ x: 200, y: 100 }, { clone: true, additive: true });
+    session.dragTo({ x: 250, y: 125 });
+    expect(state().count).toBe(4);
+    expect(state().objects.slice(0, 2)).toEqual(objects);
+    expect(state().selectedIds.every((id: string) => id !== "a" && id !== "b")).toBe(true);
+    expect(f.writes()).toBe(0);
+    session.endDrag(false);
+    expect(state().objects).toEqual(objects);
+    expect(state().selectedIds).toEqual(["a", "b"]);
+    session.beginDrag({ x: 200, y: 100 }, { clone: true, additive: true });
+    session.dragTo({ x: 250, y: 125 });
+    session.endDrag();
+    const cloned = JSON.parse(f.saved()!);
+    expect(f.writes()).toBe(1);
+    expect(cloned.slice(0, 2)).toEqual(objects);
+    expect(cloned.slice(2).map((drawing: ChartDrawing) => drawing.anchors)).toEqual([
+      [
+        { time: 150, price: 4875 },
+        { time: 350, price: 4875 },
+      ],
+      [
+        { time: 150, price: 4775 },
+        { time: 350, price: 4775 },
+      ],
+    ]);
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toEqual(objects);
+    session.redo();
+    expect(JSON.parse(f.saved()!)).toEqual(cloned);
+    session.dispose();
+    const reloaded = f.open();
+    expect(state().objects).toEqual(
+      cloned.map(({ locked: _locked, ...drawing }: ChartDrawing) => drawing),
+    );
+    reloaded.dispose();
+  });
+  it("edits common appearance and deletes groups atomically, preserving locks and individual geometry", () => {
+    const { f, session, state, objects } = setup([
+      line("a", 100),
+      line("b", 200),
+      line("locked", 300, { locked: true }),
+    ]);
+    session.selectDrawing("locked", { additive: true });
+    session.updateSelected({
+      color: "#ff0000",
+      width: 3,
+      anchors: [{ time: 0 as Time, price: 0 }],
+    });
+    expect(f.writes()).toBe(1);
+    expect(
+      state()
+        .objects.slice(0, 2)
+        .map((drawing: ChartDrawing) => drawing.color),
+    ).toEqual(["#ff0000", "#ff0000"]);
+    expect(state().objects.map((drawing: ChartDrawing) => drawing.anchors)).toEqual(
+      objects.map((drawing) => drawing.anchors),
+    );
+    expect(state().objects[2]).toEqual(objects[2]);
+    session.updateSelected({ color: "bad" });
+    expect(f.writes()).toBe(1);
+    session.undo();
+    expect(state().objects).toEqual(objects);
+    session.selectDrawing("a");
+    session.selectDrawing("b", { additive: true });
+    session.selectDrawing("locked", { additive: true });
+    const writes = f.writes();
+    session.deleteSelected();
+    expect(f.writes()).toBe(writes + 1);
+    expect(state().objects).toEqual([objects[2]]);
+    expect(state().selectedIds).toEqual(["locked"]);
+    session.undo();
+    expect(state().objects).toEqual(objects);
+    session.dispose();
+  });
+  it("cleans hidden and interval-invisible group members and clears globally hidden selection", () => {
+    const { session, state } = setup();
+    session.updateDrawing("b", { hidden: true });
+    expect(state().selectedIds).toEqual(["a"]);
+    session.updateDrawing("b", { hidden: false });
+    session.selectDrawing("b", { additive: true });
+    session.updateDrawing("a", {
+      visibility: sanitizeDrawingVisibility({ minutes: { enabled: true, min: 5, max: 30 } }),
+    });
+    expect(state().selectedIds).toEqual(["b"]);
+    session.toggleHidden();
+    expect(state().selectedIds).toEqual([]);
+    session.dispose();
+  });
+  it("rejects capacity-overflow clones and invalid group projection atomically", () => {
+    const objects = Array.from({ length: 99 }, (_, i) =>
+      line(i === 0 ? "a" : i === 1 ? "b" : `extra${i}`, i < 2 ? 100 + i * 100 : 400),
+    );
+    const { f, session, state } = setup(objects);
+    expect(session.beginDrag({ x: 200, y: 100 }, { clone: true })).toBe(false);
+    expect(state().count).toBe(99);
+    expect(f.writes()).toBe(0);
+    expect(session.beginDrag({ x: 200, y: 100 })).toBe(true);
+    vi.spyOn(f.series, "coordinateToPrice").mockReturnValue(null);
+    session.dragTo({ x: 250, y: 120 });
+    session.endDrag();
+    expect(state().objects).toEqual(objects);
+    expect(f.writes()).toBe(0);
+    vi.restoreAllMocks();
+    session.dispose();
+  });
+});
+
+describe("group drawing transactions", () => {
+  const setup = () => {
+    const objects: ChartDrawing[] = [
+      {
+        id: "a",
+        kind: "trend",
+        anchors: [
+          { time: 100 as Time, price: 4900 },
+          { time: 300 as Time, price: 4800 },
+        ],
+        color: "#123456",
+        width: 1,
+        text: "First",
+        visibility: sanitizeDrawingVisibility({ minutes: { min: 1, max: 5 } }),
+      },
+      {
+        id: "b",
+        kind: "rectangle",
+        anchors: [
+          { time: 200 as Time, price: 4700 },
+          { time: 400 as Time, price: 4600 },
+        ],
+        color: "#abcdef",
+        width: 3,
+        text: "Second",
+        visibility: sanitizeDrawingVisibility({ minutes: { min: 1, max: 30 } }),
+      },
+    ];
+    const f = fixture("group-settings", JSON.stringify(objects)),
+      session = f.open();
+    session.selectDrawing("b");
+    session.selectDrawing("a", { additive: true });
+    return { f, session, objects, state: () => f.change.mock.calls.at(-1)![0] };
+  };
+  it("previews only patched common fields, cancels every member, and commits one undo/write", () => {
+    const { f, session, objects, state } = setup();
+    expect(session.openSettings()).toBe(true);
+    expect(session.previewSettings({ width: 2 })).toBe(true);
+    expect(state().selectedObjects.map((d: ChartDrawing) => [d.color, d.width, d.text])).toEqual([
+      ["#abcdef", 2, "Second"],
+      ["#123456", 2, "First"],
+    ]);
+    expect(state().objects).toEqual(objects);
+    expect(f.writes()).toBe(0);
+    session.closeSettings();
+    expect(state().objects).toEqual(objects);
+    expect(state().selectedObjects.map((d: ChartDrawing) => d.width)).toEqual([3, 1]);
+    session.openSettings();
+    session.previewSettings({ color: "#ff0000" });
+    expect(session.applySettings({ width: 4 })).toBe(true);
+    expect(f.writes()).toBe(1);
+    expect(state().objects).toEqual(objects.map((d) => ({ ...d, color: "#ff0000", width: 4 })));
+    session.undo();
+    expect(state().objects).toEqual(objects);
+    session.redo();
+    expect(state().objects.map((d: ChartDrawing) => d.width)).toEqual([4, 4]);
+    session.dispose();
+  });
+  it("retains temporarily invisible draft members and preserves untouched mixed visibility ranges", () => {
+    const { f, session, objects, state } = setup();
+    session.openSettings();
+    expect(
+      session.previewSelectedVisibility({ hours: { enabled: false }, minutes: { enabled: false } }),
+    ).toBe(true);
+    expect(state().selectedIds).toEqual(["b", "a"]);
+    expect(state().settingsOpen).toBe(true);
+    expect(state().selectedObjects.map((d: ChartDrawing) => d.visibility?.minutes.max)).toEqual([
+      30, 5,
+    ]);
+    session.closeSettings();
+    expect(state().objects).toEqual(objects);
+    expect(f.writes()).toBe(0);
+    session.openSettings();
+    session.previewSelectedVisibility({ hours: { enabled: false } });
+    session.applySettings({});
+    expect(
+      state().objects.map((d: ChartDrawing) => [
+        d.visibility?.hours.enabled,
+        d.visibility?.minutes.max,
+      ]),
+    ).toEqual([
+      [false, 5],
+      [false, 30],
+    ]);
+    expect(f.writes()).toBe(1);
+    session.dispose();
+  });
+  it("computes relative displacement from the original snapshot, preserves style previews, and rejects bad projections atomically", () => {
+    const { f, session, objects, state } = setup();
+    const scale = f.chart.timeScale();
+    f.chart.timeScale = () =>
+      ({ ...scale, logicalToCoordinate: (bar: number) => (bar * 100) as Coordinate }) as ReturnType<
+        IChartApi["timeScale"]
+      >;
+    session.openSettings();
+    session.previewSettings({ width: 2 });
+    expect(session.previewSelectedDisplacement({ bars: 2, price: 5 })).toBe(true);
+    expect(session.previewSelectedDisplacement({ bars: 1, price: -10, priceMultiplier: 2 })).toBe(
+      true,
+    );
+    const expected = objects.map((d) => ({
+      ...d,
+      width: 2,
+      anchors: d.anchors.map((a) => ({ time: Number(a.time) + 100, price: a.price * 2 - 10 })),
+    }));
+    expect(state().selectedObjects).toEqual([expected[1], expected[0]]);
+    expect(session.previewSelectedDisplacement({ bars: 1.5, price: 1 })).toBe(false);
+    expect(
+      session.previewSelectedDisplacement({ bars: 0, price: 1, priceMultiplier: Infinity }),
+    ).toBe(false);
+    f.chart.timeScale = () =>
+      ({ ...scale, logicalToCoordinate: () => null }) as ReturnType<IChartApi["timeScale"]>;
+    expect(session.previewSelectedDisplacement({ bars: 3, price: 0 })).toBe(false);
+    expect(state().selectedObjects).toEqual([expected[1], expected[0]]);
+    expect(f.writes()).toBe(0);
+    session.applySettings({});
+    expect(state().objects).toEqual(expected);
+    expect(f.writes()).toBe(1);
+    session.undo();
+    expect(state().objects).toEqual(objects);
+    session.dispose();
+  });
+  it("copies reverse-click selections in visual order and pastes/duplicates independent groups atomically", () => {
+    const { f, session, objects, state } = setup();
+    const text = session.copySelectedSerialized()!;
+    expect(parseDrawingsClipboard(text)).toEqual(objects);
+    expect(session.pasteDrawing(text)).toBe(true);
+    expect(f.writes()).toBe(1);
+    const pasted: ChartDrawing[] = state().objects.slice(2);
+    expect(pasted.map((d) => d.kind)).toEqual(["trend", "rectangle"]);
+    expect(pasted.map((d) => d.anchors)).toEqual(
+      objects.map((d) => d.anchors.map((a) => ({ ...a, price: a.price + 40 }))),
+    );
+    expect(new Set(state().objects.map((d: ChartDrawing) => d.id)).size).toBe(4);
+    expect(state().selectedIds).toEqual(pasted.map((d) => d.id));
+    session.undo();
+    expect(state().objects).toEqual(objects);
+    session.selectDrawing("b");
+    session.selectDrawing("a", { additive: true });
+    const writes = f.writes();
+    session.duplicateSelected();
+    expect(f.writes()).toBe(writes + 1);
+    expect(
+      state()
+        .objects.slice(2)
+        .map((d: ChartDrawing) => d.anchors),
+    ).toEqual(objects.map((d) => d.anchors));
+    session.updateSelected({ color: "#ffffff" });
+    expect(state().objects.slice(0, 2)).toEqual(objects);
+    session.dispose();
+  });
+  it("moves selected objects together in visual order and templates preserve each object's identity and geometry", () => {
+    const { f, session, objects, state } = setup();
+    session.duplicateSelected();
+    session.selectDrawing("a");
+    session.selectDrawing("b", { additive: true });
+    const order = state().objects.map((d: ChartDrawing) => d.id),
+      writes = f.writes();
+    expect(session.reorderSelected("front")).toBe(true);
+    expect(state().objects.map((d: ChartDrawing) => d.id)).toEqual([...order.slice(2), "a", "b"]);
+    expect(f.writes()).toBe(writes + 1);
+    session.undo();
+    expect(state().objects.map((d: ChartDrawing) => d.id)).toEqual(order);
+    session.selectDrawing("a");
+    session.selectDrawing("b", { additive: true });
+    expect(session.applySelectedTemplate({ color: "#ff0000", width: 2 })).toBe(true);
+    expect(
+      state()
+        .objects.slice(0, 2)
+        .map((d: ChartDrawing) => [d.id, d.kind, d.anchors, d.text]),
+    ).toEqual(objects.map((d) => [d.id, d.kind, d.anchors, d.text]));
+    expect(
+      state()
+        .objects.slice(0, 2)
+        .every((d: ChartDrawing) => d.color === "#ff0000" && d.width === 2),
+    ).toBe(true);
+    session.dispose();
+  });
+});
+
+describe("group drawing geometry preservation", () => {
+  it("restores exact off-tick anchors when clearing displacement and does not round prices on bar-only shifts", () => {
+    const objects: ChartDrawing[] = ["a", "b"].map((id, index) => ({
+      id,
+      kind: "trend",
+      color: "#2962ff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 4900.123 + index },
+        { time: 200 as Time, price: 4800.456 + index },
+      ],
+    }));
+    const f = fixture("group-offtick", JSON.stringify(objects)),
+      session = f.open();
+    const scale = f.chart.timeScale();
+    f.chart.timeScale = () =>
+      ({ ...scale, logicalToCoordinate: (bar: number) => (bar * 100) as Coordinate }) as ReturnType<
+        IChartApi["timeScale"]
+      >;
+    session.selectDrawing("a");
+    session.selectDrawing("b", { additive: true });
+    session.openSettings();
+    session.previewSelectedDisplacement({ bars: 1, price: 0 });
+    expect(
+      f.change.mock.calls.at(-1)![0].selectedObjects.map((d: ChartDrawing) => d.anchors),
+    ).toEqual(objects.map((d) => d.anchors.map((a) => ({ ...a, time: Number(a.time) + 100 }))));
+    session.previewSelectedDisplacement({ bars: 0, price: 3 });
+    session.previewSelectedDisplacement({ bars: 0, price: 0 });
+    session.applySettings({});
+    expect(f.change.mock.calls.at(-1)![0].objects).toEqual(objects);
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+  it("updates explicit channel/regression rails independently without changing their ratios or visibility", () => {
+    const channel: ChartDrawing = {
+      id: "channel",
+      kind: "channel",
+      color: "#2962ff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 4900 },
+        { time: 300 as Time, price: 4900 },
+        { time: 100 as Time, price: 4800 },
+      ],
+      levels: [
+        { value: 0.2, visible: true, color: "#ff0000", width: 1 },
+        { value: 1, visible: false, color: "#00ff00", width: 2 },
+      ],
+    };
+    const regression: ChartDrawing = {
+      id: "regression",
+      kind: "regression-trend",
+      color: "#ff0000",
+      width: 1,
+      anchors: [
+        { time: 100 as Time, price: 4900 },
+        { time: 300 as Time, price: 4800 },
+      ],
+      regressionUpperLine: {
+        visible: false,
+        color: "#abcdef",
+        width: 1,
+        lineStyle: "dashed",
+        opacity: 0.5,
+      },
+    };
+    const f = fixture("group-explicit-rails", JSON.stringify([channel, regression])),
+      session = f.open();
+    session.selectDrawing("channel");
+    session.selectDrawing("regression", { additive: true });
+    session.openSettings();
+    session.previewSettings({ color: "#123456", width: 3, lineStyle: "dotted" });
+    session.applySettings({});
+    const next = JSON.parse(f.saved()!);
+    expect(next[0].levels).toEqual(
+      channel.levels!.map((level) => ({
+        ...level,
+        color: "#123456",
+        width: 3,
+        lineStyle: "dotted",
+      })),
+    );
+    expect(next[1].regressionUpperLine).toEqual({
+      ...regression.regressionUpperLine,
+      color: "#123456",
+      width: 3,
+      lineStyle: "dotted",
+    });
+    expect(next[1].regressionBaseLine.color).toBe("#123456");
+    expect(next[1].regressionLowerLine.color).toBe("#123456");
+    expect(f.writes()).toBe(1);
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toEqual([channel, regression]);
+    session.dispose();
+  });
+  it("moves vertical, horizontal, and parallel-channel members as bodies without altering their structural constraints", () => {
+    const objects: ChartDrawing[] = [
+      {
+        id: "a",
+        kind: "channel",
+        color: "#2962ff",
+        width: 2,
+        anchors: [
+          { time: 100 as Time, price: 4900 },
+          { time: 300 as Time, price: 4850 },
+          { time: 100 as Time, price: 4800 },
+        ],
+      },
+      {
+        id: "b",
+        kind: "horizontal",
+        color: "#ff0000",
+        width: 2,
+        anchors: [{ time: 200 as Time, price: 4700 }],
+      },
+      {
+        id: "c",
+        kind: "vertical",
+        color: "#00ff00",
+        width: 2,
+        anchors: [{ time: 400 as Time, price: 4600 }],
+      },
+    ];
+    const f = fixture("group-mixed-move", JSON.stringify(objects)),
+      session = f.open();
+    session.selectDrawing("a");
+    session.selectDrawing("b", { additive: true });
+    session.selectDrawing("c", { additive: true });
+    expect(session.beginDrag({ x: 200, y: 125 })).toBe(true);
+    session.dragTo({ x: 250, y: 145 });
+    session.endDrag();
+    expect(JSON.parse(f.saved()!).map((d: ChartDrawing) => d.anchors)).toEqual([
+      [
+        { time: 150, price: 4880 },
+        { time: 350, price: 4830 },
+        { time: 150, price: 4780 },
+      ],
+      [{ time: 200, price: 4680 }],
+      [{ time: 450, price: 4600 }],
+    ]);
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toEqual(objects);
     session.dispose();
   });
 });

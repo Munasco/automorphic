@@ -1,3 +1,4 @@
+import { DrawingGroupSettings } from "./DrawingGroupSettings";
 import { supportsInlineDrawingText } from "./drawingPrimitive";
 import { getDrawingDialogBounds } from "./drawingDialogBounds";
 import { DRAWING_TEXT_FONT_SIZES, DrawingTextSettings } from "./DrawingTextSettings";
@@ -41,7 +42,6 @@ import {
 import { toastManager } from "../ui/toast";
 import { ChartIcon } from "./ChartIcon";
 import { DrawingToolIcon } from "./DrawingToolIcon";
-import { SolarSettingsIcon } from "./SolarSettingsIcon";
 import { AlertIcon } from "./AlertIcon";
 import { supportsDrawingAlert } from "./drawingAlerts";
 import { type ChartDrawing, validDrawingAnchors } from "./drawingGeometry";
@@ -820,6 +820,10 @@ export function DrawingSelectionOverlay({
   const [templateDrawing, setTemplateDrawing] = useState<ChartDrawing | null>(null);
   const drag = useRef<{ x: number; y: number; originX: number; originY: number } | null>(null);
   const selected = drawings.selected;
+  const group = drawings.selectedObjects.length > 1;
+  const allLocked = drawings.selectedObjects.every((drawing) => drawing.locked);
+  const mixed = (value: (drawing: ChartDrawing) => unknown) =>
+    new Set(drawings.selectedObjects.map(value)).size > 1;
   useLayoutEffect(() => {
     const toolbar = toolbarRef.current;
     const chart = toolbar?.parentElement;
@@ -841,7 +845,7 @@ export function DrawingSelectionOverlay({
     return () => observer.disconnect();
     // Selection/tool changes mount or replace the toolbar node observed above.
     // eslint-disable-next-line react/exhaustive-effect-dependencies
-  }, [selected?.id, drawings.tool]);
+  }, [selected?.id, drawings.tool, group]);
   if (!selected || drawings.tool !== "cursor") return null;
   const regression =
     selected.kind === "regression-trend"
@@ -897,7 +901,7 @@ export function DrawingSelectionOverlay({
       <div
         ref={toolbarRef}
         role="toolbar"
-        aria-label="Selected drawing"
+        aria-label={group ? "Selected drawings" : "Selected drawing"}
         className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center rounded-[6px] bg-[#1f1f1f] text-zinc-200 shadow-lg"
         style={{
           marginLeft: offset.x,
@@ -956,7 +960,42 @@ export function DrawingSelectionOverlay({
           </svg>
         </button>
         <DrawingTemplateMenu compact drawing={selected} onApply={drawings.applySelectedTemplate} />
-        {selected.kind === "regression-trend" ? (
+        {group ? (
+          <>
+            <WidthPicker
+              variant="toolbar"
+              compact={compactToolbar}
+              drawing={selected}
+              mixed={mixed((drawing) => drawing.width)}
+              onChange={drawings.updateSelected}
+            />
+            <LineStylePicker
+              variant="toolbar"
+              drawing={selected}
+              mixed={mixed((drawing) => drawing.lineStyle ?? "solid")}
+              onChange={drawings.updateSelected}
+            />
+            <ColorPicker
+              variant="toolbar"
+              value={selected.color}
+              icon="pencil"
+              mixed={mixed((drawing) => drawing.color)}
+              opacity={selected.lineOpacity ?? 1}
+              onOpacityChange={(lineOpacity) => drawings.updateSelected({ lineOpacity })}
+              onChange={(color) => drawings.updateSelected({ color })}
+            />
+            {drawings.selectedObjects.some((drawing) => supportsInlineDrawingText(drawing.kind)) ? (
+              <ColorPicker
+                variant="toolbar"
+                label="Text color"
+                icon="letter-t"
+                value={selected.textColor ?? selected.color}
+                mixed={mixed((drawing) => drawing.textColor ?? drawing.color)}
+                onChange={(textColor) => drawings.updateSelected({ textColor })}
+              />
+            ) : null}
+          </>
+        ) : selected.kind === "regression-trend" ? (
           <WidthPicker
             variant="toolbar"
             compact={compactToolbar}
@@ -1062,19 +1101,19 @@ export function DrawingSelectionOverlay({
         {!compactToolbar ? (
           <>
             <IconButton label="Drawing settings" onClick={drawings.openSettings}>
-              <SolarSettingsIcon className="size-7" />
+              <DrawingToolIcon name="nut" className="size-7 rotate-90" />
             </IconButton>
-            {onCreateAlert && supportsDrawingAlert(selected) ? (
+            {!group && onCreateAlert && supportsDrawingAlert(selected) ? (
               <IconButton label="Add drawing alert" onClick={() => onCreateAlert(selected)}>
                 <AlertIcon name="alarm-add" size={28} />
               </IconButton>
             ) : null}
             <IconButton
-              label={selected.locked ? "Unlock drawing" : "Lock drawing"}
-              active={selected.locked ?? false}
-              onClick={() => drawings.updateSelected({ locked: !selected.locked })}
+              label={allLocked ? "Unlock drawing" : "Lock drawing"}
+              active={allLocked}
+              onClick={() => drawings.updateSelected({ locked: !allLocked })}
             >
-              <DrawingToolIcon name={selected.locked ? "lock" : "lock-open"} className="size-7" />
+              <DrawingToolIcon name={allLocked ? "lock" : "lock-open"} className="size-7" />
             </IconButton>
           </>
         ) : null}
@@ -1107,7 +1146,9 @@ export function DrawingSelectionOverlay({
           </MenuPopup>
         </Menu>
       </div>
-      {drawings.settingsOpen ? (
+      {drawings.settingsOpen && group ? (
+        <DrawingGroupSettings drawings={drawings} />
+      ) : drawings.settingsOpen ? (
         <DrawingSettings
           key={selected.id}
           drawing={selected}
@@ -1192,10 +1233,12 @@ function DrawingMenuCommands({
 }) {
   const selected = drawings.selected;
   if (!selected) return null;
+  const group = drawings.selectedObjects.length > 1;
+  const allLocked = drawings.selectedObjects.every((drawing) => drawing.locked);
   const mac = typeof navigator !== "undefined" && isMacPlatform(navigator.platform);
   const modifier = mac ? "⌘" : "Ctrl";
   const copy = () => {
-    void drawings.copyDrawing(selected.id).then((copied) => {
+    void (group ? drawings.copySelected() : drawings.copyDrawing(selected.id)).then((copied) => {
       if (!copied) {
         toastManager.add({
           type: "error",
@@ -1207,7 +1250,7 @@ function DrawingMenuCommands({
   };
   return (
     <>
-      {onCreateAlert && supportsDrawingAlert(selected) ? (
+      {!group && onCreateAlert && supportsDrawingAlert(selected) ? (
         <MenuItem
           className={drawingMenuItemClass}
           onClick={() => onAction(() => onCreateAlert(selected))}
@@ -1237,7 +1280,11 @@ function DrawingMenuCommands({
       <MenuSeparator />
       <MenuItem
         className={drawingMenuItemClass}
-        onClick={() => onAction(() => drawings.duplicateDrawing(selected.id))}
+        onClick={() =>
+          onAction(() =>
+            group ? drawings.duplicateSelected() : drawings.duplicateDrawing(selected.id),
+          )
+        }
       >
         <DrawingMenuIcon>
           <DrawingToolIcon name="copy" className="size-4.5" />
@@ -1251,11 +1298,9 @@ function DrawingMenuCommands({
       <MenuSeparator />
       {[
         {
-          label: selected.locked ? "Unlock" : "Lock",
-          action: () => drawings.updateSelected({ locked: !selected.locked }),
-          icon: (
-            <DrawingToolIcon name={selected.locked ? "lock-open" : "lock"} className="size-4.5" />
-          ),
+          label: allLocked ? "Unlock" : "Lock",
+          action: () => drawings.updateSelected({ locked: !allLocked }),
+          icon: <DrawingToolIcon name={allLocked ? "lock-open" : "lock"} className="size-4.5" />,
         },
         {
           label: "Hide",
@@ -1284,7 +1329,7 @@ function DrawingMenuCommands({
       <MenuSeparator />
       <MenuItem className={drawingMenuItemClass} onClick={() => onAction(drawings.openSettings)}>
         <DrawingMenuIcon>
-          <SolarSettingsIcon className="size-4.5" />
+          <DrawingToolIcon name="nut" className="size-4.5 rotate-90" />
         </DrawingMenuIcon>
         Settings…
       </MenuItem>
@@ -1292,8 +1337,15 @@ function DrawingMenuCommands({
   );
 }
 function DrawingOrderSubmenu({ drawings }: { drawings: ChartDrawingsController }) {
-  const index = drawings.objects.findIndex((drawing) => drawing.id === drawings.selected?.id);
+  const selectedIndices = drawings.objects.flatMap((drawing, index) =>
+    drawings.selectedIds.includes(drawing.id) ? [index] : [],
+  );
+  const index = selectedIndices[0] ?? -1;
   const last = drawings.objects.length - 1;
+  const atFront = selectedIndices.every(
+    (value, offset) => value === last - selectedIndices.length + 1 + offset,
+  );
+  const atBack = selectedIndices.every((value, offset) => value === offset);
   return (
     <MenuSub>
       <MenuSubTrigger className={drawingMenuItemClass}>
@@ -1308,10 +1360,10 @@ function DrawingOrderSubmenu({ drawings }: { drawings: ChartDrawingsController }
       >
         {(
           [
-            ["front", "Bring to front", index === last],
-            ["back", "Send to back", index === 0],
-            ["forward", "Bring forward", index === last],
-            ["backward", "Send backward", index === 0],
+            ["front", "Bring to front", atFront],
+            ["back", "Send to back", atBack],
+            ["forward", "Bring forward", atFront],
+            ["backward", "Send backward", atBack],
           ] as const
         ).map(([direction, label, boundary]) => (
           <MenuItem

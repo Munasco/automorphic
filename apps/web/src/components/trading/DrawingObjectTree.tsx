@@ -92,7 +92,14 @@ export function DrawingObjectTree({
   const selected = drawings.selected;
   const selectedId = selected?.id;
   const selectedIndex = drawings.objects.findIndex((object) => object.id === selectedId);
+  const selectedIndices = drawings.objects.flatMap((drawing, index) =>
+    drawings.selectedIds.includes(drawing.id) ? [index] : [],
+  );
   const lastIndex = drawings.objects.length - 1;
+  const atFront = selectedIndices.every(
+    (value, offset) => value === lastIndex - selectedIndices.length + 1 + offset,
+  );
+  const atBack = selectedIndices.every((value, offset) => value === offset);
   useEffect(() => {
     if (selectedId) selectedRow.current?.scrollIntoView({ block: "nearest" });
   }, [selectedId]);
@@ -123,10 +130,10 @@ export function DrawingObjectTree({
             <MenuPopup align="end" aria-label="Visual order">
               {(
                 [
-                  ["front", "Bring to front", selectedIndex === lastIndex],
-                  ["back", "Send to back", selectedIndex === 0],
-                  ["forward", "Bring forward", selectedIndex === lastIndex],
-                  ["backward", "Send backward", selectedIndex === 0],
+                  ["front", "Bring to front", atFront],
+                  ["back", "Send to back", atBack],
+                  ["forward", "Bring forward", atFront],
+                  ["backward", "Send backward", atBack],
                 ] as const
               ).map(([direction, label, boundary]) => (
                 <MenuItem
@@ -140,11 +147,15 @@ export function DrawingObjectTree({
             </MenuPopup>
           </Menu>
           <RowAction
-            label="Duplicate selected drawing"
+            label={
+              drawings.selectedIds.length > 1
+                ? "Duplicate selected drawings"
+                : "Duplicate selected drawing"
+            }
             active
-            disabled={!selected || drawings.count >= 100}
+            disabled={!selected || drawings.count + drawings.selectedIds.length > 100}
             onClick={() => {
-              if (selected) drawings.duplicateDrawing(selected.id);
+              if (selected) drawings.duplicateSelected();
             }}
           >
             <DrawingToolIcon name="copy" className="size-4" />
@@ -201,11 +212,11 @@ export function DrawingObjectTree({
         <ul aria-label="Drawings">
           {drawings.objects.toReversed().map((object) => {
             const label = drawingLabel(object);
-            const isSelected = selected?.id === object.id;
+            const isSelected = drawings.selectedIds.includes(object.id);
             return (
               <li
                 key={object.id}
-                ref={isSelected ? selectedRow : undefined}
+                ref={selected?.id === object.id ? selectedRow : undefined}
                 className={cn(
                   "group/object flex h-[38px] items-center gap-0.5 pl-3 pr-1 hover:bg-white/5 focus-within:bg-white/5",
                   isSelected && "bg-[#1e3260] hover:bg-[#1e3260] focus-within:bg-[#1e3260]",
@@ -215,7 +226,9 @@ export function DrawingObjectTree({
                   type="button"
                   aria-label={`Select ${label}`}
                   aria-pressed={isSelected}
-                  onClick={() => drawings.selectDrawing(object.id)}
+                  onClick={(event) =>
+                    drawings.selectDrawing(object.id, { additive: event.metaKey || event.ctrlKey })
+                  }
                   onDoubleClick={() => {
                     drawings.selectDrawing(object.id);
                     drawings.openSettings();
