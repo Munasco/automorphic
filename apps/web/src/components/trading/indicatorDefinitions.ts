@@ -37,6 +37,7 @@ import { calculateParabolicSAR } from "./parabolicSar";
 import { calculateSupertrend } from "./supertrend";
 import { calculateMoneyFlowIndex } from "./moneyFlowIndex";
 import { calculateHullMovingAverage } from "./hullMovingAverage";
+import { calculateWeightedMovingAverage } from "./weightedMovingAverage";
 import { calculateAwesomeOscillator } from "./awesomeOscillator";
 const length = (
   defaultValue: number,
@@ -325,6 +326,23 @@ export const INDICATOR_DEFINITIONS = [
     styles: [style("main", "Line", "#67a6ef", true)],
     calculate: ({ bars, inputs }) =>
       single(calculateEMA(bars, inputs.period ?? 20, PRICE_SOURCES[inputs.source ?? 0])),
+  }),
+  defineIndicator({
+    key: "wma",
+    label: "WMA 9",
+    detail: "Weighted moving average",
+    category: "Overlays",
+    placement: "overlay",
+    inputs: [length(9), priceSource],
+    styles: [style("main", "Line", "#34d399", true, 2)],
+    calculate: ({ bars, inputs }) =>
+      single(
+        calculateWeightedMovingAverage(bars, inputs.period, PRICE_SOURCES[inputs.source ?? 0]),
+        {
+          title: "WMA",
+          breakOnGaps: true,
+        },
+      ),
   }),
   defineIndicator({
     key: "hma",

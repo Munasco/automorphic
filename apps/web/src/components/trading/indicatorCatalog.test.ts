@@ -107,6 +107,7 @@ describe("indicator catalog and saved preferences", () => {
     expect(findIndicators(" MOVING average ").map((entry) => entry.key)).toEqual([
       "sma",
       "ema",
+      "wma",
       "hma",
     ]);
     expect(findIndicators("chaikin").map((entry) => entry.key)).toEqual(["cmf"]);
@@ -120,6 +121,7 @@ describe("indicator catalog and saved preferences", () => {
       "supertrend",
       "sma",
       "ema",
+      "wma",
       "hma",
       "bollinger",
       "donchian",
