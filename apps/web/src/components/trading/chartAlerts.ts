@@ -154,6 +154,36 @@ export function createChartAlertSession(
       publish({ ...state, alerts: [...state.alerts, alert] });
       return alert;
     },
+    update: (id: string, input: NewChartAlert): boolean => {
+      const alert = state.alerts.find((item) => item.id === id && item.symbol === symbol);
+      if (
+        !alert ||
+        !finite(input.price) ||
+        !condition(input.condition) ||
+        typeof input.repeat !== "boolean" ||
+        !cooldown(input.cooldownMs)
+      )
+        return false;
+      if (
+        alert.price === input.price &&
+        alert.condition === input.condition &&
+        alert.repeat === input.repeat &&
+        alert.cooldownMs === input.cooldownMs
+      )
+        return true;
+      // Editing changes the next rule evaluation, not whether the alert is paused or
+      // the time of its last notification. A running repeating cooldown still applies.
+      const updated: ChartPriceAlert = {
+        ...alert,
+        price: input.price,
+        condition: input.condition,
+        repeat: input.repeat,
+        cooldownMs: input.cooldownMs,
+        armedAt: Math.max(now(), highWater + 1),
+      };
+      publish({ ...state, alerts: state.alerts.map((item) => (item === alert ? updated : item)) });
+      return true;
+    },
     setEnabled: (id: string, enabled: boolean) => {
       publish({
         ...state,

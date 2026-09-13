@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import type { MarketQuote } from "./InstrumentHeader";
-import { CHART_ALERTS_KEY, createChartAlertSession, parseChartAlerts } from "./chartAlerts";
+import {
+  CHART_ALERTS_KEY,
+  createChartAlertSession,
+  parseChartAlerts,
+  type NewChartAlert,
+} from "./chartAlerts";
 
 const EPOCH = Date.parse("2026-09-11T12:00:00Z");
 function harness() {
@@ -312,4 +317,172 @@ describe("directional chart price alerts", () => {
       expect(parseChartAlerts(h.values.get(CHART_ALERTS_KEY)!).history).toHaveLength(2);
     },
   );
+});
+
+describe("editing chart price alerts", () => {
+  it("rejects invalid, missing and foreign-symbol edits without a write or state change", () => {
+    const h = harness();
+    const session = h.open();
+    const alert = session.add(crossing);
+    const before = session.getSnapshot();
+    const writes = h.storage.setItem.mock.calls.length;
+    for (const patch of [
+      { price: NaN },
+      { price: Infinity },
+      { condition: "crossing-sideways" },
+      { cooldownMs: 999 },
+      { cooldownMs: 86_400_001 },
+      { repeat: "yes" },
+    ])
+      expect(session.update(alert.id, { ...crossing, ...patch } as NewChartAlert)).toBe(false);
+    expect(session.update("missing", crossing)).toBe(false);
+    const other = h.open("NQU6");
+    expect(other.update(alert.id, { ...crossing, price: 200 })).toBe(false);
+    expect(session.getSnapshot()).toBe(before);
+    expect(other.getSnapshot()).toEqual(before);
+    expect(h.storage.setItem).toHaveBeenCalledTimes(writes);
+  });
+
+  it("accepts a valid no-op without resetting an established crossing baseline", () => {
+    const h = harness();
+    const session = h.open();
+    const alert = session.add(crossing);
+    session.observeQuote(h.quote(99));
+    const before = session.getSnapshot();
+    const writes = h.storage.setItem.mock.calls.length;
+    h.advance(100);
+    expect(session.update(alert.id, crossing)).toBe(true);
+    expect(session.getSnapshot()).toBe(before);
+    expect(h.storage.setItem).toHaveBeenCalledTimes(writes);
+    session.observeQuote(h.quote(100));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps identity and paused state through edits and persists the new fields", () => {
+    const h = harness();
+    const session = h.open();
+    const alert = session.add(crossing);
+    session.setEnabled(alert.id, false);
+    const edited = {
+      price: 200,
+      condition: "crossing-down" as const,
+      repeat: true,
+      cooldownMs: 5000,
+    };
+    h.advance(100);
+    expect(session.update(alert.id, edited)).toBe(true);
+    expect(session.getSnapshot().alerts[0]).toMatchObject({
+      ...edited,
+      id: alert.id,
+      enabled: false,
+    });
+    expect(session.getSnapshot().alerts[0]!.armedAt).toBeGreaterThan(alert.armedAt);
+    session.observeQuote(h.quote(201));
+    session.observeQuote(h.quote(199));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    expect(h.open().getSnapshot()).toEqual(session.getSnapshot());
+  });
+
+  it("requires a fresh crossing after target and condition edits, including quotes already seen at a future timestamp", () => {
+    const h = harness();
+    const session = h.open();
+    const alert = session.add(crossing);
+    const beforeEdit = h.quote(199, 1, { timestamp: new Date(EPOCH + 4000).toISOString() });
+    session.observeQuote(beforeEdit);
+    expect(session.update(alert.id, { ...crossing, price: 200, condition: "crossing-up" })).toBe(
+      true,
+    );
+    expect(session.getSnapshot().alerts[0]!.armedAt).toBe(EPOCH + 4001);
+    session.observeQuote({ ...beforeEdit, last: 201 });
+    h.advance(4000);
+    session.observeQuote(h.quote(201));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    session.observeQuote(h.quote(199));
+    session.observeQuote(h.quote(200));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    expect(h.onTrigger.mock.lastCall![0]).toMatchObject({
+      alertId: alert.id,
+      condition: "crossing-up",
+      target: 200,
+    });
+  });
+
+  it("retains one-shot history and remains disabled until manually rearmed", () => {
+    const h = harness();
+    const session = h.open();
+    const alert = session.add(crossing);
+    session.observeQuote(h.quote(99));
+    session.observeQuote(h.quote(100));
+    const before = session.getSnapshot();
+    expect(session.update(alert.id, { ...crossing, price: 200, condition: "crossing-down" })).toBe(
+      true,
+    );
+    const edited = session.getSnapshot();
+    expect(edited.history).toBe(before.history);
+    expect(edited.alerts[0]).toMatchObject({
+      id: alert.id,
+      enabled: false,
+      lastTriggeredAt: before.alerts[0]!.lastTriggeredAt,
+      lastQuoteAt: before.alerts[0]!.lastQuoteAt,
+    });
+    session.observeQuote(h.quote(201));
+    session.observeQuote(h.quote(199));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    session.setEnabled(alert.id, true);
+    session.observeQuote(h.quote(201));
+    session.observeQuote(h.quote(200));
+    expect(h.onTrigger).toHaveBeenCalledTimes(2);
+    expect(session.getSnapshot().history.map((event) => event.target)).toEqual([200, 100]);
+  });
+
+  it("preserves a running repeating cooldown when the target changes and applies new frequency fields", () => {
+    const h = harness();
+    const session = h.open();
+    const alert = session.add({ ...crossing, condition: "above", repeat: true, cooldownMs: 1000 });
+    session.observeQuote(h.quote(101));
+    const triggered = session.getSnapshot().alerts[0]!.lastTriggeredAt;
+    h.advance(100);
+    session.update(alert.id, {
+      ...crossing,
+      price: 200,
+      condition: "above",
+      repeat: true,
+      cooldownMs: 2000,
+    });
+    expect(session.getSnapshot().alerts[0]!.lastTriggeredAt).toBe(triggered);
+    session.observeQuote(h.quote(201, 1000));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    session.observeQuote(h.quote(201, 1000));
+    expect(h.onTrigger).toHaveBeenCalledTimes(2);
+    session.update(alert.id, {
+      ...crossing,
+      price: 300,
+      condition: "above",
+      repeat: false,
+      cooldownMs: 2000,
+    });
+    session.observeQuote(h.quote(301));
+    expect(h.onTrigger).toHaveBeenCalledTimes(3);
+    expect(session.getSnapshot().alerts[0]!.enabled).toBe(false);
+  });
+
+  it("leaves the old rule and crossing baseline intact if persistence rejects an edit", () => {
+    const h = harness();
+    const session = h.open();
+    const alert = session.add(crossing);
+    session.observeQuote(h.quote(99));
+    const before = session.getSnapshot();
+    const listener = vi.fn();
+    session.subscribe(listener);
+    h.storage.setItem.mockImplementationOnce(() => {
+      throw Error("Storage unavailable");
+    });
+    expect(() => session.update(alert.id, { ...crossing, price: 200 })).toThrow(
+      "Storage unavailable",
+    );
+    expect(session.getSnapshot()).toBe(before);
+    expect(listener).not.toHaveBeenCalled();
+    session.observeQuote(h.quote(100));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+  });
 });

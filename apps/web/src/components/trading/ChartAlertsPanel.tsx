@@ -14,6 +14,7 @@ import {
   createChartAlertSession,
   type AlertCondition,
   type ChartAlertState,
+  type ChartPriceAlert,
 } from "./chartAlerts";
 import type { DrawingAlertsController } from "./useDrawingAlerts";
 import type { DrawingAlertCondition, DrawingAlertTrigger } from "./drawingAlerts";
@@ -121,7 +122,12 @@ export function ChartAlerts({
 }) {
   const formId = useId();
   const [tab, setTab] = useState("alerts");
-  const [creating, setCreating] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingPrice, setEditingPrice] = useState<{
+    id: string;
+    symbol: string;
+    update: ChartAlertsController["update"];
+  } | null>(null);
   const [editingDrawingId, setEditingDrawingId] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [search, setSearch] = useState("");
@@ -150,6 +156,20 @@ export function ChartAlerts({
       return false;
     }
   }
+  const priceEditorAvailable =
+    !editingPrice ||
+    (editingPrice.symbol === symbol &&
+      editingPrice.update === controller.update &&
+      controller.alerts.some((alert) => alert.id === editingPrice.id && alert.symbol === symbol));
+  const openPriceEdit = (alert: ChartPriceAlert) => {
+    setEditingPrice({ id: alert.id, symbol: alert.symbol, update: controller.update });
+    setTarget(String(alert.price));
+    setCondition(alert.condition);
+    setRepeat(alert.repeat);
+    setCooldownMs(alert.cooldownMs);
+    setError("");
+    setEditorOpen(true);
+  };
   const allAlerts = [
     ...controller.alerts.map((alert) => ({
       key: `price:${alert.id}`,
@@ -167,7 +187,7 @@ export function ChartAlerts({
           ? "Triggered"
           : "Paused",
       frequency: alert.repeat ? "Repeating" : "Once",
-      edit: null,
+      edit: alert.symbol === symbol ? () => openPriceEdit(alert) : null,
       canEnable: true,
       actionLabel: `${alert.symbol} alert at ${alert.price}`,
       toggle: () => {
@@ -247,9 +267,13 @@ export function ChartAlerts({
           : b.triggeredAt - a.triggeredAt,
     );
   const openCreate = () => {
+    setEditingPrice(null);
+    setCondition("crossing");
+    setRepeat(false);
+    setCooldownMs(60_000);
     setTarget(Number.isFinite(lastPrice) ? String(lastPrice) : "");
     setError("");
-    setCreating(true);
+    setEditorOpen(true);
   };
   const empty = tab === "alerts" ? !alerts.length : !history.length;
   return (
@@ -545,11 +569,13 @@ export function ChartAlerts({
           onClose={() => setEditingDrawingId(null)}
         />
       ) : null}
-      <Dialog open={creating} onOpenChange={setCreating}>
+      <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
         <DialogPopup className="w-[min(420px,calc(100vw-32px))] bg-[#161616] p-6">
-          <DialogTitle className="text-lg font-semibold">Create alert</DialogTitle>
+          <DialogTitle className="text-lg font-semibold">
+            {editingPrice ? "Edit alert" : "Create alert"}
+          </DialogTitle>
           <DialogDescription className="mt-1 text-sm text-zinc-400">
-            {symbol || "Select a symbol to create an alert."}
+            {editingPrice?.symbol || symbol || "Select a symbol to create an alert."}
           </DialogDescription>
           <form
             className="mt-6 space-y-4"
@@ -557,13 +583,17 @@ export function ChartAlerts({
               event.preventDefault();
               try {
                 if (!target.trim()) throw Error("Enter a target price.");
-                controller.add({ price: Number(target), condition, repeat, cooldownMs });
+                const input = { price: Number(target), condition, repeat, cooldownMs };
+                if (editingPrice) {
+                  if (!priceEditorAvailable || !controller.update(editingPrice.id, input))
+                    throw Error("Could not save this alert. Check its settings and try again.");
+                } else controller.add(input);
                 setError("");
                 setTab("alerts");
                 setSearch("");
-                setCreating(false);
+                setEditorOpen(false);
               } catch (cause) {
-                setError(cause instanceof Error ? cause.message : "Could not create the alert.");
+                setError(cause instanceof Error ? cause.message : "Could not save the alert.");
               }
             }}
           >
@@ -593,7 +623,7 @@ export function ChartAlerts({
                 />
               </label>
             </div>
-            {Number.isFinite(lastPrice) ? (
+            {priceEditorAvailable && Number.isFinite(lastPrice) ? (
               <button
                 type="button"
                 className="text-xs text-blue-400 hover:text-blue-300"
@@ -633,21 +663,27 @@ export function ChartAlerts({
                 />
               </label>
             ) : null}
-            {error ? (
+            {!priceEditorAvailable || error ? (
               <p role="alert" className="text-sm text-red-400">
-                {error}
+                {!priceEditorAvailable
+                  ? "This alert is no longer available. Close this editor and reopen the alert."
+                  : error}
               </p>
             ) : null}
             <div className="flex justify-end gap-3 pt-2">
               <button
                 type="button"
                 className="rounded px-3 py-2 text-sm text-zinc-400 hover:text-white"
-                onClick={() => setCreating(false)}
+                onClick={() => setEditorOpen(false)}
               >
                 Cancel
               </button>
-              <button type="submit" disabled={!symbol} className={primaryClass}>
-                Create
+              <button
+                type="submit"
+                disabled={!symbol || !priceEditorAvailable}
+                className={primaryClass}
+              >
+                {editingPrice ? "Save" : "Create"}
               </button>
             </div>
           </form>
