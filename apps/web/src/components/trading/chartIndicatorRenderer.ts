@@ -230,7 +230,11 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
             : {}),
         });
       }
-      const data = points.map((point) => ({
+      const previousTime =
+        options.histogramColorMode === "change"
+          ? new Map(bars.map((bar, index) => [bar.time, bars[index - 1]?.time]))
+          : undefined;
+      const data = points.map((point, index) => ({
         ...point,
         time: point.time as UTCTimestamp,
         ...(options.histogram
@@ -243,7 +247,15 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
                   : indicatorStyleColor(
                       resolveIndicatorStyle(
                         indicator,
-                        (point.value >= 0 ? options.positiveStyleKey : options.negativeStyleKey) ??
+                        ((
+                          options.histogramColorMode === "change"
+                            ? points[index - 1]?.time === previousTime?.get(point.time) &&
+                              index > 0 &&
+                              point.value > points[index - 1]!.value
+                            : point.value >= 0
+                        )
+                          ? options.positiveStyleKey
+                          : options.negativeStyleKey) ??
                           options.styleKey ??
                           "main",
                         instance.appearance,

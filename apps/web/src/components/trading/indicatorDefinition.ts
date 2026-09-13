@@ -49,6 +49,7 @@ export type IndicatorPlot = {
   title?: string;
   primary?: boolean;
   histogram?: boolean;
+  histogramColorMode?: "change";
   markers?: "cross";
   positiveStyleKey?: string;
   negativeStyleKey?: string;

@@ -990,3 +990,38 @@ it("persists independent Hull moving average lengths, sources and appearance", a
       .inputs,
   ).toEqual({ period: 9, source: 0 });
 });
+
+it("persists independent AO periods, momentum colors and visibility", async () => {
+  const store = useChartPreferences.getState();
+  const base = store.addIndicator("ao")!;
+  expect(store.setIndicatorInstanceInputs(base, { fast: 3, slow: 10 })).toBe(true);
+  store.setIndicatorInstanceAppearance(base, {
+    plots: { growing: { color: "#123456" }, falling: { color: "#abcdef", opacity: 0.5 } },
+  });
+  const duplicate = store.duplicateIndicatorInstance(base)!;
+  expect(store.setIndicatorInstanceInputs(duplicate, { fast: 7, slow: 21 })).toBe(true);
+  store.toggleIndicatorInstanceVisibility(duplicate);
+  expect(store.setIndicatorInstanceInputs(base, { fast: 10 })).toBe(false);
+  expect(store.setIndicatorInstanceInputs(base, { slow: 0 })).toBe(false);
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  const instances = getChartIndicatorInstances(useChartPreferences.getState()).filter(
+    (i) => i.key === "ao",
+  );
+  expect(instances.map((i) => i.inputs)).toEqual([
+    { fast: 3, slow: 10 },
+    { fast: 7, slow: 21 },
+  ]);
+  expect(instances.map((i) => i.hidden)).toEqual([false, true]);
+  expect(instances[0]!.appearance.plots).toEqual({
+    growing: { color: "#123456" },
+    falling: { color: "#abcdef", opacity: 0.5 },
+  });
+  useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
+  expect(
+    getChartIndicatorInstances(useChartPreferences.getState()).find((i) => i.id === duplicate)!
+      .inputs,
+  ).toEqual({ fast: 5, slow: 34 });
+});

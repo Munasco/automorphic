@@ -37,6 +37,7 @@ import { calculateParabolicSAR } from "./parabolicSar";
 import { calculateSupertrend } from "./supertrend";
 import { calculateMoneyFlowIndex } from "./moneyFlowIndex";
 import { calculateHullMovingAverage } from "./hullMovingAverage";
+import { calculateAwesomeOscillator } from "./awesomeOscillator";
 const length = (
   defaultValue: number,
   key: IndicatorInputKey = "period",
@@ -584,6 +585,30 @@ export const INDICATOR_DEFINITIONS = [
         ),
         inputs,
       ),
+  }),
+  defineIndicator({
+    key: "ao",
+    label: "Awesome Oscillator",
+    detail: "AO · Median-price momentum",
+    category: "Oscillators",
+    placement: "pane",
+    inputs: [length(5, "fast", "Fast length"), length(34, "slow", "Slow length")],
+    validateInputs: (values) => values.fast! < values.slow!,
+    repairInputs: (values) => ({ ...values, fast: 5, slow: 34 }),
+    styles: [
+      { ...style("growing", "Growing", "#26a69a", true), kind: "fill", opacity: 1 },
+      { ...style("falling", "Falling", "#ef5350"), kind: "fill", opacity: 1 },
+    ],
+    calculate: ({ bars, inputs }) =>
+      single(calculateAwesomeOscillator(bars, inputs.fast, inputs.slow), {
+        title: "AO",
+        styleKey: "growing",
+        histogram: true,
+        histogramColorMode: "change",
+        positiveStyleKey: "growing",
+        negativeStyleKey: "falling",
+        levels: [0],
+      }),
   }),
   defineIndicator({
     key: "mfi",

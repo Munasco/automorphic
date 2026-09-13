@@ -98,6 +98,44 @@ const disabled = Object.fromEntries(
 ) as ChartIndicators;
 
 describe("native indicator renderer", () => {
+  it("colors AO by momentum rather than sign and updates revisions, gaps and appearance", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.25);
+    const values = [0, 6, 10, 8, 4, 2, 2, 4];
+    const bars = inputBars(values.length).map((bar, i) => ({
+      ...bar,
+      high: values[i]!,
+      low: values[i]!,
+    }));
+    const instance = {
+      ...createIndicatorInstance("ao", "base:ao"),
+      inputs: { fast: 1, slow: 2 },
+      appearance: { plots: { growing: { color: "#123456" }, falling: { color: "#abcdef" } } },
+    };
+    const update = (input: Candle[]) =>
+      renderer.update(input, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [instance]);
+    expect(update(bars).readings).toEqual({ ao: 1 });
+    const series = harness.series[0]!;
+    expect(series.pane).toBe(1);
+    expect(series.data.map((point) => point.value)).toEqual([3, 2, -1, -2, -1, 0, 1]);
+    expect(series.data.map((point) => point.color)).toEqual([
+      "#abcdef",
+      "#abcdef",
+      "#abcdef",
+      "#abcdef",
+      "#123456",
+      "#123456",
+      "#123456",
+    ]);
+    const revised = bars.map((bar, i) => (i === 7 ? { ...bar, high: 0, low: 0 } : bar));
+    expect(update(revised).readings).toEqual({ ao: -1 });
+    expect(harness.series[0]).toBe(series);
+    expect(series.data.at(-1)).toMatchObject({ value: -1, color: "#abcdef" });
+    const gap = bars.map((bar, i) => (i === 5 ? { ...bar, high: NaN } : bar));
+    update(gap);
+    expect(series.data.at(-1)).toMatchObject({ value: 1, color: "#abcdef" });
+    expect(series.data).toHaveLength(5);
+  });
   it("keeps duplicate moving-average plots, inputs, styles, and crosshair readings independent", () => {
     const harness = chartHarness();
     const renderer = createIndicatorRenderer(harness.chart, 0.25);
@@ -500,7 +538,9 @@ describe("native indicator renderer", () => {
       103,
     ]);
     expect(renderer.update(input, enabled, DEFAULT_INITIAL_BALANCE, 1).readings).toEqual({});
-    expect(harness.series.every((series) => series.data.length === 0)).toBe(true);
+    expect(
+      harness.series.every((series) => series.data.every((point) => !Number.isFinite(point.value))),
+    ).toBe(true);
   });
 
   it("uses all four Stochastic RSI inputs when determining its smoothing warmup", () => {
@@ -562,7 +602,7 @@ describe("native indicator renderer", () => {
     const result = renderer.update([], all, DEFAULT_INITIAL_BALANCE, 15);
     expect(result.readings).toEqual({});
     expect(result.initialBalanceStatus).toContain("waiting");
-    expect(harness.paneCount()).toBe(12);
+    expect(harness.paneCount()).toBe(14);
     expect(harness.series.every((series) => series.data.length === 0)).toBe(true);
     expect(() => renderer.update([], disabled, DEFAULT_INITIAL_BALANCE, 15)).not.toThrow();
     expect(harness.series).toHaveLength(0);
