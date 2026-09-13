@@ -2553,6 +2553,7 @@ export function useChartDrawings(
   const [state, setState] = useState<DrawingState>(EMPTY);
   const session = useRef<ReturnType<typeof createChartDrawingSession> | null>(null);
   const contextMenuTrigger = useRef<HTMLElement | null>(null);
+  const contextMenuRenameAction = useRef<(() => void) | null>(null);
   useEffect(() => {
     if (!chart || !series || !symbol) return;
     const current = createChartDrawingSession(
@@ -2679,6 +2680,7 @@ export function useChartDrawings(
         current.openContextMenu(point, { x: event.clientX, y: event.clientY }, point.paneIndex)
       ) {
         contextMenuTrigger.current = null;
+        contextMenuRenameAction.current = null;
         element.focus({ preventScroll: true });
         event.preventDefault();
         event.stopPropagation();
@@ -2815,7 +2817,11 @@ export function useChartDrawings(
       if (originalTabIndex === null) element.removeAttribute("tabindex");
       else element.setAttribute("tabindex", originalTabIndex);
       current.dispose();
-      if (session.current === current) session.current = null;
+      if (session.current === current) {
+        session.current = null;
+        contextMenuTrigger.current = null;
+        contextMenuRenameAction.current = null;
+      }
     };
   }, [chart, series, symbol, intervalMinutes, regressionSeries]);
   const getCommittedDrawings = useCallback(
@@ -3054,14 +3060,35 @@ export function useChartDrawings(
     [],
   );
   const openDrawingContextMenu = useCallback(
-    (id: string, point: DrawingPoint, trigger: HTMLElement | null = null) => {
-      const opened = session.current?.openDrawingContextMenu(id, point) ?? false;
-      if (opened) contextMenuTrigger.current = trigger;
+    (
+      id: string,
+      point: DrawingPoint,
+      trigger: HTMLElement | null = null,
+      onRename?: () => void,
+    ) => {
+      const owner = session.current;
+      const opened = owner?.openDrawingContextMenu(id, point) ?? false;
+      if (opened) {
+        contextMenuTrigger.current = trigger;
+        const action: (() => void) | null = onRename
+          ? () => {
+              if (
+                contextMenuRenameAction.current === action &&
+                session.current === owner &&
+                (!trigger || trigger.isConnected) &&
+                owner?.getCommittedDrawings()?.some((drawing) => drawing.id === id)
+              )
+                onRename();
+            }
+          : null;
+        contextMenuRenameAction.current = action;
+      }
       return opened;
     },
     [],
   );
   const getContextMenuTrigger = useCallback(() => contextMenuTrigger.current, []);
+  const getContextMenuRenameAction = useCallback(() => contextMenuRenameAction.current, []);
   const closeContextMenu = useCallback(() => session.current?.closeContextMenu(), []);
   const updateSelected = useCallback(
     (patch: DrawingPatch) => session.current?.updateSelected(patch),
@@ -3103,6 +3130,7 @@ export function useChartDrawings(
     isVisible,
     openDrawingContextMenu,
     getContextMenuTrigger,
+    getContextMenuRenameAction,
     closeContextMenu,
     selectDrawing,
     updateDrawing,

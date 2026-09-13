@@ -1300,12 +1300,15 @@ export function DrawingSelectionOverlay({
               drawings={drawings}
               onAction={closeThen}
               onSaveTemplate={() => setTemplateDrawing(selected)}
-              onRename={() =>
-                setRenameTarget({
-                  drawing: selected,
-                  trigger: drawings.getContextMenuTrigger() ?? moreTriggerRef.current,
-                })
-              }
+              onRename={() => {
+                const renameInTree = drawings.getContextMenuRenameAction();
+                if (renameInTree) renameInTree();
+                else
+                  setRenameTarget({
+                    drawing: selected,
+                    trigger: drawings.getContextMenuTrigger() ?? moreTriggerRef.current,
+                  });
+              }}
               onOpenObjectTree={onOpenObjectTree}
               onCreateAlert={onCreateAlert}
             />

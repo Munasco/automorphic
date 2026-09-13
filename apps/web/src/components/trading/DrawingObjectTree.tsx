@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { XIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -80,6 +80,54 @@ function RowAction({
   );
 }
 
+function DrawingNameInput({
+  drawing,
+  label,
+  onSave,
+  onClose,
+}: {
+  drawing: ChartDrawing;
+  label: string;
+  onSave: (id: string, name: string) => boolean;
+  onClose: (restoreFocus: boolean) => void;
+}) {
+  const [name, setName] = useState(drawing.name ?? label);
+  const initialName = useRef(name);
+  const input = useRef<HTMLInputElement>(null);
+  const finished = useRef(false);
+  useLayoutEffect(() => {
+    input.current?.focus();
+    input.current?.select();
+  }, []);
+  const finish = (save: boolean, restoreFocus: boolean) => {
+    if (finished.current) return;
+    finished.current = true;
+    if (save && name !== initialName.current) onSave(drawing.id, name);
+    onClose(restoreFocus);
+  };
+  return (
+    <input
+      ref={input}
+      aria-label="Drawing name"
+      value={name}
+      maxLength={80}
+      placeholder={label}
+      onChange={(event) => setName(event.target.value)}
+      onBlur={() => finish(true, false)}
+      onContextMenu={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.nativeEvent.isComposing) return;
+        if (event.key === "Enter" || event.key === "Escape") {
+          event.preventDefault();
+          finish(event.key === "Enter", true);
+        }
+      }}
+      className="h-7 min-w-0 flex-1 rounded border border-[#2962ff] bg-transparent px-1 text-xs text-zinc-200 outline-none"
+    />
+  );
+}
+
 function IndicatorTreeRow({ indicator }: { indicator: DrawingObjectTreeIndicator }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -157,10 +205,16 @@ export function DrawingObjectTree({
   onClose: () => void;
   indicators?: readonly DrawingObjectTreeIndicator[];
 }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const restoreRenameFocus = useRef<string | null>(null);
+  if (editingId && !drawings.objects.some((drawing) => drawing.id === editingId))
+    setEditingId(null);
   const openMenu = (id: string, trigger: HTMLButtonElement, point?: { x: number; y: number }) => {
     trigger.focus({ preventScroll: true });
     const rect = trigger.getBoundingClientRect();
-    drawings.openDrawingContextMenu(id, point ?? { x: rect.left, y: rect.bottom }, trigger);
+    drawings.openDrawingContextMenu(id, point ?? { x: rect.left, y: rect.bottom }, trigger, () =>
+      setEditingId(id),
+    );
   };
   const dragging = useRef<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{
@@ -330,54 +384,86 @@ export function DrawingObjectTree({
                   isSelected && "bg-[#1e3260] hover:bg-[#1e3260] focus-within:bg-[#1e3260]",
                 )}
               >
-                <button
-                  type="button"
-                  aria-label={`Select ${label}`}
-                  data-drawing-select
-                  draggable
-                  onDragStart={(event) => {
-                    drawings.selectDrawing(object.id, { includeHidden: true });
-                    dragging.current = object.id;
-                    setDropTarget(null);
-                    event.dataTransfer.effectAllowed = "move";
-                    event.dataTransfer.setData("application/x-automorphic-drawing", object.id);
-                  }}
-                  onDragEnd={() => {
-                    dragging.current = null;
-                    setDropTarget(null);
-                  }}
-                  aria-haspopup="menu"
-                  onKeyDown={(event) => {
-                    if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey))
-                      return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    openMenu(object.id, event.currentTarget);
-                  }}
-                  aria-pressed={isSelected}
-                  onClick={(event) =>
-                    drawings.selectDrawing(object.id, {
-                      additive: event.metaKey || event.ctrlKey,
-                      includeHidden: true,
-                      range: event.shiftKey,
-                      replaceSelection: !event.metaKey && !event.ctrlKey && !event.shiftKey,
-                    })
-                  }
-                  onDoubleClick={() => {
-                    drawings.selectDrawing(object.id, {
-                      includeHidden: true,
-                      replaceSelection: true,
-                    });
-                    drawings.openSettings();
-                  }}
-                  className={cn(
-                    "flex h-full min-w-0 flex-1 items-center gap-3 text-left text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-400",
-                    object.hidden && "text-zinc-500",
-                  )}
-                >
-                  <ChartDrawingGlyph tool={object.kind} />
-                  <span className="truncate">{label}</span>
-                </button>
+                {editingId === object.id ? (
+                  <div className="flex h-full min-w-0 flex-1 items-center gap-3">
+                    <ChartDrawingGlyph tool={object.kind} />
+                    <DrawingNameInput
+                      key={object.id}
+                      drawing={object}
+                      label={label}
+                      onSave={drawings.renameDrawing}
+                      onClose={(restoreFocus) => {
+                        restoreRenameFocus.current = restoreFocus ? object.id : null;
+                        setEditingId(null);
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <button
+                    ref={(node) => {
+                      if (node && restoreRenameFocus.current === object.id) {
+                        restoreRenameFocus.current = null;
+                        node.focus({ preventScroll: true });
+                      }
+                    }}
+                    type="button"
+                    aria-label={`Select ${label}`}
+                    data-drawing-select
+                    draggable
+                    onDragStart={(event) => {
+                      drawings.selectDrawing(object.id, { includeHidden: true });
+                      dragging.current = object.id;
+                      setDropTarget(null);
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("application/x-automorphic-drawing", object.id);
+                    }}
+                    onDragEnd={() => {
+                      dragging.current = null;
+                      setDropTarget(null);
+                    }}
+                    aria-haspopup="menu"
+                    onKeyDown={(event) => {
+                      if (event.key === "F2") {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        drawings.selectDrawing(object.id, {
+                          includeHidden: true,
+                          replaceSelection: true,
+                        });
+                        setEditingId(object.id);
+                        return;
+                      }
+                      if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey))
+                        return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      openMenu(object.id, event.currentTarget);
+                    }}
+                    aria-pressed={isSelected}
+                    onClick={(event) =>
+                      drawings.selectDrawing(object.id, {
+                        additive: event.metaKey || event.ctrlKey,
+                        includeHidden: true,
+                        range: event.shiftKey,
+                        replaceSelection: !event.metaKey && !event.ctrlKey && !event.shiftKey,
+                      })
+                    }
+                    onDoubleClick={() => {
+                      drawings.selectDrawing(object.id, {
+                        includeHidden: true,
+                        replaceSelection: true,
+                      });
+                      drawings.openSettings();
+                    }}
+                    className={cn(
+                      "flex h-full min-w-0 flex-1 items-center gap-3 text-left text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-400",
+                      object.hidden && "text-zinc-500",
+                    )}
+                  >
+                    <ChartDrawingGlyph tool={object.kind} />
+                    <span className="truncate">{label}</span>
+                  </button>
+                )}
                 <RowAction
                   label={`${object.locked ? "Unlock" : "Lock"} ${label}`}
                   active={!!object.locked}
