@@ -54,6 +54,10 @@ export type ChartToolbarProps = {
   indicatorLimitReached?: boolean;
   showGrid: boolean;
   onToggleGrid: () => void;
+  showPriceLine: boolean;
+  onTogglePriceLine: () => void;
+  showPriceLabel: boolean;
+  onTogglePriceLabel: () => void;
   crosshairMode: ChartCrosshairMode;
   onCrosshairModeChange: (value: ChartCrosshairMode) => void;
   logScale: boolean;
@@ -82,6 +86,10 @@ export function ChartToolbar({
   indicatorLimitReached = false,
   showGrid,
   onToggleGrid,
+  showPriceLine,
+  onTogglePriceLine,
+  showPriceLabel,
+  onTogglePriceLabel,
   crosshairMode,
   onCrosshairModeChange,
   logScale,
@@ -429,6 +437,28 @@ export function ChartToolbar({
             >
               <Checkbox id={`${id}-grid`} checked={showGrid} onCheckedChange={onToggleGrid} />
               Grid lines
+            </label>
+            <label
+              htmlFor={`${id}-price-line`}
+              className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"
+            >
+              <Checkbox
+                id={`${id}-price-line`}
+                checked={showPriceLine}
+                onCheckedChange={onTogglePriceLine}
+              />
+              Last price line
+            </label>
+            <label
+              htmlFor={`${id}-price-label`}
+              className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"
+            >
+              <Checkbox
+                id={`${id}-price-label`}
+                checked={showPriceLabel}
+                onCheckedChange={onTogglePriceLabel}
+              />
+              Last price label
             </label>
             <label
               htmlFor={`${id}-log`}

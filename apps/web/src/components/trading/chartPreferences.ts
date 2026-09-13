@@ -71,6 +71,8 @@ type SavedChartPreferences = {
   volumeColors: typeof DEFAULT_VOLUME_COLORS;
   initialBalance: InitialBalanceSettings;
   showGrid: boolean;
+  showPriceLine: boolean;
+  showPriceLabel: boolean;
   logScale: boolean;
 };
 
@@ -121,6 +123,8 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
       ? resolveInitialBalanceSettings(saved.initialBalance)
       : { ...DEFAULT_INITIAL_BALANCE },
     showGrid: typeof saved.showGrid === "boolean" ? saved.showGrid : true,
+    showPriceLine: typeof saved.showPriceLine === "boolean" ? saved.showPriceLine : true,
+    showPriceLabel: typeof saved.showPriceLabel === "boolean" ? saved.showPriceLabel : true,
     logScale: typeof saved.logScale === "boolean" ? saved.logScale : false,
   };
 }
@@ -137,6 +141,8 @@ export const useChartPreferences = create<{
   initialBalance: InitialBalanceSettings;
   setInitialBalance: (settings: InitialBalanceSettings) => void;
   showGrid: boolean;
+  showPriceLine: boolean;
+  showPriceLabel: boolean;
   logScale: boolean;
   setStyle: (style: ChartStyle) => void;
   setCrosshairMode: (mode: ChartCrosshairMode) => void;
@@ -161,6 +167,8 @@ export const useChartPreferences = create<{
   setIndicatorInstanceInitialBalance: (id: string, settings: InitialBalanceSettings) => void;
   setIndicatorInstanceVolumeColors: (id: string, colors: typeof DEFAULT_VOLUME_COLORS) => void;
   toggleGrid: () => void;
+  togglePriceLine: () => void;
+  togglePriceLabel: () => void;
   toggleLogScale: () => void;
 }>()(
   persist(
@@ -180,6 +188,8 @@ export const useChartPreferences = create<{
           set({ initialBalance: resolveInitialBalanceSettings(settings) });
       },
       showGrid: true,
+      showPriceLine: true,
+      showPriceLabel: true,
       logScale: false,
       setStyle: (style) => set({ style }),
       setCrosshairMode: (crosshairMode) => {
@@ -398,6 +408,8 @@ export const useChartPreferences = create<{
           });
       },
       toggleGrid: () => set((state) => ({ showGrid: !state.showGrid })),
+      togglePriceLine: () => set((state) => ({ showPriceLine: !state.showPriceLine })),
+      togglePriceLabel: () => set((state) => ({ showPriceLabel: !state.showPriceLabel })),
       toggleLogScale: () => set((state) => ({ logScale: !state.logScale })),
     }),
     {

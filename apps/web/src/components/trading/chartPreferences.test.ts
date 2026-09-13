@@ -1100,3 +1100,70 @@ describe("chart crosshair preferences", () => {
     expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("current price display preferences", () => {
+  it("keeps lines and labels visible for legacy charts and rejects nonboolean saved values", () => {
+    expect(useChartPreferences.getInitialState()).toMatchObject({
+      showPriceLine: true,
+      showPriceLabel: true,
+    });
+    expect(normalizeChartPreferences({})).toMatchObject({
+      showPriceLine: true,
+      showPriceLabel: true,
+    });
+    for (const invalid of [null, undefined, "false", "true", 0, 1, [], {}, [false]]) {
+      expect(
+        normalizeChartPreferences({ showPriceLine: invalid, showPriceLabel: false }),
+      ).toMatchObject({ showPriceLine: true, showPriceLabel: false });
+      expect(
+        normalizeChartPreferences({ showPriceLine: false, showPriceLabel: invalid }),
+      ).toMatchObject({ showPriceLine: false, showPriceLabel: true });
+    }
+  });
+
+  it.each([
+    { line: true, label: true },
+    { line: true, label: false },
+    { line: false, label: true },
+    { line: false, label: false },
+  ])(
+    "preserves line=$line and label=$label independently through toggles and reload",
+    async ({ line, label }) => {
+      const configured = configure();
+      configured.setStyle("heikin-ashi");
+      configured.setCrosshairMode("ohlc");
+      configured.toggleGrid();
+      configured.toggleLogScale();
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      const { togglePriceLine, togglePriceLabel } = useChartPreferences.getState();
+      if (!line) togglePriceLine();
+      if (!label) togglePriceLabel();
+      // Saved callbacks must read current state, and round-tripping each setting is independent.
+      togglePriceLine();
+      expect(useChartPreferences.getState()).toMatchObject({
+        showPriceLine: !line,
+        showPriceLabel: label,
+      });
+      togglePriceLine();
+      togglePriceLabel();
+      expect(useChartPreferences.getState()).toMatchObject({
+        showPriceLine: line,
+        showPriceLabel: !label,
+      });
+      togglePriceLabel();
+      const expected = { ...before, showPriceLine: line, showPriceLabel: label };
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+      expect(JSON.parse(saved[1]).state).toMatchObject({
+        showPriceLine: line,
+        showPriceLabel: label,
+      });
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      expect(typeof useChartPreferences.getState().togglePriceLine).toBe("function");
+      expect(typeof useChartPreferences.getState().togglePriceLabel).toBe("function");
+    },
+  );
+});

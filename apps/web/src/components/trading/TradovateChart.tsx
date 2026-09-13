@@ -34,6 +34,7 @@ import {
   type UTCTimestamp,
   type IChartApi,
   type ISeriesApi,
+  type IPriceLine,
   type SeriesType,
 } from "lightweight-charts";
 import type { MarketQuote } from "./InstrumentHeader";
@@ -79,6 +80,7 @@ type ChartEngine = {
   interval: ChartInterval;
   chart: IChartApi;
   prices: Record<ChartStyle, ISeriesApi<SeriesType>>;
+  marketPriceLine: IPriceLine;
   volume: ISeriesApi<"Histogram">;
   indicators: ReturnType<typeof createIndicatorRenderer>;
   bars: Map<number, Candle>;
@@ -491,6 +493,7 @@ export function TradovateChart({
       interval,
       chart,
       prices,
+      marketPriceLine,
       volume,
       indicators,
       bars,
@@ -677,11 +680,7 @@ export function TradovateChart({
         fitted = true;
       }
       const latest = bars.get(renderedTime) ?? null;
-      marketPriceLine.applyOptions({
-        ...(latest ? { price: latest.close } : {}),
-        lineVisible: latest !== null,
-        axisLabelVisible: latest !== null,
-      });
+      if (latest) marketPriceLine.applyOptions({ price: latest.close });
       setLast(latest);
       if (alertSnapshot && !replaying) drawingAlertsRef.current.consume(alertSnapshot);
       if (latest && (replaying || !receivedQuote))
@@ -749,7 +748,12 @@ export function TradovateChart({
   useEffect(() => {
     if (!engine || engine.disposed) return;
     for (const style of ["candles", "hollow", "heikin-ashi", "bars", "line", "area"] as const)
-      engine.prices[style].applyOptions({ visible: style === settings.style });
+      engine.prices[style].applyOptions({
+        visible: style === settings.style,
+        priceLineVisible: settings.showPriceLine,
+        lastValueVisible: settings.showPriceLabel,
+        title: style === "heikin-ashi" && settings.showPriceLabel ? "HA" : "",
+      });
     // The shared scale takes its formatter from the first series, including hidden ones.
     engine.prices[settings.style].setSeriesOrder(0);
     engine.chart.applyOptions({
@@ -771,7 +775,24 @@ export function TradovateChart({
     engine.chart.priceScale("right", 0).applyOptions({
       mode: settings.logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
     });
-  }, [engine, settings.style, settings.showGrid, settings.logScale, settings.crosshairMode]);
+  }, [
+    engine,
+    settings.style,
+    settings.showGrid,
+    settings.logScale,
+    settings.crosshairMode,
+    settings.showPriceLine,
+    settings.showPriceLabel,
+  ]);
+
+  useEffect(() => {
+    if (!engine || engine.disposed) return;
+    const hasPrice = last !== null && engine.bars.size > 0;
+    engine.marketPriceLine.applyOptions({
+      lineVisible: hasPrice && settings.showPriceLine,
+      axisLabelVisible: hasPrice && settings.showPriceLabel,
+    });
+  }, [engine, last, settings.showPriceLine, settings.showPriceLabel]);
 
   const zoom = (factor: number) => {
     const scale = engine?.chart.timeScale();
@@ -830,6 +851,10 @@ export function TradovateChart({
         indicatorLimitReached={indicatorInstances.length >= MAX_CHART_INDICATORS}
         showGrid={settings.showGrid}
         onToggleGrid={settings.toggleGrid}
+        showPriceLine={settings.showPriceLine}
+        onTogglePriceLine={settings.togglePriceLine}
+        showPriceLabel={settings.showPriceLabel}
+        onTogglePriceLabel={settings.togglePriceLabel}
         crosshairMode={settings.crosshairMode}
         onCrosshairModeChange={settings.setCrosshairMode}
         logScale={settings.logScale}
