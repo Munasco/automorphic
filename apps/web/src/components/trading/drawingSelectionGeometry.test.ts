@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { DrawingGeometry, DrawingPoint } from "./drawingGeometry";
+import {
+  buildDrawingGeometry,
+  type ChartDrawing,
+  type DrawingGeometry,
+  type DrawingPoint,
+} from "./drawingGeometry";
+import type { Time } from "lightweight-charts";
 import { drawingIntersectsRect } from "./drawingSelectionGeometry";
 
 const rect = { x: 40, y: 40, width: 20, height: 20 };
@@ -254,5 +260,62 @@ describe("drawing rectangle selection", () => {
         rect,
       ),
     ).toBe(true);
+  });
+});
+
+describe("measured text rectangle selection", () => {
+  const text: ChartDrawing = {
+    id: "text",
+    kind: "text",
+    anchors: [{ time: 100 as Time, price: 100 }],
+    color: "#ffffff",
+    width: 2,
+    text: "WW\n\ni",
+    textFontSize: 20,
+    textPosition: "below",
+  };
+  const measured = (drawing: ChartDrawing) =>
+    buildDrawingGeometry(
+      drawing,
+      ({ time, price }) => ({ x: Number(time), y: price }),
+      (price) => price,
+      500,
+      500,
+      undefined,
+      undefined,
+      undefined,
+      { fontFamily: "Test", measure: (value) => (value.includes("W") ? 40 : value ? 4 : 0) },
+    );
+  it("uses measured row widths and leaves blank lines unselected without a background", () => {
+    const geometry = measured(text);
+    expect(drawingIntersectsRect(geometry, { x: 130, y: 105, width: 3, height: 3 })).toBe(true);
+    expect(drawingIntersectsRect(geometry, { x: 120, y: 130, width: 3, height: 3 })).toBe(false);
+    expect(drawingIntersectsRect(geometry, { x: 120, y: 152, width: 3, height: 3 })).toBe(false);
+    expect(drawingIntersectsRect(geometry, { x: 101, y: 152, width: 2, height: 3 })).toBe(true);
+  });
+  it("selects independent background/frame with transparent glyphs, not invisible artwork", () => {
+    const interior = { x: 120, y: 130, width: 3, height: 3 };
+    expect(
+      drawingIntersectsRect(
+        measured({ ...text, textOpacity: 0, background: true, backgroundOpacity: 0.4 }),
+        interior,
+      ),
+    ).toBe(true);
+    const border = measured({ ...text, textOpacity: 0, textBorder: true, textBorderOpacity: 0.6 });
+    expect(drawingIntersectsRect(border, interior)).toBe(false);
+    expect(drawingIntersectsRect(border, { x: 95, y: 120, width: 2, height: 3 })).toBe(true);
+    expect(
+      drawingIntersectsRect(
+        measured({
+          ...text,
+          textOpacity: 0,
+          background: true,
+          backgroundOpacity: 0,
+          textBorder: true,
+          textBorderOpacity: 0,
+        }),
+        interior,
+      ),
+    ).toBe(false);
   });
 });

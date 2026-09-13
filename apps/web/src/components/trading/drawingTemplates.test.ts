@@ -493,3 +493,47 @@ describe("drawing templates", () => {
     expect(useDrawingTemplates.getState().templates).toEqual([]);
   });
 });
+
+describe("Text box templates", () => {
+  it("preserves box appearance through saved templates and resets only appearance with factory defaults", () => {
+    const source: ChartDrawing = {
+      ...drawing,
+      kind: "text",
+      anchors: [{ time: 100 as Time, price: 20 }],
+      text: "First\nSecond",
+      textWrap: true,
+      textWrapWidth: 180,
+      textBorder: true,
+      textBorderColor: "#112233",
+      textBorderOpacity: 0.5,
+      background: true,
+      backgroundColor: "#abcdef",
+      backgroundOpacity: 0.25,
+    };
+    const templates = normalizeDrawingTemplates([{ kind: "text", name: "Note", settings: source }]);
+    expect(templates[0]?.settings).toMatchObject({
+      textWrap: true,
+      textWrapWidth: 180,
+      textBorder: true,
+      textBorderColor: "#112233",
+      textBorderOpacity: 0.5,
+      background: true,
+      backgroundOpacity: 0.25,
+    });
+    const restored = applyDrawingTemplate(source, templates[0]!.settings);
+    expect(parseChartDrawings(JSON.stringify([restored]))[0]).toMatchObject({
+      textWrap: true,
+      textWrapWidth: 180,
+      text: "First\nSecond",
+    });
+    const reset = applyDrawingTemplate(source, defaultDrawingTemplateSettings("text"));
+    expect(reset).toMatchObject({
+      id: source.id,
+      anchors: source.anchors,
+      background: false,
+      textBorder: false,
+      textWrap: false,
+    });
+    expect(reset.textWrapWidth).toBeUndefined();
+  });
+});

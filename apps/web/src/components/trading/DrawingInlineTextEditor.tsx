@@ -10,6 +10,7 @@ import type { IChartApi, ISeriesApi, SeriesType } from "lightweight-charts";
 import { drawingTextPlacement, supportsInlineDrawingText } from "./drawingPrimitive";
 import type { ChartDrawingsController } from "./useChartDrawings";
 import type { ChartDrawing } from "./drawingGeometry";
+import { measureDrawingText, type DrawingTextLayout } from "./drawingTextLayout";
 import {
   clampDrawingInlineTextOrigin,
   drawingInlineTextBox,
@@ -18,6 +19,7 @@ import {
 
 type Placement = NonNullable<ReturnType<typeof drawingTextPlacement>> & {
   fontFamily: string;
+  editorLayout: DrawingTextLayout | null;
   paneWidth: number;
   paneHeight: number;
   drawingId: string;
@@ -53,6 +55,7 @@ function TextInput({
     input.current?.setSelectionRange(valueRef.current.length, valueRef.current.length);
   }, []);
   useLayoutEffect(() => {
+    if (drawing.kind === "text") return;
     const element = input.current;
     const context = document.createElement("canvas").getContext("2d");
     if (!element || !context) return;
@@ -70,6 +73,7 @@ function TextInput({
   }, [
     value,
     size,
+    drawing.kind,
     drawing.textBold,
     drawing.textItalic,
     placement.fontFamily,
@@ -96,7 +100,7 @@ function TextInput({
       aria-label="Drawing text"
       placeholder="Add text"
       rows={rows.length}
-      wrap="off"
+      wrap={drawing.kind === "text" && drawing.textWrap ? "soft" : "off"}
       value={value}
       onChange={(event) => {
         const next = event.target.value;
@@ -124,9 +128,13 @@ function TextInput({
       style={{
         ...style,
         color: drawing.textColor ?? drawing.color,
-        width: 60,
+        width: placement.editorLayout?.width ?? 60,
+        padding: placement.editorLayout ? Math.max(0, placement.editorLayout.padding - 1) : 0,
+        boxSizing: "border-box",
+        whiteSpace: drawing.kind === "text" && drawing.textWrap ? "pre-wrap" : "pre",
+        overflowWrap: drawing.kind === "text" && drawing.textWrap ? "anywhere" : "normal",
         height: Math.min(
-          rows.length * size * 1.2 + 2,
+          placement.editorLayout?.height ?? rows.length * size * 1.2 + 2,
           Math.max(size * 1.2 + 2, placement.paneHeight - 12),
         ),
       }}
@@ -188,7 +196,41 @@ export function DrawingInlineTextEditor({
       // must retain its DOM node, draft and caret while projection catches up.
       const local =
         position ?? (editing && current?.drawingId === selected.id ? current.local : null);
-      const box = local ? drawingInlineTextBox(local, width, height) : null;
+      let layout =
+        local && selected.kind === "text"
+          ? measureDrawingText(
+              selected,
+              { ...local, value: selected.text || (editing ? "" : "Add text") },
+              fontFamily,
+              (text, font) => {
+                context.font = font;
+                return context.measureText(text).width;
+              },
+            )
+          : null;
+      if (layout && editing) {
+        // Keep the editing surface reachable even for a box wider than the pane.
+        // Native scrolling preserves the draft without changing the stored width.
+        layout = {
+          ...layout,
+          width: Math.min(layout.width, Math.max(1, paneWidth - 12)),
+          height: Math.min(layout.height, Math.max(1, paneHeight - 12)),
+        };
+      }
+      const box = local
+        ? drawingInlineTextBox(
+            layout
+              ? {
+                  ...local,
+                  point: { x: local.point.x + layout.left, y: local.point.y + layout.top },
+                  align: "left",
+                  baseline: "top",
+                }
+              : local,
+            layout?.width ?? width,
+            layout?.height ?? height,
+          )
+        : null;
       let next: Placement | null = null;
       if (
         local &&
@@ -207,6 +249,7 @@ export function DrawingInlineTextEditor({
             y: paneRect.top - bounds.top + point.y,
           },
           fontFamily,
+          editorLayout: layout,
           paneWidth,
           paneHeight,
         };
@@ -268,7 +311,9 @@ export function DrawingInlineTextEditor({
     lineHeight: `${size * 1.2}px`,
     textAlign: placement?.align ?? "left",
     whiteSpace: "pre",
-    transform: `translate(${placement?.align === "right" ? "-100%" : placement?.align === "center" ? "-50%" : 0}, ${placement?.baseline === "top" ? 0 : placement?.baseline === "middle" ? "-50%" : "-100%"})`,
+    transform: placement?.editorLayout
+      ? `translate(${placement.editorLayout.left}px, ${placement.editorLayout.top}px)`
+      : `translate(${placement?.align === "right" ? "-100%" : placement?.align === "center" ? "-50%" : 0}, ${placement?.baseline === "top" ? 0 : placement?.baseline === "middle" ? "-50%" : "-100%"})`,
   };
   return (
     <div ref={overlay} className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
@@ -303,7 +348,21 @@ export function DrawingInlineTextEditor({
                 event.stopPropagation();
               }}
               className="pointer-events-auto block cursor-text border-0 bg-transparent p-0 outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
-              style={{ ...style, color: selected.text ? "transparent" : "#2962ff" }}
+              style={{
+                ...style,
+                color: selected.text ? "transparent" : "#2962ff",
+                ...(placement.editorLayout
+                  ? {
+                      clipPath: selected.textWrap ? "inset(0 7px 0 0)" : undefined,
+                      width: placement.editorLayout.width,
+                      height: placement.editorLayout.height,
+                      padding: placement.editorLayout.padding,
+                      boxSizing: "border-box",
+                      whiteSpace: selected.textWrap ? "pre-wrap" : "pre",
+                      overflowWrap: selected.textWrap ? "anywhere" : "normal",
+                    }
+                  : {}),
+              }}
             >
               {selected.text || "Add text"}
             </button>

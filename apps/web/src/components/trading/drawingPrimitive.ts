@@ -1,3 +1,4 @@
+import { measureDrawingText } from "./drawingTextLayout";
 import { drawingIntersectsRect } from "./drawingSelectionGeometry";
 import type {
   IChartApi,
@@ -25,7 +26,6 @@ import {
   type DrawingAnchor,
   type DrawingKind,
   type DrawingPoint,
-  type DrawingGeometry,
   type DrawingRegressionFit,
   defaultRegressionDrawingSettings,
 } from "./drawingGeometry";
@@ -34,24 +34,6 @@ import { calculateDrawingStats, formatInfoLineStats } from "./drawingStats";
 import { calculateChartRegression } from "./chartRegression";
 
 const SELECTION_COLOR = "#2962ff";
-
-function drawingLabelLayout(
-  drawing: ChartDrawing,
-  text: NonNullable<DrawingGeometry["text"]>,
-  fontFamily: string,
-) {
-  const size = text.fontSize ?? 14;
-  const rows = text.value.split(/\r?\n/);
-  const rowHeight = size * 1.2;
-  const height = rows.length * rowHeight;
-  return {
-    rows,
-    rowHeight,
-    height,
-    top: text.baseline === "top" ? 0 : text.baseline === "middle" ? -height / 2 : -height,
-    font: `${drawing.textItalic ? "italic " : ""}${drawing.textBold ? "bold " : ""}${size}px ${fontFamily}`,
-  };
-}
 
 const supportsLineTextGap = (kind: DrawingKind) =>
   [
@@ -165,9 +147,10 @@ export type DrawingPrimitiveHit = {
   drawing: ChartDrawing;
   handle: number;
   handlePoint?: DrawingPoint;
+  textBoxWidth?: number;
   distance: number;
   hitTestPriority: 0 | 1 | 2;
-  cursorStyle: "default" | "pointer";
+  cursorStyle: "default" | "pointer" | "ew-resize";
 };
 
 export function createDrawingPrimitive(
@@ -186,6 +169,20 @@ export function createDrawingPrimitive(
   regressionSeries: ISeriesApi<SeriesType> = series,
 ) {
   let requestUpdate = () => {};
+  let textMeasureContext: CanvasRenderingContext2D | null | undefined;
+  const textMetrics = () => ({
+    fontFamily: chart.options().layout.fontFamily,
+    measure: (text: string, font: string) => {
+      if (textMeasureContext === undefined)
+        textMeasureContext =
+          typeof document === "undefined"
+            ? null
+            : document.createElement("canvas").getContext("2d");
+      if (!textMeasureContext) return NaN;
+      textMeasureContext.font = font;
+      return textMeasureContext.measureText(text).width;
+    },
+  });
   let regressionData: ReturnType<typeof regressionSeries.data> | undefined;
   const regressionCache = new Map<string, { key: string; fit: DrawingRegressionFit | undefined }>();
   const invalidateRegression = () => {
@@ -265,7 +262,14 @@ export function createDrawingPrimitive(
         undefined,
         undefined,
         regressionFit(drawing),
+        textMetrics(),
       );
+      if (
+        drawing.kind === "text" &&
+        ((state.selectedIds?.length ?? 0) > 1 ||
+          !(drawing.id === state.selected || state.selectedIds?.includes(drawing.id)))
+      )
+        geometry.handleIndices = [0];
       const handle = hitDrawingHandle(geometry, point);
       let candidate: DrawingPrimitiveHit;
       if (handle >= 0) {
@@ -278,7 +282,10 @@ export function createDrawingPrimitive(
               ? -1
               : (geometry.handleAnchorIndices?.[handle] ?? handle),
           handlePoint: anchor,
-          cursorStyle: "default",
+          ...(drawing.kind === "text" && handle === 1 && geometry.text?.layout
+            ? { textBoxWidth: geometry.text.layout.width }
+            : {}),
+          cursorStyle: drawing.kind === "text" && handle === 1 ? "ew-resize" : "default",
           distance: Math.hypot(point.x - anchor.x, point.y - anchor.y),
           hitTestPriority: 2,
         };
@@ -340,6 +347,7 @@ export function createDrawingPrimitive(
         (price) => series.priceFormatter().format(price),
         (coordinate) => series.coordinateToPrice(coordinate),
         regressionFit(drawing),
+        textMetrics(),
       );
       const lineOpacity =
         drawing.kind === "regression-trend" || isFibTimeDrawing(drawing.kind)
@@ -358,7 +366,7 @@ export function createDrawingPrimitive(
             }
           : {}),
       };
-      if ((drawing.textOpacity ?? 1) <= 0) delete visibleGeometry.text;
+      if (drawing.kind !== "text" && (drawing.textOpacity ?? 1) <= 0) delete visibleGeometry.text;
       return drawingIntersectsRect(visibleGeometry, rect) ? [drawing.id] : [];
     });
   };
@@ -383,9 +391,25 @@ export function createDrawingPrimitive(
             (price) => series.priceFormatter().format(price),
             (coordinate) => series.coordinateToPrice(coordinate),
             regressionFit(drawing),
+            {
+              fontFamily: chart.options().layout.fontFamily,
+              measure: (text, font) => {
+                ctx.font = font;
+                return ctx.measureText?.(text).width ?? NaN;
+              },
+            },
           );
           const textLayout = geometry.text
-            ? drawingLabelLayout(drawing, geometry.text, chart.options().layout.fontFamily)
+            ? (geometry.text.layout ??
+              measureDrawingText(
+                drawing,
+                geometry.text,
+                chart.options().layout.fontFamily,
+                (text, font) => {
+                  ctx.font = font;
+                  return ctx.measureText?.(text).width ?? NaN;
+                },
+              ))
             : undefined;
           const genericLineOpacity =
             drawing.kind === "regression-trend" || isFibTimeDrawing(drawing.kind)
@@ -434,7 +458,7 @@ export function createDrawingPrimitive(
             ctx.save();
             const strokeFont = ctx.font;
             ctx.font = textLayout.font;
-            const textWidth = Math.max(...textLayout.rows.map((row) => ctx.measureText(row).width));
+            const textWidth = textLayout.width;
             ctx.font = strokeFont;
             const left =
               (gapText.align === "right"
@@ -530,9 +554,41 @@ export function createDrawingPrimitive(
           }
           if (geometry.text && textLayout) {
             const text = geometry.text;
-            ctx.globalAlpha = drawing.kind === "regression-trend" ? 1 : (drawing.textOpacity ?? 1);
             const { rows, rowHeight } = textLayout;
             ctx.font = textLayout.font;
+            ctx.textAlign = text.align ?? "left";
+            ctx.textBaseline = "top";
+            const rotated = text.angle !== undefined && text.angle !== 0;
+            ctx.save();
+            if (rotated) {
+              ctx.translate(text.point.x, text.point.y);
+              ctx.rotate(text.angle!);
+            }
+            const originX = rotated ? 0 : text.point.x;
+            const originY = rotated ? 0 : text.point.y;
+            if (text.background) {
+              ctx.globalAlpha = text.background.opacity;
+              ctx.fillStyle = text.background.color;
+              ctx.fillRect(
+                originX + textLayout.left,
+                originY + textLayout.top,
+                textLayout.width,
+                textLayout.height,
+              );
+            }
+            if (text.border) {
+              ctx.globalAlpha = text.border.opacity;
+              ctx.strokeStyle = text.border.color;
+              ctx.lineWidth = 1;
+              ctx.setLineDash([]);
+              ctx.strokeRect(
+                originX + textLayout.left,
+                originY + textLayout.top,
+                textLayout.width,
+                textLayout.height,
+              );
+            }
+            ctx.globalAlpha = drawing.kind === "regression-trend" ? 1 : (drawing.textOpacity ?? 1);
             ctx.fillStyle =
               drawing.kind === "regression-trend"
                 ? (
@@ -540,20 +596,20 @@ export function createDrawingPrimitive(
                     defaultRegressionDrawingSettings().regressionLowerLine
                   ).color
                 : (drawing.textColor ?? drawing.color);
-            ctx.textAlign = text.align ?? "left";
-            ctx.textBaseline = "top";
-            const rotated = text.angle !== undefined && text.angle !== 0;
-            if (rotated) {
-              ctx.save();
-              ctx.translate(text.point.x, text.point.y);
-              ctx.rotate(text.angle!);
-            }
-            const top = (rotated ? 0 : text.point.y) + textLayout.top;
-            rows.forEach((row, index) =>
-              ctx.fillText(row, rotated ? 0 : text.point.x, top + index * rowHeight),
-            );
-            if (rotated) ctx.restore();
+            const x =
+              drawing.kind !== "text"
+                ? originX
+                : originX +
+                  (text.align === "right"
+                    ? textLayout.left + textLayout.width - textLayout.padding
+                    : text.align === "center"
+                      ? textLayout.left + textLayout.width / 2
+                      : textLayout.left + textLayout.padding);
+            const top = originY + textLayout.top + textLayout.padding;
+            rows.forEach((row, index) => ctx.fillText(row, x, top + index * rowHeight));
+            ctx.restore();
           }
+
           if (supportsLineStatistics(drawing.kind) && drawing.anchors.length >= 2) {
             const a = project(drawing.anchors[0]!);
             const b = project(drawing.anchors[1]!);
@@ -727,11 +783,15 @@ export function createDrawingPrimitive(
             ctx.lineWidth = hovering ? 1 : drawing.kind === "channel" ? 1.5 : drawing.width;
             for (const index of geometry.handleIndices ??
               geometry.handles.map((_, index) => index)) {
+              if (drawing.kind === "text" && index === 1 && (hovering || drawing.locked)) continue;
               const point = geometry.handles[index]!;
               ctx.beginPath();
               const radius = hovering ? 6 : drawing.locked ? 3 : drawing.kind === "channel" ? 5 : 4;
               // The disjoint channel's third anchor changes only the opposite right price.
-              if (drawing.kind === "channel" && (index === 1 || index === 4))
+              if (
+                (drawing.kind === "channel" && (index === 1 || index === 4)) ||
+                (drawing.kind === "text" && index === 1)
+              )
                 ctx.roundRect(point.x - radius, point.y - radius, radius * 2, radius * 2, 2);
               else if (drawing.kind === "disjoint-channel" && index === 2)
                 ctx.rect(point.x - radius, point.y - radius, radius * 2, radius * 2);

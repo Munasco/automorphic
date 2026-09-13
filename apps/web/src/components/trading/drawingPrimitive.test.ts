@@ -594,6 +594,7 @@ describe("additional line primitive behavior", () => {
       font: "",
       measureText: vi.fn((text: string) => ({ width: text.length * 6 })),
       fillRect: vi.fn(),
+      strokeRect: vi.fn(),
       roundRect: vi.fn(),
       save: vi.fn(),
       translate: vi.fn(),
@@ -648,6 +649,93 @@ describe("additional line primitive behavior", () => {
       { time: 100 as Time, price: 400 },
       { time: 200 as Time, price: 300 },
     ],
+  });
+
+  it("renders wrapped text with independent fill, border and glyph opacities", () => {
+    const drawing: ChartDrawing = {
+      ...line("text"),
+      anchors: [{ time: 100 as Time, price: 400 }],
+      text: "Alpha Beta",
+      textPosition: "below",
+      textFontSize: 20,
+      textWrap: true,
+      textWrapWidth: 40,
+      background: true,
+      backgroundColor: "#112233",
+      backgroundOpacity: 0.35,
+      textBorder: true,
+      textBorderColor: "#abcdef",
+      textBorderOpacity: 0.7,
+      textOpacity: 0,
+    };
+    const f = renderFixture(drawing);
+    const fills: unknown[] = [],
+      borders: unknown[] = [],
+      glyphs: number[] = [];
+    const context = f.ctx as unknown as CanvasRenderingContext2D;
+    f.ctx.fillRect.mockImplementation((...bounds: unknown[]) =>
+      fills.push({ bounds, alpha: context.globalAlpha, color: context.fillStyle }),
+    );
+    f.ctx.strokeRect.mockImplementation((...bounds: unknown[]) =>
+      borders.push({ bounds, alpha: context.globalAlpha, color: context.strokeStyle }),
+    );
+    f.ctx.fillText.mockImplementation(() => {
+      glyphs.push(context.globalAlpha);
+    });
+    f.draw();
+    expect(fills).toEqual([{ bounds: [96, 96, 40, 56], alpha: 0.35, color: "#112233" }]);
+    expect(borders).toEqual([{ bounds: [96, 96, 40, 56], alpha: 0.7, color: "#abcdef" }]);
+    expect(f.ctx.fillText.mock.calls).toEqual([
+      ["Alpha", 100, 100],
+      ["Beta", 100, 124],
+    ]);
+    expect(glyphs).toEqual([0, 0]);
+  });
+
+  it("keeps ordinary Text unframed and gives selected wrapped Text one width handle", () => {
+    const drawing: ChartDrawing = {
+      ...line("text"),
+      anchors: [{ time: 100 as Time, price: 400 }],
+      text: "X",
+      textPosition: "below",
+      textFontSize: 20,
+      textWrap: true,
+      textWrapWidth: 40,
+    };
+    const f = renderFixture(drawing);
+    f.draw();
+    expect(f.ctx.fillRect).not.toHaveBeenCalled();
+    expect(f.ctx.strokeRect).not.toHaveBeenCalled();
+    expect(f.plugin.hitTest({ x: 136, y: 112 })?.handle).not.toBe(1);
+    f.select();
+    f.draw();
+    expect(f.plugin.hitTest({ x: 136, y: 112 })).toMatchObject({
+      handle: 1,
+      textBoxWidth: 40,
+      handlePoint: { x: 136, y: 112 },
+    });
+    expect(f.ctx.roundRect).toHaveBeenCalled();
+    expect(f.ctx.arc.mock.calls.some((call) => call[0] === 100 && call[1] === 100)).toBe(true);
+  });
+
+  it("does not expose the wrapped Text resize handle during group selection", () => {
+    const drawing: ChartDrawing = {
+      ...line("text"),
+      anchors: [{ time: 100 as Time, price: 400 }],
+      text: "X",
+      textPosition: "below",
+      textFontSize: 20,
+      textWrap: true,
+      textWrapWidth: 40,
+    };
+    const { chart, series } = fixture();
+    const plugin = createDrawingPrimitive(chart, series, () => ({
+      drawings: [drawing],
+      selected: drawing.id,
+      selectedIds: [drawing.id, "other"],
+    }));
+    expect(plugin.hitTest({ x: 136, y: 112 })?.handle).not.toBe(1);
+    expect(plugin.hitTest({ x: 136, y: 112 })?.cursorStyle).not.toBe("ew-resize");
   });
 
   it.each([0, 0.5, 1])(

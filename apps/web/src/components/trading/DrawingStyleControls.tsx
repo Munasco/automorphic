@@ -111,7 +111,7 @@ export function ColorPicker({
   onChange: (color: string) => void;
   label?: string;
   mixed?: boolean | "diagonal";
-  icon?: "pencil" | "letter-t";
+  icon?: "pencil" | "letter-t" | "bucket-droplet";
   variant?: "default" | "settings" | "toolbar";
   opacity?: number | undefined;
   onOpacityChange?: (opacity: number) => void;

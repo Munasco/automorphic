@@ -2152,3 +2152,95 @@ describe("line and annotation opacity persistence", () => {
     expect(sanitizeDrawingSettings({ lineOpacity: 1.1, textOpacity: "0.5" })).toEqual({});
   });
 });
+
+describe("standalone text box geometry", () => {
+  const textDrawing: ChartDrawing = {
+    ...drawing("text", [[100, 400]]),
+    text: "Alpha Beta",
+    textPosition: "below",
+    textFontSize: 20,
+    textWrap: true,
+    textWrapWidth: 40,
+  };
+  const measured = (value: ChartDrawing) =>
+    buildDrawingGeometry(
+      value,
+      ({ time, price }) => ({ x: Number(time), y: 500 - price }),
+      (price) => 500 - price,
+      1000,
+      500,
+      undefined,
+      undefined,
+      undefined,
+      { fontFamily: "Test", measure: (value) => value.length * 6 },
+    );
+  it("shares wrapped rows and exact measured body with its width handle", () => {
+    const result = measured(textDrawing);
+    expect(result.text?.layout).toMatchObject({
+      rows: ["Alpha", "Beta"],
+      width: 40,
+      height: 56,
+      left: -4,
+      top: -4,
+    });
+    expect(result.handles).toEqual([
+      { x: 100, y: 100 },
+      { x: 136, y: 124 },
+    ]);
+    expect(hitDrawingGeometry(result, { x: 105, y: 130 }, 0)).toBe(true);
+    expect(hitDrawingGeometry(result, { x: 160, y: 105 }, 0)).toBe(false);
+    expect(hitDrawingHandle(result, { x: 136, y: 124 })).toBe(1);
+    expect(measured({ ...textDrawing, locked: true }).handles).toHaveLength(1);
+  });
+  it("round trips independent background, border, wrapping and opacity settings", () => {
+    const value: ChartDrawing = {
+      ...textDrawing,
+      background: true,
+      backgroundColor: "#112233",
+      backgroundOpacity: 0.3,
+      textBorder: true,
+      textBorderColor: "#abcdef",
+      textBorderOpacity: 0.8,
+      textOpacity: 0,
+    };
+    expect(parseChartDrawings(JSON.stringify([value]))[0]).toMatchObject(value);
+    expect(measured(value).text).toMatchObject({
+      opacity: 0,
+      background: { color: "#112233", opacity: 0.3 },
+      border: { color: "#abcdef", opacity: 0.8 },
+    });
+  });
+  it("uses the settings swatch defaults independently of the text color", () => {
+    const result = measured({
+      ...textDrawing,
+      color: "#ff0000",
+      background: true,
+      textBorder: true,
+    });
+    expect(result.text).toMatchObject({
+      background: { color: "#2962ff", opacity: 0.2 },
+      border: { color: "#787b86", opacity: 1 },
+    });
+  });
+  it("drops malformed box appearance instead of persisting invalid coordinates or colors", () => {
+    expect(
+      sanitizeDrawingSettings({
+        textWrap: "yes",
+        textBorder: 1,
+        textBorderColor: "red",
+        textBorderOpacity: Infinity,
+        textWrapWidth: NaN,
+      }),
+    ).toEqual({});
+    expect(sanitizeDrawingSettings({ textWrapWidth: 39, textBorderOpacity: 1.01 })).toEqual({});
+    expect(sanitizeDrawingSettings({ textWrapWidth: 4001, textBorderOpacity: -0.1 })).toEqual({});
+    expect(
+      sanitizeDrawingSettings({
+        textWrap: false,
+        textBorder: false,
+        textWrapWidth: 40,
+        textBorderOpacity: 0,
+      }),
+    ).toEqual({ textWrap: false, textBorder: false, textWrapWidth: 40, textBorderOpacity: 0 });
+  });
+});

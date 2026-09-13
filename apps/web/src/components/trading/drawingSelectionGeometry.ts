@@ -91,14 +91,51 @@ function polygonIntersectsRect(points: readonly DrawingPoint[], rect: Rect) {
 
 function textIntersectsRect(text: NonNullable<DrawingGeometry["text"]>, rect: Rect) {
   const { point, value, fontSize = 14, angle = 0, align = "left", baseline = "bottom" } = text;
-  if (
-    !value.trim() ||
-    !finitePoint(point) ||
-    !Number.isFinite(fontSize) ||
-    fontSize <= 0 ||
-    !Number.isFinite(angle)
-  )
+  if (!finitePoint(point) || !Number.isFinite(fontSize) || fontSize <= 0 || !Number.isFinite(angle))
     return false;
+  const layout = text.layout;
+  if (layout) {
+    const transformed = (bounds: Rect) =>
+      corners(bounds).map((p) => ({
+        x: point.x + p.x * Math.cos(angle) - p.y * Math.sin(angle),
+        y: point.y + p.x * Math.sin(angle) + p.y * Math.cos(angle),
+      }));
+    const box = transformed({
+      x: layout.left,
+      y: layout.top,
+      width: layout.width,
+      height: layout.height,
+    });
+    if (text.background && visible(text.background.opacity) && polygonIntersectsRect(box, rect))
+      return true;
+    if (
+      text.border &&
+      visible(text.border.opacity) &&
+      box.some((p, index) => strokeIntersectsRect(p, box[(index + 1) % box.length]!, rect, 1))
+    )
+      return true;
+    if (!visible(text.opacity)) return false;
+    return layout.rows.some((row, index) => {
+      if (!row.trim()) return false;
+      const width = layout.rowWidths[index]!;
+      const left =
+        align === "right"
+          ? layout.left + layout.width - layout.padding - width
+          : align === "center"
+            ? layout.left + layout.width / 2 - width / 2
+            : layout.left + layout.padding;
+      return polygonIntersectsRect(
+        transformed({
+          x: left,
+          y: layout.top + layout.padding + index * layout.rowHeight,
+          width,
+          height: layout.rowHeight,
+        }),
+        rect,
+      );
+    });
+  }
+  if (!value.trim()) return false;
   // Geometry has no font metrics. Match its existing text hit-box approximation,
   // testing each row separately so multiline whitespace does not become a solid box.
   const rows = value.split(/\r?\n/),

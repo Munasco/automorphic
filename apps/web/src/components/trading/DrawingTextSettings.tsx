@@ -1,5 +1,11 @@
+import {
+  DEFAULT_DRAWING_TEXT_BACKGROUND_COLOR,
+  DEFAULT_DRAWING_TEXT_BACKGROUND_OPACITY,
+  DEFAULT_DRAWING_TEXT_BORDER_COLOR,
+  DEFAULT_DRAWING_TEXT_BORDER_OPACITY,
+} from "./drawingTextLayout";
 import { cn } from "../../lib/utils";
-import { ColorPicker, DrawingSelect, inputClass } from "./DrawingStyleControls";
+import { Check, ColorPicker, DrawingSelect, inputClass } from "./DrawingStyleControls";
 import type { ChartDrawing } from "./drawingGeometry";
 import type { DrawingPatch } from "./useChartDrawings";
 
@@ -57,47 +63,96 @@ export function DrawingTextSettings({
         onChange={(event) => onChange({ text: event.target.value })}
         className={cn(
           inputClass,
-          "h-[100px] w-full resize-none rounded-[8px] px-[7px] py-1 text-sm leading-[18px] focus:border-[#2962ff] focus:outline-2 focus:outline-offset-[-2px] focus:outline-[#2962ff] focus:[outline-style:solid]",
+          "w-full resize-none rounded-[8px] px-[7px] py-1 text-sm leading-[18px] focus:border-[#2962ff] focus:outline-2 focus:outline-offset-[-2px] focus:outline-[#2962ff] focus:[outline-style:solid]",
+          drawing.kind === "text" ? "h-[170px]" : "h-[100px]",
         )}
       />
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <span
-          className={cn(
-            "shrink-0 whitespace-nowrap text-sm",
-            drawing.kind === "vertical" && "w-[100px]",
-          )}
-        >
-          Text alignment
-        </span>
-        <div className="flex items-center gap-2">
-          <DrawingSelect
-            label="Text vertical alignment"
-            value={drawing.textPosition ?? (drawing.kind === "vertical" ? "center" : "above")}
-            onChange={(value) =>
-              onChange({ textPosition: value as NonNullable<ChartDrawing["textPosition"]> })
-            }
-            options={[
-              ["above", "Top"],
-              ["center", "Middle"],
-              ["below", "Bottom"],
-            ]}
-            className="h-[34px] w-[100px] shrink-0"
-          />
-          <DrawingSelect
-            label="Text horizontal alignment"
-            value={drawing.textAlignment ?? (drawing.kind === "text" ? "left" : "center")}
-            onChange={(value) =>
-              onChange({ textAlignment: value as NonNullable<ChartDrawing["textAlignment"]> })
-            }
-            options={[
-              ["left", "Left"],
-              ["center", "Center"],
-              ["right", "Right"],
-            ]}
-            className="h-[34px] w-[100px] shrink-0"
-          />
+      {drawing.kind === "text" ? (
+        <div className="text-sm [&>div]:flex [&>div]:h-[50px] [&>div]:items-center">
+          <div>
+            <div className="w-[124px] shrink-0">
+              <Check
+                label="Background"
+                checked={drawing.background ?? false}
+                onChange={(background) => onChange({ background })}
+              />
+            </div>
+            <ColorPicker
+              variant="settings"
+              label="Background color"
+              disabled={!drawing.background}
+              value={drawing.backgroundColor ?? DEFAULT_DRAWING_TEXT_BACKGROUND_COLOR}
+              opacity={drawing.backgroundOpacity ?? DEFAULT_DRAWING_TEXT_BACKGROUND_OPACITY}
+              onChange={(backgroundColor) => onChange({ backgroundColor })}
+              onOpacityChange={(backgroundOpacity) => onChange({ backgroundOpacity })}
+            />
+          </div>
+          <div>
+            <div className="w-[124px] shrink-0">
+              <Check
+                label="Border"
+                checked={drawing.textBorder ?? false}
+                onChange={(textBorder) => onChange({ textBorder })}
+              />
+            </div>
+            <ColorPicker
+              variant="settings"
+              label="Border color"
+              disabled={!drawing.textBorder}
+              value={drawing.textBorderColor ?? DEFAULT_DRAWING_TEXT_BORDER_COLOR}
+              opacity={drawing.textBorderOpacity ?? DEFAULT_DRAWING_TEXT_BORDER_OPACITY}
+              onChange={(textBorderColor) => onChange({ textBorderColor })}
+              onOpacityChange={(textBorderOpacity) => onChange({ textBorderOpacity })}
+            />
+          </div>
+          <div>
+            <Check
+              label="Text wrap"
+              checked={drawing.textWrap ?? false}
+              onChange={(textWrap) => onChange({ textWrap })}
+            />
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          <span
+            className={cn(
+              "shrink-0 whitespace-nowrap text-sm",
+              drawing.kind === "vertical" && "w-[100px]",
+            )}
+          >
+            Text alignment
+          </span>
+          <div className="flex items-center gap-2">
+            <DrawingSelect
+              label="Text vertical alignment"
+              value={drawing.textPosition ?? (drawing.kind === "vertical" ? "center" : "above")}
+              onChange={(value) =>
+                onChange({ textPosition: value as NonNullable<ChartDrawing["textPosition"]> })
+              }
+              options={[
+                ["above", "Top"],
+                ["center", "Middle"],
+                ["below", "Bottom"],
+              ]}
+              className="h-[34px] w-[100px] shrink-0"
+            />
+            <DrawingSelect
+              label="Text horizontal alignment"
+              value={drawing.textAlignment ?? "center"}
+              onChange={(value) =>
+                onChange({ textAlignment: value as NonNullable<ChartDrawing["textAlignment"]> })
+              }
+              options={[
+                ["left", "Left"],
+                ["center", "Center"],
+                ["right", "Right"],
+              ]}
+              className="h-[34px] w-[100px] shrink-0"
+            />
+          </div>
+        </div>
+      )}
       {drawing.kind === "vertical" ? (
         <div className="flex items-center gap-5">
           <span className="w-[100px] shrink-0 whitespace-nowrap text-sm">Text orientation</span>

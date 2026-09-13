@@ -17,7 +17,7 @@ import type {
 } from "lightweight-charts";
 import { createChartDrawingSession } from "./useChartDrawings";
 import { sanitizeDrawingVisibility } from "./drawingVisibility";
-import type { ChartDrawing } from "./drawingGeometry";
+import { buildDrawingGeometry, type ChartDrawing } from "./drawingGeometry";
 import {
   parseDrawingsClipboard,
   parseDrawingClipboard,
@@ -47,6 +47,7 @@ function fixture(symbol: string, initial: string | null = null, candles: Candles
     },
   } as unknown as ISeriesApi<SeriesType>;
   const chart = {
+    options: () => ({ layout: { fontFamily: "sans-serif" } }),
     timeScale: () => ({
       width: () => 1000,
       timeToCoordinate: (time: number) => time,
@@ -4469,6 +4470,167 @@ describe("group template preview", () => {
     expect(state().objects).toEqual(objects);
     session.redo();
     expect(f.saved()).toBe(saved);
+    session.dispose();
+  });
+});
+
+describe("wrapped Text width resizing", () => {
+  const make = (patch: Partial<ChartDrawing> = {}, useDefaultWidth = false) => {
+    const original: ChartDrawing = {
+      id: "wrapped-text",
+      kind: "text",
+      color: "#2962ff",
+      width: 2,
+      text: "Plan the trade",
+      textWrap: true,
+      textWrapWidth: 240,
+      background: true,
+      backgroundColor: "#123456",
+      anchors: [{ time: 100 as Time, price: 4800 }],
+      ...patch,
+    };
+    if (useDefaultWidth) delete original.textWrapWidth;
+    const f = fixture("text-width", JSON.stringify([original])),
+      session = f.open();
+    session.selectDrawing(original.id);
+    const handle = (drawing = original) => {
+      const projection = drawingProjection(f.chart, f.series);
+      return buildDrawingGeometry(
+        drawing,
+        projection.project,
+        projection.priceY,
+        projection.width,
+        projection.height,
+      ).handles[1]!;
+    };
+    return { f, session, original, handle, state: () => f.change.mock.calls.at(-1)![0] };
+  };
+  it("resizes only the outer CSS width, commits one undo/write, and reloads the same width", () => {
+    const { f, session, original, handle, state } = make();
+    const point = handle();
+    expect(session.beginDrag(point)).toBe(true);
+    session.dragTo({ x: point.x + 30, y: point.y + 50 });
+    session.dragTo({ x: point.x + 80, y: point.y - 30 });
+    expect(state().objects).toEqual([{ ...original, textWrapWidth: 320 }]);
+    expect(f.writes()).toBe(0);
+    session.endDrag();
+    expect(f.writes()).toBe(1);
+    expect(JSON.parse(f.saved()!)).toEqual([{ ...original, textWrapWidth: 320 }]);
+    session.undo();
+    expect(state().objects).toEqual([original]);
+    session.redo();
+    expect(state().objects[0].textWrapWidth).toBe(320);
+    session.dispose();
+    const reloaded = f.open();
+    expect(state().objects[0].textWrapWidth).toBe(320);
+    expect(state().objects[0].anchors).toEqual(original.anchors);
+    reloaded.dispose();
+  });
+  it.each(["cancel", "escape", "tool"] as const)(
+    "restores the original width after %s without persisting a preview",
+    (action) => {
+      const { f, session, original, handle, state } = make();
+      const point = handle();
+      session.beginDrag(point);
+      session.dragTo({ x: point.x + 100, y: point.y });
+      expect(state().objects[0].textWrapWidth).toBe(340);
+      if (action === "cancel") session.endDrag(false);
+      else if (action === "escape") session.cancel();
+      else session.setTool("cursor");
+      expect(state().objects).toEqual([original]);
+      expect(f.writes()).toBe(0);
+      session.endDrag();
+      expect(f.writes()).toBe(0);
+      session.dispose();
+    },
+  );
+  it("clamps at40 and4000 pixels and modifier resizing never clones or changes anchors", () => {
+    const { f, session, original, handle, state } = make();
+    const point = handle();
+    expect(session.beginDrag(point, { clone: true, additive: true })).toBe(true);
+    session.dragTo({ x: point.x - 1000, y: point.y });
+    expect(state().objects[0].textWrapWidth).toBe(40);
+    session.dragTo({ x: point.x + 5000, y: point.y });
+    session.endDrag();
+    expect(state().count).toBe(1);
+    expect(state().objects[0].textWrapWidth).toBe(4000);
+    expect(state().objects[0].anchors).toEqual(original.anchors);
+    expect(f.writes()).toBe(1);
+    session.dispose();
+  });
+  it("uses the default outer width without materializing it for clicks, vertical motion, invalid points, or returning to origin", () => {
+    const { f, session, original, handle, state } = make({}, true);
+    const point = handle();
+    session.beginDrag(point);
+    session.dragTo({ x: point.x + 1, y: point.y + 1 });
+    session.endDrag();
+    expect(f.writes()).toBe(0);
+    session.beginDrag(point);
+    session.dragTo({ x: point.x, y: point.y + 100 });
+    session.dragTo({ x: NaN, y: point.y });
+    session.endDrag();
+    expect(f.writes()).toBe(0);
+    session.beginDrag(point);
+    session.dragTo({ x: point.x + 50, y: point.y });
+    expect(state().objects[0].textWrapWidth).toBe(290);
+    session.dragTo(point);
+    session.endDrag();
+    expect(state().objects[0].textWrapWidth).toBeUndefined();
+    expect(state().objects[0].anchors).toEqual(original.anchors);
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+  it("retains fractional outer widths without rounding during vertical-only motion", () => {
+    const { f, session, original, handle, state } = make({ textWrapWidth: 240.5 });
+    const point = handle();
+    session.beginDrag(point);
+    session.dragTo({ x: point.x, y: point.y + 40 });
+    session.endDrag();
+    expect(state().objects).toEqual([original]);
+    expect(f.writes()).toBe(0);
+    session.beginDrag(point);
+    session.dragTo({ x: point.x + 10.25, y: point.y });
+    session.endDrag();
+    expect(state().objects[0].textWrapWidth).toBe(250.75);
+    session.dispose();
+  });
+  it.each(["left", "center", "right"] as const)(
+    "keeps the outer origin fixed while resizing %s-aligned wrapped text",
+    (textAlignment) => {
+      const { session, original, handle, state } = make({ textAlignment });
+      const point = handle();
+      expect(session.beginDrag(point)).toBe(true);
+      session.dragTo({ x: point.x + 64, y: point.y });
+      session.endDrag();
+      const resized = state().objects[0];
+      expect(resized.textWrapWidth).toBe(304);
+      expect(resized.anchors).toEqual(original.anchors);
+      expect(handle(resized).x).toBe(point.x + 64);
+      session.dispose();
+    },
+  );
+  it("does not resize locked text or a wrapped Text that belongs to a selected group", () => {
+    const { f, session, original, handle, state } = make();
+    const point = handle();
+    session.updateSelected({ locked: true });
+    const beforeLocked = f.saved();
+    expect(session.beginDrag(point)).toBe(false);
+    session.dragTo({ x: point.x + 80, y: point.y });
+    session.endDrag();
+    expect(f.saved()).toBe(beforeLocked);
+    session.updateDrawing(original.id, { locked: false });
+    session.duplicateSelected();
+    const otherId = state().selected.id;
+    session.updateDrawing(otherId, { anchors: [{ time: 400 as Time, price: 4700 }] });
+    session.selectDrawing(original.id);
+    session.selectDrawing(otherId, { additive: true });
+    expect(session.beginDrag(point)).toBe(true);
+    session.dragTo({ x: point.x + 40, y: point.y + 20 });
+    session.endDrag();
+    expect(state().objects.map((drawing: ChartDrawing) => drawing.textWrapWidth)).toEqual([
+      240, 240,
+    ]);
+    expect(state().objects[0].anchors).toEqual([{ time: 140, price: 4780 }]);
     session.dispose();
   });
 });

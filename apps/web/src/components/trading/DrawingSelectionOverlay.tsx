@@ -1,3 +1,7 @@
+import {
+  DEFAULT_DRAWING_TEXT_BACKGROUND_COLOR,
+  DEFAULT_DRAWING_TEXT_BACKGROUND_OPACITY,
+} from "./drawingTextLayout";
 import { DrawingGroupSettings } from "./DrawingGroupSettings";
 import { supportsInlineDrawingText } from "./drawingPrimitive";
 import { getDrawingDialogBounds } from "./drawingDialogBounds";
@@ -260,7 +264,7 @@ function DrawingSettings({
   const [replaceAppearance, setReplaceAppearance] = useState(false);
   const availableTabs =
     draft.kind === "text"
-      ? ["Text", "Coordinates", "Visibility"]
+      ? ["Text", "Visibility"]
       : draft.kind === "regression-trend"
         ? ["Inputs", "Style", "Coordinates", "Visibility"]
         : supportsDrawingLevels(draft.kind) || ["crossline", "trend-angle"].includes(draft.kind)
@@ -1028,29 +1032,26 @@ export function DrawingSelectionOverlay({
               opacity={selected.textOpacity ?? 1}
               onOpacityChange={(textOpacity) => drawings.updateSelected({ textOpacity })}
             />
+            {selected.background ? (
+              <ColorPicker
+                variant="toolbar"
+                label="Background color"
+                icon="bucket-droplet"
+                value={selected.backgroundColor ?? DEFAULT_DRAWING_TEXT_BACKGROUND_COLOR}
+                opacity={selected.backgroundOpacity ?? DEFAULT_DRAWING_TEXT_BACKGROUND_OPACITY}
+                onChange={(backgroundColor) => drawings.updateSelected({ backgroundColor })}
+                onOpacityChange={(backgroundOpacity) =>
+                  drawings.updateSelected({ backgroundOpacity })
+                }
+              />
+            ) : null}
             <DrawingSelect
               label="Text size"
               value={String(selected.textFontSize ?? 14)}
               onChange={(value) => drawings.updateSelected({ textFontSize: Number(value) })}
-              options={[8, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 40, 48].map(
-                (size) => [String(size), String(size)] as const,
-              )}
+              options={DRAWING_TEXT_FONT_SIZES.map((size) => [String(size), String(size)] as const)}
               className="w-16"
             />
-            <IconButton
-              label="Bold text"
-              active={selected.textBold ?? false}
-              onClick={() => drawings.updateSelected({ textBold: !selected.textBold })}
-            >
-              <span className="font-bold">B</span>
-            </IconButton>
-            <IconButton
-              label="Italic text"
-              active={selected.textItalic ?? false}
-              onClick={() => drawings.updateSelected({ textItalic: !selected.textItalic })}
-            >
-              <span className="italic">I</span>
-            </IconButton>
           </>
         ) : isFibTimeDrawing(selected.kind) ? (
           <FibTimeToolbar drawing={selected} onChange={drawings.updateSelected} />

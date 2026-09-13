@@ -1,3 +1,9 @@
+import {
+  DEFAULT_DRAWING_TEXT_BACKGROUND_COLOR,
+  DEFAULT_DRAWING_TEXT_BACKGROUND_OPACITY,
+  DEFAULT_DRAWING_TEXT_BORDER_COLOR,
+  DEFAULT_DRAWING_TEXT_BORDER_OPACITY,
+} from "./drawingTextLayout";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import {
@@ -28,6 +34,17 @@ export type DrawingTemplate = {
 /** Factory appearance, independent of saved templates and the user's last edited style. */
 export function defaultDrawingTemplateSettings(kind: DrawingKind): DrawingTemplateSettings {
   return {
+    ...(kind === "text"
+      ? {
+          background: false,
+          backgroundColor: DEFAULT_DRAWING_TEXT_BACKGROUND_COLOR,
+          backgroundOpacity: DEFAULT_DRAWING_TEXT_BACKGROUND_OPACITY,
+          textBorder: false,
+          textBorderColor: DEFAULT_DRAWING_TEXT_BORDER_COLOR,
+          textBorderOpacity: DEFAULT_DRAWING_TEXT_BORDER_OPACITY,
+          textWrap: false,
+        }
+      : {}),
     color: "#2962ff",
     width: 2,
     lineStyle: "solid",

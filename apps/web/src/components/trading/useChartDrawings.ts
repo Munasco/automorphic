@@ -43,6 +43,7 @@ import {
   type DrawingVisibility,
 } from "./drawingVisibility";
 import { applyDrawingTemplate } from "./drawingTemplates";
+import { DEFAULT_DRAWING_TEXT_WRAP_WIDTH } from "./drawingTextLayout";
 import {
   parseDrawingsClipboard,
   serializeDrawingClipboard,
@@ -647,6 +648,23 @@ export function createChartDrawingSession(
     let dx = point.x - activeDrag.origin.x,
       dy = point.y - activeDrag.origin.y;
     if (!activeDrag.moved && Math.hypot(dx, dy) < 3) return;
+    if (
+      activeDrag.drawing.kind === "text" &&
+      activeDrag.drawing.textWrap === true &&
+      activeDrag.handle === 1 &&
+      !activeDrag.group.length
+    ) {
+      if (!Number.isFinite(dx)) return;
+      const originalWidth = activeDrag.drawing.textWrapWidth ?? DEFAULT_DRAWING_TEXT_WRAP_WIDTH;
+      const width = Math.max(40, Math.min(4000, originalWidth + dx));
+      activeDrag.moved = width !== originalWidth;
+      const next = activeDrag.moved
+        ? { ...activeDrag.drawing, textWrapWidth: width }
+        : activeDrag.drawing;
+      drawings = drawings.map((drawing) => (drawing.id === next.id ? next : drawing));
+      emit();
+      return;
+    }
     const projection = drawingProjection(chart, series);
     if (activeDrag.group.length) {
       const reference = activeDrag.points[0]!;

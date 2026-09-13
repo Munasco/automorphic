@@ -1,3 +1,12 @@
+import {
+  measureDrawingText,
+  DEFAULT_DRAWING_TEXT_BACKGROUND_COLOR,
+  DEFAULT_DRAWING_TEXT_BACKGROUND_OPACITY,
+  DEFAULT_DRAWING_TEXT_BORDER_COLOR,
+  DEFAULT_DRAWING_TEXT_BORDER_OPACITY,
+  type DrawingTextLayout,
+  type DrawingTextMetrics,
+} from "./drawingTextLayout";
 import type { ChartRegression, RegressionSource } from "./chartRegression";
 import { sanitizeDrawingVisibility, type DrawingVisibility } from "./drawingVisibility";
 import type { Time } from "lightweight-charts";
@@ -111,6 +120,11 @@ export type DrawingSettings = {
   textFontSize?: number;
   textBold?: boolean;
   textItalic?: boolean;
+  textBorder?: boolean;
+  textBorderColor?: string;
+  textBorderOpacity?: number;
+  textWrap?: boolean;
+  textWrapWidth?: number;
   textPosition?: "above" | "center" | "below";
   textAlignment?: "left" | "center" | "right";
   textOrientation?: "horizontal" | "vertical";
@@ -151,6 +165,10 @@ export type DrawingGeometry = {
     baseline?: "top" | "middle" | "bottom";
     fontSize?: number;
     angle?: number;
+    layout?: DrawingTextLayout;
+    opacity?: number;
+    background?: { color: string; opacity: number };
+    border?: { color: string; opacity: number };
   };
   handles: DrawingPoint[];
   /** Original anchor indices for the visible, editable handles of dense freehand strokes. */
@@ -732,6 +750,8 @@ export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
     "priceLabelItalic",
     "textBold",
     "textItalic",
+    "textBorder",
+    "textWrap",
   ] as const)
     if (typeof source[key] === "boolean") result[key] = source[key];
   for (const key of ["startMarker", "endMarker"] as const)
@@ -747,6 +767,22 @@ export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
     source.priceLabelFontSize <= 48
   )
     result.priceLabelFontSize = source.priceLabelFontSize;
+  if (typeof source.textBorderColor === "string" && /^#[a-f\d]{6}$/i.test(source.textBorderColor))
+    result.textBorderColor = source.textBorderColor;
+  if (
+    typeof source.textBorderOpacity === "number" &&
+    Number.isFinite(source.textBorderOpacity) &&
+    source.textBorderOpacity >= 0 &&
+    source.textBorderOpacity <= 1
+  )
+    result.textBorderOpacity = source.textBorderOpacity;
+  if (
+    typeof source.textWrapWidth === "number" &&
+    Number.isFinite(source.textWrapWidth) &&
+    source.textWrapWidth >= 40 &&
+    source.textWrapWidth <= 4000
+  )
+    result.textWrapWidth = source.textWrapWidth;
   if (typeof source.text === "string") result.text = source.text;
   if (typeof source.textColor === "string" && /^#[a-f\d]{6}$/i.test(source.textColor))
     result.textColor = source.textColor;
@@ -1608,6 +1644,7 @@ export function buildDrawingGeometry(
   formatPrice: (price: number) => string = (price) => String(Number(price.toFixed(6))),
   coordinatePrice?: (coordinate: number) => number | null,
   regressionFit?: DrawingRegressionFit,
+  textMetrics?: DrawingTextMetrics,
 ): DrawingGeometry {
   drawing = { ...defaultVerticalLineSettings(drawing.kind), ...drawing };
   if (isFibTimeDrawing(drawing.kind))
@@ -1847,6 +1884,34 @@ export function buildDrawingGeometry(
       }
     }
   }
+  if (drawing.kind === "text" && result.text) {
+    const text = result.text;
+    text.layout = measureDrawingText(
+      drawing,
+      text,
+      textMetrics?.fontFamily ?? "sans-serif",
+      textMetrics?.measure ?? ((value) => Array.from(value).length * (text.fontSize ?? 14) * 0.65),
+    );
+    text.opacity = drawing.textOpacity ?? 1;
+    if (drawing.background === true)
+      text.background = {
+        color: drawing.backgroundColor ?? DEFAULT_DRAWING_TEXT_BACKGROUND_COLOR,
+        opacity: drawing.backgroundOpacity ?? DEFAULT_DRAWING_TEXT_BACKGROUND_OPACITY,
+      };
+    if (drawing.textBorder === true)
+      text.border = {
+        color: drawing.textBorderColor ?? DEFAULT_DRAWING_TEXT_BORDER_COLOR,
+        opacity: drawing.textBorderOpacity ?? DEFAULT_DRAWING_TEXT_BORDER_OPACITY,
+      };
+    if (drawing.textWrap === true && !drawing.locked) {
+      const layout = text.layout;
+      result.handles.push({
+        x: text.point.x + layout.left + layout.width,
+        y: text.point.y + layout.top + layout.height / 2,
+      });
+    }
+  }
+
   return result;
 }
 
@@ -1899,6 +1964,43 @@ export function hitDrawingGeometry(
       x: anchor.x + relative.x * Math.cos(angle) + relative.y * Math.sin(angle),
       y: anchor.y - relative.x * Math.sin(angle) + relative.y * Math.cos(angle),
     };
+    const layout = geometry.text.layout;
+    if (layout) {
+      const x = local.x - anchor.x,
+        y = local.y - anchor.y;
+      const inBox =
+        x >= layout.left - tolerance &&
+        x <= layout.left + layout.width + tolerance &&
+        y >= layout.top - tolerance &&
+        y <= layout.top + layout.height + tolerance;
+      if (
+        inBox &&
+        ((geometry.text.background?.opacity ?? 0) > 0 || (geometry.text.border?.opacity ?? 0) > 0)
+      )
+        return true;
+      if (
+        (geometry.text.opacity ?? 1) > 0 &&
+        layout.rows.some((row, index) => {
+          if (!row.trim()) return false;
+          const rowWidth = layout.rowWidths[index]!;
+          const rowLeft =
+            align === "right"
+              ? layout.left + layout.width - layout.padding - rowWidth
+              : align === "center"
+                ? layout.left + layout.width / 2 - rowWidth / 2
+                : layout.left + layout.padding;
+          const rowTop = layout.top + layout.padding + index * layout.rowHeight;
+          return (
+            x >= rowLeft - tolerance &&
+            x <= rowLeft + rowWidth + tolerance &&
+            y >= rowTop - tolerance &&
+            y <= rowTop + layout.rowHeight + tolerance
+          );
+        })
+      )
+        return true;
+      return hitDrawingHandle(geometry, point, tolerance) >= 0;
+    }
     const lines = value.split(/\r?\n/);
     const width = Math.max(...lines.map((line) => line.length)) * fontSize * 0.65;
     const height = lines.length * fontSize * 1.2;
