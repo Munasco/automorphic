@@ -1723,27 +1723,24 @@ export function createChartDrawingSession(
     const { first, second } = projected;
     return (Math.atan2(first.y - second.y, second.x - first.x) * 180) / Math.PI || 0;
   };
-  const continuousAngleAnchor = (
-    projection: ReturnType<typeof drawingProjection>,
-    point: DrawingPoint,
-  ): DrawingAnchor | null => {
-    if (![point.x, point.y].every(Number.isFinite)) return null;
-    const price = series.coordinateToPrice(point.y);
-    if (price === null || !Number.isFinite(price)) return null;
-    const data = series.data();
-    if (data.length < 2) {
-      const anchor = projection.unproject(point);
-      const projected = anchor ? projection.project(anchor) : null;
-      return projected && Math.abs(projected.x - point.x) < 1e-6 ? anchor : null;
-    }
+  const continuousTimeAtCoordinate = (
+    x: number,
+    data: ReturnType<typeof series.data> = series.data(),
+  ): Time | null => {
+    if (!Number.isFinite(x)) return null;
     const scale = chart.timeScale();
+    if (data.length < 2) {
+      const time = drawingPaneTimeAtCoordinate(chart, series, x);
+      const projected = time === null ? null : drawingTimeCoordinate(chart, series, time);
+      return projected !== null && Math.abs(projected - x) < 1e-6 ? time : null;
+    }
     let left = 0,
       right = data.length - 1;
     while (left < right) {
       const middle = Math.floor((left + right) / 2);
       const coordinate = scale.timeToCoordinate(data[middle]!.time);
       if (coordinate === null || !Number.isFinite(coordinate)) return null;
-      if (coordinate < point.x) left = middle + 1;
+      if (coordinate < x) left = middle + 1;
       else right = middle;
     }
     const a = data[Math.max(0, left - 1)]!;
@@ -1763,19 +1760,104 @@ export function createChartDrawingSession(
       at === bt
     )
       return null;
-    // Invert drawingTimeCoordinate's interpolation. coordinateToTime rounds to a bar,
-    // which would change the requested screen angle and length after every edit.
-    const time = at + ((point.x - ax) / (bx - ax)) * (bt - at);
-    return Number.isFinite(time) ? { time: time as Time, price } : null;
+    if (x === ax) return a.time;
+    if (x === bx) return b.time;
+    // Invert drawingTimeCoordinate across real candle times, including session gaps.
+    // coordinateToTime rounds fractional anchors to a bar and cannot do this inversion.
+    const time = at + ((x - ax) / (bx - ax)) * (bt - at);
+    return Number.isFinite(time) ? (time as Time) : null;
+  };
+  const continuousAngleAnchor = (point: DrawingPoint): DrawingAnchor | null => {
+    if (![point.x, point.y].every(Number.isFinite)) return null;
+    const price = series.coordinateToPrice(point.y);
+    if (price === null || !Number.isFinite(price)) return null;
+    const time = continuousTimeAtCoordinate(point.x);
+    return time === null ? null : { time, price };
+  };
+  const nudgeSelected = ({ bars, ticks }: { bars: number; ticks: number }): boolean => {
+    if (
+      disposed ||
+      tool !== "cursor" ||
+      hidden ||
+      settingsOpen ||
+      settingsDraft ||
+      groupSettingsDraft ||
+      textEditing ||
+      drag ||
+      marquee ||
+      contextPoint ||
+      anchors.length ||
+      strokeLastPoint ||
+      replacingId ||
+      !Number.isSafeInteger(bars) ||
+      !Number.isSafeInteger(ticks) ||
+      (bars === 0 && ticks === 0)
+    )
+      return false;
+    const step = coordinatePriceStep();
+    const delta = step * ticks;
+    if (!Number.isFinite(delta)) return false;
+    const decimals = (value: number) => {
+      const [coefficient = "", exponent = "0"] = value.toString().split("e");
+      return Math.max(0, (coefficient.split(".")[1]?.length ?? 0) - Number(exponent));
+    };
+    const changes = new Map<string, ChartDrawing>();
+    try {
+      const scale = chart.timeScale();
+      const data = bars ? series.data() : [];
+      for (const drawing of drawings) {
+        if (!selectedIds.includes(drawing.id) || drawing.locked || !isVisible(drawing)) continue;
+        const moved = drawing.anchors.map((anchor): DrawingAnchor | null => {
+          let time = anchor.time;
+          if (bars && drawing.kind !== "horizontal") {
+            const x = drawingTimeCoordinate(chart, series, time, data);
+            const logical = x === null ? null : scale.coordinateToLogical(x);
+            if (logical === null || !Number.isFinite(logical)) return null;
+            const target = logical + bars;
+            const lower = Math.floor(target),
+              upper = Math.ceil(target);
+            const a = scale.logicalToCoordinate(lower as Logical);
+            const b = lower === upper ? a : scale.logicalToCoordinate(upper as Logical);
+            if (a === null || b === null || !Number.isFinite(a) || !Number.isFinite(b)) return null;
+            const shifted = continuousTimeAtCoordinate(a + (b - a) * (target - lower), data);
+            if (shifted === null) return null;
+            time = shifted;
+          }
+          let price = anchor.price;
+          if (ticks && drawing.kind !== "vertical" && drawing.kind !== "regression-trend") {
+            const precision = Math.max(decimals(price), decimals(step));
+            const sum = price + delta;
+            // Remove arithmetic noise without quantizing an existing off-tick coordinate.
+            price = precision <= 100 ? Number(sum.toFixed(precision)) : sum;
+            if (!Number.isFinite(price)) return null;
+          }
+          return time === anchor.time && price === anchor.price ? anchor : { time, price };
+        });
+        if (
+          moved.some((anchor) => anchor === null) ||
+          !validDrawingAnchors(drawing.kind, moved as DrawingAnchor[])
+        )
+          return false;
+        if (moved.some((anchor, index) => !sameAnchor(drawing.anchors[index], anchor!)))
+          changes.set(drawing.id, { ...drawing, anchors: moved as DrawingAnchor[] });
+      }
+    } catch {
+      return false;
+    }
+    if (!changes.size) return false;
+    remember();
+    drawings = drawings.map((drawing) => changes.get(drawing.id) ?? drawing);
+    changed();
+    return true;
   };
   const anchorsAtAngle = (drawing: ChartDrawing, degrees: number): DrawingAnchor[] | null => {
     if (!Number.isFinite(degrees)) return null;
     const projected = angleProjection(drawing);
     if (!projected) return null;
-    const { projection, first, length } = projected;
+    const { first, length } = projected;
     const radians = ((degrees % 360) * Math.PI) / 180;
     try {
-      const second = continuousAngleAnchor(projection, {
+      const second = continuousAngleAnchor({
         x: first.x + Math.cos(radians) * length,
         y: first.y - Math.sin(radians) * length,
       });
@@ -1796,7 +1878,7 @@ export function createChartDrawingSession(
     try {
       const origin = projection.project(anchor);
       if (!origin || ![origin.x, origin.y].every(Number.isFinite)) return null;
-      const endpoint = continuousAngleAnchor(projection, {
+      const endpoint = continuousAngleAnchor({
         x: origin.x + second.x - first.x,
         y: origin.y + second.y - first.y,
       });
@@ -1864,6 +1946,7 @@ export function createChartDrawingSession(
       hover(null);
       primitive.redraw();
     },
+    nudgeSelected,
     beginDrag,
     beginMarquee,
     updateMarquee,
@@ -1999,7 +2082,6 @@ export function createChartDrawingSession(
       if (!drawings.length && !history.length) return;
       future.push(drawings.slice());
       drawings = history.pop() ?? drawings.slice(0, -1);
-      selectedId = null;
       changed();
     },
     redo: () => {
@@ -2007,7 +2089,6 @@ export function createChartDrawingSession(
       setTool("cursor");
       history.push(drawings.slice());
       drawings = future.pop()!;
-      selectedId = null;
       changed();
     },
     setMagnetMode: (mode: DrawingMagnetMode) => {
@@ -2397,6 +2478,21 @@ export function useChartDrawings(
       )
         return;
       if (event.key === "Escape") current.cancel();
+      if (
+        document.activeElement === element &&
+        target === element &&
+        !event.defaultPrevented &&
+        !event.isComposing &&
+        event.keyCode !== 229 &&
+        !event.shiftKey &&
+        !event.altKey &&
+        !event.metaKey &&
+        !event.ctrlKey
+      ) {
+        const bars = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+        const ticks = event.key === "ArrowUp" ? 1 : event.key === "ArrowDown" ? -1 : 0;
+        if ((bars || ticks) && current.nudgeSelected({ bars, ticks })) event.preventDefault();
+      }
       if (!element.contains(document.activeElement)) return;
       if (event.key === "Enter" && current.finishDrawing()) event.preventDefault();
       if (event.key === "Delete" || event.key === "Backspace") {

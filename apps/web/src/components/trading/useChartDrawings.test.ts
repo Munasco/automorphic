@@ -543,6 +543,291 @@ describe("Shift line alignment", () => {
   });
 });
 
+describe("selected drawing keyboard nudges", () => {
+  const line = (id = "a", patch: Partial<ChartDrawing> = {}): ChartDrawing => ({
+    id,
+    kind: "trend",
+    color: "#2962ff",
+    width: 2,
+    anchors: [
+      { time: 100 as Time, price: 4800 },
+      { time: 300 as Time, price: 4800 },
+    ],
+    ...patch,
+  });
+  const setup = (objects = [line()]) => {
+    const f = fixture("nudge", JSON.stringify(objects));
+    const scale = f.chart.timeScale();
+    vi.spyOn(f.chart, "timeScale").mockReturnValue({
+      ...scale,
+      logicalToCoordinate: (bar: number) => (bar * 100) as Coordinate,
+    });
+    const options = f.series.options();
+    vi.spyOn(f.series, "options").mockReturnValue({
+      ...options,
+      priceFormat: { type: "price", minMove: 0.25, precision: 2 },
+    });
+    const session = f.open();
+    session.selectDrawing(objects[0]!.id);
+    return { f, session };
+  };
+
+  it("commits one undo entry per nudge and persists the restored bar positions", () => {
+    const { f, session } = setup();
+    for (let index = 0; index < 3; index++)
+      expect(session.nudgeSelected({ bars: 1, ticks: 0 })).toBe(true);
+    expect(session.getCommittedDrawings()![0]!.anchors).toEqual([
+      { time: 400, price: 4800 },
+      { time: 600, price: 4800 },
+    ]);
+    expect(f.writes()).toBe(3);
+    session.undo();
+    const restored = session.getCommittedDrawings();
+    expect(restored![0]!.anchors).toEqual([
+      { time: 300, price: 4800 },
+      { time: 500, price: 4800 },
+    ]);
+    expect(session.nudgeSelected({ bars: 0, ticks: 0 })).toBe(false);
+    session.redo();
+    expect(session.getCommittedDrawings()![0]!.anchors[0]!.time).toBe(400);
+    session.undo();
+    session.dispose();
+    const reopened = f.open();
+    expect(reopened.getCommittedDrawings()).toEqual(restored);
+    reopened.dispose();
+  });
+
+  it.each([false, true])(
+    "keeps surviving selection across undo/redo and a subsequent nudge (group: %s)",
+    (group) => {
+      const originals = group ? [line(), line("b")] : [line()];
+      const { f, session } = setup(originals);
+      if (group) session.selectDrawing("b", { additive: true });
+      const ids = originals.map((drawing) => drawing.id);
+      session.nudgeSelected({ bars: 1, ticks: 0 });
+      session.nudgeSelected({ bars: 1, ticks: 0 });
+      session.undo();
+      expect(f.change.mock.calls.at(-1)![0].selectedIds).toEqual(ids);
+      session.redo();
+      expect(f.change.mock.calls.at(-1)![0].selectedIds).toEqual(ids);
+      session.undo();
+      expect(session.nudgeSelected({ bars: -1, ticks: 0 })).toBe(true);
+      expect(session.getCommittedDrawings()).toEqual(originals);
+      expect(f.change.mock.calls.at(-1)![0].selectedIds).toEqual(ids);
+      session.dispose();
+    },
+  );
+
+  it("filters a removed primary selection but keeps surviving group members, without selecting recreated items", () => {
+    const { f, session } = setup();
+    session.setTool("trend");
+    session.placeAt({ x: 100, y: 300 });
+    session.placeAt({ x: 300, y: 300 });
+    const created = session.getCommittedDrawings()![1]!;
+    session.selectDrawing("a", { additive: true });
+    session.selectDrawing(created.id);
+    expect(f.change.mock.calls.at(-1)![0].selectedIds).toEqual([created.id, "a"]);
+    expect(f.change.mock.calls.at(-1)![0].selected.id).toBe(created.id);
+    session.undo();
+    expect(f.change.mock.calls.at(-1)![0].selectedIds).toEqual(["a"]);
+    expect(f.change.mock.calls.at(-1)![0].selected.id).toBe("a");
+    session.redo();
+    expect(f.change.mock.calls.at(-1)![0].selectedIds).toEqual(["a"]);
+    session.nudgeSelected({ bars: 1, ticks: 0 });
+    expect(session.getCommittedDrawings()![1]).toEqual(created);
+    session.dispose();
+  });
+
+  it("does not invent selection after undoing deletion or recreating an undone drawing", () => {
+    const { f, session } = setup();
+    session.deleteSelected();
+    session.undo();
+    expect(session.getCommittedDrawings()).toEqual([line()]);
+    expect(f.change.mock.calls.at(-1)![0].selectedIds).toEqual([]);
+    expect(session.nudgeSelected({ bars: 1, ticks: 0 })).toBe(false);
+    session.setTool("trend");
+    session.placeAt({ x: 100, y: 300 });
+    session.placeAt({ x: 300, y: 300 });
+    session.undo();
+    expect(f.change.mock.calls.at(-1)![0].selectedIds).toEqual([]);
+    session.redo();
+    expect(f.change.mock.calls.at(-1)![0].selectedIds).toEqual([]);
+    expect(session.nudgeSelected({ bars: 1, ticks: 0 })).toBe(false);
+    session.dispose();
+  });
+
+  it("adds ticks as price deltas without changing off-tick geometry or untouched times", () => {
+    const original = line("a", {
+      anchors: [
+        { time: 100.125 as Time, price: 4358.56123 },
+        { time: 300.375 as Time, price: 4374.86789 },
+      ],
+    });
+    const { f, session } = setup([original]);
+    // Price nudging must not use pixel/log-scale movement or time/bar projection.
+    vi.spyOn(f.series, "priceToCoordinate").mockImplementation(() => {
+      throw new Error("unexpected price projection");
+    });
+    vi.spyOn(f.series, "coordinateToPrice").mockImplementation(() => {
+      throw new Error("unexpected price inverse");
+    });
+    expect(session.nudgeSelected({ bars: 0, ticks: 1 })).toBe(true);
+    expect(session.getCommittedDrawings()![0]!.anchors).toEqual([
+      { time: 100.125, price: 4358.81123 },
+      { time: 300.375, price: 4375.11789 },
+    ]);
+    expect(session.nudgeSelected({ bars: 0, ticks: -1 })).toBe(true);
+    expect(session.getCommittedDrawings()).toEqual([original]);
+    session.dispose();
+  });
+
+  it("retains fractional bars across session gaps and beyond the final loaded bar", () => {
+    const times = [1000, 1300, 1600, 88000, 88300];
+    const candles = times.map((time) => ({
+      time: time as UTCTimestamp,
+      open: 4800,
+      high: 4900,
+      low: 4700,
+      close: 4800,
+    }));
+    const original = line("a", {
+      anchors: [
+        { time: 1450 as Time, price: 4800.12345 },
+        { time: 88075 as Time, price: 4800.6789 },
+      ],
+    });
+    const f = fixture("nudge-gap", JSON.stringify([original]), candles);
+    const scale = f.chart.timeScale();
+    vi.spyOn(f.chart, "timeScale").mockReturnValue({
+      ...scale,
+      timeToCoordinate: (time: Time) =>
+        times.includes(time as number)
+          ? ((100 + times.indexOf(time as number) * 20) as Coordinate)
+          : null,
+      coordinateToLogical: (x: number) => ((x - 100) / 20) as Logical,
+      logicalToCoordinate: (bar: number) =>
+        (Number.isInteger(bar) ? 100 + bar * 20 : 0) as Coordinate,
+      coordinateToTime: (x: number) => (times[Math.round((x - 100) / 20)] as Time) ?? null,
+    });
+    const session = f.open();
+    session.selectDrawing("a");
+    const dataReads = vi.spyOn(f.series, "data");
+    expect(session.nudgeSelected({ bars: 1, ticks: 0 })).toBe(true);
+    expect(dataReads).toHaveBeenCalledTimes(1);
+    expect(session.getCommittedDrawings()![0]!.anchors).toEqual([
+      { time: 44800, price: 4800.12345 },
+      { time: 88375, price: 4800.6789 },
+    ]);
+    expect(session.nudgeSelected({ bars: -1, ticks: 0 })).toBe(true);
+    expect(dataReads).toHaveBeenCalledTimes(2);
+    expect(session.getCommittedDrawings()).toEqual([original]);
+    session.dispose();
+  });
+
+  it("moves groups atomically while retaining locks and drawing-specific coordinate rules", () => {
+    const originals = [
+      line(),
+      line("locked", { locked: true }),
+      line("horizontal", { kind: "horizontal", anchors: [{ time: 100 as Time, price: 4800 }] }),
+      line("vertical", { kind: "vertical", anchors: [{ time: 100 as Time, price: 4800 }] }),
+      line("regression", { kind: "regression-trend" }),
+    ];
+    const { f, session } = setup(originals);
+    for (const drawing of originals.slice(1)) session.selectDrawing(drawing.id, { additive: true });
+    expect(session.nudgeSelected({ bars: 1, ticks: 1 })).toBe(true);
+    const moved = session.getCommittedDrawings()!;
+    expect(moved[0]!.anchors).toEqual([
+      { time: 200, price: 4800.25 },
+      { time: 400, price: 4800.25 },
+    ]);
+    expect(moved[1]).toEqual(originals[1]);
+    expect(moved[2]!.anchors).toEqual([{ time: 100, price: 4800.25 }]);
+    expect(moved[3]!.anchors).toEqual([{ time: 200, price: 4800 }]);
+    expect(moved[4]!.anchors).toEqual([
+      { time: 200, price: 4800 },
+      { time: 400, price: 4800 },
+    ]);
+    expect(f.writes()).toBe(1);
+    session.undo();
+    expect(session.getCommittedDrawings()).toEqual(originals);
+    session.dispose();
+  });
+
+  it.each(["locked", "horizontal", "vertical", "regression-trend"] as const)(
+    "does not create history for an ineffective %s nudge",
+    (kind) => {
+      const original = line(
+        "a",
+        kind === "locked"
+          ? { locked: true }
+          : kind === "regression-trend"
+            ? { kind }
+            : { kind, anchors: [{ time: 100 as Time, price: 4800 }] },
+      );
+      const { f, session } = setup([original]);
+      expect(
+        session.nudgeSelected({
+          bars: kind === "horizontal" || kind === "locked" ? 1 : 0,
+          ticks: kind === "horizontal" || kind === "locked" ? 0 : 1,
+        }),
+      ).toBe(false);
+      expect(f.writes()).toBe(0);
+      expect(session.getCommittedDrawings()).toEqual([original]);
+      session.dispose();
+    },
+  );
+
+  it("rejects invalid input and cancels the entire group nudge if any anchor cannot project", () => {
+    const originals = [
+      line(),
+      line("b", {
+        anchors: [
+          { time: 500 as Time, price: 4700 },
+          { time: 700 as Time, price: 4700 },
+        ],
+      }),
+    ];
+    const { f, session } = setup(originals);
+    session.selectDrawing("b", { additive: true });
+    for (const move of [
+      { bars: 0.5, ticks: 0 },
+      { bars: 0, ticks: Infinity },
+      { bars: NaN, ticks: 1 },
+    ])
+      expect(session.nudgeSelected(move)).toBe(false);
+    const scale = f.chart.timeScale();
+    vi.spyOn(f.chart, "timeScale").mockReturnValue({
+      ...scale,
+      logicalToCoordinate: (bar: number) => (bar === 6 ? null : ((bar * 100) as Coordinate)),
+    });
+    expect(session.nudgeSelected({ bars: 1, ticks: 0 })).toBe(false);
+    expect(session.getCommittedDrawings()).toEqual(originals);
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+
+  it.each(["drawing", "settings", "text", "drag", "marquee", "context", "hidden", "disposed"])(
+    "does not interrupt an active %s state",
+    (state) => {
+      const original = line();
+      const { f, session } = setup([original]);
+      if (state === "drawing") session.setTool("trend");
+      if (state === "settings") session.openSettings();
+      if (state === "text") expect(session.beginTextEdit()).toBe(true);
+      if (state === "drag") expect(session.beginDrag({ x: 200, y: 200 })).toBe(true);
+      if (state === "marquee") expect(session.beginMarquee({ x: 400, y: 400 })).toBe(true);
+      if (state === "context")
+        expect(session.openContextMenu({ x: 200, y: 200 }, { x: 200, y: 200 })).toBe(true);
+      if (state === "hidden") session.toggleHidden();
+      if (state === "disposed") session.dispose();
+      expect(session.nudgeSelected({ bars: 1, ticks: 1 })).toBe(false);
+      expect(f.writes()).toBe(0);
+      if (state !== "disposed") expect(session.getCommittedDrawings()).toEqual([original]);
+      session.dispose();
+    },
+  );
+});
+
 describe("drawing bar coordinate inputs", () => {
   it("rounds fractional bar inputs before the native integer-only projection and keeps price unchanged", () => {
     const start = 1_700_000_000;
@@ -4331,9 +4616,7 @@ describe("drawing multiselection", () => {
     expect(f.writes()).toBe(1);
     session.undo();
     expect(state().objects).toEqual(objects);
-    session.selectDrawing("a");
-    session.selectDrawing("b", { additive: true });
-    session.selectDrawing("locked", { additive: true });
+    expect(state().selectedIds).toEqual(["a", "b", "locked"]);
     const writes = f.writes();
     session.deleteSelected();
     expect(f.writes()).toBe(writes + 1);
@@ -4539,8 +4822,7 @@ describe("group drawing transactions", () => {
     expect(f.writes()).toBe(writes + 1);
     session.undo();
     expect(state().objects.map((d: ChartDrawing) => d.id)).toEqual(order);
-    session.selectDrawing("a");
-    session.selectDrawing("b", { additive: true });
+    expect(state().selectedIds).toEqual(["a", "b"]);
     expect(session.applySelectedTemplate({ color: "#ff0000", width: 2 })).toBe(true);
     expect(
       state()

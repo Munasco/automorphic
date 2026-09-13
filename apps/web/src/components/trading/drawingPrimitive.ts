@@ -51,13 +51,14 @@ export function drawingTimeCoordinate(
   chart: IChartApi,
   series: ISeriesApi<SeriesType>,
   time: Time,
+  suppliedData?: ReturnType<typeof series.data>,
 ): number | null {
   const scale = chart.timeScale();
   let x: number | null = scale.timeToCoordinate(time);
   if (x === null) {
     // Keep absolute timestamps when changing intervals; interpolate between the new candle anchors.
     const target = drawingTimeValue(time);
-    const data = series.data();
+    const data = suppliedData ?? series.data();
     if (target !== null && data.length) {
       let left = 0,
         right = data.length - 1;
