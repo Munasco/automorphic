@@ -2,6 +2,8 @@ import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
 import { drawingContextMenuStyle } from "./drawingContextMenuStyles";
 import { Slider } from "@base-ui/react/slider";
+import { Select as SelectPrimitive } from "@base-ui/react/select";
+import { SelectPopup, SelectItem } from "../ui/select";
 import { NumberField } from "@base-ui/react/number-field";
 import { DrawingToolIcon } from "./DrawingToolIcon";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
@@ -717,56 +719,68 @@ export function MarkerPicker({
   value: "normal" | "arrow";
   onChange: (value: "normal" | "arrow") => void;
 }) {
-  const [open, setOpen] = useState(false);
   const glyph = (marker: "normal" | "arrow") => (
     <svg
-      width="24"
-      height="20"
-      viewBox="0 0 24 20"
+      width="28"
+      height="28"
+      viewBox="0 0 28 28"
+      className="size-7 shrink-0 text-current"
       aria-hidden="true"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.2"
-      style={{ transform: side === "start" ? "scaleX(-1)" : undefined }}
+      style={{ transform: side === "end" ? "scaleX(-1)" : undefined }}
     >
-      <path d="M2 10H18" />
-      {marker === "arrow" ? <path d="m14 6 5 4-5 4" /> : <circle cx="19" cy="10" r="2" />}
+      <path
+        d={
+          marker === "arrow"
+            ? "M4.5 13.5H24m-19.5 0L8 17m-3.5-3.5L8 10"
+            : "M8.5 13.5a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 0H24"
+        }
+      />
     </svg>
   );
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
+    <SelectPrimitive.Root
+      value={value}
+      onValueChange={(next) => {
+        if (next === "normal" || next === "arrow") onChange(next);
+      }}
+    >
+      <SelectPrimitive.Trigger
         aria-label={side === "start" ? "Start marker" : "End marker"}
-        className="flex size-[34px] shrink-0 items-center justify-center rounded border border-[#575757] hover:bg-white/10"
+        className="flex size-[34px] shrink-0 items-center justify-center rounded border border-[#575757] hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2962ff]"
       >
         {glyph(value)}
-      </PopoverTrigger>
-      <PopoverPopup
-        instant
-        style={{ background: "#202020", backdropFilter: "none" }}
-        className="w-40"
-        viewportClassName="p-1"
+      </SelectPrimitive.Trigger>
+      <SelectPopup
+        align="start"
+        alignItemWithTrigger={false}
+        sideOffset={0}
+        scrollArrows={false}
+        className="p-1.5 [&:has([data-highlighted])_[data-selected]:not([data-highlighted])]:bg-transparent [&:has([data-highlighted])_[data-selected]:not([data-highlighted])]:text-[#dbdbdb]"
+        popupClassName="rounded-[10px] border-0! bg-[#1f1f1f]! backdrop-filter-none! shadow-[0_2px_4px_0_rgb(0_0_0/20%)] dark:shadow-[0_2px_4px_0_rgb(0_0_0/20%)]"
+        style={{
+          fontFamily: '-apple-system, system-ui, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
+        }}
       >
-        <PopoverTitle className="sr-only">Line end</PopoverTitle>
         {(["normal", "arrow"] as const).map((marker) => (
-          <button
+          <SelectItem
             key={marker}
-            type="button"
-            aria-pressed={value === marker}
-            onClick={() => {
-              onChange(marker);
-              setOpen(false);
-            }}
-            className="flex w-full items-center gap-3 rounded px-3 py-2 text-sm capitalize hover:bg-white/10 aria-pressed:bg-white/15"
+            value={marker}
+            hideIndicator
+            className="min-h-8 rounded-[6px] pl-1 pr-3.5 py-0.5 text-sm text-[#dbdbdb] sm:min-h-8 data-selected:bg-[#f2f2f2] data-selected:text-black data-highlighted:bg-[#f2f2f2] data-highlighted:text-black"
           >
-            {glyph(marker)}
-            {marker}
-          </button>
+            <span className="flex items-center gap-1.5">
+              {glyph(marker)}
+              <span>{marker === "normal" ? "Normal" : "Arrow"}</span>
+            </span>
+          </SelectItem>
         ))}
-      </PopoverPopup>
-    </Popover>
+      </SelectPopup>
+    </SelectPrimitive.Root>
   );
 }
+
 export function LineAppearancePicker({
   drawing,
   onChange,
