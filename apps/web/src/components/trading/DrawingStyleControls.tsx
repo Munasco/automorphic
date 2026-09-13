@@ -10,7 +10,7 @@ import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popov
 import type { ChartDrawing } from "./drawingGeometry";
 import type { DrawingPatch } from "./useChartDrawings";
 import { cn } from "../../lib/utils";
-import { useRef, useState, type ComponentProps } from "react";
+import { useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { DrawingCustomColorEditor } from "./DrawingCustomColorEditor";
 import { useDrawingCustomColors } from "./drawingCustomColors";
 import { TradingSelect } from "./TradingSelect";
@@ -431,6 +431,26 @@ export function OpacityControl({
     </div>
   );
 }
+const drawingToolbarOptionClass =
+  "h-8 min-h-8 whitespace-nowrap rounded-none py-0.5 text-sm text-[#dbdbdb] sm:min-h-8 data-selected:bg-[#f2f2f2] data-selected:text-black data-highlighted:bg-[#f2f2f2] data-highlighted:text-black";
+
+function DrawingToolbarSelectPopup({ children }: { children: ReactNode }) {
+  return (
+    <SelectPopup
+      align="start"
+      alignItemWithTrigger={false}
+      sideOffset={2}
+      matchTriggerWidth={false}
+      scrollArrows={false}
+      className="px-0 py-1.5 [&:has([data-highlighted])_[data-selected]:not([data-highlighted])]:bg-transparent [&:has([data-highlighted])_[data-selected]:not([data-highlighted])]:text-[#dbdbdb]"
+      popupClassName="w-max overflow-hidden rounded-[6px] border-0! bg-[#1f1f1f]! backdrop-filter-none!"
+      style={{ fontFamily: '-apple-system, system-ui, "Trebuchet MS", Roboto, Ubuntu, sans-serif' }}
+    >
+      {children}
+    </SelectPopup>
+  );
+}
+
 export function LineStylePicker({
   drawing,
   onChange,
@@ -442,10 +462,15 @@ export function LineStylePicker({
   onChange: (patch: DrawingPatch) => void;
   variant?: "default" | "toolbar";
 }) {
-  const [open, setOpen] = useState(false);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
+    <SelectPrimitive.Root
+      value={mixed ? null : (drawing.lineStyle ?? "solid")}
+      onValueChange={(next) => {
+        if (next === "solid" || next === "dashed" || next === "dotted")
+          onChange({ lineStyle: next });
+      }}
+    >
+      <SelectPrimitive.Trigger
         aria-label="Line style"
         className={cn(
           "flex size-8 shrink-0 items-center justify-center rounded hover:bg-white/10 aria-expanded:bg-white/10",
@@ -473,21 +498,8 @@ export function LineStylePicker({
             />
           </svg>
         )}
-      </PopoverTrigger>
-      <PopoverPopup
-        instant
-        align="start"
-        sideOffset={2}
-        style={{
-          background: "#1f1f1f",
-          backdropFilter: "none",
-          border: 0,
-          fontFamily: '-apple-system, system-ui, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
-        }}
-        className="w-max rounded"
-        viewportClassName="px-0 py-1.5"
-      >
-        <PopoverTitle className="sr-only">Line style</PopoverTitle>
+      </SelectPrimitive.Trigger>
+      <DrawingToolbarSelectPopup>
         {(
           [
             ["solid", "Line"],
@@ -495,34 +507,37 @@ export function LineStylePicker({
             ["dotted", "Dotted line"],
           ] as const
         ).map(([style, label]) => (
-          <button
-            type="button"
+          <SelectItem
             key={style}
-            aria-pressed={!mixed && (drawing.lineStyle ?? "solid") === style}
-            onClick={() => {
-              onChange({ lineStyle: style });
-              setOpen(false);
-            }}
-            className="flex h-8 w-full items-center gap-1.5 whitespace-nowrap pl-2 pr-5 text-sm hover:bg-white/10 aria-pressed:bg-white/15"
+            value={style}
+            hideIndicator
+            className={cn(drawingToolbarOptionClass, "pl-2 pr-5")}
           >
-            <svg width="28" height="28" aria-hidden="true">
-              <line
-                x1="4"
-                y1="14"
-                x2="24"
-                y2="14"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeDasharray={
-                  style === "dashed" ? "7 4" : style === "dotted" ? "2 4" : undefined
-                }
-              />
-            </svg>
-            {label}
-          </button>
+            <span className="flex items-center gap-1.5">
+              <svg
+                width="28"
+                height="28"
+                viewBox="0 0 28 28"
+                className="size-7 text-current"
+                aria-hidden="true"
+              >
+                {style === "solid" ? (
+                  <path stroke="currentColor" d="M4 13.5h20" />
+                ) : style === "dashed" ? (
+                  <path fill="currentColor" d="M4 13h5v1H4zM12 13h5v1h-5zM20 13h5v1h-5z" />
+                ) : (
+                  <path
+                    fill="currentColor"
+                    d="M3 13h2v2H3zM8 13h2v2H8zM13 13h2v2h-2zM18 13h2v2h-2zM23 13h2v2h-2z"
+                  />
+                )}
+              </svg>
+              {label}
+            </span>
+          </SelectItem>
         ))}
-      </PopoverPopup>
-    </Popover>
+      </DrawingToolbarSelectPopup>
+    </SelectPrimitive.Root>
   );
 }
 export function WidthPicker({
@@ -538,10 +553,14 @@ export function WidthPicker({
   onChange: (patch: DrawingPatch) => void;
   variant?: "default" | "toolbar";
 }) {
-  const [open, setOpen] = useState(false);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
+    <SelectPrimitive.Root
+      value={mixed ? null : drawing.width}
+      onValueChange={(next) => {
+        if (next !== null) onChange({ width: next });
+      }}
+    >
+      <SelectPrimitive.Trigger
         aria-label="Line width"
         className={cn(
           "flex h-8 shrink-0 items-center justify-center gap-2 rounded px-2 text-sm hover:bg-white/10 aria-expanded:bg-white/10",
@@ -562,38 +581,23 @@ export function WidthPicker({
             {drawing.width}px
           </>
         )}
-      </PopoverTrigger>
-      <PopoverPopup
-        instant
-        align="start"
-        sideOffset={2}
-        style={{
-          background: "#1f1f1f",
-          backdropFilter: "none",
-          border: 0,
-          fontFamily: '-apple-system, system-ui, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
-        }}
-        className="w-max rounded"
-        viewportClassName="px-0 py-1.5"
-      >
-        <PopoverTitle className="sr-only">Line width</PopoverTitle>
+      </SelectPrimitive.Trigger>
+      <DrawingToolbarSelectPopup>
         {[1, 2, 3, 4].map((width) => (
-          <button
-            type="button"
+          <SelectItem
             key={width}
-            aria-pressed={!mixed && drawing.width === width}
-            onClick={() => {
-              onChange({ width });
-              setOpen(false);
-            }}
-            className="flex h-8 w-full items-center gap-[11px] whitespace-nowrap pl-[13px] pr-[14px] text-sm hover:bg-white/10 aria-pressed:bg-white/15"
+            value={width}
+            hideIndicator
+            className={cn(drawingToolbarOptionClass, "pl-[13px] pr-[14px]")}
           >
-            <span className="w-[18px] bg-current" style={{ height: width }} />
-            {width}px
-          </button>
+            <span className="flex items-center gap-[11px]">
+              <span className="w-[18px] rounded-full bg-current" style={{ height: width }} />
+              {width}px
+            </span>
+          </SelectItem>
         ))}
-      </PopoverPopup>
-    </Popover>
+      </DrawingToolbarSelectPopup>
+    </SelectPrimitive.Root>
   );
 }
 export function DrawingMultiSelect<T extends string>({
