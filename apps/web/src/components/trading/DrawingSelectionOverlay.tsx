@@ -25,7 +25,6 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type ClipboardEvent,
   type ReactNode,
   type PointerEventHandler,
 } from "react";
@@ -938,19 +937,6 @@ export function DrawingSelectionOverlay({
     drawings.closeContextMenu();
     action();
   };
-  const copyFromMenu = (event: ClipboardEvent) => {
-    const target = event.target;
-    if (
-      target instanceof HTMLElement &&
-      (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
-    )
-      return;
-    const text = drawings.copySelectedSerialized();
-    if (!text) return;
-    event.clipboardData.setData("text/plain", text);
-    event.preventDefault();
-    event.stopPropagation();
-  };
   return (
     <>
       <div
@@ -1223,7 +1209,6 @@ export function DrawingSelectionOverlay({
             finalFocus={() => menuFinalFocus(false)}
             className={drawingContextMenuPopupClass}
             style={drawingMenuStyle}
-            onCopy={copyFromMenu}
           >
             <DrawingMenuCommands
               drawings={drawings}
@@ -1258,7 +1243,6 @@ export function DrawingSelectionOverlay({
               if (node) contextPopupRef.current = node;
             }}
             finalFocus={() => menuFinalFocus(true)}
-            onCopy={copyFromMenu}
             onMouseUpCapture={(event) => {
               // Canvas hit testing opens this virtual-anchor menu without a DOM trigger.
               // Releasing the opening right-click must not activate the item under it.

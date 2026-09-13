@@ -717,6 +717,8 @@ export function TradovateChart({
       className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#0b0d12]"
       aria-label={`${symbol} Tradovate chart`}
       onKeyDown={drawings.onHistoryKeyDown}
+      onCopy={drawings.onCopy}
+      onPaste={drawings.onPaste}
     >
       <ChartToolbar
         symbol={symbol}

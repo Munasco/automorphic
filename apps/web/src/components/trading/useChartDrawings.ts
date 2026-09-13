@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ClipboardEvent as ReactClipboardEvent,
 } from "react";
 import { randomUUID } from "../../lib/utils";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
@@ -132,6 +133,13 @@ const EMPTY: DrawingState = {
   contextPoint: null,
 };
 
+function isDrawingTextTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || !!target.closest("input,textarea,select,[role=textbox]"))
+  );
+}
+
 function drawingHistoryShortcut(event: KeyboardEvent): "undo" | "redo" | null {
   if (
     event.defaultPrevented ||
@@ -142,12 +150,7 @@ function drawingHistoryShortcut(event: KeyboardEvent): "undo" | "redo" | null {
     event.key.toLowerCase() !== "z"
   )
     return null;
-  const target = event.target;
-  if (
-    target instanceof HTMLElement &&
-    (target.isContentEditable || target.closest("input,textarea,select,[role=textbox]"))
-  )
-    return null;
+  if (isDrawingTextTarget(event.target)) return null;
   return event.shiftKey ? "redo" : "undo";
 }
 
@@ -2560,14 +2563,10 @@ export function useChartDrawings(
     element.addEventListener("touchstart", stopTouchPan, { capture: true, passive: false });
     element.addEventListener("touchmove", stopTouchPan, { capture: true, passive: false });
     const clipboardAllowed = (event: ClipboardEvent) => {
-      const target = event.target;
       return (
         !event.defaultPrevented &&
         element.contains(document.activeElement) &&
-        !(
-          target instanceof HTMLElement &&
-          (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
-        )
+        !isDrawingTextTarget(event.target)
       );
     };
     const copy = (event: ClipboardEvent) => {
@@ -2708,6 +2707,42 @@ export function useChartDrawings(
       });
     },
     [focusChart, state.settingsOpen],
+  );
+  const onCopy = useCallback(
+    (event: ReactClipboardEvent<HTMLElement>) => {
+      const current = session.current;
+      if (
+        !current ||
+        state.settingsOpen ||
+        event.defaultPrevented ||
+        !event.clipboardData ||
+        isDrawingTextTarget(event.target)
+      )
+        return;
+      const text = current.copySelectedSerialized();
+      if (!text) return;
+      event.clipboardData.setData("text/plain", text);
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    [state.settingsOpen],
+  );
+  const onPaste = useCallback(
+    (event: ReactClipboardEvent<HTMLElement>) => {
+      const current = session.current;
+      if (
+        !current ||
+        state.settingsOpen ||
+        event.defaultPrevented ||
+        !event.clipboardData ||
+        isDrawingTextTarget(event.target)
+      )
+        return;
+      if (!current.pasteDrawing(event.clipboardData.getData("text/plain"))) return;
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    [state.settingsOpen],
   );
   const setTool = useCallback((tool: ChartDrawingTool) => session.current?.setTool(tool), []);
   const undo = useCallback(() => session.current?.undo(), []);
@@ -2872,6 +2907,8 @@ export function useChartDrawings(
   return {
     ...state,
     onHistoryKeyDown,
+    onCopy,
+    onPaste,
     getChartElement,
     getCommittedDrawings,
     interval: intervalMinutes,
