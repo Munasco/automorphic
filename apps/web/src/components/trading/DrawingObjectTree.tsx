@@ -227,10 +227,13 @@ export function DrawingObjectTree({
                   aria-label={`Select ${label}`}
                   aria-pressed={isSelected}
                   onClick={(event) =>
-                    drawings.selectDrawing(object.id, { additive: event.metaKey || event.ctrlKey })
+                    drawings.selectDrawing(object.id, {
+                      additive: event.metaKey || event.ctrlKey,
+                      includeHidden: true,
+                    })
                   }
                   onDoubleClick={() => {
-                    drawings.selectDrawing(object.id);
+                    drawings.selectDrawing(object.id, { includeHidden: true });
                     drawings.openSettings();
                   }}
                   className={cn(

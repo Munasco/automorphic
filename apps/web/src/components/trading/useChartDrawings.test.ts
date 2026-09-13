@@ -6234,3 +6234,133 @@ describe("human-readable copy names", () => {
     },
   );
 });
+
+describe("explicit hidden object-tree selection", () => {
+  const make = (reason: "hidden" | "interval" | "global") => {
+    const objects: ChartDrawing[] = ["a", "b", "c"].map((id, index) => ({
+      id,
+      kind: "trend",
+      color: "#2962ff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 4900 - index * 100 },
+        { time: 300 as Time, price: 4900 - index * 100 },
+      ],
+      ...(index < 2 && reason === "hidden" ? { hidden: true } : {}),
+      ...(index < 2 && reason === "interval"
+        ? { visibility: sanitizeDrawingVisibility({ minutes: { enabled: false } }) }
+        : {}),
+    }));
+    const f = fixture(`tree-invisible-${reason}`, JSON.stringify(objects));
+    const session = f.open();
+    if (reason === "global") session.toggleHidden();
+    const select = () => {
+      session.cancel();
+      session.selectDrawing("a", { includeHidden: true });
+      session.selectDrawing("b", { additive: true, includeHidden: true });
+    };
+    const state = () => f.change.mock.lastCall![0];
+    return { f, session, objects, select, state };
+  };
+
+  it.each(["hidden", "interval", "global"] as const)(
+    "explicitly selects multiple %s drawings without changing persistence or canvas visibility",
+    (reason) => {
+      const { f, session, select, state } = make(reason);
+      select();
+      expect(state().selectedIds).toEqual(["a", "b"]);
+      expect(state().selectedObjects.map((d: ChartDrawing) => d.id)).toEqual(["a", "b"]);
+      expect(state().selectedObjects.every((d: ChartDrawing) => !session.isVisible(d))).toBe(true);
+      expect(f.writes()).toBe(0);
+      session.selectDrawing("a", { additive: true, includeHidden: true });
+      expect(state().selectedIds).toEqual(["b"]);
+      session.dispose();
+    },
+  );
+
+  it.each(["duplicate", "delete", "reorder"] as const)(
+    "persists and undoes %s of hidden selected rows atomically",
+    (operation) => {
+      const { f, session, objects, select, state } = make("hidden");
+      select();
+      if (operation === "duplicate") {
+        session.duplicateSelected();
+        expect(state().objects).toHaveLength(5);
+        expect(
+          state()
+            .objects.slice(3)
+            .map((d: ChartDrawing) => d.hidden),
+        ).toEqual([true, true]);
+        expect(state().selectedIds).toHaveLength(2);
+        expect(state().selectedIds.every((id: string) => !objects.some((d) => d.id === id))).toBe(
+          true,
+        );
+      } else if (operation === "delete") {
+        session.deleteSelected();
+        expect(state().objects).toEqual([objects[2]]);
+      } else {
+        expect(session.reorderSelected("front")).toBe(true);
+        expect(state().objects.map((d: ChartDrawing) => d.id)).toEqual(["c", "a", "b"]);
+      }
+      expect(f.writes()).toBe(1);
+      const saved = f.saved();
+      session.undo();
+      expect(state().objects).toEqual(objects);
+      session.redo();
+      expect(f.saved()).toBe(saved);
+      session.dispose();
+      const reopened = f.open();
+      const normalized = (objects: readonly ChartDrawing[]) =>
+        objects.map((drawing) => ({ ...drawing, locked: !!drawing.locked }));
+      expect(normalized(reopened.getCommittedDrawings()!)).toEqual(normalized(JSON.parse(saved!)));
+      reopened.dispose();
+    },
+  );
+
+  it.each(["hidden", "interval"] as const)(
+    "%s tree selections are not moved by chart dragging or keyboard nudges",
+    (reason) => {
+      const { f, session, objects, select, state } = make(reason);
+      select();
+      expect(session.nudgeSelected({ bars: 0, ticks: 1 })).toBe(false);
+      expect(session.beginDrag({ x: 150, y: 100 })).toBe(false);
+      expect(f.writes()).toBe(0);
+      select();
+      session.selectDrawing("c", { additive: true, includeHidden: true });
+      expect(session.beginDrag({ x: 150, y: 300 })).toBe(true);
+      session.dragTo({ x: 170, y: 320 });
+      session.endDrag();
+      expect(state().objects.slice(0, 2)).toEqual(objects.slice(0, 2));
+      expect(state().objects[2].anchors).not.toEqual(objects[2]!.anchors);
+      session.undo();
+      select();
+      session.selectDrawing("c", { additive: true, includeHidden: true });
+      expect(session.nudgeSelected({ bars: 0, ticks: 1 })).toBe(true);
+      expect(state().objects.slice(0, 2)).toEqual(objects.slice(0, 2));
+      expect(state().objects[2].anchors).not.toEqual(objects[2]!.anchors);
+      session.dispose();
+    },
+  );
+
+  it.each(["hidden", "interval", "global"] as const)(
+    "tree permission does not make %s drawings hit-testable or marquee-selectable",
+    (reason) => {
+      const { f, session, select, state } = make(reason);
+      select();
+      expect(session.blocksChartPan({ x: 150, y: 100 })).toBe(false);
+      expect(session.blocksChartPan({ x: 150, y: 200 })).toBe(false);
+      session.cancel();
+      if (reason === "global") {
+        expect(session.beginMarquee({ x: 50, y: 50 })).toBe(false);
+        expect(session.nudgeSelected({ bars: 0, ticks: 1 })).toBe(false);
+      } else {
+        expect(session.beginMarquee({ x: 50, y: 50 })).toBe(true);
+        session.dragTo({ x: 350, y: 250 });
+        session.endMarquee();
+        expect(state().selectedIds).toEqual([]);
+      }
+      expect(f.writes()).toBe(0);
+      session.dispose();
+    },
+  );
+});

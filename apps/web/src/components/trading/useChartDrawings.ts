@@ -180,6 +180,8 @@ export function createChartDrawingSession(
   let anchors: DrawingAnchor[] = [];
   let selectedId: string | null = null;
   let selectedIds: string[] = [];
+  // Object-tree selection can include drawings that have no visible canvas geometry.
+  const hiddenSelectableIds = new Set<string>();
   let selectionRect: DrawingSelectionRect | null = null;
   let marquee: {
     origin: DrawingPoint;
@@ -372,11 +374,18 @@ export function createChartDrawingSession(
     const selectedObjects = selectedIds.flatMap((id) => {
       const drawing = displayedDrawings().find(
         (item) =>
-          item.id === id && (groupSettingsDraft || selectedIds.length === 1 || isVisible(item)),
+          item.id === id &&
+          (groupSettingsDraft ||
+            selectedIds.length === 1 ||
+            hiddenSelectableIds.has(id) ||
+            isVisible(item)),
       );
       return drawing ? [drawing] : [];
     });
     selectedIds = selectedObjects.map((drawing) => drawing.id);
+    for (const id of hiddenSelectableIds) {
+      if (!selectedIds.includes(id)) hiddenSelectableIds.delete(id);
+    }
     if (!selectedIds.includes(selectedId ?? "")) selectedId = selectedIds.at(-1) ?? null;
     const selected = selectedObjects.find((drawing) => drawing.id === selectedId) ?? null;
     const remaining = tool === "cursor" ? 0 : DRAWING_ANCHORS[tool] - anchors.length;
@@ -659,7 +668,9 @@ export function createChartDrawingSession(
       return false;
     }
     const clone = options?.clone === true && handle < 0;
-    const moving = drawings.filter((item) => selectedIds.includes(item.id) && !item.locked);
+    const moving = drawings.filter(
+      (item) => selectedIds.includes(item.id) && !item.locked && isVisible(item),
+    );
     if (clone && drawings.length + moving.length > 100) {
       if (options?.additive) {
         selectedIds = selectionBefore;
@@ -1683,6 +1694,9 @@ export function createChartDrawingSession(
     }));
     remember();
     drawings = [...drawings, ...copies];
+    copies.forEach((drawing, index) => {
+      if (hiddenSelectableIds.has(originals[index]!.id)) hiddenSelectableIds.add(drawing.id);
+    });
     selectedIds = copies.map((drawing) => drawing.id);
     selectedId = selectedIds.at(-1) ?? null;
     changed();
@@ -2340,13 +2354,18 @@ export function createChartDrawingSession(
       preview = null;
       changed();
     },
-    selectDrawing: (id: string, options?: { additive?: boolean }) => {
+    selectDrawing: (id: string, options?: { additive?: boolean; includeHidden?: boolean }) => {
       if (
         disposed ||
-        !drawings.some((drawing) => drawing.id === id && (!options?.additive || isVisible(drawing)))
+        !drawings.some(
+          (drawing) =>
+            drawing.id === id &&
+            (!options?.additive || options.includeHidden || isVisible(drawing)),
+        )
       )
         return;
       setTool("cursor");
+      if (options?.includeHidden) hiddenSelectableIds.add(id);
       chooseDrawing(id, options?.additive);
       emit();
     },
@@ -2823,7 +2842,8 @@ export function useChartDrawings(
   }, [focusChart]);
   const redrawSelected = useCallback(() => session.current?.redrawSelected(), []);
   const selectDrawing = useCallback(
-    (id: string, options?: { additive?: boolean }) => session.current?.selectDrawing(id, options),
+    (id: string, options?: { additive?: boolean; includeHidden?: boolean }) =>
+      session.current?.selectDrawing(id, options),
     [],
   );
   const updateDrawing = useCallback(
