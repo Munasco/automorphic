@@ -21,6 +21,8 @@ import {
 import { DrawingCustomColorEditor } from "./DrawingCustomColorEditor";
 import { useDrawingCustomColors } from "./drawingCustomColors";
 import { TradingSelect } from "./TradingSelect";
+const transparencyPattern =
+  'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%228%22 height=%228%22%3E%3Cpath fill=%22%232a2e39%22 fill-opacity=%22.4%22 d=%22M0 0h4v4H0zM4 4h4v4H4z%22/%3E%3C/svg%3E")';
 const colors = [
   "#ffffff",
   "#dbdbdb",
@@ -374,6 +376,7 @@ function ColorSettingsPanel({
         {opacity !== undefined && onOpacityChange ? (
           <OpacityControl
             label={`${label} opacity`}
+            color={value}
             value={opacity}
             onChange={onOpacityChange}
             compact
@@ -425,11 +428,13 @@ function ColorSettingsPanel({
 }
 export function OpacityControl({
   label,
+  color = "#ffffff",
   value,
   onChange,
   compact = false,
 }: {
   label: string;
+  color?: string;
   value: number;
   onChange: (value: number) => void;
   compact?: boolean;
@@ -442,11 +447,14 @@ export function OpacityControl({
         compact && "space-y-1 border-0 pt-0",
       )}
     >
-      <div className="text-xs leading-[14px] text-zinc-300">Opacity</div>
+      <div className={cn("text-xs leading-[14px] text-zinc-300", compact && "text-[#8c8c8c]")}>
+        Opacity
+      </div>
       <div className={cn("flex items-center gap-3", compact && "gap-2")}>
         <Slider.Root
           min={0}
           max={100}
+          thumbAlignment={compact ? "edge" : "center"}
           value={percent}
           onValueChange={(next) => onChange(Number(next) / 100)}
           className="flex-1"
@@ -455,15 +463,32 @@ export function OpacityControl({
             <Slider.Track
               className={cn(
                 "relative h-1 w-full rounded bg-zinc-600",
-                compact && "h-[10px] border border-white bg-transparent",
+                compact &&
+                  "h-[10px] rounded-[5px] bg-black after:pointer-events-none after:absolute after:-inset-1 after:rounded-[6px] after:border-2 after:border-transparent has-[:focus-visible]:after:border-[#2962ff]",
               )}
+              style={
+                compact
+                  ? { backgroundImage: transparencyPattern, backgroundPosition: "1px center" }
+                  : undefined
+              }
             >
-              <Slider.Indicator className={cn("rounded bg-[#2962ff]", compact && "bg-zinc-200")} />
+              {compact ? (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded border"
+                  style={{
+                    backgroundImage: `linear-gradient(90deg, transparent, ${color})`,
+                    borderColor: color,
+                  }}
+                />
+              ) : (
+                <Slider.Indicator className="rounded bg-[#2962ff]" />
+              )}
               <Slider.Thumb
                 getAriaLabel={() => `${label} slider`}
                 className={cn(
                   "size-3 rounded-full border-2 border-[#2962ff] bg-[#202020] outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
-                  compact && "border-white",
+                  compact && "border-white bg-black focus-visible:ring-0",
                 )}
               />
             </Slider.Track>
@@ -480,17 +505,26 @@ export function OpacityControl({
           }}
           className={cn(
             "flex h-8 items-center gap-1 rounded border border-white/15 px-2 text-xs text-zinc-300",
-            compact && "h-[26px] w-[47px] shrink-0 gap-0 px-[5px] text-sm leading-6",
+            compact &&
+              "relative h-[26px] w-[47px] shrink-0 gap-0 border-[#575757] px-0 text-sm leading-6 text-[#dbdbdb] focus-within:border-[#2962ff]",
           )}
         >
           <NumberField.Input
             aria-label={label}
             className={cn(
               "w-8 bg-transparent text-right outline-none",
-              compact && "min-w-0 flex-1",
+              compact && "h-full w-full min-w-0 pl-[5px] pr-[14px]",
             )}
           />
-          %
+          <span
+            className={
+              compact
+                ? "pointer-events-none absolute right-0.5 top-1/2 -translate-y-1/2 leading-normal"
+                : undefined
+            }
+          >
+            %
+          </span>
         </NumberField.Root>
       </div>
     </div>
@@ -872,8 +906,7 @@ export function LineAppearancePicker({
           aria-hidden="true"
           className="relative size-6 shrink-0 overflow-hidden rounded-[3px] bg-black"
           style={{
-            backgroundImage:
-              'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%228%22 height=%228%22%3E%3Cpath fill=%22%232a2e39%22 fill-opacity=%22.4%22 d=%22M0 0h4v4H0zM4 4h4v4H4z%22/%3E%3C/svg%3E")',
+            backgroundImage: transparencyPattern,
             backgroundSize: "50% auto",
           }}
         >
