@@ -10,7 +10,14 @@ import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popov
 import type { ChartDrawing } from "./drawingGeometry";
 import type { DrawingPatch } from "./useChartDrawings";
 import { cn } from "../../lib/utils";
-import { useRef, useState, type ComponentProps, type CSSProperties, type ReactNode } from "react";
+import {
+  useId,
+  useRef,
+  useState,
+  type ComponentProps,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { DrawingCustomColorEditor } from "./DrawingCustomColorEditor";
 import { useDrawingCustomColors } from "./drawingCustomColors";
 import { TradingSelect } from "./TradingSelect";
@@ -197,6 +204,72 @@ export function ColorPicker({
     </Popover>
   );
 }
+function AppearanceRadio({
+  name,
+  label,
+  checked,
+  onChange,
+  children,
+}: {
+  name: string;
+  label: string;
+  checked: boolean;
+  onChange: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <label
+      className={cn(
+        "relative -ml-px flex h-8 min-w-0 flex-1 cursor-pointer items-center justify-center border border-[#575757] text-[#f2f2f2] first:ml-0 first:rounded-l-[3px] last:rounded-r-[3px] hover:z-10 hover:border-[#8c8c8c]",
+        checked && "z-10 border-[#f2f2f2] bg-[#f2f2f2] text-black hover:border-[#f2f2f2]",
+      )}
+    >
+      <input
+        type="radio"
+        name={name}
+        aria-label={label}
+        checked={checked}
+        onChange={onChange}
+        className="peer absolute inset-0 size-full cursor-pointer opacity-0"
+      />
+      {children}
+      <span className="pointer-events-none absolute -inset-1 rounded border-2 border-transparent peer-focus-visible:border-[#2962ff]" />
+    </label>
+  );
+}
+
+function AppearanceLinePreview({
+  width,
+  lineStyle,
+  color = "currentColor",
+  opacity = 1,
+}: {
+  width: number;
+  lineStyle: ChartDrawing["lineStyle"];
+  color?: string;
+  opacity?: number;
+}) {
+  const dotted = lineStyle === "dotted";
+  const segmented = dotted || lineStyle === "dashed";
+  const segmentWidth = dotted ? width + 1 : segmented ? 5 : 30;
+  const segmentHeight = dotted ? width + 1 : width;
+  const segmentCount = segmented ? Math.ceil(30 / (segmentWidth + 3)) : 1;
+  return (
+    <svg width="30" height="24" className="shrink-0" aria-hidden="true" opacity={opacity}>
+      {Array.from({ length: segmentCount }, (_, index) => (
+        <rect
+          key={index}
+          x={index * (segmentWidth + 3)}
+          y={(24 - segmentHeight) / 2}
+          width={segmentWidth}
+          height={segmentHeight}
+          fill={color}
+        />
+      ))}
+    </svg>
+  );
+}
+
 function ColorSettingsPanel({
   value,
   onChange,
@@ -214,6 +287,7 @@ function ColorSettingsPanel({
   drawing?: ChartDrawing;
   onDrawingChange?: (patch: DrawingPatch) => void;
 }) {
+  const groupId = useId();
   const [custom, setCustom] = useState(false);
   const [focusedSwatch, setFocusedSwatch] = useState(0);
   const swatchRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -309,47 +383,38 @@ function ColorSettingsPanel({
       {drawing && onDrawingChange ? (
         <div className="space-y-3 px-3 pt-1.5">
           <div>
-            <div className="mb-1 text-xs leading-[14px]">Thickness</div>
-            <div className="flex h-8 overflow-hidden rounded border border-white/15">
+            <div className="mb-1 text-xs leading-[14px] text-[#8c8c8c]">Thickness</div>
+            <div role="radiogroup" aria-label="Thickness" className="flex h-8">
               {[1, 2, 3, 4].map((width) => (
-                <button
+                <AppearanceRadio
                   key={width}
-                  type="button"
-                  aria-label={`${width}px thickness`}
-                  aria-pressed={drawing.width === width}
-                  onClick={() => onDrawingChange({ width })}
-                  className="flex min-w-0 flex-1 items-center justify-center border-r border-white/15 last:border-r-0 hover:bg-white/10 aria-pressed:bg-white/20"
+                  name={`${groupId}-thickness`}
+                  label={`${width}px thickness`}
+                  checked={drawing.width === width}
+                  onChange={() => onDrawingChange({ width })}
                 >
-                  <svg width="26" height="16" aria-hidden="true">
-                    <path d="M0 8h26" stroke="currentColor" strokeWidth={width} />
-                  </svg>
-                </button>
+                  <span
+                    aria-hidden="true"
+                    className="mx-3 w-full border-t-current"
+                    style={{ borderTopWidth: width }}
+                  />
+                </AppearanceRadio>
               ))}
             </div>
           </div>
           <div>
-            <div className="mb-1 text-xs leading-[14px]">Line style</div>
-            <div className="flex h-8 overflow-hidden rounded border border-white/15">
+            <div className="mb-1 text-xs leading-[14px] text-[#8c8c8c]">Line style</div>
+            <div role="radiogroup" aria-label="Line style" className="flex h-8">
               {(["solid", "dashed", "dotted"] as const).map((lineStyle) => (
-                <button
+                <AppearanceRadio
                   key={lineStyle}
-                  type="button"
-                  aria-label={`${lineStyle} line`}
-                  aria-pressed={(drawing.lineStyle ?? "solid") === lineStyle}
-                  onClick={() => onDrawingChange({ lineStyle })}
-                  className="flex min-w-0 flex-1 items-center justify-center border-r border-white/15 last:border-r-0 hover:bg-white/10 aria-pressed:bg-white/20"
+                  name={`${groupId}-style`}
+                  label={`${lineStyle} line`}
+                  checked={(drawing.lineStyle ?? "solid") === lineStyle}
+                  onChange={() => onDrawingChange({ lineStyle })}
                 >
-                  <svg width="40" height="16" aria-hidden="true">
-                    <path
-                      d="M0 8h40"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeDasharray={
-                        lineStyle === "dashed" ? "6 3" : lineStyle === "dotted" ? "2 3" : undefined
-                      }
-                    />
-                  </svg>
-                </button>
+                  <AppearanceLinePreview width={1} lineStyle={lineStyle} />
+                </AppearanceRadio>
               ))}
             </div>
           </div>
@@ -796,11 +861,6 @@ export function LineAppearancePicker({
   onChange: (patch: DrawingPatch) => void;
 }) {
   const opacity = fillOpacity ?? drawing.lineOpacity ?? 1;
-  const dotted = drawing.lineStyle === "dotted";
-  const segmented = dotted || drawing.lineStyle === "dashed";
-  const segmentWidth = dotted ? drawing.width + 1 : segmented ? 5 : 30;
-  const segmentHeight = dotted ? drawing.width + 1 : drawing.width;
-  const segmentCount = segmented ? Math.ceil(30 / (segmentWidth + 3)) : 1;
   return (
     <Popover>
       <PopoverTrigger
@@ -820,18 +880,12 @@ export function LineAppearancePicker({
           <span className="absolute inset-0" style={{ backgroundColor: drawing.color, opacity }} />
         </span>
         <span className="flex h-6 w-[41px] shrink-0 items-center overflow-hidden pl-2">
-          <svg width="30" height="24" className="shrink-0" aria-hidden="true" opacity={opacity}>
-            {Array.from({ length: segmentCount }, (_, index) => (
-              <rect
-                key={index}
-                x={index * (segmentWidth + 3)}
-                y={(24 - segmentHeight) / 2}
-                width={segmentWidth}
-                height={segmentHeight}
-                fill={drawing.color}
-              />
-            ))}
-          </svg>
+          <AppearanceLinePreview
+            width={drawing.width}
+            lineStyle={drawing.lineStyle}
+            color={drawing.color}
+            opacity={opacity}
+          />
         </span>
       </PopoverTrigger>
       <PopoverPopup
