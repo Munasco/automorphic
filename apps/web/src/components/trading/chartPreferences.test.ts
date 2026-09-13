@@ -1233,3 +1233,50 @@ describe("inverted price scale preferences", () => {
     },
   );
 });
+
+it("persists independent Bollinger %B inputs, levels and appearance", async () => {
+  const store = useChartPreferences.getState();
+  const base = store.addIndicator("bbPercentB")!;
+  expect(
+    store.setIndicatorInstanceInputs(base, {
+      period: 10,
+      source: 5,
+      deviations: 1.5,
+      lowerLevel: -0.2,
+      upperLevel: 1.2,
+    }),
+  ).toBe(true);
+  store.setIndicatorInstanceAppearance(base, {
+    plots: { main: { color: "#ff00aa", lineWidth: 3 } },
+  });
+  const duplicate = store.duplicateIndicatorInstance(base)!;
+  expect(
+    store.setIndicatorInstanceInputs(duplicate, {
+      period: 21,
+      source: 1,
+      deviations: 3,
+      showLevels: 0,
+    }),
+  ).toBe(true);
+  store.toggleIndicatorInstanceVisibility(duplicate);
+  for (const invalid of [{ period: 0 }, { deviations: 0 }, { source: 7 }, { lowerLevel: 2 }])
+    expect(store.setIndicatorInstanceInputs(base, invalid)).toBe(false);
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  const instances = getChartIndicatorInstances(useChartPreferences.getState()).filter(
+    (i) => i.key === "bbPercentB",
+  );
+  expect(instances.map((i) => i.inputs)).toEqual([
+    { period: 10, source: 5, deviations: 1.5, showLevels: 1, lowerLevel: -0.2, upperLevel: 1.2 },
+    { period: 21, source: 1, deviations: 3, showLevels: 0, lowerLevel: -0.2, upperLevel: 1.2 },
+  ]);
+  expect(instances.map((i) => i.hidden)).toEqual([false, true]);
+  expect(instances[0]!.appearance.plots?.main).toEqual({ color: "#ff00aa", lineWidth: 3 });
+  useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
+  expect(
+    getChartIndicatorInstances(useChartPreferences.getState()).find((i) => i.id === duplicate)!
+      .inputs,
+  ).toEqual({ period: 20, source: 0, deviations: 2, showLevels: 1, lowerLevel: 0, upperLevel: 1 });
+});

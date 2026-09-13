@@ -98,6 +98,37 @@ const disabled = Object.fromEntries(
 ) as ChartIndicators;
 
 describe("native indicator renderer", () => {
+  it("keeps Bollinger %B unbounded and breaks its line across zero-width windows", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.25);
+    const values = [1, 2, 3, 3, 3, 2, 1];
+    const bars = inputBars(values.length).map((bar, i) => ({ ...bar, close: values[i]! }));
+    const instance = {
+      ...createIndicatorInstance("bbPercentB", "base:bbPercentB"),
+      inputs: {
+        period: 3,
+        source: 0,
+        deviations: 0.5,
+        showLevels: 1,
+        lowerLevel: 0,
+        upperLevel: 1,
+      },
+    };
+    renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [instance]);
+    const series = harness.series[0]!;
+    expect(series.pane).toBe(1);
+    expect(series.data[2]!.value).toBeGreaterThan(1);
+    expect(series.data[6]!.value).toBeLessThan(0);
+    expect(series.data[4]).toEqual({ time: bars[4]!.time });
+    expect(series.data[3]!.color).toBe("transparent");
+    expect(series.priceLines.map((line) => line.options.price)).toEqual([0, 1]);
+    const revised = bars.map((bar, i) => (i === 4 ? { ...bar, close: 4 } : bar));
+    renderer.update(revised, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [instance]);
+    expect(harness.series[0]).toBe(series);
+    expect(series.data[4]!.value).toBeGreaterThan(1);
+    expect(series.data[3]!.color).not.toBe("transparent");
+  });
+
   it("colors AO by momentum rather than sign and updates revisions, gaps and appearance", () => {
     const harness = chartHarness();
     const renderer = createIndicatorRenderer(harness.chart, 0.25);
@@ -602,7 +633,7 @@ describe("native indicator renderer", () => {
     const result = renderer.update([], all, DEFAULT_INITIAL_BALANCE, 15);
     expect(result.readings).toEqual({});
     expect(result.initialBalanceStatus).toContain("waiting");
-    expect(harness.paneCount()).toBe(14);
+    expect(harness.paneCount()).toBe(15);
     expect(harness.series.every((series) => series.data.length === 0)).toBe(true);
     expect(() => renderer.update([], disabled, DEFAULT_INITIAL_BALANCE, 15)).not.toThrow();
     expect(harness.series).toHaveLength(0);

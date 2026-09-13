@@ -38,6 +38,7 @@ import { calculateSupertrend } from "./supertrend";
 import { calculateMoneyFlowIndex } from "./moneyFlowIndex";
 import { calculateHullMovingAverage } from "./hullMovingAverage";
 import { calculateWeightedMovingAverage } from "./weightedMovingAverage";
+import { calculateBollingerPercentB } from "./bollingerPercentB";
 import { calculateAwesomeOscillator } from "./awesomeOscillator";
 const length = (
   defaultValue: number,
@@ -645,6 +646,45 @@ export const INDICATOR_DEFINITIONS = [
         levels: oscillatorLevels(inputs, 20, 80),
         breakOnGaps: true,
       }),
+  }),
+  defineIndicator({
+    key: "bbPercentB",
+    label: "Bollinger %B",
+    detail: "Price position within Bollinger Bands",
+    category: "Oscillators",
+    placement: "pane",
+    inputs: [
+      length(20),
+      priceSource,
+      {
+        key: "deviations",
+        label: "Standard deviations",
+        defaultValue: 2,
+        min: 0.1,
+        max: 10,
+        step: 0.1,
+      },
+      ...oscillatorLevelInputs(0, 1).map((input) =>
+        input.key === "showLevels" ? input : { ...input, min: -10, max: 10, step: 0.1 },
+      ),
+    ],
+    validateInputs: validOscillatorLevels,
+    repairInputs: (values) => ({ ...values, lowerLevel: 0, upperLevel: 1 }),
+    styles: [style("main", "Line", "#60a5fa", true, 2)],
+    calculate: ({ bars, inputs }) =>
+      single(
+        calculateBollingerPercentB(
+          bars,
+          inputs.period,
+          inputs.deviations,
+          PRICE_SOURCES[inputs.source ?? 0],
+        ),
+        {
+          title: "%B",
+          levels: oscillatorLevels(inputs, 0, 1),
+          breakOnGaps: true,
+        },
+      ),
   }),
   defineIndicator({
     key: "cmf",
