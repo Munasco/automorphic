@@ -15,6 +15,7 @@ export function TradingSelect({
   popupProps,
   itemClassName,
   variant,
+  icon,
 }: {
   id?: string;
   label: string;
@@ -30,6 +31,7 @@ export function TradingSelect({
   >;
   itemClassName?: string;
   variant?: "default" | "ghost";
+  icon?: ComponentProps<typeof SelectTrigger>["icon"];
 }) {
   return (
     <Select
@@ -43,6 +45,7 @@ export function TradingSelect({
         id={id}
         size="sm"
         variant={variant}
+        icon={icon}
         aria-label={label}
         className={cn("min-w-0", className)}
       >

@@ -42,18 +42,22 @@ export function DrawingTextSettings({
           aria-label="Bold text"
           aria-pressed={drawing.textBold ?? false}
           onClick={() => onChange({ textBold: !drawing.textBold })}
-          className="size-[34px] shrink-0 rounded border border-white/15 font-bold hover:bg-white/10 aria-pressed:bg-blue-600"
+          className="flex size-[34px] shrink-0 items-center justify-center rounded-[6px] border border-[#575757] hover:border-[#8c8c8c] aria-pressed:border-[#8c8c8c] aria-pressed:bg-[#8c8c8c] aria-pressed:text-white"
         >
-          B
+          <svg aria-hidden="true" width="28" height="28" viewBox="0 0 28 28" fill="currentColor">
+            <path d="M14 21h-3a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h3c2 0 4 1 4 3 0 1 0 2-1.5 3 1.5.5 2.5 2 2.5 4 0 2.75-2.638 4-5 4zM12 9l.004 3c.39.026.82 0 1.25 0C14.908 12 16 11.743 16 10.5c0-1.1-.996-1.5-2.5-1.5-.397 0-.927-.033-1.5 0zm0 5v5h1.5c1.5 0 3.5-.5 3.5-2.5S15 14 13.5 14c-.5 0-.895-.02-1.5 0z" />
+          </svg>
         </button>
         <button
           type="button"
           aria-label="Italic text"
           aria-pressed={drawing.textItalic ?? false}
           onClick={() => onChange({ textItalic: !drawing.textItalic })}
-          className="size-[34px] shrink-0 rounded border border-white/15 italic hover:bg-white/10 aria-pressed:bg-blue-600"
+          className="flex size-[34px] shrink-0 items-center justify-center rounded-[6px] border border-[#575757] hover:border-[#8c8c8c] aria-pressed:border-[#8c8c8c] aria-pressed:bg-[#8c8c8c] aria-pressed:text-white"
         >
-          I
+          <svg aria-hidden="true" width="28" height="28" viewBox="0 0 28 28" fill="currentColor">
+            <path d="M12.143 20l1.714-12H12V7h5v1h-2.143l-1.714 12H15v1h-5v-1h2.143z" />
+          </svg>
         </button>
       </div>
       <textarea

@@ -900,6 +900,20 @@ export function DrawingSelect({ className, ...props }: ComponentProps<typeof Tra
   return (
     <TradingSelect
       {...props}
+      icon={
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 18 18"
+          aria-hidden="true"
+          className="size-[18px] shrink-0 text-[#8c8c8c] opacity-100"
+        >
+          <path
+            fill="currentColor"
+            d="M3.92 7.83 9 12.29l5.08-4.46-1-1.13L9 10.29l-4.09-3.6-.99 1.14Z"
+          />
+        </svg>
+      }
       popupProps={{
         align: "start",
         sideOffset: 0,
@@ -910,7 +924,7 @@ export function DrawingSelect({ className, ...props }: ComponentProps<typeof Tra
       itemClassName="min-h-8 rounded-[4px] px-1 py-0.5 text-sm sm:min-h-8 data-selected:bg-foreground data-selected:text-background"
       className={cn(
         inputClass,
-        "min-h-[34px] shadow-none before:hidden dark:bg-transparent sm:min-h-[34px] sm:text-sm focus-visible:ring-1 [&_[data-slot=select-icon]_svg]:size-6 [&_[data-slot=select-icon]_svg]:text-[#dbdbdb] [&_[data-slot=select-icon]_svg]:opacity-60 [&[aria-expanded=true]_[data-slot=select-icon]]:rotate-180",
+        "min-h-[34px] pl-[7px] pr-0.5 shadow-none before:hidden dark:bg-transparent sm:min-h-[34px] sm:text-sm focus-visible:ring-1 [&_[data-slot=select-icon]]:flex [&_[data-slot=select-icon]]:h-7 [&_[data-slot=select-icon]]:w-5 [&_[data-slot=select-icon]]:shrink-0 [&_[data-slot=select-icon]]:items-center [&_[data-slot=select-icon]]:justify-center [&[aria-expanded=true]_[data-slot=select-icon]]:rotate-180",
         className,
       )}
     />
