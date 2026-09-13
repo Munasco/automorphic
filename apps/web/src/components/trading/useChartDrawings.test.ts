@@ -4695,3 +4695,218 @@ describe("wrapped Text width resizing", () => {
     session.dispose();
   });
 });
+
+describe("parallel channel endpoint coordinate edits", () => {
+  it.each([
+    {
+      name: "linear first price",
+      log: false,
+      index: 0,
+      prices: [100, 300, 250],
+      next: { time: 100, price: 200 },
+      expected: 300,
+    },
+    {
+      name: "linear second price",
+      log: false,
+      index: 1,
+      prices: [100, 300, 250],
+      next: { time: 300, price: 500 },
+      expected: 350,
+    },
+    {
+      name: "logarithmic first price",
+      log: true,
+      index: 0,
+      prices: [100, 400, 250],
+      next: { time: 100, price: 400 },
+      expected: 450,
+    },
+    {
+      name: "logarithmic second price",
+      log: true,
+      index: 1,
+      prices: [100, 400, 250],
+      next: { time: 300, price: 900 },
+      expected: 350,
+    },
+  ])(
+    "preserves numeric offset for $name and saves/cancels as one settings transaction",
+    ({ name, log, index, prices, next, expected }) => {
+      const original: ChartDrawing = {
+        id: "endpoint",
+        kind: "channel",
+        color: "#2962ff",
+        width: 2,
+        anchors: [100, 300, 200].map((time, i) => ({ time: time as Time, price: prices[i]! })),
+      };
+      const f = fixture(`channel-endpoint-${name}`, JSON.stringify([original]));
+      if (log) {
+        vi.spyOn(f.series, "priceToCoordinate").mockImplementation((price) =>
+          price > 0 ? (-Math.log(price) as Coordinate) : null,
+        );
+        vi.spyOn(f.series, "coordinateToPrice").mockImplementation((y) => Math.exp(-y) as BarPrice);
+      }
+      const session = f.open();
+      session.selectDrawing(original.id);
+      session.openSettings();
+      const oldOffset = session.channelPriceOffset(original)!;
+      const anchors = session.channelAnchorsAtEndpoint(original, index, {
+        ...next,
+        time: next.time as Time,
+      })!;
+      expect(anchors[index]).toEqual(next);
+      expect(anchors[1 - index]).toEqual(original.anchors[1 - index]);
+      expect(anchors[2]!.time).toBe(original.anchors[2]!.time);
+      expect(anchors[2]!.price).toBeCloseTo(expected, 10);
+      expect(session.channelPriceOffset({ ...original, anchors })).toBeCloseTo(oldOffset, 10);
+      expect(original.anchors[2]!.price).toBe(prices[2]);
+      expect(f.writes()).toBe(0);
+      session.previewSettings({ anchors });
+      expect(f.writes()).toBe(0);
+      session.closeSettings();
+      expect(f.change.mock.calls.at(-1)![0].objects).toEqual([original]);
+      session.openSettings();
+      session.previewSettings({ anchors });
+      session.applySettings({});
+      expect(f.writes()).toBe(1);
+      expect(JSON.parse(f.saved()!)).toEqual([{ ...original, anchors }]);
+      session.undo();
+      expect(JSON.parse(f.saved()!)).toEqual([original]);
+      session.redo();
+      expect(JSON.parse(f.saved()!)).toEqual([{ ...original, anchors }]);
+      session.dispose();
+    },
+  );
+  it.each([
+    { name: "first bar", index: 0, time: 0, expected: 310 },
+    { name: "second bar", index: 1, time: 2000000, expected: 230 },
+    {
+      name: "first bar past second with exterior width anchor",
+      index: 0,
+      time: 2000000,
+      expected: 1750,
+    },
+  ])(
+    "uses actual chart positions for $name across nonuniform timestamp spacing",
+    ({ name, index, time, expected }) => {
+      const original: ChartDrawing = {
+        id: "gapped-endpoint",
+        kind: "channel",
+        color: "#2962ff",
+        width: 2,
+        anchors: [
+          { time: 100 as Time, price: 100 },
+          { time: 1000000 as Time, price: 500 },
+          { time: 200 as Time, price: 250 },
+        ],
+      };
+      const f = fixture(`channel-endpoint-${name}`, JSON.stringify([original]));
+      const positions = new Map([
+          [0, 0],
+          [100, 100],
+          [200, 200],
+          [1000000, 500],
+          [2000000, 600],
+        ]),
+        scale = f.chart.timeScale();
+      vi.spyOn(f.chart, "timeScale").mockReturnValue({
+        ...scale,
+        timeToCoordinate: (value: Time) =>
+          (positions.get(Number(value)) as Coordinate | undefined) ?? null,
+      });
+      const session = f.open();
+      const anchors = session.channelAnchorsAtEndpoint(original, index, {
+        time: time as Time,
+        price: original.anchors[index]!.price,
+      })!;
+      expect(anchors[index]!.time).toBe(time);
+      expect(anchors[2]!.time).toBe(200);
+      expect(anchors[2]!.price).toBeCloseTo(expected, 10);
+      expect(session.channelPriceOffset({ ...original, anchors })).toBeCloseTo(50, 10);
+      expect(f.writes()).toBe(0);
+      expect(JSON.parse(f.saved()!)).toEqual([original]);
+      session.dispose();
+    },
+  );
+  it("rejects invalid endpoints and unavailable projections without changing the current settings preview", () => {
+    const original: ChartDrawing = {
+      id: "invalid-endpoint",
+      kind: "channel",
+      color: "#2962ff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 100 },
+        { time: 300 as Time, price: 400 },
+        { time: 200 as Time, price: 50 },
+      ],
+    };
+    const f = fixture("channel-endpoint-invalid", JSON.stringify([original])),
+      session = f.open();
+    session.selectDrawing(original.id);
+    session.openSettings();
+    session.previewSettings({ color: "#ff0000" });
+    const next = { time: 100 as Time, price: 200 };
+    expect(session.channelAnchorsAtEndpoint(original, 2, next)).toBeNull();
+    expect(session.channelAnchorsAtEndpoint(original, -1, next)).toBeNull();
+    expect(session.channelAnchorsAtEndpoint(original, 0.5, next)).toBeNull();
+    expect(session.channelAnchorsAtEndpoint({ ...original, kind: "triangle" }, 0, next)).toBeNull();
+    expect(session.channelAnchorsAtEndpoint(original, 0, { ...next, price: NaN })).toBeNull();
+    expect(
+      session.channelAnchorsAtEndpoint(original, 0, { ...next, time: NaN as Time }),
+    ).toBeNull();
+    expect(session.channelAnchorsAtEndpoint(original, 0, original.anchors[1]!)).toBeNull();
+    const projected = vi.spyOn(f.series, "priceToCoordinate");
+    projected.mockReturnValue(null);
+    expect(session.channelAnchorsAtEndpoint(original, 0, next)).toBeNull();
+    projected.mockImplementation(() => {
+      throw new Error("detached price scale");
+    });
+    expect(session.channelAnchorsAtEndpoint(original, 0, next)).toBeNull();
+    projected.mockRestore();
+    vi.spyOn(f.series, "priceToCoordinate").mockImplementation((price) =>
+      price > 0 ? (-Math.log(price) as Coordinate) : null,
+    );
+    vi.spyOn(f.series, "coordinateToPrice").mockImplementation((y) => Math.exp(-y) as BarPrice);
+    // Old numeric offset is -150. The edited log baseline is100, so preserving it would require a negative third price.
+    expect(
+      session.channelAnchorsAtEndpoint(original, 1, { time: 300 as Time, price: 100 }),
+    ).toBeNull();
+    expect(session.channelAnchorsAtEndpoint(original, 0, { ...next, price: -1 })).toBeNull();
+    expect(f.change.mock.calls.at(-1)![0].selected.color).toBe("#ff0000");
+    expect(f.writes()).toBe(0);
+    expect(JSON.parse(f.saved()!)).toEqual([original]);
+    session.dispose();
+    expect(session.channelAnchorsAtEndpoint(original, 0, next)).toBeNull();
+  });
+  it("keeps exact coordinates for unchanged endpoints and leaves fractional recomputed offsets unrounded", () => {
+    const original: ChartDrawing = {
+      id: "exact-endpoint",
+      kind: "channel",
+      color: "#2962ff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 100 },
+        { time: 400 as Time, price: 400 },
+        { time: 200 as Time, price: 250.123456 },
+      ],
+    };
+    const f = fixture("channel-endpoint-exact", JSON.stringify([original]));
+    vi.spyOn(f.series, "priceToCoordinate").mockImplementation((price) =>
+      price > 0 ? (-Math.log(price) as Coordinate) : null,
+    );
+    vi.spyOn(f.series, "coordinateToPrice").mockImplementation((y) => Math.exp(-y) as BarPrice);
+    const session = f.open();
+    const unchanged = session.channelAnchorsAtEndpoint(original, 0, { ...original.anchors[0]! })!;
+    expect(unchanged).toEqual(original.anchors);
+    const offset = session.channelPriceOffset(original)!;
+    const anchors = session.channelAnchorsAtEndpoint(original, 0, {
+      time: 100 as Time,
+      price: 123.45,
+    })!;
+    expect(session.channelPriceOffset({ ...original, anchors })).toBeCloseTo(offset, 10);
+    expect(anchors[2]!.price).not.toBe(session.normalizeCoordinatePrice(anchors[2]!.price));
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+});

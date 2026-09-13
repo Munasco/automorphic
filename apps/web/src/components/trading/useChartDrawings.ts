@@ -1558,6 +1558,31 @@ export function createChartDrawingSession(
       index === 2 ? { ...anchor, price } : { ...anchor },
     );
   };
+  const channelAnchorsAtEndpoint = (
+    drawing: ChartDrawing,
+    index: number,
+    anchor: DrawingAnchor,
+  ): DrawingAnchor[] | null => {
+    if (
+      disposed ||
+      drawing.kind !== "channel" ||
+      (index !== 0 && index !== 1) ||
+      !validDrawingAnchors("channel", drawing.anchors)
+    )
+      return null;
+    const anchors = drawing.anchors.map((point, i) => ({ ...(i === index ? anchor : point) }));
+    if (!validDrawingAnchors("channel", anchors)) return null;
+    try {
+      const offset = channelPriceOffset(drawing);
+      if (offset === null) return null;
+      if (sameAnchor(drawing.anchors[index], anchor)) return anchors;
+      // Coordinate inputs retain their numeric Price offset, even when log scaling changes
+      // the visible rail separation. Reproject the new baseline at the stored third time.
+      return channelAnchorsAtOffset({ ...drawing, anchors }, offset);
+    } catch {
+      return null;
+    }
+  };
   const angleProjection = (drawing: ChartDrawing) => {
     if (
       disposed ||
@@ -1711,6 +1736,7 @@ export function createChartDrawingSession(
     cancelTextEdit,
     channelPriceOffset,
     channelAnchorsAtOffset,
+    channelAnchorsAtEndpoint,
     drawingAngle,
     anchorsAtAngle,
     anchorsAtOrigin,
@@ -2306,6 +2332,11 @@ export function useChartDrawings(
       session.current?.channelAnchorsAtOffset(drawing, offset) ?? null,
     [],
   );
+  const channelAnchorsAtEndpoint = useCallback(
+    (drawing: ChartDrawing, index: number, anchor: DrawingAnchor) =>
+      session.current?.channelAnchorsAtEndpoint(drawing, index, anchor) ?? null,
+    [],
+  );
   const drawingAngle = useCallback(
     (drawing: ChartDrawing) => session.current?.drawingAngle(drawing) ?? null,
     [],
@@ -2395,6 +2426,7 @@ export function useChartDrawings(
     interval: intervalMinutes,
     channelPriceOffset,
     channelAnchorsAtOffset,
+    channelAnchorsAtEndpoint,
     drawingAngle,
     anchorsAtAngle,
     anchorsAtOrigin,

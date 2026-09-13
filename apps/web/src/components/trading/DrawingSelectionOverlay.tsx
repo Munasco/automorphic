@@ -714,7 +714,9 @@ function DrawingSettings({
                             const anchors =
                               draft.kind === "trend-angle"
                                 ? drawings.anchorsAtOrigin(draft, next)
-                                : draft.anchors.map((point, i) => (i === index ? next : point));
+                                : draft.kind === "channel" && (index === 0 || index === 1)
+                                  ? drawings.channelAnchorsAtEndpoint(draft, index, next)
+                                  : draft.anchors.map((point, i) => (i === index ? next : point));
                             if (anchors) update({ anchors });
                           }}
                         />
@@ -734,7 +736,9 @@ function DrawingSettings({
                               const anchors =
                                 draft.kind === "trend-angle"
                                   ? drawings.anchorsAtOrigin(draft, next)
-                                  : draft.anchors.map((point, i) => (i === index ? next : point));
+                                  : draft.kind === "channel" && (index === 0 || index === 1)
+                                    ? drawings.channelAnchorsAtEndpoint(draft, index, next)
+                                    : draft.anchors.map((point, i) => (i === index ? next : point));
                               if (anchors) update({ anchors });
                             }
                           }}
