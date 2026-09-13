@@ -106,10 +106,13 @@ describe("indicator catalog and saved preferences", () => {
   it("searches labels, indicator names and categories without case sensitivity", () => {
     expect(findIndicators(" MOVING average ").map((entry) => entry.key)).toEqual(["sma", "ema"]);
     expect(findIndicators("chaikin").map((entry) => entry.key)).toEqual(["cmf"]);
+    expect(findIndicators("money flow index").map((entry) => entry.key)).toEqual(["mfi"]);
     expect(findIndicators("rate of change").map((entry) => entry.key)).toEqual(["roc"]);
     expect(findIndicators("stochastic rsi").map((entry) => entry.key)).toEqual(["stochRsi"]);
     expect(findIndicators("initial").map((entry) => entry.key)).toEqual(["ib"]);
     expect(findIndicators("overlays").map((entry) => entry.key)).toEqual([
+      "sar",
+      "supertrend",
       "sma",
       "ema",
       "bollinger",
@@ -504,7 +507,7 @@ describe("Stochastic RSI source inputs", () => {
   });
 });
 
-describe.each(["rsi", "stochastic", "stochRsi"] as const)("%s oscillator levels", (key) => {
+describe.each(["rsi", "stochastic", "stochRsi", "mfi"] as const)("%s oscillator levels", (key) => {
   const bars = Array.from({ length: 60 }, (_, index) => ({
     time: index + 1,
     open: 100 + (index % 5),

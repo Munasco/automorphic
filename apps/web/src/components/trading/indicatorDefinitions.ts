@@ -34,6 +34,7 @@ import {
 import { resolveInitialBalanceSettings } from "./initialBalanceSettings";
 import { calculateParabolicSAR } from "./parabolicSar";
 import { calculateSupertrend } from "./supertrend";
+import { calculateMoneyFlowIndex } from "./moneyFlowIndex";
 const length = (
   defaultValue: number,
   key: IndicatorInputKey = "period",
@@ -516,6 +517,24 @@ export const INDICATOR_DEFINITIONS = [
         ),
         inputs,
       ),
+  }),
+  defineIndicator({
+    key: "mfi",
+    label: "MFI 14",
+    detail: "Money Flow Index · Price and volume momentum",
+    category: "Oscillators",
+    placement: "pane",
+    inputs: [length(14), ...oscillatorLevelInputs(20, 80)],
+    validateInputs: validOscillatorLevels,
+    repairInputs: (values) => ({ ...values, lowerLevel: 20, upperLevel: 80 }),
+    styles: [style("main", "Line", "#a78bfa", true)],
+    calculate: ({ bars, inputs }) =>
+      single(calculateMoneyFlowIndex(bars, inputs.period), {
+        title: "MFI",
+        bounds: [0, 100],
+        levels: oscillatorLevels(inputs, 20, 80),
+        breakOnGaps: true,
+      }),
   }),
   defineIndicator({
     key: "cmf",
