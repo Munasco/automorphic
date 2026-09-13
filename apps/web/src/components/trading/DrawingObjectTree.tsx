@@ -280,7 +280,11 @@ export function DrawingObjectTree({
                 <RowAction
                   label={`${object.locked ? "Unlock" : "Lock"} ${label}`}
                   active={!!object.locked}
-                  onClick={() => drawings.updateDrawing(object.id, { locked: !object.locked })}
+                  onClick={() => {
+                    const patch = { locked: !object.locked };
+                    if (isSelected) drawings.updateSelected(patch);
+                    else drawings.updateDrawing(object.id, patch);
+                  }}
                 >
                   <DrawingToolIcon name={object.locked ? "lock" : "lock-open"} className="size-4" />
                 </RowAction>
