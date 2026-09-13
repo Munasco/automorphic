@@ -171,6 +171,63 @@ describe("drawing sessions sharing one workspace store", () => {
     };
   };
 
+  it.each(["before-preview", "after-preview"] as const)(
+    "preserves another chart's endpoint coordinate change received %s through save, undo and reload",
+    (timing) => {
+      const f = setup();
+      try {
+        f.a.selectDrawing("a");
+        f.a.openSettings();
+        const local = [{ ...initial[0]!.anchors[0]!, price: 4910 }, initial[0]!.anchors[1]!];
+        const remote = [initial[0]!.anchors[0]!, { ...initial[0]!.anchors[1]!, price: 4820 }];
+        if (timing === "before-preview") f.b.updateDrawing("a", { anchors: remote });
+        expect(f.a.previewSettings({ anchors: local })).toBe(true);
+        if (timing === "after-preview") f.b.updateDrawing("a", { anchors: remote });
+        expect(f.a.applySettings({})).toBe(true);
+        const expected = [local[0], remote[1]];
+        expect(f.saved()[0]!.anchors).toEqual(expected);
+        expect(f.b.getCommittedDrawings()?.[0]?.anchors).toEqual(expected);
+        f.a.undo();
+        expect(f.saved()[0]!.anchors).toEqual(remote);
+        f.a.redo();
+        expect(f.saved()[0]!.anchors).toEqual(expected);
+        const reloaded = f.first.open();
+        expect(reloaded.getCommittedDrawings()?.[0]?.anchors).toEqual(expected);
+        reloaded.dispose();
+        f.b.undo();
+        expect(f.saved()[0]!.anchors).toEqual(local);
+      } finally {
+        f.dispose();
+      }
+    },
+  );
+
+  it("merges a horizontal ray's bar and price edits on the same anchor and keeps each undo independent", () => {
+    const ray: ChartDrawing = {
+      ...initial[0]!,
+      kind: "horizontal-ray",
+      anchors: [initial[0]!.anchors[0]!],
+    };
+    const f = setup([ray]);
+    try {
+      f.a.selectDrawing("a");
+      f.a.openSettings();
+      expect(f.a.previewSettings({ anchors: [{ ...ray.anchors[0]!, price: 4910 }] })).toBe(true);
+      f.b.updateDrawing("a", { anchors: [{ ...ray.anchors[0]!, time: 150 as Time }] });
+      expect(f.a.applySettings({})).toBe(true);
+      expect(f.saved()[0]!.anchors).toEqual([{ time: 150, price: 4910 }]);
+      f.b.undo();
+      expect(f.saved()[0]!.anchors).toEqual([{ time: 100, price: 4910 }]);
+      f.a.undo();
+      expect(f.saved()[0]!.anchors).toEqual(ray.anchors);
+      f.a.redo();
+      f.b.redo();
+      expect(f.saved()[0]!.anchors).toEqual([{ time: 150, price: 4910 }]);
+    } finally {
+      f.dispose();
+    }
+  });
+
   it("preserves edits to different lines and publishes the same committed snapshot to both charts", () => {
     const f = setup();
     try {
@@ -1235,6 +1292,7 @@ describe("drawing price ticks", () => {
     tickOptions(f, 0.25);
     const session = f.open();
     expect(session.coordinatePriceStep()).toBe(0.25);
+    expect(session.coordinatePricePrecision()).toBe(2);
     expect(session.coordinatePrice(31852.83)).toBe(31852.83);
     expect(session.normalizeCoordinatePrice(31852.83)).toBe(31852.75);
     expect(session.normalizeCoordinatePrice(31852.9)).toBe(31853);
@@ -1244,12 +1302,19 @@ describe("drawing price ticks", () => {
     expect(session.normalizeCoordinatePrice(-10.08)).toBe(-10.1);
     tickOptions(f, 0.00001, 5);
     expect(session.coordinatePriceStep()).toBe(0.00001);
+    expect(session.coordinatePricePrecision()).toBe(5);
     expect(session.normalizeCoordinatePrice(1.2345678)).toBe(1.23457);
     tickOptions(f, NaN, 3);
     expect(session.coordinatePriceStep()).toBe(0.001);
     expect(session.normalizeCoordinatePrice(1.23456)).toBe(1.235);
     expect(session.normalizeCoordinatePrice(NaN)).toBeNaN();
     expect(session.normalizeCoordinatePrice(Infinity)).toBe(Infinity);
+    tickOptions(f, 1, 0);
+    expect(session.coordinatePricePrecision()).toBe(0);
+    expect(session.coordinatePrice(12.75)).toBe(13);
+    tickOptions(f, 0.01, NaN);
+    expect(session.coordinatePricePrecision()).toBe(2);
+    expect(session.coordinatePrice(12.345)).toBe(12.35);
     expect(f.writes()).toBe(0);
     session.dispose();
   });

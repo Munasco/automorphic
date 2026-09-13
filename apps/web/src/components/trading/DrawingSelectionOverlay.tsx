@@ -1,3 +1,4 @@
+import { mergeDrawingChanges } from "./drawingChanges";
 import { drawingKindLabel } from "./drawingNames";
 import {
   DEFAULT_DRAWING_TEXT_BACKGROUND_COLOR,
@@ -258,6 +259,11 @@ function DrawingSettings({
     ...(drawing.kind === "regression-trend" ? defaultRegressionDrawingSettings() : {}),
     ...drawing,
   }));
+  const [openingDraft] = useState(draft);
+  // Display accepted peer coordinates without adding them to our local edit patch.
+  // Callbacks retain the opening-based draft so the next keystroke cannot claim
+  // an untouched endpoint that changed in another chart.
+  const coordinateDisplay = mergeDrawingChanges(openingDraft, draft, drawing);
   const availableTabs =
     draft.kind === "text"
       ? ["Text", "Visibility"]
@@ -285,7 +291,7 @@ function DrawingSettings({
   const coordinateHasBar = draft.kind !== "horizontal";
   const coordinateBars =
     tab === "Coordinates" && coordinateHasBar
-      ? draft.anchors.map((anchor) => drawings.anchorBar(anchor))
+      ? coordinateDisplay.anchors.map((anchor) => drawings.anchorBar(anchor))
       : [];
   const coordinateLabel = coordinateHasPrice ? (coordinateHasBar ? "price, bar" : "price") : "bar";
   const selectedStats = draft.stats ?? defaultDrawingStats(draft.kind);
@@ -695,7 +701,7 @@ function DrawingSettings({
                 )
                 .map((anchor, index) => (
                   <div key={anchorKeys[index]} className="flex h-[50px] items-center">
-                    <span className="w-[113px] shrink-0 pr-5 text-sm leading-[18px] text-zinc-400">
+                    <span className="w-[113px] shrink-0 pr-5 text-sm leading-[18px] text-[#dbdbdb]">
                       #{index + 1} ({coordinateLabel})
                     </span>
                     <div className="flex gap-2">
@@ -703,7 +709,10 @@ function DrawingSettings({
                         <DrawingNumberField
                           label={`Point ${index + 1} price`}
                           step={drawings.coordinatePriceStep()}
-                          value={drawings.coordinatePrice(anchor.price)}
+                          precision={drawings.coordinatePricePrecision()}
+                          value={drawings.coordinatePrice(
+                            coordinateDisplay.anchors[index]?.price ?? anchor.price,
+                          )}
                           onValueChange={(price) => {
                             const next = {
                               ...anchor,
@@ -767,6 +776,7 @@ function DrawingSettings({
                   <DrawingNumberField
                     label="Price offset"
                     step={drawings.coordinatePriceStep()}
+                    precision={drawings.coordinatePricePrecision()}
                     disabled={channelOffset === null}
                     value={channelOffset === null ? null : drawings.coordinatePrice(channelOffset)}
                     onValueChange={(offset) => {

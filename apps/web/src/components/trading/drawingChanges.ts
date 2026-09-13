@@ -1,12 +1,59 @@
 import {
   defaultDrawingLevels,
   parallelChannelSettingsLevels,
+  validDrawingAnchors,
   type ChartDrawing,
 } from "./drawingGeometry";
 import { sanitizeDrawingVisibility } from "./drawingVisibility";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
+
+const independentLineAnchors = new Set<ChartDrawing["kind"]>([
+  "trend",
+  "info-line",
+  "ray",
+  "extended-line",
+  "arrow",
+  "horizontal",
+  "horizontal-ray",
+  "vertical",
+  "crossline",
+]);
+
+function mergeLineAnchors(before: ChartDrawing, after: ChartDrawing, target: ChartDrawing) {
+  if (
+    !independentLineAnchors.has(before.kind) ||
+    before.kind !== after.kind ||
+    before.kind !== target.kind ||
+    before.anchors.length !== after.anchors.length ||
+    before.anchors.length !== target.anchors.length
+  )
+    return after.anchors;
+  const changedIndices = before.anchors.flatMap((anchor, index) =>
+    JSON.stringify(anchor) === JSON.stringify(after.anchors[index]) ? [] : [index],
+  );
+  // Whole-line moves and transformations are coupled edits, not coordinate field edits.
+  if (changedIndices.length !== 1) return after.anchors;
+  const index = changedIndices[0]!;
+  const previous = before.anchors[index]!;
+  const next = after.anchors[index]!;
+  const anchors = target.anchors.map((anchor, i) =>
+    i === index
+      ? {
+          ...anchor,
+          ...(previous.price === next.price ? {} : { price: next.price }),
+          // BusinessDay is one time value; never combine its year/month/day separately.
+          ...(JSON.stringify(previous.time) === JSON.stringify(next.time)
+            ? {}
+            : { time: next.time }),
+        }
+      : anchor,
+  );
+  // Independently valid endpoint edits can coincide when combined. Keep the incoming
+  // valid geometry atomically in that conflict instead of producing an invalid drawing.
+  return validDrawingAnchors(after.kind, anchors) ? anchors : after.anchors;
+}
 
 function mergeValue(before: unknown, after: unknown, target: unknown): unknown {
   if (JSON.stringify(before) === JSON.stringify(after)) return target;
@@ -31,7 +78,9 @@ export function mergeDrawingChanges(
   for (const field of new Set([...Object.keys(before), ...Object.keys(after)])) {
     const key = field as keyof ChartDrawing;
     if (JSON.stringify(before[key]) === JSON.stringify(after[key])) continue;
-    if (key === "visibility" && after.visibility) {
+    if (key === "anchors") {
+      result.anchors = mergeLineAnchors(before, after, target);
+    } else if (key === "visibility" && after.visibility) {
       result.visibility = sanitizeDrawingVisibility(
         mergeValue(
           sanitizeDrawingVisibility(before.visibility),

@@ -19,6 +19,7 @@ export function DrawingNumberField({
   readOnly = false,
   showSteppers = true,
   integerOnly = false,
+  precision,
   className,
 }: {
   label: string;
@@ -31,6 +32,7 @@ export function DrawingNumberField({
   readOnly?: boolean;
   showSteppers?: boolean;
   integerOnly?: boolean;
+  precision?: number;
   className?: string;
 }) {
   return (
@@ -52,10 +54,14 @@ export function DrawingNumberField({
       max={max}
       disabled={disabled}
       readOnly={readOnly}
-      format={numberFormat}
+      format={
+        precision === undefined
+          ? numberFormat
+          : { ...numberFormat, minimumFractionDigits: precision, maximumFractionDigits: precision }
+      }
       allowWheelScrub={false}
       className={cn(
-        "group/drawing-number relative flex h-[34px] w-[100px] shrink-0 rounded border border-[#575757] bg-transparent text-sm leading-[18px] text-[#dbdbdb] focus-within:border-blue-500 data-disabled:cursor-not-allowed data-disabled:opacity-40",
+        "group/drawing-number relative flex h-[34px] w-[100px] shrink-0 rounded-[6px] border border-[#575757] bg-transparent text-sm leading-[18px] text-[#dbdbdb] hover:border-[#8c8c8c] after:pointer-events-none after:absolute after:-inset-px after:rounded-[6px] after:border-2 after:border-transparent focus-within:after:border-[#2962ff] data-disabled:cursor-not-allowed data-disabled:opacity-40",
         className,
       )}
     >
@@ -104,8 +110,7 @@ export function DrawingNumberField({
         }}
         className={cn(
           "h-full w-full min-w-0 rounded bg-transparent py-0 pl-[7px] pr-[7px] text-left text-sm leading-[18px] outline-none disabled:cursor-not-allowed",
-          showSteppers &&
-            "group-hover/drawing-number:pr-[27px] group-focus-within/drawing-number:pr-[27px]",
+          showSteppers && "m-0.5 h-7 w-[calc(100%_-_28px)] pl-[5px] pr-0.5",
         )}
       />
       {showSteppers ? (
@@ -116,7 +121,7 @@ export function DrawingNumberField({
             aria-label={`Increase ${label}`}
             className="flex min-h-0 flex-1 items-center justify-center rounded-tr text-zinc-400 hover:bg-white/10 hover:text-zinc-200 focus-visible:outline focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <ChartIcon name="chevron-down" className="size-3 rotate-180" />
+            <ChartIcon name="chevron-down" className="size-[18px] rotate-180" />
           </NumberField.Increment>
           <NumberField.Decrement
             tabIndex={-1}
@@ -124,7 +129,7 @@ export function DrawingNumberField({
             aria-label={`Decrease ${label}`}
             className="flex min-h-0 flex-1 items-center justify-center rounded-br text-zinc-400 hover:bg-white/10 hover:text-zinc-200 focus-visible:outline focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <ChartIcon name="chevron-down" className="size-3" />
+            <ChartIcon name="chevron-down" className="size-[18px]" />
           </NumberField.Decrement>
         </div>
       ) : null}

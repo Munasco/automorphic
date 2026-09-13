@@ -258,6 +258,11 @@ export function createChartDrawingSession(
   const history: ChartDrawing[][] = [];
   const future: ChartDrawing[][] = [];
   const removers: Array<() => void> = [];
+  const coordinatePricePrecision = () => {
+    const format = series.options().priceFormat;
+    const precision = format && "precision" in format ? format.precision : 2;
+    return Math.max(0, Math.min(10, Number.isFinite(precision) ? Math.trunc(precision!) : 2));
+  };
   const coordinatePriceStep = () => {
     const format = series.options().priceFormat;
     if (format && Number.isFinite(format.minMove) && format.minMove > 0) return format.minMove;
@@ -2110,11 +2115,10 @@ export function createChartDrawingSession(
     anchorsAtAngle,
     anchorsAtOrigin,
     coordinatePriceStep,
+    coordinatePricePrecision,
     normalizeCoordinatePrice,
     coordinatePrice: (price: number) => {
-      const format = series.options().priceFormat;
-      const precision = format && "precision" in format ? format.precision : 2;
-      return Number(price.toFixed(Math.max(0, Math.min(10, precision ?? 2))));
+      return Number(price.toFixed(coordinatePricePrecision()));
     },
     anchorBar: (anchor: DrawingAnchor) => {
       if (disposed) return null;
@@ -2840,6 +2844,10 @@ export function useChartDrawings(
     (price: number) => session.current?.coordinatePrice(price) ?? price,
     [],
   );
+  const coordinatePricePrecision = useCallback(
+    () => session.current?.coordinatePricePrecision() ?? 2,
+    [],
+  );
   const coordinatePriceStep = useCallback(() => session.current?.coordinatePriceStep() ?? 0.01, []);
   const normalizeCoordinatePrice = useCallback(
     (price: number) => session.current?.normalizeCoordinatePrice(price) ?? price,
@@ -2920,6 +2928,7 @@ export function useChartDrawings(
     anchorsAtAngle,
     anchorsAtOrigin,
     coordinatePriceStep,
+    coordinatePricePrecision,
     normalizeCoordinatePrice,
     coordinatePrice,
     anchorBar,
