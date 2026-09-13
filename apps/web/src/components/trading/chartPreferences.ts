@@ -89,6 +89,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
   return {
     style:
       saved.style === "hollow" ||
+      saved.style === "heikin-ashi" ||
       saved.style === "bars" ||
       saved.style === "line" ||
       saved.style === "area"

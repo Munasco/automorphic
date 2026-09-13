@@ -46,6 +46,7 @@ import {
 } from "./chartPreferences";
 import type { Candle } from "./chartIndicators";
 import { hollowCandleColors } from "./hollowCandles";
+import { calculateHeikinAshi, heikinAshiBar } from "./heikinAshi";
 import { INDICATOR_CATALOG, getIndicatorDefinition, getIndicatorLabel } from "./indicatorCatalog";
 import { getChartIndicatorInstances, MAX_CHART_INDICATORS } from "./chartIndicatorInstances";
 import {
@@ -80,6 +81,7 @@ type ChartEngine = {
   volume: ISeriesApi<"Histogram">;
   indicators: ReturnType<typeof createIndicatorRenderer>;
   bars: Map<number, Candle>;
+  heikinAshiBars: Map<number, Candle>;
   refreshIndicators: () => void;
   showReplay: (bars: readonly Candle[] | null) => void;
   disposed: boolean;
@@ -343,7 +345,11 @@ export function TradovateChart({
     onDrawingAlertsChange?.(drawingAlerts);
   }, [drawingAlerts, onDrawingAlertsChange]);
   useEffect(() => () => onDrawingAlertsChange?.(null), [onDrawingAlertsChange]);
-  const shown = hovered ?? last;
+  const rawShown = hovered ?? last;
+  const shown =
+    settings.style === "heikin-ashi" && rawShown
+      ? (activeEngine?.heikinAshiBars.get(rawShown.time) ?? null)
+      : rawShown;
 
   useEffect(() => {
     if (!activeEngine) return;
@@ -377,6 +383,7 @@ export function TradovateChart({
     setTickHistory(null);
     let receivedQuote = false;
     const bars = new Map<number, Candle>();
+    const heikinAshiBars = new Map<number, Candle>();
     const timeFormatters = createChartTimeFormatters((time) => bars.get(time));
     const chart = createChart(host.current, {
       autoSize: true,
@@ -426,6 +433,17 @@ export function TradovateChart({
         visible: false,
         priceFormat,
       }),
+      "heikin-ashi": chart.addSeries(CandlestickSeries, {
+        title: "HA",
+        upColor: "#26a69a",
+        downColor: "#ef5350",
+        borderVisible: false,
+        wickUpColor: "#26a69a",
+        wickDownColor: "#ef5350",
+        visible: false,
+        // Averaged OHLC can fall between exchange ticks; display its actual two-decimal value.
+        priceFormat: { ...priceFormat, minMove: 0.01 },
+      }),
       bars: chart.addSeries(BarSeries, {
         upColor: "#26a69a",
         downColor: "#ef5350",
@@ -447,6 +465,16 @@ export function TradovateChart({
         priceFormat,
       }),
     };
+    // Keep the actual closing price distinct from the averaged candle value.
+    const marketPriceLine = prices["heikin-ashi"].createPriceLine({
+      price: 0,
+      color: "#9299a7",
+      lineWidth: 1,
+      lineStyle: 2,
+      lineVisible: false,
+      axisLabelVisible: false,
+      title: "Price",
+    });
     const volume = chart.addSeries(HistogramSeries, {
       priceScaleId: "volume",
       priceFormat: { type: "volume" },
@@ -465,6 +493,7 @@ export function TradovateChart({
       volume,
       indicators,
       bars,
+      heikinAshiBars,
       disposed: false,
       showReplay: (history) => {
         if (state.disposed) return;
@@ -558,6 +587,8 @@ export function TradovateChart({
     let renderedTime = -Infinity;
     let hollowPrevious: Candle | undefined;
     let hollowLatest: Candle | undefined;
+    let heikinPrevious: Candle | undefined;
+    let heikinLatest: Candle | undefined;
     let hollowPriceColor = "";
     const hollowPoint = (bar: Candle, previous?: Candle) => ({
       ...bar,
@@ -592,6 +623,14 @@ export function TradovateChart({
         const closes = sorted.map((b) => ({ time: b.time as UTCTimestamp, value: b.close }));
         prices.candles.setData(ohlc);
         prices.hollow.setData(sorted.map((bar, index) => hollowPoint(bar, sorted[index - 1])));
+        const averaged = calculateHeikinAshi(sorted);
+        heikinAshiBars.clear();
+        for (const bar of averaged) heikinAshiBars.set(bar.time, bar);
+        prices["heikin-ashi"].setData(
+          averaged.map((bar) => ({ ...bar, time: bar.time as UTCTimestamp })),
+        );
+        heikinLatest = averaged.at(-1);
+        heikinPrevious = averaged.at(-2);
         hollowLatest = sorted.at(-1);
         hollowPrevious = sorted.at(-2);
         prices.bars.setData(ohlc);
@@ -610,6 +649,10 @@ export function TradovateChart({
           if (!hollowLatest || bar.time > hollowLatest.time) hollowPrevious = hollowLatest;
           hollowLatest = bar;
           prices.hollow.update(hollowPoint(bar, hollowPrevious));
+          if (!heikinLatest || bar.time > heikinLatest.time) heikinPrevious = heikinLatest;
+          heikinLatest = heikinAshiBar(bar, heikinPrevious);
+          heikinAshiBars.set(bar.time, heikinLatest);
+          prices["heikin-ashi"].update({ ...heikinLatest, time: bar.time as UTCTimestamp });
           prices.bars.update(ohlc);
           prices.line.update(close);
           prices.area.update(close);
@@ -633,6 +676,11 @@ export function TradovateChart({
         fitted = true;
       }
       const latest = bars.get(renderedTime) ?? null;
+      marketPriceLine.applyOptions({
+        ...(latest ? { price: latest.close } : {}),
+        lineVisible: latest !== null,
+        axisLabelVisible: latest !== null,
+      });
       setLast(latest);
       if (alertSnapshot && !replaying) drawingAlertsRef.current.consume(alertSnapshot);
       if (latest && (replaying || !receivedQuote))
@@ -699,8 +747,10 @@ export function TradovateChart({
 
   useEffect(() => {
     if (!engine || engine.disposed) return;
-    for (const style of ["candles", "hollow", "bars", "line", "area"] as const)
+    for (const style of ["candles", "hollow", "heikin-ashi", "bars", "line", "area"] as const)
       engine.prices[style].applyOptions({ visible: style === settings.style });
+    // The shared scale takes its formatter from the first series, including hidden ones.
+    engine.prices[settings.style].setSeriesOrder(0);
     engine.chart.applyOptions({
       grid: {
         vertLines: { visible: settings.showGrid },
@@ -910,14 +960,21 @@ export function TradovateChart({
                 className="pointer-events-none absolute left-2.5 right-20 top-2 z-10 text-xs"
               >
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <button
-                    type="button"
-                    onClick={onSelectSymbol}
-                    className="pointer-events-auto trading-heading truncate font-medium text-zinc-200 hover:text-white"
-                  >
-                    {INSTRUMENTS[root].name} · {formatChartInterval(interval)} ·{" "}
-                    {INSTRUMENTS[root].exchange}
-                  </button>
+                  <Tooltip>
+                    <TooltipTrigger
+                      onClick={onSelectSymbol}
+                      className="pointer-events-auto trading-heading truncate font-medium text-zinc-200 hover:text-white"
+                    >
+                      {INSTRUMENTS[root].name} · {formatChartInterval(interval)} ·{" "}
+                      {INSTRUMENTS[root].exchange}
+                      {settings.style === "heikin-ashi" ? " · Heikin Ashi" : null}
+                    </TooltipTrigger>
+                    <TooltipPopup>
+                      {settings.style === "heikin-ashi"
+                        ? "Averaged candles; indicators and alerts use market prices."
+                        : "Select contract"}
+                    </TooltipPopup>
+                  </Tooltip>
                 </div>
                 {shown ? (
                   <div

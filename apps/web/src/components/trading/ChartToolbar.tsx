@@ -204,6 +204,7 @@ export function ChartToolbar({
           options={[
             ["candles", "Candles"],
             ["hollow", "Hollow candles"],
+            ["heikin-ashi", "Heikin Ashi"],
             ["bars", "Bars"],
             ["line", "Line"],
             ["area", "Area"],
@@ -212,6 +213,7 @@ export function ChartToolbar({
             if (
               value === "candles" ||
               value === "hollow" ||
+              value === "heikin-ashi" ||
               value === "bars" ||
               value === "line" ||
               value === "area"
