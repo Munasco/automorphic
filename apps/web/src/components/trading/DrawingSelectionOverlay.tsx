@@ -180,6 +180,7 @@ function DrawingSettingsTitle({
   onPointerUp: PointerEventHandler<HTMLElement>;
 }) {
   const [editing, setEditing] = useState(false);
+  const [editingName, setEditingName] = useState("");
   const nameBeforeEdit = useRef(drawing.name ?? "");
   const restoreFocus = useRef(false);
   return (
@@ -189,7 +190,11 @@ function DrawingSettingsTitle({
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onLostPointerCapture={onPointerUp}
-      className="flex h-[68px] shrink-0 touch-none items-center gap-2 px-5 py-5 pr-12 text-xl font-semibold leading-7"
+      data-drawing-name-editing={editing || undefined}
+      className={cn(
+        "flex h-[68px] shrink-0 touch-none items-center gap-2 px-5 py-[17px] text-xl font-semibold leading-7",
+        !editing && "pr-12",
+      )}
     >
       {editing ? (
         <input
@@ -202,8 +207,11 @@ function DrawingSettingsTitle({
           aria-label="Drawing name"
           placeholder={titleFor(drawing)}
           maxLength={80}
-          value={drawing.name ?? ""}
-          onChange={(event) => onChange({ name: event.target.value })}
+          value={editingName}
+          onChange={(event) => {
+            setEditingName(event.target.value);
+            onChange({ name: event.target.value });
+          }}
           onBlur={() => setEditing(false)}
           onKeyDown={(event) => {
             event.stopPropagation();
@@ -215,7 +223,7 @@ function DrawingSettingsTitle({
               setEditing(false);
             }
           }}
-          className="h-8 min-w-0 flex-1 rounded border border-blue-500 bg-transparent px-2 text-base outline-none"
+          className="h-[34px] min-w-0 flex-1 rounded-[6px] border border-[#575757] bg-transparent px-[7px] text-xl font-semibold leading-7 outline-2 outline-offset-[-2px] outline-[#2962ff] [outline-style:solid]"
         />
       ) : (
         <>
@@ -231,11 +239,17 @@ function DrawingSettingsTitle({
             aria-label="Rename drawing"
             onClick={() => {
               nameBeforeEdit.current = drawing.name ?? "";
+              setEditingName(drawing.name?.trim() || titleFor(drawing));
               setEditing(true);
             }}
-            className="flex size-6 shrink-0 items-center justify-center rounded text-zinc-300 hover:bg-white/10 focus-visible:outline-blue-500"
+            className="flex size-7 shrink-0 items-center justify-center rounded text-[#dbdbdb] hover:bg-white/10 focus-visible:outline-blue-500"
           >
-            <DrawingToolIcon name="pencil" className="size-4" />
+            <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M16.73 6.56a2.5 2.5 0 0 1 3.54 0l1.17 1.17a2.5 2.5 0 0 1 0 3.54l-.59.58-9 9-1 1-.14.15H6v-4.7l.15-.15 1-1 9-9 .58-.59Zm2.83.7a1.5 1.5 0 0 0-2.12 0l-.23.24 3.29 3.3.23-.24a1.5 1.5 0 0 0 0-2.12l-1.17-1.17Zm.23 4.24L16.5 8.2l-8.3 8.3 3.3 3.3 8.3-8.3Zm-9 9L7.5 17.2l-.5.5V21h3.3l.5-.5Z"
+              />
+            </svg>
           </button>
         </>
       )}
@@ -384,7 +398,7 @@ function DrawingSettings({
         backdropStyle={{ background: "transparent", backdropFilter: "none", transition: "none" }}
         ref={measureDialog}
         initialFocus={() => focusSettingsInput() ?? dialogElement.current}
-        className="max-w-[calc(100vw-24px)] overflow-hidden rounded-md border-0 p-0 text-[#dbdbdb] transition-none data-starting-style:scale-100 data-ending-style:scale-100 data-starting-style:opacity-100 data-ending-style:opacity-100"
+        className="max-w-[calc(100vw-24px)] overflow-hidden rounded-md border-0 p-0 text-[#dbdbdb] transition-none data-starting-style:scale-100 data-ending-style:scale-100 data-starting-style:opacity-100 data-ending-style:opacity-100 [&:has([data-drawing-name-editing])_[data-drawing-settings-close]]:hidden"
         style={{
           background: "#1f1f1f",
           fontFamily: '-apple-system, system-ui, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
@@ -395,6 +409,7 @@ function DrawingSettings({
       >
         <DialogClose
           aria-label="Close"
+          data-drawing-settings-close
           className="absolute right-[17px] top-[17px] z-10 flex size-[34px] items-center justify-center rounded text-[#dbdbdb] hover:bg-white/10 focus-visible:outline focus-visible:outline-blue-500"
         >
           <svg width="18" height="18" viewBox="0 0 14 14" fill="none" aria-hidden="true">
