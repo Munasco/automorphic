@@ -45,18 +45,20 @@ function TextInput({
   const drawingId = drawing.id;
   const input = useRef<HTMLTextAreaElement>(null);
   const finished = useRef(false);
-  const [value, setValue] = useState(drawing.text ?? "");
-  const valueRef = useRef(value);
+  const value = drawing.text ?? "";
   const size = drawing.textFontSize ?? 14;
   const rows = value.split(/\r?\n/);
   const finish = useCallback(() => {
     if (finished.current) return;
     finished.current = true;
-    commitText(valueRef.current, drawingId);
+    // The controller owns the draft and merges peer updates. Passing the displayed
+    // value back would incorrectly turn an untouched peer label into a local edit.
+    commitText(undefined, drawingId);
   }, [commitText, drawingId]);
   useLayoutEffect(() => {
     input.current?.focus({ preventScroll: true });
-    input.current?.setSelectionRange(valueRef.current.length, valueRef.current.length);
+    const length = input.current?.value.length ?? 0;
+    input.current?.setSelectionRange(length, length);
   }, []);
   useEffect(() => {
     const outside = (event: PointerEvent) => {
@@ -82,10 +84,7 @@ function TextInput({
       wrap={drawing.kind === "text" && drawing.textWrap ? "soft" : "off"}
       value={value}
       onChange={(event) => {
-        const next = event.target.value;
-        valueRef.current = next;
-        setValue(next);
-        previewText(next);
+        previewText(event.target.value);
       }}
       onBlur={finish}
       onPointerDown={(event) => event.stopPropagation()}

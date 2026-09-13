@@ -293,6 +293,34 @@ describe("drawing sessions sharing one workspace store", () => {
     }
   });
 
+  it.each([false, true])(
+    "commits the controller-owned inline text draft after peer text updates (locally edited: %s)",
+    (dirty) => {
+      const f = setup();
+      try {
+        f.a.selectDrawing("a");
+        expect(f.a.beginTextEdit()).toBe(true);
+        if (dirty) f.a.previewText("Local multiline\nannotation");
+        f.b.updateDrawing("a", { text: "Peer label" });
+        const expectedText = dirty ? "Local multiline\nannotation" : "Peer label";
+        expect(f.first.change.mock.lastCall![0].selected?.text).toBe(expectedText);
+        const writes = f.first.writes();
+        expect(f.a.commitText(undefined, "a")).toBe(true);
+        expect(f.saved()[0]?.text).toBe(expectedText);
+        if (dirty) {
+          f.a.undo();
+          expect(f.saved()[0]?.text).toBe("Peer label");
+        } else {
+          expect(f.first.writes()).toBe(writes);
+          f.b.undo();
+          expect(f.saved()[0]?.text).toBe(initial[0]!.text);
+        }
+      } finally {
+        f.dispose();
+      }
+    },
+  );
+
   it("keeps remote geometry and appearance while an inline text draft is committed", () => {
     const f = setup();
     try {
