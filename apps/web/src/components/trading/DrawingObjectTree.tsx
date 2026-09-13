@@ -3,6 +3,7 @@ import { XIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { Popover, PopoverPopup } from "../ui/popover";
 import { ChartDrawingGlyph } from "./ChartDrawingGlyph";
 import { ChartIcon } from "./ChartIcon";
 import { DrawingToolIcon } from "./DrawingToolIcon";
@@ -15,6 +16,8 @@ export interface DrawingObjectTreeIndicator {
   hidden: boolean;
   onToggleHidden: () => void;
   onRemove: () => void;
+  settingsContent?: ReactNode;
+  settingsLabel?: string;
 }
 
 const NO_INDICATORS: readonly DrawingObjectTreeIndicator[] = [];
@@ -74,6 +77,72 @@ function RowAction({
       </TooltipTrigger>
       <TooltipPopup>{label}</TooltipPopup>
     </Tooltip>
+  );
+}
+
+function IndicatorTreeRow({ indicator }: { indicator: DrawingObjectTreeIndicator }) {
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  return (
+    <li className="group/object flex h-[38px] items-center gap-1 px-2 hover:bg-white/5 focus-within:bg-white/5">
+      <ChartIcon name="chart-area-line" className="mx-1 size-5 shrink-0 text-zinc-400" />
+      {indicator.settingsContent ? (
+        <button
+          ref={trigger}
+          type="button"
+          aria-label={indicator.settingsLabel ?? `${indicator.label} settings`}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={(event) => {
+            if (event.detail === 0) setOpen(true);
+          }}
+          onDoubleClick={() => setOpen(true)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            event.stopPropagation();
+            setOpen(true);
+          }}
+          className={cn(
+            "h-full min-w-0 flex-1 truncate pl-1 text-left text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400",
+            indicator.hidden && "text-zinc-500",
+          )}
+        >
+          {indicator.label}
+        </button>
+      ) : (
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate pl-1 text-xs",
+            indicator.hidden && "text-zinc-500",
+          )}
+        >
+          {indicator.label}
+        </span>
+      )}
+      <RowAction
+        label={`${indicator.hidden ? "Show" : "Hide"} ${indicator.label}`}
+        active={indicator.hidden}
+        onClick={indicator.onToggleHidden}
+      >
+        <DrawingToolIcon name={indicator.hidden ? "eye-off" : "eye"} className="size-4" />
+      </RowAction>
+      <RowAction label={`Remove ${indicator.label}`} onClick={indicator.onRemove}>
+        <ChartIcon name="trash" className="size-4" />
+      </RowAction>
+      {indicator.settingsContent ? (
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverPopup
+            anchor={trigger}
+            finalFocus={trigger}
+            align="end"
+            className="max-h-[min(70vh,36rem)] w-72 overflow-y-auto"
+          >
+            {indicator.settingsContent}
+          </PopoverPopup>
+        </Popover>
+      ) : null}
+    </li>
   );
 }
 
@@ -183,30 +252,7 @@ export function DrawingObjectTree({
         {indicators.length > 0 ? (
           <ul aria-label="Indicators">
             {indicators.map((indicator) => (
-              <li
-                key={indicator.key}
-                className="group/object flex h-[38px] items-center gap-1 px-2 hover:bg-white/5 focus-within:bg-white/5"
-              >
-                <ChartIcon name="chart-area-line" className="mx-1 size-5 shrink-0 text-zinc-400" />
-                <span
-                  className={cn(
-                    "min-w-0 flex-1 truncate pl-1 text-xs",
-                    indicator.hidden && "text-zinc-500",
-                  )}
-                >
-                  {indicator.label}
-                </span>
-                <RowAction
-                  label={`${indicator.hidden ? "Show" : "Hide"} ${indicator.label}`}
-                  active={indicator.hidden}
-                  onClick={indicator.onToggleHidden}
-                >
-                  <DrawingToolIcon name={indicator.hidden ? "eye-off" : "eye"} className="size-4" />
-                </RowAction>
-                <RowAction label={`Remove ${indicator.label}`} onClick={indicator.onRemove}>
-                  <ChartIcon name="trash" className="size-4" />
-                </RowAction>
-              </li>
+              <IndicatorTreeRow key={indicator.key} indicator={indicator} />
             ))}
           </ul>
         ) : null}

@@ -45,7 +45,7 @@ import {
   type ChartIndicators,
 } from "./chartPreferences";
 import type { Candle } from "./chartIndicators";
-import { INDICATOR_CATALOG, getIndicatorLabel } from "./indicatorCatalog";
+import { INDICATOR_CATALOG, getIndicatorDefinition, getIndicatorLabel } from "./indicatorCatalog";
 import { getChartIndicatorInstances, MAX_CHART_INDICATORS } from "./chartIndicatorInstances";
 import {
   createIndicatorRenderer,
@@ -54,6 +54,7 @@ import {
 } from "./chartIndicatorRenderer";
 import { useChartDrawings } from "./useChartDrawings";
 import { IndicatorLegend } from "./IndicatorLegend";
+import { IndicatorSettingsContent } from "./IndicatorSettingsContent";
 import { InitialBalanceDashboard } from "./InitialBalanceDashboard";
 import type { InitialBalanceStats } from "./initialBalance";
 import { DrawingTools, FavoriteDrawingToolbar } from "./DrawingTools";
@@ -933,13 +934,34 @@ export function TradovateChart({
             drawings={drawings}
             symbol={symbol}
             onClose={() => setObjectTreeOpen(false)}
-            indicators={indicatorInstances.map((instance) => ({
-              key: instance.id,
-              label: getIndicatorLabel(instance.key, { [instance.key]: instance.inputs }),
-              hidden: instance.hidden,
-              onToggleHidden: () => settings.toggleIndicatorInstanceVisibility(instance.id),
-              onRemove: () => settings.removeIndicatorInstance(instance.id),
-            }))}
+            indicators={indicatorInstances.map((instance, index) => {
+              const label = getIndicatorLabel(instance.key, { [instance.key]: instance.inputs });
+              const ordinal = indicatorInstances
+                .slice(0, index + 1)
+                .filter((item) => item.key === instance.key).length;
+              const accessible = (text: string) =>
+                (indicatorCounts[instance.key] ?? 0) > 1 ? `${text}, instance ${ordinal}` : text;
+              return {
+                key: instance.id,
+                label,
+                hidden: instance.hidden,
+                settingsLabel: accessible(`${label} settings`),
+                settingsContent: (
+                  <IndicatorSettingsContent
+                    instance={instance}
+                    settings={settings}
+                    accessible={accessible}
+                    description={
+                      instance.key === "ib"
+                        ? (initialBalanceStatuses[instance.id] ?? initialBalanceStatus)
+                        : getIndicatorDefinition(instance.key).detail
+                    }
+                  />
+                ),
+                onToggleHidden: () => settings.toggleIndicatorInstanceVisibility(instance.id),
+                onRemove: () => settings.removeIndicatorInstance(instance.id),
+              };
+            })}
           />
         ) : null}
         {technicals ? (
