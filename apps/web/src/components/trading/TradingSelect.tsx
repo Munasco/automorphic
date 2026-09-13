@@ -27,7 +27,7 @@ export function TradingSelect({
   popupClassName?: string;
   popupProps?: Pick<
     ComponentProps<typeof SelectPopup>,
-    "align" | "sideOffset" | "className" | "popupClassName"
+    "align" | "sideOffset" | "className" | "popupClassName" | "style"
   >;
   itemClassName?: string;
   variant?: "default" | "ghost";

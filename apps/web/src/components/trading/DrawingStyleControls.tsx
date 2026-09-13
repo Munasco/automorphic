@@ -10,7 +10,7 @@ import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popov
 import type { ChartDrawing } from "./drawingGeometry";
 import type { DrawingPatch } from "./useChartDrawings";
 import { cn } from "../../lib/utils";
-import { useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { useRef, useState, type ComponentProps, type CSSProperties, type ReactNode } from "react";
 import { DrawingCustomColorEditor } from "./DrawingCustomColorEditor";
 import { useDrawingCustomColors } from "./drawingCustomColors";
 import { TradingSelect } from "./TradingSelect";
@@ -918,10 +918,16 @@ export function DrawingSelect({ className, ...props }: ComponentProps<typeof Tra
         align: "start",
         sideOffset: 0,
         className: "p-[6px]",
+        style: {
+          fontFamily: '-apple-system, system-ui, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
+          color: "#dbdbdb",
+          "--popover": "#1f1f1f",
+          "--foreground": "#dbdbdb",
+        } as CSSProperties,
         popupClassName:
-          "rounded-[10px] border-0! bg-popover! backdrop-filter-none! shadow-[0_2px_4px_0_rgb(0_0_0/20%)] dark:shadow-[0_2px_4px_0_rgb(0_0_0/20%)]",
+          "rounded-[10px] border-0! bg-[#1f1f1f]! backdrop-filter-none! shadow-[0_2px_4px_0_rgb(0_0_0/20%)] dark:shadow-[0_2px_4px_0_rgb(0_0_0/20%)]",
       }}
-      itemClassName="min-h-8 rounded-[4px] px-1 py-0.5 text-sm sm:min-h-8 data-selected:bg-foreground data-selected:text-background"
+      itemClassName="min-h-8 rounded-[6px] px-2 py-0.5 text-sm text-[#dbdbdb] sm:min-h-8 data-highlighted:bg-[#2e2e2e] data-highlighted:text-[#dbdbdb] data-selected:bg-[#f2f2f2] data-selected:text-[#0f0f0f] data-selected:data-highlighted:bg-[#f2f2f2] data-selected:data-highlighted:text-[#0f0f0f] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#2962ff] focus-visible:[outline-style:solid] data-highlighted:focus-visible:not-hover:not-data-selected:bg-transparent"
       className={cn(
         inputClass,
         "min-h-[34px] pl-[7px] pr-0.5 shadow-none before:hidden dark:bg-transparent sm:min-h-[34px] sm:text-sm focus-visible:ring-1 [&_[data-slot=select-icon]]:flex [&_[data-slot=select-icon]]:h-7 [&_[data-slot=select-icon]]:w-5 [&_[data-slot=select-icon]]:shrink-0 [&_[data-slot=select-icon]]:items-center [&_[data-slot=select-icon]]:justify-center [&[aria-expanded=true]_[data-slot=select-icon]]:rotate-180",
