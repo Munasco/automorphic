@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import type { IChartApi, MouseEventParams } from "lightweight-charts";
 import type { Candle } from "./chartIndicators";
 import { createIndicatorRenderer } from "./chartIndicatorRenderer";
@@ -9,6 +9,11 @@ import {
   type ChartIndicators,
 } from "./indicatorCatalog";
 
+type FakePriceLine = {
+  options: Record<string, unknown>;
+  applyOptions: (options: Record<string, unknown>) => void;
+  removed: boolean;
+};
 type FakeSeries = {
   pane: number;
   options: Record<string, unknown>;
@@ -16,7 +21,9 @@ type FakeSeries = {
   setData: (points: { time: number; value: number }[]) => void;
   seriesType: () => string;
   applyOptions: (options: Record<string, unknown>) => void;
-  createPriceLine: (options: object) => void;
+  createPriceLine: (options: Record<string, unknown>) => FakePriceLine;
+  removePriceLine: (line: FakePriceLine) => void;
+  priceLines: FakePriceLine[];
   attachPrimitive: (primitive: object) => void;
   primitives: object[];
 };
@@ -31,6 +38,7 @@ function chartHarness() {
         options,
         data: [],
         primitives: [],
+        priceLines: [],
         attachPrimitive(primitive) {
           this.primitives.push(primitive);
         },
@@ -41,7 +49,24 @@ function chartHarness() {
         applyOptions(update) {
           Object.assign(this.options, update);
         },
-        createPriceLine() {},
+        createPriceLine: vi.fn((options) => {
+          const line: FakePriceLine = {
+            options: { ...options },
+            removed: false,
+            applyOptions: vi.fn((update) => {
+              if (line.removed) throw new Error("Updated a removed price line");
+              Object.assign(line.options, update);
+            }),
+          };
+          next.priceLines.push(line);
+          return line;
+        }),
+        removePriceLine: vi.fn((line) => {
+          const index = next.priceLines.indexOf(line);
+          if (index < 0) throw new Error("Removed a foreign or stale price line");
+          next.priceLines.splice(index, 1);
+          line.removed = true;
+        }),
       };
       series.push(next);
       return next;
@@ -126,6 +151,105 @@ describe("native indicator renderer", () => {
     expect(harness.paneCount()).toBe(3);
     update([]);
     expect(harness.paneCount()).toBe(1);
+  });
+
+  it.each(["rsi", "stochastic", "stochRsi"] as const)(
+    "updates %s reference levels without recreating series or churning unchanged lines",
+    (key) => {
+      const harness = chartHarness();
+      const renderer = createIndicatorRenderer(harness.chart, 0.25);
+      const original = createIndicatorInstance(key, `base:${key}`);
+      const update = (instance: typeof original) =>
+        renderer.update(inputBars(), disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [
+          instance,
+        ]);
+      update(original);
+      const series = [...harness.series];
+      const host = series.find((item) => item.priceLines.length)!;
+      const handles = [...host.priceLines];
+      expect(handles.map((line) => line.options.price)).toEqual(
+        key === "rsi" ? [30, 70] : [20, 80],
+      );
+      update({ ...original, inputs: { ...original.inputs } });
+      expect(host.createPriceLine).toHaveBeenCalledTimes(2);
+      expect(host.removePriceLine).not.toHaveBeenCalled();
+      for (const line of handles) expect(line.applyOptions).not.toHaveBeenCalled();
+      const edited = {
+        ...original,
+        inputs: { ...original.inputs, lowerLevel: 25, upperLevel: 75 },
+      };
+      update(edited);
+      expect(harness.series).toEqual(series);
+      expect(host.priceLines).toEqual(handles);
+      expect(host.priceLines.map((line) => line.options.price)).toEqual([25, 75]);
+      for (const line of handles) expect(line.applyOptions).toHaveBeenCalledTimes(1);
+      update({ ...edited, inputs: { ...edited.inputs, upperLevel: 85 } });
+      expect(handles[0]!.applyOptions).toHaveBeenCalledTimes(1);
+      expect(handles[1]!.applyOptions).toHaveBeenCalledTimes(2);
+      update({ ...edited, inputs: { ...edited.inputs, showLevels: 0 } });
+      expect(harness.series).toEqual(series);
+      expect(host.priceLines).toEqual([]);
+      expect(host.removePriceLine).toHaveBeenCalledTimes(2);
+      expect(handles.every((line) => line.removed)).toBe(true);
+      update(edited);
+      expect(harness.series).toEqual(series);
+      expect(host.createPriceLine).toHaveBeenCalledTimes(4);
+      expect(host.priceLines.map((line) => line.options.price)).toEqual([25, 75]);
+      expect(host.priceLines[0]).not.toBe(handles[0]);
+      update(edited);
+      expect(host.createPriceLine).toHaveBeenCalledTimes(4);
+      for (const line of host.priceLines) expect(line.applyOptions).not.toHaveBeenCalled();
+    },
+  );
+
+  it("isolates duplicate reference lines and cleans old handles when oscillator panes rebuild", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.25);
+    const a = createIndicatorInstance("rsi", "base:rsi");
+    const b = {
+      ...createIndicatorInstance("rsi", "second-rsi"),
+      inputs: { ...a.inputs, lowerLevel: 10, upperLevel: 90 },
+    };
+    const update = (instances: (typeof a)[]) =>
+      renderer.update(
+        inputBars(),
+        disabled,
+        DEFAULT_INITIAL_BALANCE,
+        1,
+        {},
+        {},
+        undefined,
+        instances,
+      );
+    update([a, b]);
+    const [first, second] = harness.series;
+    const secondLines = [...second!.priceLines];
+    update([{ ...a, inputs: { ...a.inputs, lowerLevel: 25, upperLevel: 75 } }, b]);
+    expect(harness.series).toEqual([first, second]);
+    expect(second!.priceLines.map((line) => line.options.price)).toEqual([10, 90]);
+    expect(second!.createPriceLine).toHaveBeenCalledTimes(2);
+    expect(second!.removePriceLine).not.toHaveBeenCalled();
+    for (const line of secondLines) expect(line.applyOptions).not.toHaveBeenCalled();
+    update([{ ...a, inputs: { ...a.inputs, showLevels: 0 } }, b]);
+    expect(first!.priceLines).toEqual([]);
+    expect(second!.priceLines).toEqual(secondLines);
+    update([b]);
+    expect(harness.series).toHaveLength(1);
+    const rebuilt = harness.series[0]!;
+    expect(rebuilt).not.toBe(second);
+    expect(second!.priceLines).toEqual([]);
+    expect(second!.removePriceLine).toHaveBeenCalledTimes(2);
+    expect(secondLines.every((line) => line.removed)).toBe(true);
+    expect(rebuilt.priceLines.map((line) => line.options.price)).toEqual([10, 90]);
+    update([b]);
+    expect(rebuilt.createPriceLine).toHaveBeenCalledTimes(2);
+    for (const line of rebuilt.priceLines) expect(line.applyOptions).not.toHaveBeenCalled();
+    update([]);
+    expect(harness.series).toEqual([]);
+    expect(rebuilt.priceLines).toEqual([]);
+    expect(rebuilt.removePriceLine).toHaveBeenCalledTimes(2);
+    update([]);
+    expect(rebuilt.removePriceLine).toHaveBeenCalledTimes(2);
   });
 
   it("renders additional volume in its own pane with independently configured bar colors", () => {

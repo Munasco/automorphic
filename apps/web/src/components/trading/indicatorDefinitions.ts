@@ -29,6 +29,7 @@ import {
   type IndicatorPlot,
   type IndicatorResult,
   type IndicatorContext,
+  type IndicatorInputValues,
 } from "./indicatorDefinition";
 import { resolveInitialBalanceSettings } from "./initialBalanceSettings";
 const length = (
@@ -67,6 +68,41 @@ const movingAverageType = (key: string, label: string): IndicatorInputDescriptor
   ],
 });
 
+const oscillatorLevelInputs = (lower: number, upper: number): IndicatorInputDescriptor[] => [
+  {
+    key: "showLevels",
+    label: "Show levels",
+    kind: "boolean",
+    legend: false,
+    defaultValue: 1,
+    min: 0,
+    max: 1,
+    step: 1,
+  },
+  {
+    key: "lowerLevel",
+    label: "Lower level",
+    legend: false,
+    defaultValue: lower,
+    min: 0,
+    max: 100,
+    step: 0.1,
+  },
+  {
+    key: "upperLevel",
+    label: "Upper level",
+    legend: false,
+    defaultValue: upper,
+    min: 0,
+    max: 100,
+    step: 0.1,
+  },
+];
+const validOscillatorLevels = (values: IndicatorInputValues) =>
+  values.lowerLevel! < values.upperLevel!;
+const oscillatorLevels = (inputs: IndicatorInputValues, lower: number, upper: number) =>
+  inputs.showLevels === 0 ? [] : [inputs.lowerLevel ?? lower, inputs.upperLevel ?? upper];
+
 const style = (key: string, label: string, color: string, primary = false, lineWidth = 1) => ({
   key,
   label,
@@ -86,7 +122,10 @@ const bands = (result: ReturnType<typeof calculateBollingerBands>): IndicatorRes
     { id: "lower", styleKey: "lower", points: result.lower, primary: false },
   ],
 });
-const stochasticPlots = (result: ReturnType<typeof calculateStochastic>): IndicatorResult => ({
+const stochasticPlots = (
+  result: ReturnType<typeof calculateStochastic>,
+  inputs: IndicatorInputValues,
+): IndicatorResult => ({
   plots: [
     {
       id: "k",
@@ -94,7 +133,7 @@ const stochasticPlots = (result: ReturnType<typeof calculateStochastic>): Indica
       points: result.k,
       title: "%K",
       bounds: [0, 100],
-      levels: [20, 80],
+      levels: oscillatorLevels(inputs, 20, 80),
     },
     {
       id: "d",
@@ -255,13 +294,15 @@ export const INDICATOR_DEFINITIONS = [
     detail: "Relative strength index",
     category: "Oscillators",
     placement: "pane",
-    inputs: [length(14), priceSource],
+    inputs: [length(14), priceSource, ...oscillatorLevelInputs(30, 70)],
+    validateInputs: validOscillatorLevels,
+    repairInputs: (values) => ({ ...values, lowerLevel: 30, upperLevel: 70 }),
     styles: [style("main", "Line", "#c084fc", true)],
     calculate: ({ bars, inputs }) =>
       single(calculateRSI(bars, inputs.period ?? 14, PRICE_SOURCES[inputs.source ?? 0]), {
         title: "RSI",
         bounds: [0, 100],
-        levels: [30, 70],
+        levels: oscillatorLevels(inputs, 30, 70),
       }),
   }),
   defineIndicator({
@@ -361,13 +402,19 @@ export const INDICATOR_DEFINITIONS = [
       length(14, "period", "Stochastic length"),
       length(3, "smoothK", "K smoothing"),
       length(3, "periodD", "D smoothing"),
+      ...oscillatorLevelInputs(20, 80),
     ],
+    validateInputs: validOscillatorLevels,
+    repairInputs: (values) => ({ ...values, lowerLevel: 20, upperLevel: 80 }),
     styles: [
       style("main", "Primary line", "#38bdf8", true),
       style("signal", "Signal line", "#fb923c"),
     ],
     calculate: ({ bars, inputs }) =>
-      stochasticPlots(calculateStochastic(bars, inputs.period, inputs.smoothK, inputs.periodD)),
+      stochasticPlots(
+        calculateStochastic(bars, inputs.period, inputs.smoothK, inputs.periodD),
+        inputs,
+      ),
   }),
   defineIndicator({
     key: "stochRsi",
@@ -381,7 +428,10 @@ export const INDICATOR_DEFINITIONS = [
       length(3, "smoothK", "K smoothing"),
       length(3, "periodD", "D smoothing"),
       { ...priceSource, label: "RSI source" },
+      ...oscillatorLevelInputs(20, 80),
     ],
+    validateInputs: validOscillatorLevels,
+    repairInputs: (values) => ({ ...values, lowerLevel: 20, upperLevel: 80 }),
     styles: [
       style("main", "Primary line", "#a78bfa", true),
       style("signal", "Signal line", "#fb923c"),
@@ -396,6 +446,7 @@ export const INDICATOR_DEFINITIONS = [
           inputs.periodD,
           PRICE_SOURCES[inputs.source ?? 0] ?? "close",
         ),
+        inputs,
       ),
   }),
   defineIndicator({

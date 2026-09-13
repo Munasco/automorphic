@@ -80,16 +80,16 @@ it("persists independent RSI sources and resets only the selected instance", asy
   const instances = () =>
     getChartIndicatorInstances(useChartPreferences.getState()).filter((i) => i.key === "rsi");
   expect(instances().map((i) => i.inputs)).toEqual([
-    { period: 7, source: 1 },
-    { period: 21, source: 5 },
+    { period: 7, source: 1, lowerLevel: 30, upperLevel: 70, showLevels: 1 },
+    { period: 21, source: 5, lowerLevel: 30, upperLevel: 70, showLevels: 1 },
   ]);
   vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
   useChartPreferences.getState().setIndicatorInstanceInputs(duplicate, { source: 99 });
   expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
   useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
   expect(instances().map((i) => i.inputs)).toEqual([
-    { period: 7, source: 1 },
-    { period: 14, source: 0 },
+    { period: 7, source: 1, lowerLevel: 30, upperLevel: 70, showLevels: 1 },
+    { period: 14, source: 0, lowerLevel: 30, upperLevel: 70, showLevels: 1 },
   ]);
 });
 
@@ -705,7 +705,16 @@ it("hydrates legacy and malformed ATR smoothing without losing each instance's l
 it("retains independent Stochastic RSI sources through duplication, reload, and reset", async () => {
   const store = useChartPreferences.getState();
   const original = store.addIndicator("stochRsi")!;
-  const custom = { rsiPeriod: 7, stochasticPeriod: 9, smoothK: 2, periodD: 1, source: 4 };
+  const custom = {
+    rsiPeriod: 7,
+    stochasticPeriod: 9,
+    smoothK: 2,
+    periodD: 1,
+    source: 4,
+    lowerLevel: 20,
+    upperLevel: 80,
+    showLevels: 1,
+  };
   expect(store.setIndicatorInstanceInputs(original, custom)).toBe(true);
   const duplicate = store.duplicateIndicatorInstance(original)!;
   expect(store.setIndicatorInstanceInputs(duplicate, { source: 6 })).toBe(true);
@@ -731,6 +740,74 @@ it("retains independent Stochastic RSI sources through duplication, reload, and 
   await reload();
   expect(instances().map((item) => item.inputs)).toEqual([
     custom,
-    { rsiPeriod: 14, stochasticPeriod: 14, smoothK: 3, periodD: 3, source: 0 },
+    {
+      rsiPeriod: 14,
+      stochasticPeriod: 14,
+      smoothK: 3,
+      periodD: 3,
+      source: 0,
+      lowerLevel: 20,
+      upperLevel: 80,
+      showLevels: 1,
+    },
   ]);
 });
+
+it.each(["rsi", "stochastic", "stochRsi"] as const)(
+  "persists independent %s levels, rejects invalid edits atomically, and resets only the copy",
+  async (key) => {
+    const store = useChartPreferences.getState();
+    const base = store.addIndicator(key)!;
+    const length = key === "stochRsi" ? { rsiPeriod: 7 } : { period: 7 };
+    const baseInputs = {
+      ...getIndicatorInputs(key),
+      ...length,
+      lowerLevel: 12.5,
+      upperLevel: 87.5,
+    };
+    expect(store.setIndicatorInstanceInputs(base, baseInputs)).toBe(true);
+    const copy = store.duplicateIndicatorInstance(base)!;
+    const inputs = () =>
+      getChartIndicatorInstances(useChartPreferences.getState())
+        .filter((instance) => instance.key === key)
+        .map((instance) => instance.inputs);
+    expect(inputs()).toEqual([baseInputs, baseInputs]);
+    const copyInputs = { ...baseInputs, lowerLevel: 25.5, upperLevel: 74.5, showLevels: 0 };
+    expect(store.setIndicatorInstanceInputs(copy, copyInputs)).toBe(true);
+    const reload = async () => {
+      const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+    };
+    await reload();
+    expect(inputs()).toEqual([baseInputs, copyInputs]);
+    const before = useChartPreferences.getState();
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    for (const id of [base, copy])
+      for (const patch of [
+        { lowerLevel: 90 },
+        { upperLevel: 10 },
+        { lowerLevel: 50, upperLevel: 50 },
+        { lowerLevel: -0.1 },
+        { upperLevel: 100.1 },
+        { lowerLevel: NaN },
+        { upperLevel: Infinity },
+        { showLevels: 2 },
+        { showLevels: 0.5 },
+      ])
+        expect(
+          useChartPreferences.getState().setIndicatorInstanceInputs(id, {
+            ...(key === "stochRsi" ? { rsiPeriod: 9 } : { period: 9 }),
+            ...patch,
+          }),
+        ).toBe(false);
+    expect(useChartPreferences.getState()).toBe(before);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+    expect(inputs()).toEqual([baseInputs, copyInputs]);
+    useChartPreferences.getState().resetIndicatorInstanceInputs(copy);
+    expect(inputs()).toEqual([baseInputs, getIndicatorInputs(key)]);
+    await reload();
+    expect(inputs()).toEqual([baseInputs, getIndicatorInputs(key)]);
+  },
+);

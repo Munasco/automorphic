@@ -190,7 +190,16 @@ describe("indicator inputs", () => {
       sma: { period: 50, source: 0 },
       bollinger: { period: 20, deviations: 1.5, source: 0 },
       keltner: { period: 20, atrPeriod: 8, multiplier: 2 },
-      stochRsi: { rsiPeriod: 10, stochasticPeriod: 14, smoothK: 2, periodD: 3, source: 0 },
+      stochRsi: {
+        rsiPeriod: 10,
+        stochasticPeriod: 14,
+        smoothK: 2,
+        periodD: 3,
+        source: 0,
+        lowerLevel: 20,
+        upperLevel: 80,
+        showLevels: 1,
+      },
       macd: { fast: 12, slow: 26, signalPeriod: 5, source: 0, oscillatorMA: 0, signalMA: 0 },
     });
     expect(normalizeChartPreferences({ indicators: { sma: true } }).indicatorInputs).toEqual({});
@@ -487,7 +496,61 @@ describe("Stochastic RSI source inputs", () => {
         smoothK: 1,
         periodD: 2,
         source: 0,
+        lowerLevel: 20,
+        upperLevel: 80,
+        showLevels: 1,
       });
+    }
+  });
+});
+
+describe.each(["rsi", "stochastic", "stochRsi"] as const)("%s oscillator levels", (key) => {
+  const bars = Array.from({ length: 60 }, (_, index) => ({
+    time: index + 1,
+    open: 100 + (index % 5),
+    high: 120 + ((index * 7) % 13),
+    low: 90 - (index % 3),
+    close: 100 + ((index * 3) % 11),
+    volume: 1,
+  }));
+  const definition = INDICATOR_CATALOG.find((item) => item.key === key)!;
+  const defaultLevels = key === "rsi" ? [30, 70] : [20, 80];
+  it("changes and hides reference levels without changing oscillator points or legend", () => {
+    const baseline = getIndicatorInputs(key);
+    const custom = { ...baseline, lowerLevel: 12.5, upperLevel: 87.5 };
+    const calculate = (inputs: typeof baseline) =>
+      definition.calculate({
+        bars,
+        inputs,
+        interval: 5,
+        session: DEFAULT_INITIAL_BALANCE,
+      }).plots;
+    const initial = calculate(baseline);
+    expect(initial[0]!.points.length).toBeGreaterThan(0);
+    expect(initial[0]!.levels).toEqual(defaultLevels);
+    const changed = calculate(custom);
+    expect(changed[0]!.levels).toEqual([12.5, 87.5]);
+    expect(changed.slice(1).every((plot) => !plot.levels?.length)).toBe(true);
+    expect(changed.map((plot) => plot.points)).toEqual(initial.map((plot) => plot.points));
+    const hidden = calculate({ ...custom, showLevels: 0 });
+    expect(hidden[0]!.levels).toEqual([]);
+    expect(hidden.map((plot) => plot.points)).toEqual(initial.map((plot) => plot.points));
+    expect(getIndicatorLabel(key, { [key]: custom })).toBe(getIndicatorLabel(key));
+    expect(calculate({ ...custom, lowerLevel: 0, upperLevel: 100 })[0]!.levels).toEqual([0, 100]);
+  });
+
+  it("defaults legacy levels and repairs reversed/equal saved pairs while retaining other inputs", () => {
+    const length = key === "stochRsi" ? { rsiPeriod: 7 } : { period: 7 };
+    const expected = { ...getIndicatorInputs(key), ...length };
+    expect(getIndicatorInputs(key, { [key]: length })).toEqual(expected);
+    for (const [lowerLevel, upperLevel] of [
+      [90, 10],
+      [50, 50],
+    ]) {
+      const saved = normalizeChartPreferences({
+        indicatorInputs: { [key]: { ...length, lowerLevel, upperLevel, showLevels: 0 } },
+      });
+      expect(saved.indicatorInputs[key]).toEqual({ ...expected, showLevels: 0 });
     }
   });
 });

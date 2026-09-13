@@ -71,7 +71,14 @@ export function IndicatorLegend({
                   ? INDICATOR_INPUTS[key]
                       .map((input) => {
                         const value = inputs[input.key] ?? input.defaultValue;
-                        return `${input.label}: ${input.options?.find((option) => option.value === value)?.label ?? value}`;
+                        const displayValue =
+                          input.kind === "boolean"
+                            ? value === 0
+                              ? "Off"
+                              : "On"
+                            : (input.options?.find((option) => option.value === value)?.label ??
+                              value);
+                        return `${input.label}: ${displayValue}`;
                       })
                       .join(" · ")
                   : detail;

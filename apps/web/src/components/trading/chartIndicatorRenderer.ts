@@ -8,6 +8,7 @@ import {
   LineType,
   type IChartApi,
   type ISeriesApi,
+  type IPriceLine,
   type MouseEventParams,
   type UTCTimestamp,
 } from "lightweight-charts";
@@ -55,6 +56,7 @@ type Plot = {
   readingKey: string;
   primary: boolean;
   oscillator: boolean;
+  levels: { price: number; line: IPriceLine }[];
   initialBalance?: ReturnType<typeof createInitialBalancePrimitive>;
   bandFill?: ReturnType<typeof createIndicatorBandFill>;
 };
@@ -63,6 +65,11 @@ type Plot = {
 export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
   const plots = new Map<string, Plot>();
   let paneSignature = "";
+  const removePlot = (plot: Plot) => {
+    for (const { line } of plot.levels) plot.series.removePriceLine(line);
+    plot.levels.length = 0;
+    chart.removeSeries(plot.series);
+  };
   const readCrosshair = (event: MouseEventParams): IndicatorReadings => {
     const result: IndicatorReadings = {};
     for (const plot of plots.values()) {
@@ -107,7 +114,7 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
       // together so every remaining pane has the correct index after a toggle.
       for (const [id, plot] of plots)
         if (plot.oscillator) {
-          chart.removeSeries(plot.series);
+          removePlot(plot);
           plots.delete(id);
         }
       paneSignature = nextSignature;
@@ -177,19 +184,38 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
               },
               pane,
             );
-        if (options.levels)
-          for (const price of options.levels)
-            series.createPriceLine({
-              price,
-              color: "#515766",
-              lineWidth: 1,
-              lineStyle: 2,
-              axisLabelVisible: false,
-              title: "",
-            });
-        plot = { series, readingKey, primary: options.primary ?? true, oscillator: pane > 0 };
+        plot = {
+          series,
+          readingKey,
+          primary: options.primary ?? true,
+          oscillator: pane > 0,
+          levels: [],
+        };
         plots.set(id, plot);
       }
+      const levels = options.levels ?? [];
+      for (let index = 0; index < levels.length; index++) {
+        const price = levels[index]!;
+        const existing = plot.levels[index];
+        if (existing) {
+          if (existing.price !== price) {
+            existing.line.applyOptions({ price });
+            existing.price = price;
+          }
+        } else {
+          const line = plot.series.createPriceLine({
+            price,
+            color: "#515766",
+            lineWidth: 1,
+            lineStyle: 2,
+            axisLabelVisible: false,
+            title: "",
+          });
+          plot.levels.push({ price, line });
+        }
+      }
+      while (plot.levels.length > levels.length)
+        plot.series.removePriceLine(plot.levels.pop()!.line);
       if (!options.histogram) {
         plot.series.applyOptions({
           color: indicatorStyleColor(style),
@@ -346,7 +372,7 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
     }
     for (const [id, plot] of plots)
       if (!desired.has(id)) {
-        chart.removeSeries(plot.series);
+        removePlot(plot);
         plots.delete(id);
       }
     if (changedPanes) {
