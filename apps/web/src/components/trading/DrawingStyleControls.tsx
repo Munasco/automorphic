@@ -95,7 +95,7 @@ const colors = [
   "#880e4f",
 ];
 export const inputClass =
-  "h-[34px] rounded border border-white/15 bg-transparent px-2.5 text-sm leading-[18px] text-zinc-200 outline-none focus:border-blue-500";
+  "h-[34px] rounded border border-[#575757] bg-transparent px-2.5 text-sm leading-[18px] text-[#dbdbdb] outline-none focus:border-blue-500";
 export function ColorPicker({
   value,
   onChange,
@@ -126,7 +126,7 @@ export function ColorPicker({
         className={cn(
           "flex shrink-0 items-center justify-center rounded hover:bg-white/10 disabled:opacity-40",
           variant === "settings"
-            ? "size-[34px] border border-white/15"
+            ? "size-[34px] border border-[#575757]"
             : variant === "toolbar"
               ? "size-[38px] aria-expanded:bg-white/10"
               : "size-8",
@@ -230,7 +230,7 @@ function ColorSettingsPanel({
     );
   }
   return (
-    <div className="py-1.5 text-zinc-200">
+    <div className="py-1.5 text-[#dbdbdb]">
       <div className="w-[248px] px-3 py-1.5">
         <div role="group" aria-label={`${label} palette`} className="-mx-[3px] grid grid-cols-10">
           {colors.map((color, index) => (
@@ -621,7 +621,7 @@ export function DrawingMultiSelect<T extends string>({
         openOnHover={false}
         aria-label={label}
         title={selectedOptions.map(([, text]) => text).join(", ") || placeholder}
-        className="group flex h-[34px] w-[180px] shrink-0 items-center gap-2 rounded border border-white/15 bg-transparent px-2 text-sm leading-[18px] text-zinc-200 outline-none hover:border-white/30 focus-visible:border-blue-500 aria-expanded:border-white/50"
+        className="group flex h-[34px] w-[180px] shrink-0 items-center gap-2 rounded border border-[#575757] bg-transparent px-2 text-sm leading-[18px] text-[#dbdbdb] outline-none hover:border-white/30 focus-visible:border-blue-500 aria-expanded:border-white/50"
       >
         <span className="min-w-0 flex-1 truncate text-left">
           {selectedOptions.length
@@ -737,7 +737,7 @@ export function MarkerPicker({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         aria-label={side === "start" ? "Start marker" : "End marker"}
-        className="flex size-[34px] shrink-0 items-center justify-center rounded border border-white/20 hover:bg-white/10"
+        className="flex size-[34px] shrink-0 items-center justify-center rounded border border-[#575757] hover:bg-white/10"
       >
         {glyph(value)}
       </PopoverTrigger>
@@ -787,7 +787,7 @@ export function LineAppearancePicker({
       <PopoverTrigger
         aria-label={label}
         disabled={disabled}
-        className="flex h-[34px] w-[75px] shrink-0 items-center gap-1 rounded border border-white/20 p-1 hover:bg-white/10 disabled:opacity-40"
+        className="flex h-[34px] w-[75px] shrink-0 items-center gap-1 rounded border border-[#575757] p-1 hover:bg-white/10 disabled:opacity-40"
       >
         <span
           className="size-6 shrink-0 rounded"
@@ -851,7 +851,7 @@ export function Check({
   onChange: (value: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center gap-2 text-sm leading-[18px] text-zinc-200">
+    <label className="flex cursor-pointer items-center gap-2 text-sm leading-[18px] text-[#dbdbdb]">
       <span className="relative flex size-[18px] shrink-0">
         <input
           type="checkbox"

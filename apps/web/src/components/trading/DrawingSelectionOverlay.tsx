@@ -287,6 +287,10 @@ function DrawingSettings({
   const angle = draft.kind === "trend-angle" ? drawings.drawingAngle(draft) : null;
   const coordinateHasPrice = draft.kind !== "vertical" && draft.kind !== "regression-trend";
   const coordinateHasBar = draft.kind !== "horizontal";
+  const coordinateBars =
+    tab === "Coordinates" && coordinateHasBar
+      ? draft.anchors.map((anchor) => drawings.anchorBar(anchor))
+      : [];
   const coordinateLabel = coordinateHasPrice ? (coordinateHasBar ? "price, bar" : "price") : "bar";
   const selectedStats = draft.stats ?? defaultDrawingStats(draft.kind);
   const extendable = supportsLineExtensions(draft.kind);
@@ -381,9 +385,9 @@ function DrawingSettings({
         backdropStyle={{ background: "transparent", backdropFilter: "none", transition: "none" }}
         ref={measureDialog}
         initialFocus={() => focusSettingsInput() ?? dialogElement.current}
-        className="max-w-[calc(100vw-24px)] overflow-hidden rounded-md border-0 p-0 text-zinc-100 transition-none data-starting-style:scale-100 data-ending-style:scale-100 data-starting-style:opacity-100 data-ending-style:opacity-100"
+        className="max-w-[calc(100vw-24px)] overflow-hidden rounded-md border-0 p-0 text-[#dbdbdb] transition-none data-starting-style:scale-100 data-ending-style:scale-100 data-starting-style:opacity-100 data-ending-style:opacity-100"
         style={{
-          background: "#202020",
+          background: "#1f1f1f",
           fontFamily: '-apple-system, system-ui, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
           backdropFilter: "none",
           width: dialogWidth,
@@ -392,10 +396,15 @@ function DrawingSettings({
       >
         <DialogClose
           aria-label="Close"
-          className="absolute right-5 top-5 z-10 flex size-7 items-center justify-center rounded text-zinc-200 hover:bg-white/10 focus-visible:outline focus-visible:outline-blue-500"
+          className="absolute right-[17px] top-[17px] z-10 flex size-[34px] items-center justify-center rounded text-[#dbdbdb] hover:bg-white/10 focus-visible:outline focus-visible:outline-blue-500"
         >
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-            <path d="m3 3 14 14M17 3 3 17" stroke="currentColor" strokeWidth="1.5" />
+          <svg width="18" height="18" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path
+              d="m1.5 1.5 11 11m0-11-11 11"
+              stroke="currentColor"
+              strokeWidth="1.2"
+              vectorEffect="non-scaling-stroke"
+            />
           </svg>
         </DialogClose>
         <DrawingSettingsTitle
@@ -460,8 +469,8 @@ function DrawingSettings({
               }}
               onClick={() => setTab(name)}
               className={cn(
-                "relative mr-6 h-8 shrink-0 pb-2 text-base font-semibold leading-6 text-zinc-400 outline-none before:pointer-events-none before:absolute before:-inset-x-2.5 before:-top-0.5 before:bottom-0 before:rounded-[8px] before:border-2 before:border-transparent after:absolute after:inset-x-0 after:bottom-0 after:h-1 after:rounded-[2px] after:bg-transparent hover:text-white focus-visible:before:border-[#2962ff]",
-                tab === name && "text-white after:bg-[#f2f2f2]",
+                "relative mr-6 h-8 shrink-0 pb-2 text-base font-semibold leading-6 text-[#dbdbdb] outline-none before:pointer-events-none before:absolute before:-inset-x-2.5 before:-top-0.5 before:bottom-0 before:rounded-[8px] before:border-2 before:border-transparent after:absolute after:inset-x-0 after:bottom-0 after:h-1 after:rounded-[2px] after:bg-transparent hover:text-white focus-visible:before:border-[#2962ff]",
+                tab === name && "after:bg-[#f2f2f2]",
               )}
             >
               {name}
@@ -715,7 +724,10 @@ function DrawingSettings({
                           label={`Point ${index + 1} bar`}
                           integerOnly
                           step={1}
-                          value={Math.round(drawings.anchorBar(anchor) ?? 0)}
+                          disabled={coordinateBars[index] == null}
+                          value={
+                            coordinateBars[index] == null ? null : Math.round(coordinateBars[index])
+                          }
                           onValueChange={(bar) => {
                             const next = drawings.anchorAtBar(bar, anchor.price);
                             if (next) {
@@ -771,7 +783,7 @@ function DrawingSettings({
             </div>
           ) : null}
         </div>
-        <div className="flex shrink-0 justify-end gap-3 border-t border-white/10 px-5 py-4 max-sm:gap-2 max-sm:px-3">
+        <div className="flex shrink-0 justify-end gap-3 border-t border-[#4a4a4a] px-5 py-4 max-sm:gap-2 max-sm:px-3">
           <div className="mr-auto">
             <DrawingTemplateMenu
               drawing={draft}
@@ -791,7 +803,7 @@ function DrawingSettings({
           <button
             type="button"
             onClick={drawings.closeSettings}
-            className="h-[34px] rounded border border-white/20 px-[11px] text-base font-normal hover:bg-white/5"
+            className="h-[34px] rounded border border-white px-[11px] text-base font-normal text-white hover:bg-white/5"
           >
             Cancel
           </button>
@@ -799,9 +811,9 @@ function DrawingSettings({
             type="button"
             disabled={!canSave}
             onClick={save}
-            className="h-[34px] rounded bg-zinc-100 px-[11px] text-base font-normal text-zinc-900 hover:bg-white disabled:opacity-40"
+            className="h-[34px] rounded border border-[#f2f2f2] bg-[#f2f2f2] px-[11px] text-base font-normal text-[#0f0f0f] hover:bg-white disabled:opacity-40"
           >
-            OK
+            Ok
           </button>
         </div>
       </DialogPopup>

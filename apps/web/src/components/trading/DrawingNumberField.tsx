@@ -55,7 +55,7 @@ export function DrawingNumberField({
       format={numberFormat}
       allowWheelScrub={false}
       className={cn(
-        "group/drawing-number relative flex h-[34px] w-[100px] shrink-0 rounded border border-white/15 bg-transparent text-sm leading-[18px] text-zinc-200 focus-within:border-blue-500 data-disabled:cursor-not-allowed data-disabled:opacity-40",
+        "group/drawing-number relative flex h-[34px] w-[100px] shrink-0 rounded border border-[#575757] bg-transparent text-sm leading-[18px] text-[#dbdbdb] focus-within:border-blue-500 data-disabled:cursor-not-allowed data-disabled:opacity-40",
         className,
       )}
     >
