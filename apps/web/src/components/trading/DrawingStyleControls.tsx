@@ -213,6 +213,8 @@ function ColorSettingsPanel({
   onDrawingChange?: (patch: DrawingPatch) => void;
 }) {
   const [custom, setCustom] = useState(false);
+  const [focusedSwatch, setFocusedSwatch] = useState(0);
+  const swatchRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const customColors = useDrawingCustomColors((state) => state.colors);
   const addCustomColor = useDrawingCustomColors((state) => state.addColor);
   if (custom) {
@@ -230,16 +232,37 @@ function ColorSettingsPanel({
   return (
     <div className="py-1.5 text-zinc-200">
       <div className="w-[248px] px-3 py-1.5">
-        <div className="-mx-[3px] grid grid-cols-10">
+        <div role="group" aria-label={`${label} palette`} className="-mx-[3px] grid grid-cols-10">
           {colors.map((color, index) => (
             <button
               type="button"
               key={color}
+              ref={(element) => {
+                swatchRefs.current[index] = element;
+              }}
+              tabIndex={focusedSwatch === index ? 0 : -1}
               aria-label={`${label} ${color}`}
               aria-pressed={value.toLowerCase() === color}
+              onFocus={() => setFocusedSwatch(index)}
+              onKeyDown={(event) => {
+                const offset =
+                  event.key === "ArrowRight"
+                    ? 1
+                    : event.key === "ArrowLeft"
+                      ? -1
+                      : event.key === "ArrowDown"
+                        ? 10
+                        : event.key === "ArrowUp"
+                          ? -10
+                          : 0;
+                if (!offset || event.altKey || event.ctrlKey || event.metaKey) return;
+                event.preventDefault();
+                event.stopPropagation();
+                swatchRefs.current[index + offset]?.focus();
+              }}
               onClick={() => onChange(color)}
               className={cn(
-                "m-[3px] size-[17px] rounded-[1px] border border-white/10",
+                "m-[3px] size-[17px] rounded-[1px] border border-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white",
                 index >= 20 && index < 30 && "mt-[9px]",
                 color === value.toLowerCase() &&
                   "ring-2 ring-white ring-offset-2 ring-offset-[#202020]",
@@ -310,7 +333,7 @@ function ColorSettingsPanel({
                   key={lineStyle}
                   type="button"
                   aria-label={`${lineStyle} line`}
-                  aria-pressed={drawing.lineStyle === lineStyle}
+                  aria-pressed={(drawing.lineStyle ?? "solid") === lineStyle}
                   onClick={() => onDrawingChange({ lineStyle })}
                   className="flex min-w-0 flex-1 items-center justify-center border-r border-white/15 last:border-r-0 hover:bg-white/10 aria-pressed:bg-white/20"
                 >
