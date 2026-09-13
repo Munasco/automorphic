@@ -45,6 +45,7 @@ import {
   type ChartIndicators,
 } from "./chartPreferences";
 import type { Candle } from "./chartIndicators";
+import { hollowCandleColors } from "./hollowCandles";
 import { INDICATOR_CATALOG, getIndicatorDefinition, getIndicatorLabel } from "./indicatorCatalog";
 import { getChartIndicatorInstances, MAX_CHART_INDICATORS } from "./chartIndicatorInstances";
 import {
@@ -416,6 +417,15 @@ export function TradovateChart({
         wickDownColor: "#ef5350",
         priceFormat,
       }),
+      hollow: chart.addSeries(CandlestickSeries, {
+        upColor: "transparent",
+        downColor: "#ef5350",
+        borderVisible: true,
+        wickUpColor: "#26a69a",
+        wickDownColor: "#ef5350",
+        visible: false,
+        priceFormat,
+      }),
       bars: chart.addSeries(BarSeries, {
         upColor: "#26a69a",
         downColor: "#ef5350",
@@ -546,6 +556,14 @@ export function TradovateChart({
     let render: number | undefined;
     let fitted = false;
     let renderedTime = -Infinity;
+    let hollowPrevious: Candle | undefined;
+    let hollowLatest: Candle | undefined;
+    let hollowPriceColor = "";
+    const hollowPoint = (bar: Candle, previous?: Candle) => ({
+      ...bar,
+      time: bar.time as UTCTimestamp,
+      ...hollowCandleColors(bar, previous),
+    });
     let replaceHistory = true;
     const pending = new Map<number, Candle>();
     const volumePoint = (b: Candle) => ({
@@ -573,6 +591,9 @@ export function TradovateChart({
         const ohlc = sorted.map((b) => ({ ...b, time: b.time as UTCTimestamp }));
         const closes = sorted.map((b) => ({ time: b.time as UTCTimestamp, value: b.close }));
         prices.candles.setData(ohlc);
+        prices.hollow.setData(sorted.map((bar, index) => hollowPoint(bar, sorted[index - 1])));
+        hollowLatest = sorted.at(-1);
+        hollowPrevious = sorted.at(-2);
         prices.bars.setData(ohlc);
         prices.line.setData(closes);
         prices.area.setData(closes);
@@ -584,12 +605,25 @@ export function TradovateChart({
           const ohlc = { ...bar, time: bar.time as UTCTimestamp };
           const close = { time: bar.time as UTCTimestamp, value: bar.close };
           prices.candles.update(ohlc);
+          // Same-bar revisions still compare against the preceding candle, never
+          // the previous tick. Corrections to earlier history use the rebuild above.
+          if (!hollowLatest || bar.time > hollowLatest.time) hollowPrevious = hollowLatest;
+          hollowLatest = bar;
+          prices.hollow.update(hollowPoint(bar, hollowPrevious));
           prices.bars.update(ohlc);
           prices.line.update(close);
           prices.area.update(close);
           volume.update(volumePoint(bar));
           renderedTime = bar.time;
         }
+      }
+      const directionColor = hollowLatest
+        ? hollowCandleColors(hollowLatest, hollowPrevious).borderColor
+        : "";
+      if (directionColor !== hollowPriceColor) {
+        // Hollow bodies are transparent; their price label and line still use the direction color.
+        prices.hollow.applyOptions({ priceLineColor: directionColor });
+        hollowPriceColor = directionColor;
       }
       state.refreshIndicators();
       if (!fitted && bars.size) {
@@ -665,7 +699,7 @@ export function TradovateChart({
 
   useEffect(() => {
     if (!engine || engine.disposed) return;
-    for (const style of ["candles", "bars", "line", "area"] as const)
+    for (const style of ["candles", "hollow", "bars", "line", "area"] as const)
       engine.prices[style].applyOptions({ visible: style === settings.style });
     engine.chart.applyOptions({
       grid: {

@@ -12,7 +12,7 @@ export {
   isValidInitialBalanceSettings,
   type InitialBalanceSettings,
 } from "./initialBalanceSettings";
-export type ChartStyle = "candles" | "bars" | "line" | "area";
+export type ChartStyle = "candles" | "hollow" | "bars" | "line" | "area";
 export const INDICATOR_CATEGORIES = ["Overlays", "Oscillators", "Session"] as const;
 export const INDICATOR_CATALOG = INDICATOR_DEFINITIONS;
 export type IndicatorKey = (typeof INDICATOR_DEFINITIONS)[number]["key"];

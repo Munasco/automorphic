@@ -883,3 +883,14 @@ it("saves independent SAR acceleration settings and marker appearance", async ()
       .inputs,
   ).toEqual({ start: 0.02, increment: 0.02, maximum: 0.2 });
 });
+
+it("restores the hollow candle chart style from workspace preferences", async () => {
+  useChartPreferences.getState().setStyle("hollow");
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  expect(useChartPreferences.getState().style).toBe("hollow");
+  useChartPreferences.getState().setStyle("candles");
+  expect(useChartPreferences.getState().style).toBe("candles");
+});

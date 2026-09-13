@@ -203,12 +203,19 @@ export function ChartToolbar({
           popupClassName="rounded-none [&_[data-slot=select-item]]:rounded-none"
           options={[
             ["candles", "Candles"],
+            ["hollow", "Hollow candles"],
             ["bars", "Bars"],
             ["line", "Line"],
             ["area", "Area"],
           ]}
           onChange={(value) => {
-            if (value === "candles" || value === "bars" || value === "line" || value === "area")
+            if (
+              value === "candles" ||
+              value === "hollow" ||
+              value === "bars" ||
+              value === "line" ||
+              value === "area"
+            )
               onStyleChange(value);
           }}
         />

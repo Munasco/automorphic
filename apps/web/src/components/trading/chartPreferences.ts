@@ -88,7 +88,10 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
   }
   return {
     style:
-      saved.style === "bars" || saved.style === "line" || saved.style === "area"
+      saved.style === "hollow" ||
+      saved.style === "bars" ||
+      saved.style === "line" ||
+      saved.style === "area"
         ? saved.style
         : "candles",
     indicators,
