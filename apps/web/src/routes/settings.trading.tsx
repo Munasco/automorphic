@@ -67,25 +67,6 @@ function TradingSettings() {
             className="w-32 shrink-0"
           />
         </div>
-        <div
-          id="trading-live-wires"
-          className="flex items-center justify-between gap-6 border-b border-border p-5"
-        >
-          <div>
-            <label htmlFor="wires-toggle" className="text-sm font-medium">
-              Show Live Wires beside the chart
-            </label>
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              Show the news rail when the panel is wide enough. News is always available from the
-              News view.
-            </p>
-          </div>
-          <Switch
-            id="wires-toggle"
-            checked={settings.showLiveWires}
-            onCheckedChange={settings.setLiveWires}
-          />
-        </div>
         <div id="tradingview-charts" className="flex items-center justify-between gap-6 p-5">
           <div>
             <label htmlFor="tradingview-toggle" className="text-sm font-medium">
