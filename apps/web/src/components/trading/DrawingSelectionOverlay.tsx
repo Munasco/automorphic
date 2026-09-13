@@ -926,6 +926,7 @@ export function DrawingSelectionOverlay({
       .getCommittedDrawings()
       ?.some((drawing) => drawing.id === selected.id);
     const active = document.activeElement;
+    const contextTrigger = returnToChart ? drawings.getContextMenuTrigger() : null;
     // An explicit focus callback bypasses the popup's default outside-focus guard.
     // Respect another chart or a newly opened dialog when it already owns focus.
     if (
@@ -934,9 +935,10 @@ export function DrawingSelectionOverlay({
       active.isConnected &&
       !optionsPopupRef.current?.contains(active) &&
       !contextPopupRef.current?.contains(active) &&
-      !(!stillExists && toolbarRef.current?.contains(active))
+      !(!stillExists && (toolbarRef.current?.contains(active) || active === contextTrigger))
     )
       return false;
+    if (stillExists && contextTrigger?.isConnected) return contextTrigger;
     // Removal unmounts the trigger. Let the popup's own focus cleanup
     // return to this chart instead of falling back to the page body.
     return !returnToChart && stillExists && moreTriggerRef.current?.isConnected
@@ -1330,6 +1332,7 @@ function DrawingMenuCommands({
   if (!selected) return null;
   const group = drawings.selectedObjects.length > 1;
   const allLocked = drawings.selectedObjects.every((drawing) => drawing.locked);
+  const allHidden = drawings.selectedObjects.every((drawing) => drawing.hidden);
   const mac = typeof navigator !== "undefined" && isMacPlatform(navigator.platform);
   const modifier = mac ? "⌘" : "Ctrl";
   const copy = () => {
@@ -1398,9 +1401,9 @@ function DrawingMenuCommands({
           icon: <DrawingToolIcon name={allLocked ? "lock-open" : "lock"} className="size-4.5" />,
         },
         {
-          label: "Hide",
-          action: () => drawings.updateSelected({ hidden: true }),
-          icon: <DrawingToolIcon name="eye-off" className="size-4.5" />,
+          label: allHidden ? "Show" : "Hide",
+          action: () => drawings.updateSelected({ hidden: !allHidden }),
+          icon: <DrawingToolIcon name={allHidden ? "eye" : "eye-off"} className="size-4.5" />,
         },
         {
           label: "Remove",

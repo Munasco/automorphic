@@ -2242,6 +2242,20 @@ export function createChartDrawingSession(
       emit();
       return true;
     },
+    openDrawingContextMenu: (id: string, screenPoint: DrawingPoint) => {
+      if (
+        disposed ||
+        ![screenPoint.x, screenPoint.y].every(Number.isFinite) ||
+        !drawings.some((drawing) => drawing.id === id)
+      )
+        return false;
+      setTool("cursor");
+      hiddenSelectableIds.add(id);
+      chooseDrawing(id);
+      contextPoint = { ...screenPoint };
+      emit();
+      return true;
+    },
     closeContextMenu: () => {
       contextPoint = null;
       emit();
@@ -2494,6 +2508,7 @@ export function useChartDrawings(
 ) {
   const [state, setState] = useState<DrawingState>(EMPTY);
   const session = useRef<ReturnType<typeof createChartDrawingSession> | null>(null);
+  const contextMenuTrigger = useRef<HTMLElement | null>(null);
   useEffect(() => {
     if (!chart || !series || !symbol) return;
     const current = createChartDrawingSession(
@@ -2619,6 +2634,7 @@ export function useChartDrawings(
         point &&
         current.openContextMenu(point, { x: event.clientX, y: event.clientY }, point.paneIndex)
       ) {
+        contextMenuTrigger.current = null;
         element.focus({ preventScroll: true });
         event.preventDefault();
         event.stopPropagation();
@@ -2984,6 +3000,15 @@ export function useChartDrawings(
     (drawing: ChartDrawing) => session.current?.isVisible(drawing) ?? false,
     [],
   );
+  const openDrawingContextMenu = useCallback(
+    (id: string, point: DrawingPoint, trigger: HTMLElement | null = null) => {
+      const opened = session.current?.openDrawingContextMenu(id, point) ?? false;
+      if (opened) contextMenuTrigger.current = trigger;
+      return opened;
+    },
+    [],
+  );
+  const getContextMenuTrigger = useCallback(() => contextMenuTrigger.current, []);
   const closeContextMenu = useCallback(() => session.current?.closeContextMenu(), []);
   const updateSelected = useCallback(
     (patch: DrawingPatch) => session.current?.updateSelected(patch),
@@ -3022,6 +3047,8 @@ export function useChartDrawings(
     commitText,
     cancelTextEdit,
     isVisible,
+    openDrawingContextMenu,
+    getContextMenuTrigger,
     closeContextMenu,
     selectDrawing,
     updateDrawing,

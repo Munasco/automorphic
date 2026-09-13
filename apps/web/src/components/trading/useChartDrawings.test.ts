@@ -6491,3 +6491,139 @@ describe("object-tree replacement and range selection", () => {
     },
   );
 });
+
+describe("object-tree context menu entry", () => {
+  const setup = () => {
+    const objects: ChartDrawing[] = ["a", "b", "c"].map((id, index) => ({
+      id,
+      kind: "trend",
+      color: "#2962ff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 4900 - index * 100 },
+        { time: 300 as Time, price: 4900 - index * 100 },
+      ],
+      ...(index < 2 ? { hidden: true } : {}),
+    }));
+    const f = fixture("tree-context", JSON.stringify(objects));
+    const session = f.open();
+    const state = () => f.change.mock.lastCall![0];
+    const group = () => {
+      session.selectDrawing("a", { includeHidden: true, replaceSelection: true });
+      session.selectDrawing("b", { additive: true, includeHidden: true });
+    };
+    return { objects, f, session, state, group };
+  };
+
+  it("opens a hidden row without a canvas hit and retains its selected group", () => {
+    const { f, session, state, group } = setup();
+    group();
+    expect(session.blocksChartPan({ x: 150, y: 100 })).toBe(false);
+    expect(session.openDrawingContextMenu("a", { x: 1200, y: 340 })).toBe(true);
+    expect(state().contextPoint).toEqual({ x: 1200, y: 340 });
+    expect(state().selectedIds).toEqual(["a", "b"]);
+    expect(state().selected.id).toBe("a");
+    expect(state().selectedObjects.every((d: ChartDrawing) => d.hidden)).toBe(true);
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+
+  it("replaces selection for an outside row and supports rows while drawings are globally hidden", () => {
+    const { f, session, state, group } = setup();
+    group();
+    expect(session.openDrawingContextMenu("c", { x: 900, y: 90 })).toBe(true);
+    expect(state().selectedIds).toEqual(["c"]);
+    session.toggleHidden();
+    expect(session.openDrawingContextMenu("a", { x: 900, y: 90 })).toBe(true);
+    expect(state().selectedIds).toEqual(["a"]);
+    expect(state().hidden).toBe(true);
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+
+  it("rejects invalid coordinates, missing rows and disposed sessions without disturbing selection", () => {
+    const { f, session, state, group } = setup();
+    group();
+    const before = state();
+    for (const point of [
+      { x: NaN, y: 50 },
+      { x: 30, y: Infinity },
+    ])
+      expect(session.openDrawingContextMenu("a", point)).toBe(false);
+    expect(session.openDrawingContextMenu("missing", { x: 30, y: 50 })).toBe(false);
+    expect(state()).toEqual(before);
+    session.dispose();
+    expect(session.openDrawingContextMenu("a", { x: 30, y: 50 })).toBe(false);
+    expect(f.writes()).toBe(0);
+  });
+
+  it("cancels an unsaved settings preview, drawing gesture and active placement before opening", () => {
+    const { objects, f, session, state } = setup();
+    session.selectDrawing("a", { includeHidden: true });
+    expect(session.openSettings()).toBe(true);
+    expect(session.previewSettings({ color: "#ff0000", text: "Uncommitted" })).toBe(true);
+    expect(session.openDrawingContextMenu("b", { x: 900, y: 180 })).toBe(true);
+    expect(state().settingsOpen).toBe(false);
+    expect(state().objects).toEqual(objects);
+    session.closeContextMenu();
+    session.selectDrawing("c", { replaceSelection: true });
+    expect(session.beginDrag({ x: 150, y: 300 })).toBe(true);
+    session.dragTo({ x: 175, y: 325 });
+    expect(session.openDrawingContextMenu("a", { x: 900, y: 180 })).toBe(true);
+    expect(state().objects).toEqual(objects);
+    session.setTool("trend");
+    f.click(400, 200);
+    expect(state().pending).toBe(true);
+    expect(session.openDrawingContextMenu("a", { x: 900, y: 180 })).toBe(true);
+    expect(state().pending).toBe(false);
+    expect(state().tool).toBe("cursor");
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+
+  it.each(["clone", "remove"] as const)(
+    "context %s acts on the hidden group with atomic undo and persistence",
+    (operation) => {
+      const { objects, f, session, state, group } = setup();
+      group();
+      expect(session.openDrawingContextMenu("a", { x: 900, y: 180 })).toBe(true);
+      session.closeContextMenu();
+      if (operation === "clone") {
+        session.duplicateSelected();
+        expect(state().objects).toHaveLength(5);
+        expect(state().selectedIds).toHaveLength(2);
+        expect(state().selectedObjects.every((d: ChartDrawing) => d.hidden)).toBe(true);
+      } else {
+        session.deleteSelected();
+        expect(state().objects).toEqual([objects[2]]);
+      }
+      expect(f.writes()).toBe(1);
+      const saved = f.saved();
+      session.undo();
+      expect(state().objects).toEqual(objects);
+      session.redo();
+      expect(f.saved()).toBe(saved);
+      session.dispose();
+      const reopened = f.open();
+      const normalize = (drawings: readonly ChartDrawing[]) =>
+        drawings.map((d) => ({ ...d, locked: !!d.locked }));
+      expect(normalize(reopened.getCommittedDrawings()!)).toEqual(normalize(JSON.parse(saved!)));
+      reopened.dispose();
+    },
+  );
+
+  it("shows the selected hidden rows through the existing visibility action and undoes it", () => {
+    const { objects, f, session, state, group } = setup();
+    group();
+    session.openDrawingContextMenu("b", { x: 900, y: 180 });
+    session.closeContextMenu();
+    session.updateSelected({ hidden: false });
+    expect(state().selectedIds).toHaveLength(2);
+    expect(state().selectedObjects.every((d: ChartDrawing) => session.isVisible(d))).toBe(true);
+    expect(state().objects[2]).toEqual(objects[2]);
+    expect(f.writes()).toBe(1);
+    session.undo();
+    expect(state().objects).toEqual(objects);
+    session.dispose();
+  });
+});

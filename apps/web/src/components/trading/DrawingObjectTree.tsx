@@ -88,6 +88,11 @@ export function DrawingObjectTree({
   onClose: () => void;
   indicators?: readonly DrawingObjectTreeIndicator[];
 }) {
+  const openMenu = (id: string, trigger: HTMLButtonElement, point?: { x: number; y: number }) => {
+    trigger.focus({ preventScroll: true });
+    const rect = trigger.getBoundingClientRect();
+    drawings.openDrawingContextMenu(id, point ?? { x: rect.left, y: rect.bottom }, trigger);
+  };
   const selectedRow = useRef<HTMLLIElement>(null);
   const selected = drawings.selected;
   const selectedId = selected?.id;
@@ -217,6 +222,20 @@ export function DrawingObjectTree({
               <li
                 key={object.id}
                 ref={selected?.id === object.id ? selectedRow : undefined}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const trigger =
+                    event.currentTarget.querySelector<HTMLButtonElement>("[data-drawing-select]");
+                  if (trigger)
+                    openMenu(
+                      object.id,
+                      trigger,
+                      event.clientX || event.clientY
+                        ? { x: event.clientX, y: event.clientY }
+                        : undefined,
+                    );
+                }}
                 className={cn(
                   "group/object flex h-[38px] items-center gap-0.5 pl-3 pr-1 hover:bg-white/5 focus-within:bg-white/5",
                   isSelected && "bg-[#1e3260] hover:bg-[#1e3260] focus-within:bg-[#1e3260]",
@@ -225,6 +244,15 @@ export function DrawingObjectTree({
                 <button
                   type="button"
                   aria-label={`Select ${label}`}
+                  data-drawing-select
+                  aria-haspopup="menu"
+                  onKeyDown={(event) => {
+                    if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey))
+                      return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openMenu(object.id, event.currentTarget);
+                  }}
                   aria-pressed={isSelected}
                   onClick={(event) =>
                     drawings.selectDrawing(object.id, {
