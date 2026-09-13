@@ -795,36 +795,44 @@ export function LineAppearancePicker({
   disabled?: boolean;
   onChange: (patch: DrawingPatch) => void;
 }) {
+  const opacity = fillOpacity ?? drawing.lineOpacity ?? 1;
+  const dotted = drawing.lineStyle === "dotted";
+  const segmented = dotted || drawing.lineStyle === "dashed";
+  const segmentWidth = dotted ? drawing.width + 1 : segmented ? 5 : 30;
+  const segmentHeight = dotted ? drawing.width + 1 : drawing.width;
+  const segmentCount = segmented ? Math.ceil(30 / (segmentWidth + 3)) : 1;
   return (
     <Popover>
       <PopoverTrigger
         aria-label={label}
         disabled={disabled}
-        className="flex h-[34px] w-[75px] shrink-0 items-center gap-1 rounded border border-[#575757] p-1 hover:bg-white/10 disabled:opacity-40"
+        className="flex h-[34px] w-[75px] shrink-0 items-center rounded-[6px] border border-[#575757] p-1 outline-none hover:border-[#8c8c8c] focus-visible:border-[#2962ff] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#2962ff] aria-expanded:border-[#2962ff] aria-expanded:ring-1 aria-expanded:ring-inset aria-expanded:ring-[#2962ff] disabled:opacity-40"
       >
         <span
-          className="size-6 shrink-0 rounded"
-          style={{ background: drawing.color, opacity: fillOpacity ?? drawing.lineOpacity ?? 1 }}
-        />
-        <svg
-          width="28"
-          height="16"
           aria-hidden="true"
-          opacity={fillOpacity ?? drawing.lineOpacity ?? 1}
+          className="relative size-6 shrink-0 overflow-hidden rounded-[3px] bg-black"
+          style={{
+            backgroundImage:
+              'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%228%22 height=%228%22%3E%3Cpath fill=%22%232a2e39%22 fill-opacity=%22.4%22 d=%22M0 0h4v4H0zM4 4h4v4H4z%22/%3E%3C/svg%3E")',
+            backgroundSize: "50% auto",
+          }}
         >
-          <path
-            d="M0 8H28"
-            stroke={drawing.color}
-            strokeWidth={drawing.width}
-            strokeDasharray={
-              drawing.lineStyle === "dashed"
-                ? "6 3"
-                : drawing.lineStyle === "dotted"
-                  ? "2 3"
-                  : undefined
-            }
-          />
-        </svg>
+          <span className="absolute inset-0" style={{ backgroundColor: drawing.color, opacity }} />
+        </span>
+        <span className="flex h-6 w-[41px] shrink-0 items-center overflow-hidden pl-2">
+          <svg width="30" height="24" className="shrink-0" aria-hidden="true" opacity={opacity}>
+            {Array.from({ length: segmentCount }, (_, index) => (
+              <rect
+                key={index}
+                x={index * (segmentWidth + 3)}
+                y={(24 - segmentHeight) / 2}
+                width={segmentWidth}
+                height={segmentHeight}
+                fill={drawing.color}
+              />
+            ))}
+          </svg>
+        </span>
       </PopoverTrigger>
       <PopoverPopup
         instant
