@@ -4224,3 +4224,251 @@ describe("group drawing geometry preservation", () => {
     session.dispose();
   });
 });
+
+describe("marquee drawing selection", () => {
+  const make = () => {
+    const objects: ChartDrawing[] = [
+      {
+        id: "a",
+        kind: "trend",
+        color: "#2962ff",
+        width: 2,
+        anchors: [
+          { time: 100 as Time, price: 4900 },
+          { time: 300 as Time, price: 4900 },
+        ],
+      },
+      {
+        id: "b",
+        kind: "rectangle",
+        color: "#ff0000",
+        width: 2,
+        anchors: [
+          { time: 400 as Time, price: 4800 },
+          { time: 600 as Time, price: 4700 },
+        ],
+      },
+      {
+        id: "locked",
+        kind: "trend",
+        color: "#00ff00",
+        width: 2,
+        locked: true,
+        anchors: [
+          { time: 200 as Time, price: 4650 },
+          { time: 350 as Time, price: 4650 },
+        ],
+      },
+      {
+        id: "hidden",
+        kind: "trend",
+        color: "#00ff00",
+        width: 2,
+        hidden: true,
+        anchors: [
+          { time: 100 as Time, price: 4890 },
+          { time: 300 as Time, price: 4890 },
+        ],
+      },
+      {
+        id: "other-interval",
+        kind: "trend",
+        color: "#00ff00",
+        width: 2,
+        visibility: sanitizeDrawingVisibility({ minutes: { enabled: true, min: 5, max: 30 } }),
+        anchors: [
+          { time: 100 as Time, price: 4880 },
+          { time: 300 as Time, price: 4880 },
+        ],
+      },
+    ];
+    const f = fixture("marquee", JSON.stringify(objects)),
+      session = f.open();
+    return { f, session, objects, state: () => f.change.mock.calls.at(-1)![0] };
+  };
+  it("normalizes reverse rectangle drags and selects visible geometry without writing or creating objects", () => {
+    const { f, session, objects, state } = make();
+    expect(session.beginMarquee({ x: 650, y: 320 })).toBe(true);
+    session.updateMarquee({ x: 50, y: 50 });
+    expect(state().selectionRect).toEqual({ x: 50, y: 50, width: 600, height: 270 });
+    expect(state().selectedIds).toEqual(["a", "b"]);
+    expect(state().objects).toEqual(objects);
+    expect(f.writes()).toBe(0);
+    session.endMarquee();
+    expect(state().selectionRect).toBeNull();
+    expect(state().selectedIds).toEqual(["a", "b"]);
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+  it("merges an additive marquee once, includes locked objects, and rejects their movement", () => {
+    const { f, session, state } = make();
+    session.selectDrawing("a");
+    session.beginMarquee({ x: 150, y: 330 }, { additive: true });
+    session.updateMarquee({ x: 370, y: 370 });
+    session.endMarquee();
+    expect(state().selectedIds).toEqual(["a", "locked"]);
+    session.beginMarquee({ x: 50, y: 50 }, { additive: true });
+    session.updateMarquee({ x: 370, y: 370 });
+    session.endMarquee();
+    expect(state().selectedIds).toEqual(["a", "locked"]);
+    expect(session.beginDrag({ x: 250, y: 350 })).toBe(false);
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+  it("restores exact selection and primary on cancellation or Escape, including after a selection replacement", () => {
+    const { f, session, state } = make();
+    session.selectDrawing("a");
+    session.selectDrawing("b", { additive: true });
+    session.selectDrawing("a");
+    session.beginMarquee({ x: 150, y: 330 });
+    session.updateMarquee({ x: 370, y: 370 });
+    expect(state().selectedIds).toEqual(["locked"]);
+    session.endMarquee(false);
+    expect(state().selectedIds).toEqual(["a", "b"]);
+    expect(state().selected.id).toBe("a");
+    session.beginMarquee({ x: 150, y: 330 });
+    session.updateMarquee({ x: 370, y: 370 });
+    session.cancel();
+    expect(state().selectionRect).toBeNull();
+    expect(state().selectedIds).toEqual(["a", "b"]);
+    expect(state().selected.id).toBe("a");
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+  it("routes modifier blank-area drag through marquee while modifier object drag still clones", () => {
+    const { f, session, state } = make();
+    expect(session.beginDrag({ x: 50, y: 50 }, { clone: true, additive: true })).toBe(true);
+    session.dragTo({ x: 650, y: 320 });
+    session.endDrag();
+    expect(state().selectedIds).toEqual(["a", "b"]);
+    expect(state().count).toBe(5);
+    expect(f.writes()).toBe(0);
+    expect(session.beginDrag({ x: 200, y: 100 }, { clone: true, additive: true })).toBe(true);
+    session.dragTo({ x: 220, y: 130 });
+    session.endDrag();
+    expect(state().count).toBe(7);
+    expect(f.writes()).toBe(1);
+    session.dispose();
+  });
+  it("ignores jitter and invalid coordinates, clips bounds, and leaves redo history intact", () => {
+    const { f, session, state } = make();
+    session.selectDrawing("a");
+    session.updateSelected({ width: 3 });
+    session.undo();
+    expect(state().canRedo).toBe(true);
+    const writes = f.writes();
+    session.selectDrawing("b");
+    session.beginMarquee({ x: 50, y: 50 });
+    session.updateMarquee({ x: 51, y: 51 });
+    session.updateMarquee({ x: NaN, y: 60 });
+    session.endMarquee();
+    expect(state().selectedIds).toEqual(["b"]);
+    expect(state().selectionRect).toBeNull();
+    session.beginMarquee({ x: 50, y: 50 });
+    session.updateMarquee({ x: 2000, y: 2000 });
+    expect(state().selectionRect).toEqual({ x: 50, y: 50, width: 950, height: 450 });
+    session.endMarquee();
+    expect(state().selectedIds).toEqual(["a", "b", "locked"]);
+    expect(state().canRedo).toBe(true);
+    expect(f.writes()).toBe(writes);
+    session.redo();
+    expect(state().objects[0].width).toBe(3);
+    session.dispose();
+  });
+  it("rejects foreign panes, invalid origins, drawing mode, hidden charts, and disposed sessions", () => {
+    const { session } = make();
+    expect(session.beginMarquee({ x: 50, y: 50 }, { paneIndex: 1 })).toBe(false);
+    expect(session.beginMarquee({ x: -1, y: 50 })).toBe(false);
+    expect(session.beginMarquee({ x: 50, y: Infinity })).toBe(false);
+    session.setTool("trend");
+    expect(session.beginMarquee({ x: 50, y: 50 })).toBe(false);
+    session.setTool("cursor");
+    session.toggleHidden();
+    expect(session.beginMarquee({ x: 50, y: 50 })).toBe(false);
+    session.dispose();
+    expect(session.beginMarquee({ x: 50, y: 50 })).toBe(false);
+  });
+});
+
+describe("group template preview", () => {
+  it("replaces sparse appearance for each draft while retaining individual metadata, geometry and visibility, and cancels atomically", () => {
+    const objects: ChartDrawing[] = [
+      {
+        id: "a",
+        kind: "trend",
+        color: "#123456",
+        width: 1,
+        background: true,
+        backgroundColor: "#ff0000",
+        textBold: true,
+        text: "Alpha",
+        name: "Line",
+        anchors: [
+          { time: 100 as Time, price: 4900 },
+          { time: 200 as Time, price: 4800 },
+        ],
+        visibility: sanitizeDrawingVisibility({ minutes: { max: 5 } }),
+      },
+      {
+        id: "b",
+        kind: "rectangle",
+        color: "#abcdef",
+        width: 3,
+        background: true,
+        backgroundColor: "#00ff00",
+        textItalic: true,
+        text: "Beta",
+        name: "Box",
+        anchors: [
+          { time: 300 as Time, price: 4700 },
+          { time: 400 as Time, price: 4600 },
+        ],
+        visibility: sanitizeDrawingVisibility({ minutes: { max: 30 } }),
+      },
+    ];
+    const f = fixture("group-template-preview", JSON.stringify(objects)),
+      session = f.open(),
+      state = () => f.change.mock.calls.at(-1)![0];
+    session.selectDrawing("a");
+    session.selectDrawing("b", { additive: true });
+    session.openSettings();
+    expect(
+      session.previewSettings(
+        {
+          color: "#ffffff",
+          width: 2,
+          text: "Do not overwrite",
+          visibility: sanitizeDrawingVisibility({ minutes: { enabled: false } }),
+        },
+        { replace: true },
+      ),
+    ).toBe(true);
+    expect(state().selectedObjects).toEqual(
+      objects.map(
+        ({
+          background: _background,
+          backgroundColor: _backgroundColor,
+          textBold: _bold,
+          textItalic: _italic,
+          ...drawing
+        }) => ({ ...drawing, color: "#ffffff", width: 2, lineStyle: "solid" }),
+      ),
+    );
+    expect(state().objects).toEqual(objects);
+    expect(f.writes()).toBe(0);
+    session.closeSettings();
+    expect(state().selectedObjects).toEqual(objects);
+    session.openSettings();
+    expect(session.previewSettings({ color: "invalid", width: 2 }, { replace: true })).toBe(false);
+    expect(state().selectedObjects).toEqual(objects);
+    session.previewSettings({ color: "#ffffff", width: 2 }, { replace: true });
+    expect(session.applySettings({}, { replace: true })).toBe(true);
+    expect(f.writes()).toBe(1);
+    const saved = f.saved();
+    session.undo();
+    expect(state().objects).toEqual(objects);
+    session.redo();
+    expect(f.saved()).toBe(saved);
+    session.dispose();
+  });
+});

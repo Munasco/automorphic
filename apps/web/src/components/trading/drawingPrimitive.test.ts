@@ -2273,3 +2273,80 @@ describe("multiple selected drawing rendering", () => {
     expect(plugin.hitTest({ x: 200, y: 200 })?.handle).toBe(1);
   });
 });
+
+describe("drawing area selection", () => {
+  it("selects visible crossing strokes in stacking order, including locked drawings and extended lines", () => {
+    const { chart, series } = fixture();
+    const line: ChartDrawing = {
+      id: "line",
+      kind: "trend",
+      color: "#fff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 400 },
+        { time: 200 as Time, price: 300 },
+      ],
+    };
+    const drawings: ChartDrawing[] = [
+      line,
+      { ...line, id: "locked", locked: true },
+      { ...line, id: "hidden", hidden: true },
+      { ...line, id: "transparent", lineOpacity: 0 },
+      { ...line, id: "extended", kind: "extended-line" },
+    ];
+    let hidden = false;
+    const plugin = createDrawingPrimitive(chart, series, () => ({
+      drawings,
+      selected: null,
+      hidden,
+    }));
+    expect(plugin.drawingsInRect({ x: 145, y: 140, width: 10, height: 20 })).toEqual([
+      "line",
+      "locked",
+      "extended",
+    ]);
+    expect(plugin.drawingsInRect({ x: 145, y: 180, width: 10, height: 10 })).toEqual([]);
+    expect(plugin.drawingsInRect({ x: 280, y: 270, width: 20, height: 40 })).toEqual(["extended"]);
+    hidden = true;
+    expect(plugin.drawingsInRect({ x: 0, y: 0, width: 500, height: 500 })).toEqual([]);
+  });
+  it("draws and clears the selection rectangle independently of stored drawings", () => {
+    const { chart, series } = fixture();
+    let selectionRect: { x: number; y: number; width: number; height: number } | null = {
+      x: 20,
+      y: 30,
+      width: 100,
+      height: 80,
+    };
+    const plugin = createDrawingPrimitive(chart, series, () => ({
+      drawings: [],
+      selected: null,
+      selectionRect,
+    }));
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      clip: vi.fn(),
+      setLineDash: vi.fn(),
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+    };
+    const renderer = plugin.primitive.paneViews!()[0]!.renderer()!;
+    const draw = () =>
+      renderer.draw({
+        useMediaCoordinateSpace: (callback: (scope: { context: typeof ctx }) => void) =>
+          callback({ context: ctx }),
+      } as unknown as Parameters<typeof renderer.draw>[0]);
+    draw();
+    expect(ctx.fillRect).toHaveBeenCalledWith(20, 30, 100, 80);
+    expect(ctx.strokeRect).toHaveBeenCalledWith(20.5, 30.5, 99, 79);
+    selectionRect = null;
+    ctx.fillRect.mockClear();
+    ctx.strokeRect.mockClear();
+    draw();
+    expect(ctx.fillRect).not.toHaveBeenCalled();
+    expect(ctx.strokeRect).not.toHaveBeenCalled();
+  });
+});

@@ -1,3 +1,4 @@
+import { drawingIntersectsRect } from "./drawingSelectionGeometry";
 import type {
   IChartApi,
   ISeriesApi,
@@ -176,6 +177,7 @@ export function createDrawingPrimitive(
     drawings: ChartDrawing[];
     selected: string | null;
     selectedIds?: readonly string[];
+    selectionRect?: { x: number; y: number; width: number; height: number } | null;
     preview?: ChartDrawing | null;
     hidden?: boolean;
     hovered?: string | null;
@@ -317,6 +319,48 @@ export function createDrawingPrimitive(
         best = candidate;
     }
     return best;
+  };
+  const drawingsInRect = (rect: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }): string[] => {
+    const state = read();
+    if (state.hidden || state.interactive === false) return [];
+    const projection = drawingProjection(chart, series);
+    return state.drawings.flatMap((drawing) => {
+      if (drawing.hidden) return [];
+      const geometry = buildDrawingGeometry(
+        drawing,
+        projection.project,
+        projection.priceY,
+        projection.width,
+        projection.height,
+        (price) => series.priceFormatter().format(price),
+        (coordinate) => series.coordinateToPrice(coordinate),
+        regressionFit(drawing),
+      );
+      const lineOpacity =
+        drawing.kind === "regression-trend" || isFibTimeDrawing(drawing.kind)
+          ? 1
+          : (drawing.lineOpacity ?? 1);
+      const visibleGeometry = {
+        ...geometry,
+        strokeWidth: geometry.strokeWidth ?? drawing.width,
+        opacity: (geometry.opacity ?? 1) * lineOpacity,
+        ...(geometry.polygons
+          ? {
+              polygons: geometry.polygons.map((polygon) => ({
+                ...polygon,
+                opacity: polygon.opacity * (polygon.lineFill ? lineOpacity : 1),
+              })),
+            }
+          : {}),
+      };
+      if ((drawing.textOpacity ?? 1) <= 0) delete visibleGeometry.text;
+      return drawingIntersectsRect(visibleGeometry, rect) ? [drawing.id] : [];
+    });
   };
   const renderer: IPrimitivePaneRenderer = {
     draw(target) {
@@ -704,6 +748,21 @@ export function createDrawingPrimitive(
             }
           }
         }
+        if (state.selectionRect) {
+          const rect = state.selectionRect;
+          ctx.globalAlpha = 1;
+          ctx.setLineDash([]);
+          ctx.fillStyle = "rgba(41,98,255,0.12)";
+          ctx.strokeStyle = "#2962ff";
+          ctx.lineWidth = 1;
+          ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+          ctx.strokeRect(
+            rect.x + 0.5,
+            rect.y + 0.5,
+            Math.max(0, rect.width - 1),
+            Math.max(0, rect.height - 1),
+          );
+        }
         ctx.restore();
       });
     },
@@ -843,5 +902,5 @@ export function createDrawingPrimitive(
     priceAxisViews: () => drawingAxisViews("price"),
     timeAxisViews: () => drawingAxisViews("time"),
   };
-  return { primitive, hitTest, redraw: () => requestUpdate() };
+  return { primitive, hitTest, drawingsInRect, redraw: () => requestUpdate() };
 }

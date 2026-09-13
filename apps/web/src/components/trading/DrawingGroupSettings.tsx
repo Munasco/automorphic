@@ -1,3 +1,4 @@
+import { DrawingTemplateMenu } from "./DrawingTemplateMenu";
 import { useCallback, useEffect, useId, useRef, useState, type PointerEventHandler } from "react";
 import { Dialog, DialogClose, DialogPopup, DialogTitle } from "../ui/dialog";
 import { cn } from "../../lib/utils";
@@ -361,7 +362,12 @@ export function DrawingGroupSettings({ drawings }: { drawings: ChartDrawingsCont
             </>
           ) : null}
         </div>
-        <div className="flex shrink-0 justify-end gap-3 border-t border-white/10 px-5 py-4">
+        <div className="flex shrink-0 items-center gap-3 border-t border-white/10 px-5 py-4">
+          <DrawingTemplateMenu
+            drawing={first}
+            onApply={(patch) => drawings.previewSettings(patch, { replace: true })}
+          />
+          <div className="flex-1" />
           <button
             type="button"
             onClick={drawings.closeSettings}

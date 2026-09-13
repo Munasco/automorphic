@@ -51,6 +51,7 @@ import {
 export type ChartDrawingTool = "cursor" | DrawingKind;
 export type DrawingOrderDirection = "front" | "forward" | "backward" | "back";
 export type DrawingMagnetMode = "off" | "weak" | "strong";
+export type DrawingSelectionRect = { x: number; y: number; width: number; height: number };
 export type DrawingState = {
   tool: ChartDrawingTool;
   count: number;
@@ -67,6 +68,7 @@ export type DrawingState = {
   selected: ChartDrawing | null;
   selectedIds: readonly string[];
   selectedObjects: readonly ChartDrawing[];
+  selectionRect: DrawingSelectionRect | null;
   hovered: ChartDrawing | null;
   instruction: string;
   settingsOpen: boolean;
@@ -98,6 +100,7 @@ const EMPTY: DrawingState = {
   selected: null,
   selectedIds: [],
   selectedObjects: [],
+  selectionRect: null,
   hovered: null,
   instruction: "",
   settingsOpen: false,
@@ -128,6 +131,14 @@ export function createChartDrawingSession(
   let anchors: DrawingAnchor[] = [];
   let selectedId: string | null = null;
   let selectedIds: string[] = [];
+  let selectionRect: DrawingSelectionRect | null = null;
+  let marquee: {
+    origin: DrawingPoint;
+    selectionBefore: string[];
+    primaryBefore: string | null;
+    additive: boolean;
+    moved: boolean;
+  } | null = null;
   let hoveredId: string | null = null;
   let settingsOpen = false;
   let textEditing = false;
@@ -245,6 +256,7 @@ export function createChartDrawingSession(
         ),
       selected: selectedId,
       selectedIds,
+      selectionRect,
       hovered: hoveredId,
       interactive: tool === "cursor" && !settingsOpen && !textEditing,
       preview,
@@ -258,7 +270,7 @@ export function createChartDrawingSession(
   );
   const emit = () => {
     const hovered =
-      tool === "cursor" && !hidden && !settingsOpen && !textEditing && !drag
+      tool === "cursor" && !hidden && !settingsOpen && !textEditing && !drag && !marquee
         ? (displayedDrawings().find((drawing) => drawing.id === hoveredId && isVisible(drawing)) ??
           null)
         : null;
@@ -310,6 +322,7 @@ export function createChartDrawingSession(
       selected,
       selectedIds,
       selectedObjects,
+      selectionRect,
       hovered,
       instruction,
       settingsOpen: settingsOpen && !!selected,
@@ -412,7 +425,7 @@ export function createChartDrawingSession(
   const hover = (point: DrawingPoint | null, paneIndex?: number) => {
     if (disposed) return;
     const next =
-      point && tool === "cursor" && !settingsOpen && !drag
+      point && tool === "cursor" && !settingsOpen && !drag && !marquee
         ? (hit(point, paneIndex)?.id ?? null)
         : null;
     if (next === hoveredId) return;
@@ -429,12 +442,76 @@ export function createChartDrawingSession(
     } else if (!selectedIds.includes(id)) selectedIds = [id];
     selectedId = id && selectedIds.includes(id) ? id : (selectedIds.at(-1) ?? null);
   };
+  const beginMarquee = (
+    point: DrawingPoint,
+    options: { additive?: boolean; paneIndex?: number } = {},
+  ): boolean => {
+    if (
+      disposed ||
+      hidden ||
+      tool !== "cursor" ||
+      (options.paneIndex !== undefined && options.paneIndex !== series.getPane().paneIndex())
+    )
+      return false;
+    const { width, height } = drawingProjection(chart, series);
+    if (
+      ![point.x, point.y].every(Number.isFinite) ||
+      point.x < 0 ||
+      point.y < 0 ||
+      point.x > width ||
+      point.y > height
+    )
+      return false;
+    endDrag(false);
+    discardSettings();
+    marquee = {
+      origin: { ...point },
+      selectionBefore: selectedIds.slice(),
+      primaryBefore: selectedId,
+      additive: options.additive === true,
+      moved: false,
+    };
+    selectionRect = null;
+    hoveredId = null;
+    contextPoint = null;
+    emit();
+    return true;
+  };
+  const updateMarquee = (point: DrawingPoint) => {
+    if (disposed || !marquee || ![point.x, point.y].every(Number.isFinite)) return;
+    const { width, height } = drawingProjection(chart, series);
+    const x = Math.max(0, Math.min(width, point.x)),
+      y = Math.max(0, Math.min(height, point.y));
+    if (!marquee.moved && Math.hypot(x - marquee.origin.x, y - marquee.origin.y) < 3) return;
+    marquee.moved = true;
+    selectionRect = {
+      x: Math.min(x, marquee.origin.x),
+      y: Math.min(y, marquee.origin.y),
+      width: Math.abs(x - marquee.origin.x),
+      height: Math.abs(y - marquee.origin.y),
+    };
+    const hits = primitive.drawingsInRect(selectionRect);
+    selectedIds = [...new Set([...(marquee.additive ? marquee.selectionBefore : []), ...hits])];
+    selectedId = selectedIds.at(-1) ?? null;
+    emit();
+  };
+  const endMarquee = (commit = true) => {
+    if (!marquee) return;
+    const previous = marquee;
+    marquee = null;
+    selectionRect = null;
+    if (!commit || !previous.moved) {
+      selectedIds = previous.selectionBefore;
+      selectedId = previous.primaryBefore;
+    }
+    emit();
+  };
   const beginDrag = (
     point: DrawingPoint,
     options?: { clone?: boolean; additive?: boolean; paneIndex?: number },
   ) => {
     if (disposed || hidden) return false;
-    if (drag) endDrag(false);
+    if (drag || marquee) endDrag(false);
     if (discardSettings()) emit();
     const foreignPane =
       options?.paneIndex !== undefined && options.paneIndex !== series.getPane().paneIndex();
@@ -457,6 +534,8 @@ export function createChartDrawingSession(
       : primitive.hitTest(point);
     const drawing = target?.drawing;
     if (!drawing) {
+      if (!foreignPane && (options?.additive || options?.clone))
+        return beginMarquee(point, { additive: true });
       chooseDrawing(null, options?.additive);
       emit();
       return false;
@@ -547,6 +626,10 @@ export function createChartDrawingSession(
   };
   const dragTo = (point: DrawingPoint) => {
     if (disposed) return;
+    if (marquee) {
+      updateMarquee(point);
+      return;
+    }
     if (strokeLastPoint && tool !== "cursor" && isFreehandDrawingTool(tool)) {
       if (Math.hypot(point.x - strokeLastPoint.x, point.y - strokeLastPoint.y) < 3) return;
       const anchor = drawingProjection(chart, series).unproject(point);
@@ -787,6 +870,10 @@ export function createChartDrawingSession(
     emit();
   };
   const endDrag = (commit = true) => {
+    if (marquee) {
+      endMarquee(commit);
+      return;
+    }
     if (strokeLastPoint) {
       strokeLastPoint = null;
       if (commit && commitDrawing()) return;
@@ -1102,11 +1189,21 @@ export function createChartDrawingSession(
     }
     return normalized;
   };
-  const previewGroupSettings = (patch: DrawingPatch) => {
+  const previewGroupSettings = (patch: DrawingPatch, options: DrawingSettingsOptions = {}) => {
     if (!groupSettingsDraft || !settingsOpen) return false;
     const common = commonGroupPatch(patch);
     const next = groupSettingsDraft.drawings.map((drawing) => {
       if (drawing.locked && common.locked !== false) return drawing;
+      if (options.replace) {
+        const applied = applyDrawingTemplate(drawing, patch);
+        if (applied === drawing) return null;
+        const next = { ...applied };
+        for (const key of ["text", "name", "visibility"] as const) {
+          if (drawing[key] === undefined) delete next[key];
+          else Object.assign(next, { [key]: drawing[key] });
+        }
+        return next;
+      }
       const normalized = normalizedGroupPatch(drawing, common);
       return normalized ? { ...drawing, ...normalized } : null;
     });
@@ -1194,7 +1291,7 @@ export function createChartDrawingSession(
   };
   const previewSettings = (patch: DrawingPatch, options: DrawingSettingsOptions = {}) => {
     if (disposed) return false;
-    if (groupSettingsDraft) return previewGroupSettings(patch);
+    if (groupSettingsDraft) return previewGroupSettings(patch, options);
     if (disposed || !settingsOpen || !settingsDraft || selectedId !== settingsDraft.original.id)
       return false;
     const next = settingsResult(patch, options);
@@ -1208,7 +1305,7 @@ export function createChartDrawingSession(
   const applySettings = (patch: DrawingPatch, options: DrawingSettingsOptions = {}) => {
     if (disposed) return false;
     if (groupSettingsDraft) {
-      if (!previewGroupSettings(patch)) return false;
+      if (!previewGroupSettings(patch, Object.keys(patch).length ? options : {})) return false;
       const { originals, drawings: drafts } = groupSettingsDraft;
       groupSettingsDraft = null;
       settingsOpen = false;
@@ -1569,6 +1666,9 @@ export function createChartDrawingSession(
       return true;
     },
     beginDrag,
+    beginMarquee,
+    updateMarquee,
+    endMarquee,
     copyDrawing,
     copySelected,
     duplicateSelected,
@@ -1672,6 +1772,10 @@ export function createChartDrawingSession(
       emit();
     },
     cancel: () => {
+      if (marquee) {
+        endMarquee(false);
+        return;
+      }
       setTool("cursor");
       selectedId = null;
       selectedIds = [];
@@ -1684,7 +1788,7 @@ export function createChartDrawingSession(
         emit();
         return;
       }
-      if (drag || strokeLastPoint) {
+      if (drag || strokeLastPoint || marquee) {
         endDrag(false);
         return;
       }
@@ -1865,6 +1969,8 @@ export function createChartDrawingSession(
       if (disposed) return;
       settingsDraft = null;
       groupSettingsDraft = null;
+      marquee = null;
+      selectionRect = null;
       settingsOpen = false;
       textEditing = false;
       disposed = true;
