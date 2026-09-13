@@ -104,7 +104,11 @@ describe("indicator catalog and saved preferences", () => {
     expect(restored.appearance).toEqual({ ema: { color: "#abcdef", lineWidth: 2 } });
   });
   it("searches labels, indicator names and categories without case sensitivity", () => {
-    expect(findIndicators(" MOVING average ").map((entry) => entry.key)).toEqual(["sma", "ema"]);
+    expect(findIndicators(" MOVING average ").map((entry) => entry.key)).toEqual([
+      "sma",
+      "ema",
+      "hma",
+    ]);
     expect(findIndicators("chaikin").map((entry) => entry.key)).toEqual(["cmf"]);
     expect(findIndicators("money flow index").map((entry) => entry.key)).toEqual(["mfi"]);
     expect(findIndicators("rate of change").map((entry) => entry.key)).toEqual(["roc"]);
@@ -115,6 +119,7 @@ describe("indicator catalog and saved preferences", () => {
       "supertrend",
       "sma",
       "ema",
+      "hma",
       "bollinger",
       "donchian",
       "keltner",

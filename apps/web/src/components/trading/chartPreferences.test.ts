@@ -958,3 +958,35 @@ it("persists independent Bollinger basis types and restores old charts to SMA", 
       .inputs,
   ).toEqual({ period: 20, basisType: 0, source: 0, deviations: 2 });
 });
+
+it("persists independent Hull moving average lengths, sources and appearance", async () => {
+  const store = useChartPreferences.getState();
+  const base = store.addIndicator("hma")!;
+  expect(store.setIndicatorInstanceInputs(base, { period: 16, source: 5 })).toBe(true);
+  store.setIndicatorInstanceAppearance(base, {
+    plots: { main: { color: "#ff00aa", lineWidth: 3 } },
+  });
+  const duplicate = store.duplicateIndicatorInstance(base)!;
+  expect(store.setIndicatorInstanceInputs(duplicate, { period: 21, source: 1 })).toBe(true);
+  store.toggleIndicatorInstanceVisibility(duplicate);
+  expect(store.setIndicatorInstanceInputs(base, { period: 0 })).toBe(false);
+  expect(store.setIndicatorInstanceInputs(base, { source: 7 })).toBe(false);
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  const instances = getChartIndicatorInstances(useChartPreferences.getState()).filter(
+    (i) => i.key === "hma",
+  );
+  expect(instances.map((i) => i.inputs)).toEqual([
+    { period: 16, source: 5 },
+    { period: 21, source: 1 },
+  ]);
+  expect(instances.map((i) => i.hidden)).toEqual([false, true]);
+  expect(instances[0]!.appearance.plots?.main).toEqual({ color: "#ff00aa", lineWidth: 3 });
+  useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
+  expect(
+    getChartIndicatorInstances(useChartPreferences.getState()).find((i) => i.id === duplicate)!
+      .inputs,
+  ).toEqual({ period: 9, source: 0 });
+});

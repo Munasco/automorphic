@@ -36,6 +36,7 @@ import { resolveInitialBalanceSettings } from "./initialBalanceSettings";
 import { calculateParabolicSAR } from "./parabolicSar";
 import { calculateSupertrend } from "./supertrend";
 import { calculateMoneyFlowIndex } from "./moneyFlowIndex";
+import { calculateHullMovingAverage } from "./hullMovingAverage";
 const length = (
   defaultValue: number,
   key: IndicatorInputKey = "period",
@@ -323,6 +324,20 @@ export const INDICATOR_DEFINITIONS = [
     styles: [style("main", "Line", "#67a6ef", true)],
     calculate: ({ bars, inputs }) =>
       single(calculateEMA(bars, inputs.period ?? 20, PRICE_SOURCES[inputs.source ?? 0])),
+  }),
+  defineIndicator({
+    key: "hma",
+    label: "HMA 9",
+    detail: "Hull moving average",
+    category: "Overlays",
+    placement: "overlay",
+    inputs: [length(9), priceSource],
+    styles: [style("main", "Line", "#f59e0b", true, 2)],
+    calculate: ({ bars, inputs }) =>
+      single(calculateHullMovingAverage(bars, inputs.period, PRICE_SOURCES[inputs.source ?? 0]), {
+        title: "HMA",
+        breakOnGaps: true,
+      }),
   }),
   defineIndicator({
     key: "bollinger",
