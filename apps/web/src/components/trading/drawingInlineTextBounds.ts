@@ -7,6 +7,69 @@ export interface DrawingTextBoxPlacement {
   angle?: number;
 }
 
+/** Fit the scrollable editor viewport, never the font, inside the rotated pane bounds. */
+export function fitDrawingInlineTextSize(
+  width: number,
+  height: number,
+  angle: number,
+  paneWidth: number,
+  paneHeight: number,
+): { width: number; height: number } {
+  if (![paneWidth, paneHeight].every(Number.isFinite) || paneWidth <= 0 || paneHeight <= 0)
+    return { width: 0, height: 0 };
+  const requestedWidth = Number.isFinite(width) && width > 0 ? width : 1;
+  const requestedHeight = Number.isFinite(height) && height > 0 ? height : 1;
+  const margin = Math.min(6, paneWidth / 2, paneHeight / 2);
+  const availableWidth = paneWidth - 2 * margin;
+  const availableHeight = paneHeight - 2 * margin;
+  if (availableWidth <= 0 || availableHeight <= 0) return { width: 0, height: 0 };
+  const cosine = Math.abs(Math.cos(Number.isFinite(angle) ? angle : 0));
+  const sine = Math.abs(Math.sin(Number.isFinite(angle) ? angle : 0));
+  if (
+    cosine * requestedWidth + sine * requestedHeight <= availableWidth &&
+    sine * requestedWidth + cosine * requestedHeight <= availableHeight
+  )
+    return { width: requestedWidth, height: requestedHeight };
+
+  // For any height, the widest feasible rectangle is bounded by three straight lines.
+  // Area is quadratic on each interval: its maximum is at an endpoint or parabola vertex.
+  const heights = [requestedHeight];
+  if (sine > 0) {
+    heights.push(availableWidth / sine, availableWidth / (2 * sine));
+    heights.push((availableWidth - cosine * requestedWidth) / sine);
+  }
+  if (cosine > 0) {
+    heights.push(availableHeight / cosine, availableHeight / (2 * cosine));
+    heights.push((availableHeight - sine * requestedWidth) / cosine);
+  }
+  const determinant = cosine * cosine - sine * sine;
+  if (determinant !== 0)
+    heights.push((cosine * availableHeight - sine * availableWidth) / determinant);
+  let best = { width: 0, height: 0 };
+  let bestArea = -Infinity;
+  for (const candidate of heights) {
+    if (!Number.isFinite(candidate) || candidate <= 0) continue;
+    const h = Math.min(requestedHeight, candidate);
+    const w = Math.min(
+      requestedWidth,
+      cosine > 0 ? (availableWidth - sine * h) / cosine : Infinity,
+      sine > 0 ? (availableHeight - cosine * h) / sine : Infinity,
+    );
+    if (!Number.isFinite(w) || w <= 0) continue;
+    const area = Math.log(w) + Math.log(h);
+    if (area <= bestArea) continue;
+    bestArea = area;
+    // Remove roundoff at a tight boundary without changing the chosen proportions.
+    const correction = Math.min(
+      1,
+      availableWidth / (cosine * w + sine * h),
+      availableHeight / (sine * w + cosine * h),
+    );
+    best = { width: w * correction, height: h * correction };
+  }
+  return best;
+}
+
 /** The label's aligned rectangle, rotated around its canvas text origin. */
 export function drawingInlineTextBox(
   placement: DrawingTextBoxPlacement,

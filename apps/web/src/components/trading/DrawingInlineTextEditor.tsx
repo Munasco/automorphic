@@ -15,6 +15,7 @@ import {
   clampDrawingInlineTextOrigin,
   drawingInlineTextBox,
   drawingInlineTextIntersectsPane,
+  fitDrawingInlineTextSize,
 } from "./drawingInlineTextBounds";
 
 const ADD_TEXT_LABEL = "+ Add text";
@@ -22,6 +23,7 @@ const ADD_TEXT_LABEL = "+ Add text";
 type Placement = NonNullable<ReturnType<typeof drawingTextPlacement>> & {
   fontFamily: string;
   editorLayout: DrawingTextLayout | null;
+  editorSize: { width: number; height: number } | null;
   paneWidth: number;
   paneHeight: number;
   drawingId: string;
@@ -56,31 +58,6 @@ function TextInput({
     input.current?.focus({ preventScroll: true });
     input.current?.setSelectionRange(valueRef.current.length, valueRef.current.length);
   }, []);
-  useLayoutEffect(() => {
-    if (drawing.kind === "text") return;
-    const element = input.current;
-    const context = document.createElement("canvas").getContext("2d");
-    if (!element || !context) return;
-    const resize = () => {
-      context.font = `${drawing.textItalic ? "italic " : ""}${drawing.textBold ? "bold " : ""}${size}px ${placement.fontFamily}`;
-      const width = Math.ceil(
-        Math.max(...value.split(/\r?\n/).map((row) => context.measureText(row).width)),
-      );
-      // Change only dimensions so typing and late font loads preserve the caret.
-      element.style.width = `${Math.min(Math.max(60, width + 4), Math.max(60, placement.paneWidth - 12))}px`;
-    };
-    resize();
-    document.fonts.addEventListener("loadingdone", resize);
-    return () => document.fonts.removeEventListener("loadingdone", resize);
-  }, [
-    value,
-    size,
-    drawing.kind,
-    drawing.textBold,
-    drawing.textItalic,
-    placement.fontFamily,
-    placement.paneWidth,
-  ]);
   useEffect(() => {
     const outside = (event: PointerEvent) => {
       if (event.target instanceof Node && !input.current?.contains(event.target)) finish();
@@ -130,15 +107,12 @@ function TextInput({
       style={{
         ...style,
         color: drawing.textColor ?? drawing.color,
-        width: placement.editorLayout?.width ?? 60,
+        width: placement.editorSize?.width ?? 60,
         padding: placement.editorLayout ? Math.max(0, placement.editorLayout.padding - 1) : 0,
         boxSizing: "border-box",
         whiteSpace: drawing.kind === "text" && drawing.textWrap ? "pre-wrap" : "pre",
         overflowWrap: drawing.kind === "text" && drawing.textWrap ? "anywhere" : "normal",
-        height: Math.min(
-          placement.editorLayout?.height ?? rows.length * size * 1.2 + 2,
-          Math.max(size * 1.2 + 2, placement.paneHeight - 12),
-        ),
+        height: placement.editorSize?.height ?? rows.length * size * 1.2 + 2,
       }}
     />
   );
@@ -191,12 +165,8 @@ export function DrawingInlineTextEditor({
     const editing = drawings.textEditing;
     const rows = (selected.text || (editing ? "" : ADD_TEXT_LABEL)).split(/\r?\n/);
     const labelWidth = Math.max(...rows.map((row) => context.measureText(row).width));
-    const width = editing
-      ? Math.min(Math.max(60, Math.ceil(labelWidth) + 4), Math.max(60, paneWidth - 12))
-      : labelWidth;
-    const height = editing
-      ? Math.min(rows.length * size * 1.2 + 2, Math.max(size * 1.2 + 2, paneHeight - 12))
-      : rows.length * size * 1.2;
+    const width = editing ? Math.max(60, Math.ceil(labelWidth) + 4) : labelWidth;
+    const height = editing ? rows.length * size * 1.2 + 2 : rows.length * size * 1.2;
     const leftScaleWidth = chart.priceScale("left", pane.paneIndex()).width();
     setPlacement((current) => {
       // Panning can temporarily remove the projected anchor. The active textarea
@@ -215,15 +185,21 @@ export function DrawingInlineTextEditor({
               },
             )
           : null;
-      if (layout && editing) {
-        // Keep the editing surface reachable even for a box wider than the pane.
-        // Native scrolling preserves the draft without changing the stored width.
-        layout = {
-          ...layout,
-          width: Math.min(layout.width, Math.max(1, paneWidth - 12)),
-          height: Math.min(layout.height, Math.max(1, paneHeight - 12)),
-        };
-      }
+      // Size in the label's local axes before translating its rotated box into the pane.
+      // The textarea scrolls overflowing content without changing the drawing's font or anchors.
+      const editorSize =
+        editing && local
+          ? fitDrawingInlineTextSize(
+              layout?.width ?? width,
+              layout?.height ?? height,
+              local.angle ?? 0,
+              paneWidth,
+              paneHeight,
+            )
+          : null;
+      // A temporarily collapsed pane must not unmount the textarea and cancel its draft.
+      if (editorSize && (editorSize.width <= 0 || editorSize.height <= 0)) return current;
+      if (layout && editorSize) layout = { ...layout, ...editorSize };
       const box = local
         ? drawingInlineTextBox(
             layout
@@ -234,8 +210,8 @@ export function DrawingInlineTextEditor({
                   baseline: "top",
                 }
               : local,
-            layout?.width ?? width,
-            layout?.height ?? height,
+            editorSize?.width ?? layout?.width ?? width,
+            editorSize?.height ?? layout?.height ?? height,
           )
         : null;
       let next: Placement | null = null;
@@ -257,6 +233,7 @@ export function DrawingInlineTextEditor({
           },
           fontFamily,
           editorLayout: layout,
+          editorSize,
           paneWidth,
           paneHeight,
         };
