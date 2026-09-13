@@ -17,6 +17,8 @@ import {
   drawingInlineTextIntersectsPane,
 } from "./drawingInlineTextBounds";
 
+const ADD_TEXT_LABEL = "+ Add text";
+
 type Placement = NonNullable<ReturnType<typeof drawingTextPlacement>> & {
   fontFamily: string;
   editorLayout: DrawingTextLayout | null;
@@ -154,7 +156,12 @@ export function DrawingInlineTextEditor({
 }) {
   const overlay = useRef<HTMLDivElement>(null);
   const [placement, setPlacement] = useState<Placement | null>(null);
+  const [hoveredTextId, setHoveredTextId] = useState<string | null>(null);
   const selected = drawings.selected;
+  const showPlaceholder =
+    selected?.kind === "text" ||
+    drawings.hovered?.id === selected?.id ||
+    hoveredTextId === selected?.id;
   const eligible =
     selected &&
     drawings.selectedIds.length === 1 &&
@@ -182,7 +189,7 @@ export function DrawingInlineTextEditor({
     const size = selected.textFontSize ?? 14;
     context.font = `${selected.textItalic ? "italic " : ""}${selected.textBold ? "bold " : ""}${size}px ${fontFamily}`;
     const editing = drawings.textEditing;
-    const rows = (selected.text || (editing ? "" : "Add text")).split(/\r?\n/);
+    const rows = (selected.text || (editing ? "" : ADD_TEXT_LABEL)).split(/\r?\n/);
     const labelWidth = Math.max(...rows.map((row) => context.measureText(row).width));
     const width = editing
       ? Math.min(Math.max(60, Math.ceil(labelWidth) + 4), Math.max(60, paneWidth - 12))
@@ -200,7 +207,7 @@ export function DrawingInlineTextEditor({
         local && selected.kind === "text"
           ? measureDrawingText(
               selected,
-              { ...local, value: selected.text || (editing ? "" : "Add text") },
+              { ...local, value: selected.text || (editing ? "" : ADD_TEXT_LABEL) },
               fontFamily,
               (text, font) => {
                 context.font = font;
@@ -341,13 +348,20 @@ export function DrawingInlineTextEditor({
               aria-label={selected.text ? "Edit drawing text" : "Add drawing text"}
               onClick={(event) => {
                 event.stopPropagation();
+                setHoveredTextId(null);
                 drawings.beginTextEdit();
               }}
               onPointerDown={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
               }}
-              className="pointer-events-auto block cursor-text border-0 bg-transparent p-0 outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+              onPointerEnter={() => setHoveredTextId(selected.id)}
+              onPointerLeave={() => setHoveredTextId(null)}
+              className={`block cursor-text border-0 bg-transparent p-0 outline-none focus-visible:ring-1 focus-visible:ring-blue-500 ${
+                selected.text || showPlaceholder
+                  ? "pointer-events-auto"
+                  : "pointer-events-none opacity-0 focus:pointer-events-auto focus:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100"
+              }`}
               style={{
                 ...style,
                 color: selected.text ? "transparent" : "#2962ff",
@@ -364,7 +378,7 @@ export function DrawingInlineTextEditor({
                   : {}),
               }}
             >
-              {selected.text || "Add text"}
+              {selected.text || ADD_TEXT_LABEL}
             </button>
           )}
         </div>
