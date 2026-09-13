@@ -32,6 +32,7 @@ import {
   type IndicatorInputValues,
 } from "./indicatorDefinition";
 import { resolveInitialBalanceSettings } from "./initialBalanceSettings";
+import { calculateSupertrend } from "./supertrend";
 const length = (
   defaultValue: number,
   key: IndicatorInputKey = "period",
@@ -197,6 +198,43 @@ function calculateSession({ bars, session, interval }: IndicatorContext): Indica
 }
 
 export const INDICATOR_DEFINITIONS = [
+  defineIndicator({
+    key: "supertrend",
+    label: "Supertrend",
+    detail: "ATR-based trend direction and trailing bands",
+    category: "Overlays",
+    placement: "overlay",
+    inputs: [
+      length(10, "period", "ATR length"),
+      { key: "multiplier", label: "Factor", defaultValue: 3, min: 0.1, max: 100, step: 0.1 },
+    ],
+    styles: [
+      style("up", "Up trend", "#26a69a", true, 2),
+      style("down", "Down trend", "#ef5350", false, 2),
+    ],
+    calculate: ({ bars, inputs }) => {
+      const result = calculateSupertrend(bars, inputs.period ?? 10, inputs.multiplier ?? 3);
+      return {
+        reading: result.reading,
+        plots: [
+          {
+            id: "up",
+            styleKey: "up",
+            points: result.upSegments.flat(),
+            primary: true,
+            breakOnGaps: true,
+          },
+          {
+            id: "down",
+            styleKey: "down",
+            points: result.downSegments.flat(),
+            primary: true,
+            breakOnGaps: true,
+          },
+        ],
+      };
+    },
+  }),
   defineIndicator({
     key: "sma",
     label: "SMA 20",

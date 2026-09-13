@@ -223,6 +223,9 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
           crosshairMarkerVisible: !options.invisible && style.visible,
           lastValueVisible: pane > 0 && style.visible,
           lineWidth: style.lineWidth as 1 | 2 | 3 | 4,
+          ...(options.breakOnGaps
+            ? { crosshairMarkerBackgroundColor: indicatorStyleColor(style) }
+            : {}),
         });
       }
       const data = points.map((point) => ({
@@ -247,7 +250,27 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
             }
           : {}),
       }));
-      plot.series.setData(data);
+      if (options.breakOnGaps) {
+        // Whitespace preserves missing readings, but line series still connect the
+        // surrounding points. A point's color owns its outgoing edge, so hide
+        // that edge when the next plotted point is not the next candle.
+        const nextTime = new Map(bars.map((bar, index) => [bar.time, bars[index + 1]?.time]));
+        const byTime = new Map(
+          data.map((point, index) => [
+            point.time as number,
+            {
+              ...point,
+              color:
+                data[index + 1] && data[index + 1]!.time !== nextTime.get(point.time as number)
+                  ? "transparent"
+                  : indicatorStyleColor(style),
+            },
+          ]),
+        );
+        plot.series.setData(
+          bars.map((bar) => byTime.get(bar.time) ?? { time: bar.time as UTCTimestamp }),
+        );
+      } else plot.series.setData(data);
       if (options.invisible && plot.series.seriesType() === "Line")
         plot.series.applyOptions({ pointMarkersVisible: false });
       const latest = points.at(-1);

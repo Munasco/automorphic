@@ -54,6 +54,8 @@ export type IndicatorPlot = {
   bounds?: [number, number];
   levels?: number[];
   steps?: boolean;
+  /** Break straight-line strokes across missing candles and retain gaps in readings. */
+  breakOnGaps?: boolean;
   invisible?: boolean;
   volumeFormat?: boolean;
   overlay?: {

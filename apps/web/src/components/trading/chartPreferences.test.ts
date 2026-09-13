@@ -811,3 +811,37 @@ it.each(["rsi", "stochastic", "stochRsi"] as const)(
     expect(inputs()).toEqual([baseInputs, getIndicatorInputs(key)]);
   },
 );
+
+it("persists independent Supertrend factors, periods, colors and visibility", async () => {
+  const store = useChartPreferences.getState();
+  const base = store.addIndicator("supertrend")!;
+  expect(store.setIndicatorInstanceInputs(base, { period: 7, multiplier: 2.5 })).toBe(true);
+  store.setIndicatorInstanceAppearance(base, {
+    plots: { up: { color: "#123456", lineWidth: 3 }, down: { color: "#654321" } },
+  });
+  const duplicate = store.duplicateIndicatorInstance(base)!;
+  store.setIndicatorInstanceInputs(duplicate, { period: 14, multiplier: 4 });
+  store.toggleIndicatorInstanceVisibility(duplicate);
+  expect(store.setIndicatorInstanceInputs(duplicate, { multiplier: 0 })).toBe(false);
+  expect(store.setIndicatorInstanceInputs(duplicate, { period: 1.5 })).toBe(false);
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  const instances = getChartIndicatorInstances(useChartPreferences.getState()).filter(
+    (instance) => instance.key === "supertrend",
+  );
+  expect(instances.map((instance) => instance.inputs)).toEqual([
+    { period: 7, multiplier: 2.5 },
+    { period: 14, multiplier: 4 },
+  ]);
+  expect(instances.map((instance) => instance.hidden)).toEqual([false, true]);
+  expect(instances[0]!.appearance.plots?.up?.color).toBe("#123456");
+  expect(instances[1]!.appearance.plots?.down?.color).toBe("#654321");
+  useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
+  expect(
+    getChartIndicatorInstances(useChartPreferences.getState()).find(
+      (instance) => instance.id === duplicate,
+    )!.inputs,
+  ).toEqual({ period: 10, multiplier: 3 });
+});

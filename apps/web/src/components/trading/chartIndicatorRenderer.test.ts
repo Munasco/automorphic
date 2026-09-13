@@ -17,7 +17,7 @@ type FakePriceLine = {
 type FakeSeries = {
   pane: number;
   options: Record<string, unknown>;
-  data: { time: number; value: number }[];
+  data: { time: number; value: number; color?: string }[];
   setData: (points: { time: number; value: number }[]) => void;
   seriesType: () => string;
   applyOptions: (options: Record<string, unknown>) => void;
@@ -745,4 +745,68 @@ describe("native indicator renderer", () => {
     renderer.update(sessions, disabled, DEFAULT_INITIAL_BALANCE, 30);
     expect(harness.series).toHaveLength(0);
   });
+});
+
+it("renders Supertrend reversals as gaps using two stable overlay series", () => {
+  const harness = chartHarness();
+  const renderer = createIndicatorRenderer(harness.chart, 0.25);
+  const bars = inputBars(60).map((bar, index) => {
+    const price = 100 + Math.sin(index / 3) * 10;
+    return { ...bar, open: price, close: price, high: price + 1, low: price - 1 };
+  });
+  const instance = {
+    ...createIndicatorInstance("supertrend", "base:supertrend"),
+    inputs: { period: 2, multiplier: 0.5 },
+  };
+  const result = renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [
+    instance,
+  ]);
+  expect(harness.series).toHaveLength(2);
+  const [up, down] = harness.series;
+  expect(up!.pane).toBe(0);
+  expect(down!.pane).toBe(0);
+  expect(up!.data).toHaveLength(bars.length);
+  expect(down!.data).toHaveLength(bars.length);
+  expect(up!.data.some((point) => Number.isFinite(point.value))).toBe(true);
+  expect(down!.data.some((point) => Number.isFinite(point.value))).toBe(true);
+  for (let index = 0; index < bars.length; index++) {
+    const a = up!.data[index]!;
+    const b = down!.data[index]!;
+    expect(a.time).toBe(bars[index]!.time);
+    expect(b.time).toBe(a.time);
+    expect(Number.isFinite(a.value) && Number.isFinite(b.value)).toBe(false);
+    const value = Number.isFinite(a.value) ? a.value : b.value;
+    const reading = renderer.readCrosshair({
+      seriesData: new Map([
+        [up, a],
+        [down, b],
+      ]),
+    } as unknown as MouseEventParams);
+    expect(reading).toEqual(Number.isFinite(value) ? { supertrend: value } : {});
+  }
+  for (const series of [up!, down!]) {
+    const plotted = series.data.filter((point) => Number.isFinite(point.value));
+    expect(plotted.some((point) => point.color === "transparent")).toBe(true);
+    for (let index = 0; index < plotted.length - 1; index++) {
+      const point = plotted[index]!;
+      const next = plotted[index + 1]!;
+      const candleIndex = bars.findIndex((bar) => bar.time === point.time);
+      expect(point.color === "transparent").toBe(next.time !== bars[candleIndex + 1]?.time);
+    }
+    expect(series.options.crosshairMarkerBackgroundColor).toBe(series.options.color);
+  }
+  const lastUp = up!.data.at(-1)!;
+  const lastDown = down!.data.at(-1)!;
+  expect(result.readings.supertrend).toBe(
+    Number.isFinite(lastUp.value) ? lastUp.value : lastDown.value,
+  );
+  renderer.update(bars.slice(0, 30), disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [
+    instance,
+  ]);
+  expect(harness.series).toEqual([up, down]);
+  expect(up!.data).toHaveLength(30);
+  renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [
+    { ...instance, hidden: true },
+  ]);
+  expect(harness.series).toHaveLength(0);
 });
