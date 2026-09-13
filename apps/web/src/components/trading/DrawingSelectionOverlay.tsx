@@ -3,6 +3,7 @@ import {
   DEFAULT_DRAWING_TEXT_BACKGROUND_OPACITY,
 } from "./drawingTextLayout";
 import { DrawingGroupSettings } from "./DrawingGroupSettings";
+import { getDrawingGroupAppearance } from "./drawingGroupAppearance";
 import { supportsInlineDrawingText } from "./drawingPrimitive";
 import { getDrawingDialogBounds } from "./drawingDialogBounds";
 import { DRAWING_TEXT_FONT_SIZES, DrawingTextSettings } from "./DrawingTextSettings";
@@ -867,6 +868,7 @@ export function DrawingSelectionOverlay({
   const drag = useRef<{ x: number; y: number; originX: number; originY: number } | null>(null);
   const selected = drawings.selected;
   const group = drawings.selectedObjects.length > 1;
+  const groupAppearance = group ? getDrawingGroupAppearance(drawings.selectedObjects) : null;
   const allLocked = drawings.selectedObjects.every((drawing) => drawing.locked);
   const mixed = (value: (drawing: ChartDrawing) => unknown) =>
     new Set(drawings.selectedObjects.map(value)).size > 1;
@@ -1031,22 +1033,22 @@ export function DrawingSelectionOverlay({
                 <WidthPicker
                   variant="toolbar"
                   compact={compactToolbar}
-                  drawing={selected}
-                  mixed={mixed((drawing) => drawing.width)}
+                  drawing={{ ...selected, ...groupAppearance?.appearance }}
+                  mixed={groupAppearance?.mixed.width ?? false}
                   onChange={drawings.updateSelected}
                 />
                 <LineStylePicker
                   variant="toolbar"
-                  drawing={selected}
-                  mixed={mixed((drawing) => drawing.lineStyle ?? "solid")}
+                  drawing={{ ...selected, ...groupAppearance?.appearance }}
+                  mixed={groupAppearance?.mixed.lineStyle ?? false}
                   onChange={drawings.updateSelected}
                 />
                 <ColorPicker
                   variant="toolbar"
-                  value={selected.color}
+                  value={groupAppearance?.appearance.color ?? selected.color}
                   icon="pencil"
-                  mixed={mixed((drawing) => drawing.color)}
-                  opacity={selected.lineOpacity ?? 1}
+                  mixed={groupAppearance?.mixed.color ?? false}
+                  opacity={groupAppearance?.appearance.lineOpacity ?? selected.lineOpacity ?? 1}
                   onOpacityChange={(lineOpacity) => drawings.updateSelected({ lineOpacity })}
                   onChange={(color) => drawings.updateSelected({ color })}
                 />
