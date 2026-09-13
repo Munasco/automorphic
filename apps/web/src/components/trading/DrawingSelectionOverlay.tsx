@@ -261,7 +261,6 @@ function DrawingSettings({
     ...(drawing.kind === "regression-trend" ? defaultRegressionDrawingSettings() : {}),
     ...drawing,
   }));
-  const [replaceAppearance, setReplaceAppearance] = useState(false);
   const availableTabs =
     draft.kind === "text"
       ? ["Text", "Visibility"]
@@ -364,8 +363,9 @@ function DrawingSettings({
     : null;
   const save = () => {
     if (!canSave) return;
-    const { id: _id, kind: _kind, ...patch } = draft;
-    drawings.applySettings(patch, { replace: replaceAppearance });
+    // Each input has already previewed its change. Saving the entire form would
+    // also submit untouched defaults and stale coordinates from another view.
+    drawings.applySettings({});
   };
   return (
     <Dialog
@@ -799,7 +799,6 @@ function DrawingSettings({
                   ...(next.kind === "regression-trend" ? defaultRegressionDrawingSettings() : {}),
                   ...next,
                 });
-                setReplaceAppearance(true);
                 drawings.previewSettings(patch, { replace: true });
               }}
             />

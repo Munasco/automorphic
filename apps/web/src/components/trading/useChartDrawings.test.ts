@@ -17,7 +17,11 @@ import type {
 } from "lightweight-charts";
 import { createChartDrawingSession } from "./useChartDrawings";
 import { sanitizeDrawingVisibility } from "./drawingVisibility";
-import { buildDrawingGeometry, type ChartDrawing } from "./drawingGeometry";
+import {
+  buildDrawingGeometry,
+  parallelChannelSettingsLevels,
+  type ChartDrawing,
+} from "./drawingGeometry";
 import {
   parseDrawingsClipboard,
   parseDrawingClipboard,
@@ -95,13 +99,17 @@ function fixture(symbol: string, initial: string | null = null, candles: Candles
     },
   };
   const change = vi.fn();
-  const open = (intervalMinutes = 1, directPlacement = false) =>
+  const open = (
+    intervalMinutes = 1,
+    directPlacement = false,
+    sessionStorage: Pick<Storage, "getItem" | "setItem"> = storage,
+  ) =>
     createChartDrawingSession(
       chart,
       series,
       symbol,
       change,
-      storage,
+      sessionStorage,
       intervalMinutes,
       undefined,
       directPlacement,
@@ -123,16 +131,328 @@ function fixture(symbol: string, initial: string | null = null, candles: Candles
     change,
     saved: () => saved,
     controls,
+    storage,
     writes: () => savedWrites,
     listener: () => listener,
   };
 }
 
+describe("drawing sessions sharing one workspace store", () => {
+  const initial: ChartDrawing[] = ["a", "b"].map((id, index) => ({
+    id,
+    kind: "trend",
+    color: "#2962ff",
+    width: 2,
+    text: `Label ${id}`,
+    anchors: [
+      { time: (100 + index * 200) as Time, price: 4900 - index * 200 },
+      { time: (200 + index * 200) as Time, price: 4800 - index * 200 },
+    ],
+  }));
+  const movedAnchors = [
+    { time: 120 as Time, price: 4890 },
+    { time: 220 as Time, price: 4790 },
+  ];
+  const setup = (objects = initial) => {
+    const first = fixture("shared-session", JSON.stringify(objects));
+    const second = fixture("shared-session");
+    const a = first.open();
+    const b = second.open(1, false, first.storage);
+    return {
+      a,
+      b,
+      first,
+      second,
+      saved: () => JSON.parse(first.saved()!) as ChartDrawing[],
+      dispose: () => {
+        a.dispose();
+        b.dispose();
+      },
+    };
+  };
+
+  it("preserves edits to different lines and publishes the same committed snapshot to both charts", () => {
+    const f = setup();
+    try {
+      f.a.updateDrawing("a", { color: "#ff0000", anchors: movedAnchors });
+      f.b.updateDrawing("b", { color: "#00ff00" });
+      const expected = [
+        { ...initial[0], color: "#ff0000", anchors: movedAnchors },
+        { ...initial[1], color: "#00ff00" },
+      ];
+      expect(f.saved()).toEqual(expected);
+      expect(f.a.getCommittedDrawings()).toEqual(expected);
+      expect(f.b.getCommittedDrawings()).toEqual(expected);
+    } finally {
+      f.dispose();
+    }
+  });
+
+  it("undoes and redoes only local edits without reverting another chart's changes", () => {
+    const f = setup();
+    try {
+      f.a.updateDrawing("a", { color: "#ff0000" });
+      f.b.updateDrawing("b", { color: "#00ff00" });
+      f.a.undo();
+      expect(f.saved()).toEqual([initial[0], { ...initial[1], color: "#00ff00" }]);
+      f.a.redo();
+      expect(f.saved()).toEqual([
+        { ...initial[0], color: "#ff0000" },
+        { ...initial[1], color: "#00ff00" },
+      ]);
+      f.b.undo();
+      expect(f.saved()).toEqual([{ ...initial[0], color: "#ff0000" }, initial[1]]);
+    } finally {
+      f.dispose();
+    }
+  });
+
+  it("keeps remote geometry when saving a local text/color settings draft with unchanged stale coordinates", () => {
+    const f = setup();
+    try {
+      f.a.selectDrawing("a");
+      f.a.openSettings();
+      f.a.previewSettings({ text: "Local draft", color: "#ff0000" });
+      f.b.updateDrawing("a", { anchors: movedAnchors });
+      // The settings dialog submits its entire local draft, including untouched coordinates.
+      expect(
+        f.a.applySettings({
+          anchors: initial[0]!.anchors,
+          color: "#ff0000",
+          width: 2,
+          text: "Local draft",
+        }),
+      ).toBe(true);
+      expect(f.saved()[0]).toEqual({
+        ...initial[0],
+        anchors: movedAnchors,
+        color: "#ff0000",
+        text: "Local draft",
+      });
+      f.a.undo();
+      expect(f.saved()[0]).toEqual({ ...initial[0], anchors: movedAnchors });
+    } finally {
+      f.dispose();
+    }
+  });
+
+  it("keeps remote geometry and appearance while an inline text draft is committed", () => {
+    const f = setup();
+    try {
+      f.a.selectDrawing("a");
+      expect(f.a.beginTextEdit()).toBe(true);
+      f.a.previewText("First row\nLocal draft");
+      f.b.updateDrawing("a", { anchors: movedAnchors, color: "#00ff00" });
+      expect(f.a.commitText("First row\nLocal draft", "a")).toBe(true);
+      expect(f.saved()[0]).toEqual({
+        ...initial[0],
+        anchors: movedAnchors,
+        color: "#00ff00",
+        text: "First row\nLocal draft",
+      });
+      f.a.undo();
+      expect(f.saved()[0]).toEqual({ ...initial[0], anchors: movedAnchors, color: "#00ff00" });
+    } finally {
+      f.dispose();
+    }
+  });
+
+  it.each(["settings", "text"] as const)(
+    "does not resurrect a peer-deleted drawing when its %s draft finishes or undoes",
+    (editor) => {
+      const f = setup();
+      try {
+        f.a.updateDrawing("a", { color: "#ff0000" });
+        f.a.selectDrawing("a");
+        if (editor === "settings") {
+          f.a.openSettings();
+          f.a.previewSettings({ text: "Pending" });
+        } else {
+          f.a.beginTextEdit();
+          f.a.previewText("Pending");
+        }
+        f.b.deleteDrawing("a");
+        if (editor === "settings") f.a.applySettings({ text: "Pending" });
+        else f.a.commitText("Pending", "a");
+        expect(f.saved()).toEqual([initial[1]]);
+        f.a.undo();
+        expect(f.saved()).toEqual([initial[1]]);
+      } finally {
+        f.dispose();
+      }
+    },
+  );
+
+  it.each([false, true])(
+    "merges independent visibility range changes from settings (sparse: %s)",
+    (sparse) => {
+      const visibility = sanitizeDrawingVisibility(undefined);
+      const original = { ...initial[0]!, ...(sparse ? {} : { visibility }) };
+      const f = setup([original, initial[1]!]);
+      try {
+        f.a.selectDrawing("a");
+        f.a.openSettings();
+        f.a.previewSettings({
+          visibility: { ...visibility, minutes: { ...visibility.minutes, max: 15 } },
+        });
+        f.b.updateDrawing("a", {
+          visibility: { ...visibility, hours: { ...visibility.hours, max: 12 } },
+        });
+        expect(f.a.applySettings({})).toBe(true);
+        expect(f.saved()[0]!.visibility).toEqual({
+          ...visibility,
+          minutes: { ...visibility.minutes, max: 15 },
+          hours: { ...visibility.hours, max: 12 },
+        });
+        f.a.undo();
+        expect(f.saved()[0]!.visibility).toEqual({
+          ...visibility,
+          hours: { ...visibility.hours, max: 12 },
+        });
+      } finally {
+        f.dispose();
+      }
+    },
+  );
+
+  it.each([false, true])(
+    "merges independent channel level appearance changes from settings (sparse: %s)",
+    (sparse) => {
+      const channel: ChartDrawing = {
+        ...initial[0]!,
+        kind: "channel",
+        anchors: [...initial[0]!.anchors, { time: 150 as Time, price: 4700 }],
+      };
+      const levels = parallelChannelSettingsLevels(channel);
+      const f = setup([{ ...channel, ...(sparse ? {} : { levels }) }, initial[1]!]);
+      try {
+        f.a.selectDrawing("a");
+        f.a.openSettings();
+        f.a.previewSettings({
+          levels: levels.map((level) =>
+            level.value === 0 ? { ...level, color: "#ff0000" } : level,
+          ),
+        });
+        f.b.updateDrawing("a", {
+          levels: levels.map((level) => (level.value === 1 ? { ...level, width: 4 } : level)),
+        });
+        expect(f.a.applySettings({})).toBe(true);
+        expect(f.saved()[0]!.levels?.find((level) => level.value === 0)?.color).toBe("#ff0000");
+        expect(f.saved()[0]!.levels?.find((level) => level.value === 1)?.width).toBe(4);
+        f.a.undo();
+        const restored = f.saved()[0]!;
+        expect(restored.levels?.find((level) => level.value === 0)?.color ?? restored.color).toBe(
+          channel.color,
+        );
+        expect(restored.levels?.find((level) => level.value === 1)?.width).toBe(4);
+      } finally {
+        f.dispose();
+      }
+    },
+  );
+
+  it("isolates symbols and storage identities, detaches disposed peers, and reloads the latest snapshot", () => {
+    const nqKey = "automorphic:chart-drawings:v1:NQ";
+    const esKey = "automorphic:chart-drawings:v1:ES";
+    const values = new Map([
+      [nqKey, JSON.stringify(initial)],
+      [esKey, JSON.stringify(initial)],
+    ]);
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        values.set(key, value);
+      },
+    };
+    const first = fixture("NQ"),
+      peer = fixture("NQ"),
+      otherSymbol = fixture("ES"),
+      otherStore = fixture("NQ", JSON.stringify(initial));
+    const a = first.open(1, false, storage),
+      b = peer.open(1, false, storage),
+      es = otherSymbol.open(1, false, storage),
+      isolated = otherStore.open();
+    try {
+      a.updateDrawing("a", { color: "#ff0000" });
+      expect(b.getCommittedDrawings()![0]!.color).toBe("#ff0000");
+      expect(es.getCommittedDrawings()).toEqual(initial);
+      expect(isolated.getCommittedDrawings()).toEqual(initial);
+      expect(JSON.parse(values.get(esKey)!)).toEqual(initial);
+      a.dispose();
+      const oldEmissions = first.change.mock.calls.length;
+      b.updateDrawing("b", { color: "#00ff00" });
+      expect(first.change.mock.calls.length).toBe(oldEmissions);
+      const replacement = first.open(1, false, storage);
+      try {
+        expect(replacement.getCommittedDrawings()).toEqual(b.getCommittedDrawings());
+        replacement.updateDrawing("a", { text: "Reopened" });
+        expect(b.getCommittedDrawings()![0]!.text).toBe("Reopened");
+      } finally {
+        replacement.dispose();
+      }
+    } finally {
+      a.dispose();
+      b.dispose();
+      es.dispose();
+      isolated.dispose();
+    }
+  });
+
+  it("keeps drag previews private until committing one shared snapshot", () => {
+    const f = setup();
+    try {
+      const peerEmissions = f.second.change.mock.calls.length;
+      expect(f.a.beginDrag({ x: 200, y: 200 })).toBe(true);
+      f.a.dragTo({ x: 250, y: 250 });
+      const expected = [
+        { ...initial[0], anchors: [initial[0]!.anchors[0], { time: 250, price: 4750 }] },
+        initial[1],
+      ];
+      expect(f.first.change.mock.lastCall![0].objects).toEqual(expected);
+      expect(f.a.getCommittedDrawings()).toEqual(initial);
+      expect(f.b.getCommittedDrawings()).toEqual(initial);
+      expect(f.second.change.mock.calls.length).toBe(peerEmissions);
+      expect(f.saved()).toEqual(initial);
+      expect(f.first.writes()).toBe(0);
+      f.a.endDrag(true);
+      expect(f.a.getCommittedDrawings()).toEqual(expected);
+      expect(f.b.getCommittedDrawings()).toEqual(expected);
+      expect(f.saved()).toEqual(expected);
+      expect(f.first.writes()).toBe(1);
+      f.a.undo();
+      expect(f.saved()).toEqual(initial);
+      expect(f.b.getCommittedDrawings()).toEqual(initial);
+    } finally {
+      f.dispose();
+    }
+  });
+
+  it("cancels a drag without rolling back peer changes to the dragged line or another line", () => {
+    const f = setup();
+    try {
+      expect(f.a.beginDrag({ x: 200, y: 200 })).toBe(true);
+      f.a.dragTo({ x: 250, y: 250 });
+      f.b.updateDrawing("a", { anchors: movedAnchors, color: "#ff0000" });
+      f.b.updateDrawing("b", { text: "Peer annotation" });
+      const expected = [
+        { ...initial[0], anchors: movedAnchors, color: "#ff0000" },
+        { ...initial[1], text: "Peer annotation" },
+      ];
+      f.a.endDrag(false);
+      expect(f.saved()).toEqual(expected);
+      expect(f.a.getCommittedDrawings()).toEqual(expected);
+      expect(f.b.getCommittedDrawings()).toEqual(expected);
+    } finally {
+      f.dispose();
+    }
+  });
+});
+
 describe("Shift line alignment", () => {
-  const anchorPoints = (session: ReturnType<ReturnType<typeof fixture>["open"]>) =>
-    session
-      .getCommittedDrawings()![0]!
-      .anchors.map(({ time, price }) => ({ x: time, y: 5000 - price }));
+  const previewDrawings = (f: ReturnType<typeof fixture>): readonly ChartDrawing[] =>
+    f.change.mock.lastCall![0].objects;
+  const anchorPoints = (f: ReturnType<typeof fixture>) =>
+    previewDrawings(f)[0]!.anchors.map(({ time, price }) => ({ x: time, y: 5000 - price }));
   const straightKinds = [
     "trend",
     "ray",
@@ -150,7 +470,7 @@ describe("Shift line alignment", () => {
       session.setTool(kind);
       session.placeAt({ x: 100, y: 350 });
       session.placeAt({ x: 300, y: 270 }, { shiftKey: true });
-      expect(anchorPoints(session)).toEqual([
+      expect(anchorPoints(f)).toEqual([
         { x: 100, y: 350 },
         { x: 300, y: 350 },
       ]);
@@ -184,7 +504,7 @@ describe("Shift line alignment", () => {
     session.setTool("trend");
     session.placeAt({ x: 100, y: 350 });
     session.placeAt(point, { shiftKey: true });
-    const actual = anchorPoints(session)[1]!;
+    const actual = anchorPoints(f)[1]!;
     expect(actual.x).toBeCloseTo(expected.x, 8);
     expect(actual.y).toBeCloseTo(expected.y, 8);
     session.dispose();
@@ -206,7 +526,7 @@ describe("Shift line alignment", () => {
     session.setTool("trend");
     session.placeAt({ x: 100, y: 350 });
     session.placeAt({ x: 300, y: 200 }, { shiftKey: true });
-    expect(anchorPoints(session)).toEqual([
+    expect(anchorPoints(f)).toEqual([
       { x: 100, y: 350 },
       { x: 277, y: 173.25 },
     ]);
@@ -307,14 +627,12 @@ describe("Shift line alignment", () => {
       const pointer = handle === 0 ? { x: 100, y: 300 } : { x: 300, y: 270 };
       expect(session.beginDrag(start)).toBe(true);
       session.dragTo(pointer);
-      expect(anchorPoints(session)[handle]).toEqual(pointer);
+      expect(anchorPoints(f)[handle]).toEqual(pointer);
       session.setShiftPressed(true);
-      expect(anchorPoints(session)[handle]).toEqual({ x: pointer.x, y: handle === 0 ? 250 : 350 });
-      expect(session.getCommittedDrawings()![0]!.anchors[1 - handle]).toEqual(
-        original.anchors[1 - handle],
-      );
+      expect(anchorPoints(f)[handle]).toEqual({ x: pointer.x, y: handle === 0 ? 250 : 350 });
+      expect(previewDrawings(f)[0]!.anchors[1 - handle]).toEqual(original.anchors[1 - handle]);
       session.setShiftPressed(false);
-      expect(anchorPoints(session)[handle]).toEqual(pointer);
+      expect(anchorPoints(f)[handle]).toEqual(pointer);
       session.dragTo(pointer, { shiftKey: true });
       session.endDrag();
       expect(f.writes()).toBe(1);
@@ -339,22 +657,22 @@ describe("Shift line alignment", () => {
     const session = f.open();
     expect(session.beginDrag({ x: 200, y: 300 })).toBe(true);
     session.dragTo({ x: 280, y: 320 }, { shiftKey: true });
-    expect(anchorPoints(session)).toEqual([
+    expect(anchorPoints(f)).toEqual([
       { x: 180, y: 350 },
       { x: 380, y: 250 },
     ]);
     session.dragTo({ x: 220, y: 380 }, { shiftKey: true });
-    expect(anchorPoints(session)).toEqual([
+    expect(anchorPoints(f)).toEqual([
       { x: 100, y: 430 },
       { x: 300, y: 330 },
     ]);
     session.setShiftPressed(false);
-    expect(anchorPoints(session)).toEqual([
+    expect(anchorPoints(f)).toEqual([
       { x: 120, y: 430 },
       { x: 320, y: 330 },
     ]);
     session.setShiftPressed(true);
-    expect(anchorPoints(session)).toEqual([
+    expect(anchorPoints(f)).toEqual([
       { x: 100, y: 430 },
       { x: 300, y: 330 },
     ]);
@@ -405,14 +723,14 @@ describe("Shift line alignment", () => {
       };
       expect(session.beginDrag(origin)).toBe(true);
       session.dragTo({ x: origin.x + 80, y: origin.y + 20 }, { shiftKey: true });
-      session.getCommittedDrawings()!.forEach((drawing, index) => {
+      previewDrawings(f).forEach((drawing, index) => {
         expect(drawing.anchors.map((anchor) => anchor.price)).toEqual(
           originals[index]!.anchors.map((anchor) => anchor.price),
         );
         expect(drawing.anchors.map((anchor) => anchor.time)).toEqual([180, 380]);
       });
       session.dragTo({ x: origin.x + 20, y: origin.y + 80 }, { shiftKey: true });
-      session.getCommittedDrawings()!.forEach((drawing, index) => {
+      previewDrawings(f).forEach((drawing, index) => {
         expect(drawing.anchors.map((anchor) => anchor.time)).toEqual(
           originals[index]!.anchors.map((anchor) => anchor.time),
         );
@@ -451,12 +769,12 @@ describe("Shift line alignment", () => {
     if (group) session.selectDrawing("b", { additive: true });
     expect(session.beginDrag({ x: 200, y: 200 }, { clone, additive: group })).toBe(true);
     session.dragTo({ x: 280, y: 220 }, { shiftKey: true });
-    const moved = session.getCommittedDrawings()!.slice(clone ? originals.length : 0);
+    const moved = previewDrawings(f).slice(clone ? originals.length : 0);
     expect(moved.map((drawing) => drawing.anchors[0])).toEqual(
       originals.map((drawing) => ({ ...drawing.anchors[0], time: 180 })),
     );
     session.dragTo({ x: 200, y: 200 }, { shiftKey: true });
-    expect(session.getCommittedDrawings()).toEqual(originals);
+    expect(previewDrawings(f)).toEqual(originals);
     session.endDrag();
     expect(f.writes()).toBe(0);
     // Returning to zero must not leave a stale clone id that loses the next preview.
@@ -466,7 +784,7 @@ describe("Shift line alignment", () => {
     session.dragTo({ x: 280, y: 220 }, { shiftKey: true });
     session.dragTo({ x: 200, y: 200 }, { shiftKey: true });
     session.dragTo({ x: 220, y: 280 }, { shiftKey: true });
-    const changed = session.getCommittedDrawings()!.slice(clone ? originals.length : 0);
+    const changed = previewDrawings(f).slice(clone ? originals.length : 0);
     expect(changed.map((drawing) => drawing.anchors[0])).toEqual(
       originals.map((drawing) => ({
         ...drawing.anchors[0],
@@ -501,7 +819,7 @@ describe("Shift line alignment", () => {
     session.setMagnetMode("strong");
     expect(session.beginDrag({ x: 200, y: 199.87655 })).toBe(true);
     session.dragTo({ x: 280, y: 219.87655 }, { shiftKey: true });
-    expect(session.getCommittedDrawings()![0]!.anchors).toEqual([
+    expect(previewDrawings(f)[0]!.anchors).toEqual([
       { time: 200, price: 4800.12345 },
       { time: 400, price: 4800.12345 },
     ]);
@@ -517,7 +835,7 @@ describe("Shift line alignment", () => {
     session.placeAt({ x: 100, y: 350 });
     session.placeAt({ x: 300, y: 270 }, { shiftKey: true });
     session.placeAt({ x: 250, y: 225 }, { shiftKey: true });
-    expect(anchorPoints(session)).toEqual([
+    expect(anchorPoints(f)).toEqual([
       { x: 100, y: 350 },
       { x: 300, y: 350 },
       { x: 250, y: 225 },
@@ -535,7 +853,7 @@ describe("Shift line alignment", () => {
     session.setTool("trend");
     session.placeAt({ x: 100, y: 350 });
     session.placeAt({ x: 300, y: 270 }, { shiftKey: true });
-    expect(anchorPoints(session)).toEqual([
+    expect(anchorPoints(f)).toEqual([
       { x: 100, y: 350 },
       { x: 300, y: 350 },
     ]);

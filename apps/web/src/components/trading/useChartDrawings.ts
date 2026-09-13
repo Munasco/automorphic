@@ -1,3 +1,4 @@
+import { applyDrawingChanges, mergeDrawingChanges } from "./drawingChanges";
 import { createDrawingDefaults, drawingAppearanceChanged } from "./drawingDefaults";
 import { createDrawingPaneExtensions, drawingPaneTimeAtCoordinate } from "./drawingPaneExtensions";
 import type { ChartInterval } from "./tradingIntervals";
@@ -99,6 +100,8 @@ export type DrawingVisibilityPatch = {
 };
 export type DrawingDisplacement = { bars: number; price: number; priceMultiplier?: number };
 type DrawingStorage = Pick<Storage, "getItem" | "setItem">;
+type DrawingPeer = (before: ChartDrawing[], after: ChartDrawing[]) => void;
+const drawingPeers = new WeakMap<DrawingStorage, Map<string, Set<DrawingPeer>>>();
 const EMPTY: DrawingState = {
   tool: "cursor",
   count: 0,
@@ -129,7 +132,7 @@ export function createChartDrawingSession(
   series: ISeriesApi<SeriesType>,
   symbol: string,
   onChange: (state: DrawingState) => void,
-  storage: DrawingStorage | undefined = tradingWorkspaceStorage,
+  storage: DrawingStorage | undefined = tradingWorkspaceStorage.capture(),
   intervalMinutes: number | ChartInterval = 1,
   regressionSeries: ISeriesApi<SeriesType> = series,
   directPlacement = false,
@@ -142,6 +145,8 @@ export function createChartDrawingSession(
   } catch {
     /* Storage may be unavailable. */
   }
+  let committedDrawings = drawings;
+  let receivedPeerChange = false;
   let tool: ChartDrawingTool = "cursor";
   let anchors: DrawingAnchor[] = [];
   let selectedId: string | null = null;
@@ -249,15 +254,20 @@ export function createChartDrawingSession(
   };
   const displayedDrawings = () =>
     groupSettingsDraft
-      ? drawings.map(
-          (drawing) =>
-            groupSettingsDraft!.drawings.find((item) => item.id === drawing.id) ?? drawing,
+      ? drawings.map((drawing) =>
+          mergeDrawingChanges(
+            groupSettingsDraft!.originals.find((item) => item.id === drawing.id),
+            groupSettingsDraft!.drawings.find((item) => item.id === drawing.id),
+            drawing,
+          ),
         )
       : settingsDraft
         ? settingsDraft.created
           ? [...drawings, settingsDraft.drawing]
           : drawings.map((drawing) =>
-              drawing.id === settingsDraft!.original.id ? settingsDraft!.drawing : drawing,
+              drawing.id === settingsDraft!.original.id
+                ? mergeDrawingChanges(settingsDraft!.original, settingsDraft!.drawing, drawing)
+                : drawing,
             )
         : drawings;
   const isVisible = (drawing: ChartDrawing) =>
@@ -328,7 +338,12 @@ export function createChartDrawingSession(
       count: drawings.length,
       objects: drawings,
       pending: anchors.length > 0,
-      canUndo: !!(anchors.length || history.length || drawings.length || replacingId),
+      canUndo: !!(
+        anchors.length ||
+        history.length ||
+        (!receivedPeerChange && drawings.length) ||
+        replacingId
+      ),
       canRedo: future.length > 0,
       hidden,
       magnet: magnetMode !== "off",
@@ -350,10 +365,17 @@ export function createChartDrawingSession(
     paneExtensions.redraw();
   };
   const persist = () => {
+    const before = committedDrawings;
+    committedDrawings = drawings;
     try {
       storage?.setItem(key, JSON.stringify(drawings));
     } catch {
       /* Keep local edits usable. */
+    }
+    if (JSON.stringify(before) !== JSON.stringify(committedDrawings)) {
+      for (const peer of drawingPeers.get(storage!)?.get(key) ?? []) {
+        if (peer !== receiveDrawings) peer(before, committedDrawings);
+      }
     }
   };
   const remember = () => {
@@ -1449,7 +1471,13 @@ export function createChartDrawingSession(
       }
       remember();
       const next = new Map(drafts.map((drawing) => [drawing.id, drawing]));
-      drawings = drawings.map((drawing) => next.get(drawing.id) ?? drawing);
+      drawings = drawings.map((drawing) =>
+        mergeDrawingChanges(
+          originals.find((item) => item.id === drawing.id),
+          next.get(drawing.id),
+          drawing,
+        ),
+      );
       changed();
       return true;
     }
@@ -1485,7 +1513,9 @@ export function createChartDrawingSession(
       }
     } else if (JSON.stringify(original) !== JSON.stringify(next)) {
       remember();
-      drawings = drawings.map((drawing) => (drawing.id === original.id ? next : drawing));
+      drawings = drawings.map((drawing) =>
+        drawing.id === original.id ? mergeDrawingChanges(original, next, drawing) : drawing,
+      );
       changed();
     } else {
       render();
@@ -1888,6 +1918,77 @@ export function createChartDrawingSession(
       return null;
     }
   };
+  // Rebase only externally changed fields, including into Undo/Redo. Editors keep
+  // their original draft so a full settings-form submission cannot overwrite fields
+  // that changed elsewhere but were untouched in this view.
+  const receiveDrawings: DrawingPeer = (before, after) => {
+    if (disposed) return;
+    receivedPeerChange = true;
+    if (drag) {
+      const members = [drag.drawing, ...drag.group.map((item) => item.drawing)];
+      const geometryChanged = members.some((drawing) => {
+        const previous = before.find((item) => item.id === drawing.id);
+        const next = after.find((item) => item.id === drawing.id);
+        return (
+          previous &&
+          (!next ||
+            next.locked ||
+            JSON.stringify(previous.anchors) !== JSON.stringify(next.anchors))
+        );
+      });
+      // A remote geometry edit invalidates the captured pointer projection. Cancel
+      // that drag before applying it; never commit against obsolete anchor positions.
+      if (geometryChanged) endDrag(false);
+      else {
+        drag.before = applyDrawingChanges(before, after, drag.before);
+        drag.drawing = mergeDrawingChanges(
+          before.find((item) => item.id === drag!.drawing.id),
+          after.find((item) => item.id === drag!.drawing.id),
+          drag.drawing,
+        );
+        for (const member of drag.group) {
+          member.drawing = mergeDrawingChanges(
+            before.find((item) => item.id === member.drawing.id),
+            after.find((item) => item.id === member.drawing.id),
+            member.drawing,
+          );
+        }
+      }
+    }
+    committedDrawings = applyDrawingChanges(before, after, committedDrawings);
+    drawings = applyDrawingChanges(before, after, drawings);
+    for (const stack of [history, future]) {
+      for (let index = 0; index < stack.length; index++) {
+        stack[index] = applyDrawingChanges(before, after, stack[index]!);
+      }
+    }
+    if (
+      settingsDraft &&
+      !settingsDraft.created &&
+      !drawings.some((item) => item.id === settingsDraft!.original.id)
+    ) {
+      discardSettings();
+    }
+    if (groupSettingsDraft) {
+      const existing = new Set(drawings.map((item) => item.id));
+      groupSettingsDraft.originals = groupSettingsDraft.originals.filter((item) =>
+        existing.has(item.id),
+      );
+      groupSettingsDraft.drawings = groupSettingsDraft.drawings.filter((item) =>
+        existing.has(item.id),
+      );
+      if (!groupSettingsDraft.drawings.length) discardSettings();
+    }
+    render();
+    emit();
+  };
+  if (storage) {
+    let symbols = drawingPeers.get(storage);
+    if (!symbols) drawingPeers.set(storage, (symbols = new Map()));
+    let peers = symbols.get(key);
+    if (!peers) symbols.set(key, (peers = new Set()));
+    peers.add(receiveDrawings);
+  }
   // The chart library suppresses a second quick click even at a different position.
   // DOM placement handles every anchor; the chart retains its cursor-selection behavior.
   const chartClick = (event: MouseEventParams<Time>) => {
@@ -1903,7 +2004,7 @@ export function createChartDrawingSession(
   render();
   emit();
   return {
-    getCommittedDrawings: () => (disposed ? null : drawings),
+    getCommittedDrawings: () => (disposed ? null : committedDrawings),
     setTool,
     placeAt: (point: DrawingPoint, modifiers?: DrawingPointerModifiers) => {
       if (disposed || tool === "cursor" || isFreehandDrawingTool(tool)) return false;
@@ -2079,7 +2180,7 @@ export function createChartDrawingSession(
         setTool("cursor");
         return;
       }
-      if (!drawings.length && !history.length) return;
+      if (!history.length && (receivedPeerChange || !drawings.length)) return;
       future.push(drawings.slice());
       drawings = history.pop() ?? drawings.slice(0, -1);
       changed();
@@ -2255,6 +2356,11 @@ export function createChartDrawingSession(
       settingsOpen = false;
       textEditing = false;
       disposed = true;
+      const symbols = storage && drawingPeers.get(storage);
+      const peers = symbols?.get(key);
+      peers?.delete(receiveDrawings);
+      if (peers?.size === 0) symbols?.delete(key);
+      if (storage && symbols?.size === 0) drawingPeers.delete(storage);
       lastPreviewEvent = null;
       lastDragPoint = null;
       paneExtensions.dispose();
@@ -2286,7 +2392,7 @@ export function useChartDrawings(
       series,
       symbol,
       setState,
-      tradingWorkspaceStorage,
+      tradingWorkspaceStorage.capture(),
       intervalMinutes,
       regressionSeries ?? series,
       true,
