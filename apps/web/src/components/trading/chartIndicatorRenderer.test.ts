@@ -810,3 +810,43 @@ it("renders Supertrend reversals as gaps using two stable overlay series", () =>
   ]);
   expect(harness.series).toHaveLength(0);
 });
+
+it("renders SAR as independent markers and retains readings and instance ownership", () => {
+  const harness = chartHarness();
+  const renderer = createIndicatorRenderer(harness.chart, 0.25);
+  const bars = inputBars(30);
+  const first = createIndicatorInstance("sar", "base:sar");
+  const second = {
+    ...createIndicatorInstance("sar", "sar-copy"),
+    inputs: { start: 0.1, increment: 0.05, maximum: 0.3 },
+  };
+  const result = renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [
+    first,
+    second,
+  ]);
+  expect(harness.series).toHaveLength(2);
+  const [base, copy] = harness.series;
+  expect(base!.options.lineVisible).toBe(false);
+  expect(base!.options.crosshairMarkerVisible).toBe(true);
+  expect(base!.primitives).toHaveLength(1);
+  expect(base!.data).not.toEqual(copy!.data);
+  expect(result.readings.sar).toBe(base!.data.at(-1)!.value);
+  expect(
+    renderer.readCrosshair({
+      seriesData: new Map([
+        [base, base!.data.at(-1)],
+        [copy, copy!.data.at(-1)],
+      ]),
+    } as unknown as MouseEventParams),
+  ).toEqual(result.readings);
+  renderer.update(bars.slice(0, 12), disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [
+    first,
+  ]);
+  expect(harness.series).toEqual([base]);
+  expect(base!.primitives).toHaveLength(1);
+  expect(base!.data.at(-1)!.time).toBe(bars[11]!.time);
+  renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [
+    { ...first, hidden: true },
+  ]);
+  expect(harness.series).toHaveLength(0);
+});

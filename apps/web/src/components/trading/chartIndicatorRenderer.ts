@@ -1,6 +1,7 @@
 import { initialBalanceChartPoints, type InitialBalanceHistory } from "./useInitialBalanceHistory";
 import { calculateATR } from "./advancedIndicators";
 import { resolveIndicatorStyle, indicatorStyleColor } from "./indicatorStyles";
+import { createIndicatorMarkers } from "./indicatorMarkers";
 import { createIndicatorBandFill } from "./indicatorBandFill";
 import {
   HistogramSeries,
@@ -59,6 +60,7 @@ type Plot = {
   levels: { price: number; line: IPriceLine }[];
   initialBalance?: ReturnType<typeof createInitialBalancePrimitive>;
   bandFill?: ReturnType<typeof createIndicatorBandFill>;
+  markers?: ReturnType<typeof createIndicatorMarkers>;
 };
 
 /** Owns only indicator series; price, volume, drawings, and the chart lifetime remain with the caller. */
@@ -219,7 +221,7 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
       if (!options.histogram) {
         plot.series.applyOptions({
           color: indicatorStyleColor(style),
-          lineVisible: !options.invisible && style.visible,
+          lineVisible: !options.invisible && !options.markers && style.visible,
           crosshairMarkerVisible: !options.invisible && style.visible,
           lastValueVisible: pane > 0 && style.visible,
           lineWidth: style.lineWidth as 1 | 2 | 3 | 4,
@@ -273,6 +275,13 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
       } else plot.series.setData(data);
       if (options.invisible && plot.series.seriesType() === "Line")
         plot.series.applyOptions({ pointMarkersVisible: false });
+      if (options.markers && plot.series.seriesType() === "Line") {
+        if (!plot.markers) {
+          plot.markers = createIndicatorMarkers(chart, plot.series as ISeriesApi<"Line">);
+          plot.series.attachPrimitive(plot.markers.primitive);
+        }
+        plot.markers.update(points, style);
+      }
       const latest = points.at(-1);
       if (plot.primary && latest && latest.time === latestTime) readings[readingKey] = latest.value;
     };

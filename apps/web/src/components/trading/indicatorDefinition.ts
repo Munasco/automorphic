@@ -34,7 +34,7 @@ export type IndicatorStyleDefinition = {
   visible?: boolean;
   opacity?: number;
   shownWhen?: { key: string; value: number };
-  kind?: "line" | "fill";
+  kind?: "line" | "fill" | "markers";
 };
 export type IndicatorContext = {
   bars: readonly Candle[];
@@ -49,6 +49,7 @@ export type IndicatorPlot = {
   title?: string;
   primary?: boolean;
   histogram?: boolean;
+  markers?: "cross";
   positiveStyleKey?: string;
   negativeStyleKey?: string;
   bounds?: [number, number];

@@ -845,3 +845,41 @@ it("persists independent Supertrend factors, periods, colors and visibility", as
     )!.inputs,
   ).toEqual({ period: 10, multiplier: 3 });
 });
+
+it("saves independent SAR acceleration settings and marker appearance", async () => {
+  const store = useChartPreferences.getState();
+  const base = store.addIndicator("sar")!;
+  expect(
+    store.setIndicatorInstanceInputs(base, { start: 0.04, increment: 0.03, maximum: 0.3 }),
+  ).toBe(true);
+  store.setIndicatorInstanceAppearance(base, {
+    plots: { main: { color: "#facc15", lineWidth: 3, opacity: 0.5 } },
+  });
+  const duplicate = store.duplicateIndicatorInstance(base)!;
+  expect(store.setIndicatorInstanceInputs(duplicate, { maximum: 0.01 })).toBe(false);
+  expect(store.setIndicatorInstanceInputs(duplicate, { increment: -1 })).toBe(false);
+  store.setIndicatorInstanceInputs(duplicate, { start: 0.01 });
+  store.toggleIndicatorInstanceVisibility(duplicate);
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  const instances = getChartIndicatorInstances(useChartPreferences.getState()).filter(
+    (i) => i.key === "sar",
+  );
+  expect(instances.map((i) => i.inputs)).toEqual([
+    { start: 0.04, increment: 0.03, maximum: 0.3 },
+    { start: 0.01, increment: 0.03, maximum: 0.3 },
+  ]);
+  expect(instances[1]!.hidden).toBe(true);
+  expect(instances[0]!.appearance.plots?.main).toEqual({
+    color: "#facc15",
+    lineWidth: 3,
+    opacity: 0.5,
+  });
+  useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
+  expect(
+    getChartIndicatorInstances(useChartPreferences.getState()).find((i) => i.id === duplicate)!
+      .inputs,
+  ).toEqual({ start: 0.02, increment: 0.02, maximum: 0.2 });
+});

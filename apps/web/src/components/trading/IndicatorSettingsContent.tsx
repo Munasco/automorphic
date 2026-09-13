@@ -171,7 +171,7 @@ export function IndicatorSettingsContent({
                     </div>
                     {plotStyle.kind !== "fill" && (
                       <label className="flex items-center justify-between">
-                        Line width
+                        {plotStyle.kind === "markers" ? "Thickness" : "Line width"}
                         <DrawingSelect
                           label={accessible(`${label} ${plotStyle.label} width`)}
                           value={String(style.lineWidth)}

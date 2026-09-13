@@ -32,6 +32,7 @@ import {
   type IndicatorInputValues,
 } from "./indicatorDefinition";
 import { resolveInitialBalanceSettings } from "./initialBalanceSettings";
+import { calculateParabolicSAR } from "./parabolicSar";
 import { calculateSupertrend } from "./supertrend";
 const length = (
   defaultValue: number,
@@ -198,6 +199,35 @@ function calculateSession({ bars, session, interval }: IndicatorContext): Indica
 }
 
 export const INDICATOR_DEFINITIONS = [
+  defineIndicator({
+    key: "sar",
+    label: "Parabolic SAR",
+    detail: "Stop-and-reverse trend markers with adjustable acceleration",
+    category: "Overlays",
+    placement: "overlay",
+    inputs: [
+      { key: "start", label: "Start", defaultValue: 0.02, min: 0, max: 1, step: 0.01 },
+      { key: "increment", label: "Increment", defaultValue: 0.02, min: 0, max: 1, step: 0.01 },
+      { key: "maximum", label: "Maximum", defaultValue: 0.2, min: 0, max: 1, step: 0.01 },
+    ],
+    validateInputs: (values) => (values.start ?? 0.02) <= (values.maximum ?? 0.2),
+    styles: [{ ...style("main", "SAR", "#2962ff", true), kind: "markers" }],
+    calculate: ({ bars, inputs }) => ({
+      plots: [
+        {
+          id: "main",
+          styleKey: "main",
+          markers: "cross",
+          points: calculateParabolicSAR(
+            bars,
+            inputs.start ?? 0.02,
+            inputs.increment ?? 0.02,
+            inputs.maximum ?? 0.2,
+          ),
+        },
+      ],
+    }),
+  }),
   defineIndicator({
     key: "supertrend",
     label: "Supertrend",
