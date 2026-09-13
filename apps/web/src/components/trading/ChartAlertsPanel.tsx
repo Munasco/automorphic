@@ -9,7 +9,12 @@ import { ChartIcon } from "./ChartIcon";
 import { AlertIcon } from "./AlertIcon";
 import { toastManager } from "../ui/toast";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
-import { createChartAlertSession, type AlertCondition, type ChartAlertState } from "./chartAlerts";
+import {
+  ALERT_CONDITIONS,
+  createChartAlertSession,
+  type AlertCondition,
+  type ChartAlertState,
+} from "./chartAlerts";
 import type { DrawingAlertsController } from "./useDrawingAlerts";
 import type { DrawingAlertCondition, DrawingAlertTrigger } from "./drawingAlerts";
 import { drawingAlertTargetLabel } from "./drawingAlertPresentation";
@@ -18,6 +23,8 @@ const EMPTY: ChartAlertState = { alerts: [], history: [] };
 const priceLabel = (price: number) => price.toLocaleString("en-US", { maximumFractionDigits: 6 });
 const conditionLabel: Record<AlertCondition, string> = {
   crossing: "Crossing",
+  "crossing-up": "Crossing up",
+  "crossing-down": "Crossing down",
   above: "Above",
   below: "Below",
 };
@@ -569,11 +576,7 @@ export function ChartAlerts({
                   className="mt-1 w-full"
                   value={condition}
                   onChange={(value) => setCondition(value as AlertCondition)}
-                  options={[
-                    ["crossing", "Crossing"],
-                    ["above", "Above"],
-                    ["below", "Below"],
-                  ]}
+                  options={ALERT_CONDITIONS.map((value) => [value, conditionLabel[value]] as const)}
                 />
               </label>
               <label htmlFor={`${formId}-price`} className="text-sm text-zinc-400">

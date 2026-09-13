@@ -202,3 +202,114 @@ describe("active chart price alerts", () => {
     expect(() => session.add({ ...crossing, price: NaN })).toThrow("valid target");
   });
 });
+
+describe("directional chart price alerts", () => {
+  it.each([
+    ["crossing-up", 99, 100, true],
+    ["crossing-up", 99, 101, true],
+    ["crossing-up", 101, 100, false],
+    ["crossing-up", 101, 99, false],
+    ["crossing-up", 100, 101, false],
+    ["crossing-up", 100, 100, false],
+    ["crossing-down", 101, 100, true],
+    ["crossing-down", 101, 99, true],
+    ["crossing-down", 99, 100, false],
+    ["crossing-down", 99, 101, false],
+    ["crossing-down", 100, 99, false],
+    ["crossing-down", 100, 100, false],
+  ] as const)(
+    "evaluates %s from %s to %s with inclusive arrival only",
+    (condition, first, next, fires) => {
+      const h = harness();
+      const session = h.open();
+      session.add({ ...crossing, condition });
+      session.observeQuote(h.quote(first));
+      expect(h.onTrigger).not.toHaveBeenCalled();
+      const quote = h.quote(next);
+      session.observeQuote(quote);
+      session.observeQuote(quote);
+      expect(h.onTrigger).toHaveBeenCalledTimes(fires ? 1 : 0);
+      expect(session.getSnapshot().alerts[0]!.enabled).toBe(!fires);
+      if (fires)
+        expect(session.getSnapshot().history[0]).toMatchObject({
+          condition,
+          target: 100,
+          price: next,
+        });
+    },
+  );
+
+  it.each(["crossing-up", "crossing-down"] as const)(
+    "persists %s rules and event history and rejects unknown direction names",
+    (condition) => {
+      const h = harness();
+      const session = h.open();
+      const first = condition === "crossing-up" ? 99 : 101;
+      session.add({ ...crossing, condition });
+      const reopened = h.open();
+      expect(reopened.getSnapshot().alerts[0]!.condition).toBe(condition);
+      reopened.observeQuote(h.quote(first));
+      reopened.observeQuote(h.quote(100));
+      const saved = parseChartAlerts(h.values.get(CHART_ALERTS_KEY)!);
+      expect(saved.alerts[0]!.condition).toBe(condition);
+      expect(saved.history[0]).toMatchObject({ condition, price: 100, target: 100 });
+      expect(h.open().getSnapshot()).toEqual(saved);
+      const bad = JSON.parse(h.values.get(CHART_ALERTS_KEY)!);
+      bad.alerts.push({ ...bad.alerts[0], id: "bad-rule", condition: "crossing-sideways" });
+      bad.history.push({ ...bad.history[0], id: "bad-event", condition: "crossing-sideways" });
+      expect(parseChartAlerts(JSON.stringify(bad))).toEqual(saved);
+    },
+  );
+
+  it.each(["crossing-up", "crossing-down"] as const)(
+    "requires fresh continuous quotes for %s after reload, disconnect, gaps and rearming",
+    (condition) => {
+      const first = condition === "crossing-up" ? 99 : 101;
+      const next = condition === "crossing-up" ? 101 : 99;
+      for (const reason of ["reload", "disconnect", "gap", "rearm"] as const) {
+        const h = harness();
+        let session = h.open();
+        const alert = session.add({ ...crossing, condition });
+        session.observeQuote(h.quote(first));
+        if (reason === "reload") session = h.open();
+        if (reason === "disconnect") session.observeQuote(null);
+        if (reason === "gap") h.advance(15_001);
+        if (reason === "rearm") {
+          session.setEnabled(alert.id, false);
+          session.setEnabled(alert.id, true);
+        }
+        session.observeQuote(h.quote(next));
+        expect(h.onTrigger).not.toHaveBeenCalled();
+        session.observeQuote(h.quote(first));
+        expect(h.onTrigger).not.toHaveBeenCalled();
+        session.observeQuote(h.quote(100));
+        expect(h.onTrigger).toHaveBeenCalledTimes(1);
+      }
+    },
+  );
+
+  it.each(["crossing-up", "crossing-down"] as const)(
+    "does not defer a %s crossing during cooldown, including after reload",
+    (condition) => {
+      const h = harness();
+      let session = h.open();
+      const first = condition === "crossing-up" ? 99 : 101;
+      const next = condition === "crossing-up" ? 101 : 99;
+      session.add({ ...crossing, condition, repeat: true, cooldownMs: 1000 });
+      session.observeQuote(h.quote(first));
+      const triggered = h.quote(next);
+      session.observeQuote(triggered);
+      expect(h.onTrigger).toHaveBeenCalledTimes(1);
+      session = h.open();
+      session.observeQuote(triggered);
+      session.observeQuote(h.quote(first, 100));
+      session.observeQuote(h.quote(next, 100));
+      session.observeQuote(h.quote(next, 1000));
+      expect(h.onTrigger).toHaveBeenCalledTimes(1);
+      session.observeQuote(h.quote(first));
+      session.observeQuote(h.quote(100));
+      expect(h.onTrigger).toHaveBeenCalledTimes(2);
+      expect(parseChartAlerts(h.values.get(CHART_ALERTS_KEY)!).history).toHaveLength(2);
+    },
+  );
+});

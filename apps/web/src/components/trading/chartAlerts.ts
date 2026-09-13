@@ -2,7 +2,13 @@ import type { MarketQuote } from "./InstrumentHeader";
 import { randomUUID } from "../../lib/utils";
 
 export const CHART_ALERTS_KEY = "automorphic:chart-alerts:v1";
-export const ALERT_CONDITIONS = ["crossing", "above", "below"] as const;
+export const ALERT_CONDITIONS = [
+  "crossing",
+  "crossing-up",
+  "crossing-down",
+  "above",
+  "below",
+] as const;
 export type AlertCondition = (typeof ALERT_CONDITIONS)[number];
 export type ChartPriceAlert = {
   id: string;
@@ -194,17 +200,26 @@ export function createChartAlertSession(
             receivedAt - alert.lastTriggeredAt < alert.cooldownMs)
         )
           return alert;
-        const crossed =
+        const crossedUp =
           before &&
           before.timestamp >= alert.armedAt &&
-          ((before.price < alert.price && quote.last >= alert.price) ||
-            (before.price > alert.price && quote.last <= alert.price));
+          before.price < alert.price &&
+          quote.last >= alert.price;
+        const crossedDown =
+          before &&
+          before.timestamp >= alert.armedAt &&
+          before.price > alert.price &&
+          quote.last <= alert.price;
         const matches =
           alert.condition === "crossing"
-            ? crossed
-            : alert.condition === "above"
-              ? quote.last > alert.price
-              : quote.last < alert.price;
+            ? crossedUp || crossedDown
+            : alert.condition === "crossing-up"
+              ? crossedUp
+              : alert.condition === "crossing-down"
+                ? crossedDown
+                : alert.condition === "above"
+                  ? quote.last > alert.price
+                  : quote.last < alert.price;
         if (!matches) return alert;
         events.push({
           id: newId(),
