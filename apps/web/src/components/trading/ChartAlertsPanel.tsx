@@ -1,5 +1,5 @@
 import { TradingSelect } from "./TradingSelect";
-import { useId, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Tabs } from "@base-ui/react/tabs";
 import { Dialog, DialogPopup, DialogTitle, DialogDescription } from "../ui/dialog";
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from "../ui/menu";
@@ -21,6 +21,20 @@ import type { DrawingAlertCondition, DrawingAlertTrigger } from "./drawingAlerts
 import { drawingAlertTargetLabel } from "./drawingAlertPresentation";
 
 const EMPTY: ChartAlertState = { alerts: [], history: [] };
+type PriceAlertSession = ReturnType<typeof createChartAlertSession>;
+const INACTIVE_SESSION: PriceAlertSession = {
+  getSnapshot: () => EMPTY,
+  subscribe: () => () => {},
+  add: () => {
+    throw Error("Wait for the chart alert session to open.");
+  },
+  update: () => false,
+  setEnabled: () => false,
+  remove: () => false,
+  clearHistory: () => false,
+  observeQuote: () => {},
+  dispose: () => {},
+};
 const priceLabel = (price: number) => price.toLocaleString("en-US", { maximumFractionDigits: 6 });
 const conditionLabel: Record<AlertCondition, string> = {
   crossing: "Crossing",
@@ -49,23 +63,35 @@ export function useChartAlerts(symbol: string) {
     tradingWorkspaceStorage.subscribe,
     tradingWorkspaceStorage.getSnapshot,
   );
-  const session = useMemo(
-    () =>
-      createChartAlertSession(symbol, tradingWorkspaceStorage.capture(), {
-        onTrigger: (event) =>
-          toastManager.add({
-            type: "info",
-            title: `${event.symbol} price alert`,
-            description: `${conditionLabel[event.condition]} ${priceLabel(event.target)} · Last ${priceLabel(event.price)}`,
-          }),
-      }),
-    // oxlint-disable-next-line react/memo-dependencies -- A workspace switch/hydration must re-open its persisted alert session.
+  const identity = useMemo(
+    () => ({ symbol, projectId: workspace.projectId, ready: workspace.ready }),
     [symbol, workspace.projectId, workspace.ready],
   );
+  const [bundle, setBundle] = useState<{
+    identity: typeof identity;
+    session: PriceAlertSession;
+  } | null>(null);
+  useEffect(() => {
+    if (!identity.ready) return;
+    const session = createChartAlertSession(identity.symbol, tradingWorkspaceStorage.capture(), {
+      onTrigger: (event) =>
+        toastManager.add({
+          type: "info",
+          title: `${event.symbol} price alert`,
+          description: `${conditionLabel[event.condition]} ${priceLabel(event.target)} · Last ${priceLabel(event.price)}`,
+        }),
+    });
+    // Register evaluators only for committed mounts, including Strict Mode effect remounts.
+    // eslint-disable-next-line react/set-state-in-effect
+    setBundle({ identity, session });
+    return () => session.dispose();
+  }, [identity]);
+  const session = bundle?.identity === identity ? bundle.session : INACTIVE_SESSION;
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot, () => EMPTY);
   return {
     ...session,
     ...state,
+    ready: session !== INACTIVE_SESSION,
     activeCount: state.alerts.filter((alert) => alert.enabled && alert.symbol === symbol).length,
   };
 }

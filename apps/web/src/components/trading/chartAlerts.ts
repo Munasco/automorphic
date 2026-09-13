@@ -34,7 +34,24 @@ export type ChartAlertEvent = {
 };
 export type ChartAlertState = { alerts: ChartPriceAlert[]; history: ChartAlertEvent[] };
 export type NewChartAlert = Pick<ChartPriceAlert, "price" | "condition" | "repeat" | "cooldownMs">;
-type AlertStorage = Pick<Storage, "getItem" | "setItem">;
+type AlertStorage = Pick<Storage, "getItem" | "setItem"> & {
+  subscribe?: (listener: () => void) => () => void;
+};
+type SharedQuoteRuntime = {
+  startedAt: number;
+  previous: { price: number; timestamp: number } | undefined;
+  highWater: number;
+  members: number;
+};
+type PriceAlertPeer = { refresh: () => void };
+// Captured workspace objects are shared within one document, not across browser windows.
+const sharedPriceAlertStores = new WeakMap<
+  object,
+  {
+    peers: Set<PriceAlertPeer>;
+    symbols: Map<string, SharedQuoteRuntime>;
+  }
+>();
 const MAX_QUOTE_AGE_MS = 15_000;
 const MAX_ALERTS = 100;
 const MAX_HISTORY = 100;
@@ -117,28 +134,67 @@ export function createChartAlertSession(
 ) {
   const now = options.now ?? Date.now;
   const newId = options.id ?? randomUUID;
-  let state = parseChartAlerts(storage.getItem(CHART_ALERTS_KEY));
-  let startedAt = now();
-  let previous: { price: number; timestamp: number } | undefined;
-  let highWater = 0;
+  let persisted = storage.getItem(CHART_ALERTS_KEY);
+  let state = parseChartAlerts(persisted);
+  let publishing = false;
+  let disposed = false;
+  let receivedLiveQuote = false;
+  let shared = sharedPriceAlertStores.get(storage);
+  if (!shared) {
+    shared = { peers: new Set(), symbols: new Map() };
+    sharedPriceAlertStores.set(storage, shared);
+  }
+  const coordinator = shared;
+  let symbolRuntime = coordinator.symbols.get(symbol);
+  if (!symbolRuntime) {
+    symbolRuntime = { startedAt: now(), previous: undefined, highWater: 0, members: 0 };
+    coordinator.symbols.set(symbol, symbolRuntime);
+  }
+  const runtime = symbolRuntime;
+  runtime.members++;
   const listeners = new Set<() => void>();
-  const publish = (next: ChartAlertState) => {
-    storage.setItem(CHART_ALERTS_KEY, JSON.stringify({ version: 1, ...next }));
-    state = next;
+  const refresh = () => {
+    if (disposed || publishing) return;
+    const saved = storage.getItem(CHART_ALERTS_KEY);
+    if (saved === persisted) return;
+    persisted = saved;
+    state = parseChartAlerts(saved);
+    // Peer changes have their own arming timestamps. Keep other alerts' quote continuity.
     listeners.forEach((listener) => listener());
   };
-  return {
+  const publish = (next: ChartAlertState) => {
+    const serialized = JSON.stringify({ version: 1, ...next });
+    publishing = true;
+    try {
+      storage.setItem(CHART_ALERTS_KEY, serialized);
+    } finally {
+      publishing = false;
+    }
+    persisted = serialized;
+    state = next;
+    for (const peer of coordinator.peers) peer.refresh();
+    listeners.forEach((listener) => listener());
+  };
+  const armTime = (targetSymbol = symbol) =>
+    Math.max(now(), (coordinator.symbols.get(targetSymbol)?.highWater ?? 0) + 1);
+  const session = {
     getSnapshot: () => state,
     subscribe: (listener: () => void) => {
-      listeners.add(listener);
+      if (!disposed) listeners.add(listener);
       return () => {
         listeners.delete(listener);
       };
     },
     add: (input: NewChartAlert) => {
+      if (disposed) throw Error("The chart alert session is closed.");
+      refresh();
       if (!contract(symbol)) throw Error("Select a futures contract first.");
       if (!finite(input.price)) throw Error("Enter a valid target price.");
-      if (!condition(input.condition) || !cooldown(input.cooldownMs))
+      if (
+        !condition(input.condition) ||
+        typeof input.repeat !== "boolean" ||
+        !cooldown(input.cooldownMs)
+      )
         throw Error("Invalid alert settings.");
       if (state.alerts.length >= MAX_ALERTS)
         throw Error("Delete an alert before adding another (100 per workspace).");
@@ -147,7 +203,7 @@ export function createChartAlertSession(
         id: newId(),
         symbol,
         enabled: true,
-        armedAt: Math.max(now(), highWater + 1),
+        armedAt: armTime(),
         lastTriggeredAt: null,
         lastQuoteAt: null,
       };
@@ -155,6 +211,8 @@ export function createChartAlertSession(
       return alert;
     },
     update: (id: string, input: NewChartAlert): boolean => {
+      if (disposed) return false;
+      refresh();
       const alert = state.alerts.find((item) => item.id === id && item.symbol === symbol);
       if (
         !alert ||
@@ -179,26 +237,48 @@ export function createChartAlertSession(
         condition: input.condition,
         repeat: input.repeat,
         cooldownMs: input.cooldownMs,
-        armedAt: Math.max(now(), highWater + 1),
+        armedAt: armTime(),
       };
       publish({ ...state, alerts: state.alerts.map((item) => (item === alert ? updated : item)) });
       return true;
     },
     setEnabled: (id: string, enabled: boolean) => {
+      if (disposed) return false;
+      refresh();
+      const alert = state.alerts.find((item) => item.id === id);
+      if (!alert || typeof enabled !== "boolean") return false;
+      if (alert.enabled === enabled) return true;
       publish({
         ...state,
-        alerts: state.alerts.map((alert) =>
-          alert.id === id ? { ...alert, enabled, armedAt: Math.max(now(), highWater + 1) } : alert,
+        alerts: state.alerts.map((item) =>
+          item === alert ? { ...alert, enabled, armedAt: armTime(alert.symbol) } : item,
         ),
       });
+      return true;
     },
-    remove: (id: string) =>
-      publish({ ...state, alerts: state.alerts.filter((alert) => alert.id !== id) }),
-    clearHistory: () => publish({ ...state, history: [] }),
+    remove: (id: string) => {
+      if (disposed) return false;
+      refresh();
+      if (!state.alerts.some((alert) => alert.id === id)) return false;
+      publish({ ...state, alerts: state.alerts.filter((alert) => alert.id !== id) });
+      return true;
+    },
+    clearHistory: () => {
+      if (disposed) return false;
+      refresh();
+      if (state.history.length) publish({ ...state, history: [] });
+      return true;
+    },
     observeQuote: (quote: MarketQuote | null) => {
+      if (disposed) return;
+      refresh();
       if (quote === null) {
-        startedAt = now();
-        previous = undefined;
+        // A newly mounted peer's initial empty snapshot is not a feed disconnect.
+        if (receivedLiveQuote) {
+          runtime.startedAt = now();
+          runtime.previous = undefined;
+          receivedLiveQuote = false;
+        }
         return;
       }
       const receivedAt = now();
@@ -208,16 +288,19 @@ export function createChartAlertSession(
         quote.source !== "quote" ||
         !finite(quote.last) ||
         !finite(quoteAt) ||
-        quoteAt < startedAt ||
-        quoteAt <= highWater ||
+        quoteAt < runtime.startedAt ||
         receivedAt - quoteAt > MAX_QUOTE_AGE_MS ||
         quoteAt - receivedAt > 5000
       )
         return;
+      receivedLiveQuote = true;
+      if (quoteAt <= runtime.highWater) return;
+      const previous = runtime.previous;
+      const oldHighWater = runtime.highWater;
       const before =
         previous && quoteAt - previous.timestamp <= MAX_QUOTE_AGE_MS ? previous : undefined;
-      highWater = quoteAt;
-      previous = { price: quote.last, timestamp: quoteAt };
+      runtime.highWater = quoteAt;
+      runtime.previous = { price: quote.last, timestamp: quoteAt };
       const events: ChartAlertEvent[] = [];
       const alerts = state.alerts.map((alert) => {
         if (
@@ -270,11 +353,34 @@ export function createChartAlertSession(
       });
       if (!events.length) return;
       // Save the one-shot/cooldown state before notifying, including when the panel is closed.
-      publish({
-        alerts,
-        history: [...events.toReversed(), ...state.history].slice(0, MAX_HISTORY),
-      });
+      try {
+        publish({
+          alerts,
+          history: [...events.toReversed(), ...state.history].slice(0, MAX_HISTORY),
+        });
+      } catch (error) {
+        // A failed save must not consume the crossing or prevent the same quote being retried.
+        if (runtime.highWater === quoteAt) {
+          runtime.highWater = oldHighWater;
+          runtime.previous = previous;
+        }
+        throw error;
+      }
       events.forEach((event) => options.onTrigger?.(event));
     },
+    dispose: () => {
+      if (disposed) return;
+      disposed = true;
+      unsubscribe?.();
+      coordinator.peers.delete(peer);
+      runtime.members--;
+      if (!runtime.members) coordinator.symbols.delete(symbol);
+      if (!coordinator.peers.size) sharedPriceAlertStores.delete(storage);
+      listeners.clear();
+    },
   };
+  const peer: PriceAlertPeer = { refresh };
+  coordinator.peers.add(peer);
+  const unsubscribe = storage.subscribe?.(refresh);
+  return session;
 }

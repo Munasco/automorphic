@@ -94,6 +94,7 @@ describe("active chart price alerts", () => {
     const session = h.open();
     session.add({ ...crossing, condition: "below" });
     session.observeQuote(h.quote(99));
+    session.dispose();
     const reopened = h.open();
     reopened.observeQuote(h.quote(98, 120_000));
     expect(h.onTrigger).toHaveBeenCalledTimes(1);
@@ -107,6 +108,7 @@ describe("active chart price alerts", () => {
     session.add({ ...crossing, condition: "above", repeat: true });
     const first = h.quote(101);
     session.observeQuote(first);
+    session.dispose();
     const reopened = h.open();
     reopened.observeQuote(first);
     reopened.observeQuote(h.quote(102, 30_000));
@@ -121,6 +123,7 @@ describe("active chart price alerts", () => {
     const session = h.open();
     session.add({ ...crossing, repeat: true });
     session.observeQuote(h.quote(99));
+    session.dispose();
     const reopened = h.open();
     reopened.observeQuote(h.quote(101));
     reopened.observeQuote(null);
@@ -251,6 +254,7 @@ describe("directional chart price alerts", () => {
       const session = h.open();
       const first = condition === "crossing-up" ? 99 : 101;
       session.add({ ...crossing, condition });
+      session.dispose();
       const reopened = h.open();
       expect(reopened.getSnapshot().alerts[0]!.condition).toBe(condition);
       reopened.observeQuote(h.quote(first));
@@ -276,7 +280,10 @@ describe("directional chart price alerts", () => {
         let session = h.open();
         const alert = session.add({ ...crossing, condition });
         session.observeQuote(h.quote(first));
-        if (reason === "reload") session = h.open();
+        if (reason === "reload") {
+          session.dispose();
+          session = h.open();
+        }
         if (reason === "disconnect") session.observeQuote(null);
         if (reason === "gap") h.advance(15_001);
         if (reason === "rearm") {
@@ -305,6 +312,7 @@ describe("directional chart price alerts", () => {
       const triggered = h.quote(next);
       session.observeQuote(triggered);
       expect(h.onTrigger).toHaveBeenCalledTimes(1);
+      session.dispose();
       session = h.open();
       session.observeQuote(triggered);
       session.observeQuote(h.quote(first, 100));
@@ -484,5 +492,210 @@ describe("editing chart price alerts", () => {
     expect(listener).not.toHaveBeenCalled();
     session.observeQuote(h.quote(100));
     expect(h.onTrigger).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("price alerts shared by mounted chart views", () => {
+  it("synchronizes additions, edits, pause, deletion and history without resurrecting a peer's deleted alert", () => {
+    const h = harness();
+    const a = h.open();
+    const b = h.open();
+    const changedA = vi.fn();
+    const changedB = vi.fn();
+    a.subscribe(changedA);
+    b.subscribe(changedB);
+    const first = a.add(crossing);
+    const second = b.add({ ...crossing, price: 200 });
+    expect(a.getSnapshot()).toEqual(b.getSnapshot());
+    expect(a.getSnapshot().alerts.map(({ id }) => id)).toEqual([first.id, second.id]);
+    b.update(first.id, { ...crossing, price: 150 });
+    expect(a.getSnapshot().alerts[0]!.price).toBe(150);
+    a.setEnabled(second.id, false);
+    expect(b.getSnapshot().alerts[1]!.enabled).toBe(false);
+    b.setEnabled(second.id, true);
+    a.remove(first.id);
+    b.observeQuote(h.quote(199));
+    a.observeQuote(h.quote(201));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    expect(b.getSnapshot().alerts.map(({ id }) => id)).toEqual([second.id]);
+    expect(b.getSnapshot().history[0]!.alertId).toBe(second.id);
+    b.clearHistory();
+    expect(a.getSnapshot()).toEqual(b.getSnapshot());
+    expect(a.getSnapshot().history).toEqual([]);
+    expect(parseChartAlerts(h.values.get(CHART_ALERTS_KEY)!)).toEqual(a.getSnapshot());
+    expect(changedA).toHaveBeenCalledTimes(8);
+    expect(changedB).toHaveBeenCalledTimes(8);
+  });
+
+  it.each([false, true])(
+    "shares quote continuity and emits once regardless of which view receives first (reverse=%s)",
+    (reverse) => {
+      const h = harness();
+      const a = h.open();
+      const b = h.open();
+      a.add({ ...crossing, repeat: true, cooldownMs: 1000 });
+      const [first, second] = reverse ? [b, a] : [a, b];
+      first.observeQuote(h.quote(99));
+      const reached = h.quote(100);
+      second.observeQuote(reached);
+      first.observeQuote(reached);
+      expect(h.onTrigger).toHaveBeenCalledTimes(1);
+      expect(a.getSnapshot().history).toHaveLength(1);
+      expect(b.getSnapshot()).toEqual(a.getSnapshot());
+      first.dispose();
+      second.observeQuote(h.quote(101, 1000));
+      second.observeQuote(h.quote(99));
+      expect(h.onTrigger).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it("preserves crossing continuity when another alert changes or a new peer mounts with an empty quote", () => {
+    const h = harness();
+    const a = h.open();
+    const first = a.add(crossing);
+    a.observeQuote(h.quote(99));
+    const b = h.open();
+    b.observeQuote(null);
+    const second = b.add({ ...crossing, price: 200 });
+    b.update(second.id, { ...crossing, price: 300 });
+    b.remove(second.id);
+    b.observeQuote(h.quote(100));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    expect(a.getSnapshot().history[0]!.alertId).toBe(first.id);
+  });
+
+  it("rearms edited rules against the shared quote high-water mark without replaying the old baseline", () => {
+    const h = harness();
+    const a = h.open();
+    const b = h.open();
+    const alert = a.add(crossing);
+    a.observeQuote(h.quote(199, 1, { timestamp: new Date(EPOCH + 4000).toISOString() }));
+    b.update(alert.id, { ...crossing, price: 200, condition: "crossing-up" });
+    expect(a.getSnapshot().alerts[0]!.armedAt).toBe(EPOCH + 4001);
+    h.advance(4000);
+    a.observeQuote(h.quote(201));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    b.observeQuote(h.quote(199));
+    a.observeQuote(h.quote(200));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves other contracts and uses their own high-water mark when re-enabling from a peer", () => {
+    const h = harness();
+    const gold = h.open();
+    const nq = h.open("NQU6");
+    const a = gold.add(crossing);
+    const b = nq.add({ ...crossing, condition: "above" });
+    nq.observeQuote(
+      h.quote(101, 1, { symbol: "NQU6", timestamp: new Date(EPOCH + 4000).toISOString() }),
+    );
+    expect(gold.getSnapshot().history[0]!.alertId).toBe(b.id);
+    gold.setEnabled(b.id, true);
+    expect(nq.getSnapshot().alerts[1]!.armedAt).toBe(EPOCH + 4001);
+    gold.observeQuote(h.quote(99));
+    gold.observeQuote(h.quote(100));
+    expect(nq.getSnapshot().history.map(({ alertId }) => alertId)).toEqual([a.id, b.id]);
+    nq.remove(a.id);
+    expect(gold.getSnapshot().alerts.map(({ id }) => id)).toEqual([b.id]);
+  });
+
+  it("retains all views' authoritative state when persistence fails and lets a peer retry the same crossing", () => {
+    const h = harness();
+    const a = h.open();
+    const b = h.open();
+    const alert = a.add(crossing);
+    a.observeQuote(h.quote(99));
+    const before = a.getSnapshot();
+    const changed = vi.fn();
+    b.subscribe(changed);
+    const fail = () => {
+      throw Error("Storage unavailable");
+    };
+    h.storage.setItem.mockImplementationOnce(fail);
+    expect(() => b.remove(alert.id)).toThrow("Storage unavailable");
+    expect(a.getSnapshot()).toBe(before);
+    expect(b.getSnapshot()).toEqual(before);
+    h.storage.setItem.mockImplementationOnce(fail);
+    const reached = h.quote(100);
+    expect(() => a.observeQuote(reached)).toThrow("Storage unavailable");
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    expect(changed).not.toHaveBeenCalled();
+    expect(a.getSnapshot()).toBe(before);
+    expect(b.getSnapshot()).toEqual(before);
+    b.observeQuote(reached);
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(a.getSnapshot()).toEqual(b.getSnapshot());
+    expect(a.getSnapshot().alerts[0]!.enabled).toBe(false);
+  });
+
+  it("resets a genuine reconnect but does not replay cached quotes, and cold-starts after the last view disposes", () => {
+    const h = harness();
+    const a = h.open();
+    const b = h.open();
+    a.add(crossing);
+    const old = h.quote(99);
+    a.observeQuote(old);
+    b.observeQuote(old);
+    b.observeQuote(null);
+    a.observeQuote(h.quote(101));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    a.dispose();
+    b.dispose();
+    const reopened = h.open();
+    reopened.observeQuote(h.quote(99));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    reopened.observeQuote(h.quote(100));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+  });
+
+  it("unregisters disposed sessions and isolates stores even for the same contract", () => {
+    const h = harness();
+    const other = harness();
+    const a = h.open();
+    const b = h.open();
+    const unrelated = other.open();
+    const alert = a.add(crossing);
+    const listener = vi.fn();
+    a.subscribe(listener);
+    a.dispose();
+    a.dispose();
+    expect(a.update(alert.id, { ...crossing, price: 200 })).toBe(false);
+    expect(a.remove(alert.id)).toBe(false);
+    expect(a.setEnabled(alert.id, false)).toBe(false);
+    expect(a.clearHistory()).toBe(false);
+    expect(() => a.add(crossing)).toThrow("closed");
+    a.observeQuote(h.quote(99));
+    b.observeQuote(h.quote(100));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    b.update(alert.id, { ...crossing, price: 200 });
+    expect(listener).not.toHaveBeenCalled();
+    expect(unrelated.getSnapshot()).toEqual({ alerts: [], history: [] });
+    expect(a.getSnapshot().alerts[0]!.price).toBe(100);
+    b.observeQuote(h.quote(199));
+    b.observeQuote(h.quote(200));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    expect(other.onTrigger).not.toHaveBeenCalled();
+  });
+
+  it("refreshes externally subscribed storage changes and releases subscriptions on disposal", () => {
+    const h = harness();
+    const listeners = new Set<() => void>();
+    const storage = {
+      ...h.storage,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+    };
+    const session = createChartAlertSession("MGCV6", storage, { now: () => EPOCH });
+    const external = h.open();
+    external.add(crossing);
+    listeners.forEach((listener) => listener());
+    expect(session.getSnapshot()).toEqual(external.getSnapshot());
+    session.dispose();
+    expect(listeners.size).toBe(0);
   });
 });
