@@ -684,7 +684,48 @@ export function createChartDrawingSession(
     const activeDrag = drag;
     let dx = point.x - activeDrag.origin.x,
       dy = point.y - activeDrag.origin.y;
+    const restoreUnmovedDrag = () => {
+      activeDrag.moved = false;
+      activeDrag.cloneId = null;
+      drawings = activeDrag.before;
+      if (activeDrag.clone) {
+        selectedIds = activeDrag.selectionBefore;
+        selectedId = selectedIds.at(-1) ?? null;
+      }
+      render();
+      emit();
+    };
+    if (activeDrag.handle < 0 && dx === 0 && dy === 0 && activeDrag.moved) {
+      restoreUnmovedDrag();
+      return;
+    }
     if (!activeDrag.moved && Math.hypot(dx, dy) < 3) return;
+    const axis =
+      modifiers?.shiftKey && activeDrag.handle < 0
+        ? Math.abs(dx) >= Math.abs(dy)
+          ? "horizontal"
+          : "vertical"
+        : null;
+    const lockMovementAxis = () => {
+      if (axis === "horizontal") dy = 0;
+      else if (axis === "vertical") dx = 0;
+    };
+    const translateLockedAnchor = (
+      anchor: DrawingAnchor,
+      old: DrawingPoint,
+      kind: DrawingKind,
+    ): DrawingAnchor | null => {
+      // Do not round-trip the locked coordinate through the chart's scale. Log scales,
+      // bar snapping and instrument ticks can otherwise move an untouched coordinate.
+      if (axis === "horizontal") {
+        if (kind === "horizontal" || Math.abs(dx) < 1) return anchor;
+        const time = drawingPaneTimeAtCoordinate(chart, series, old.x + dx);
+        return time === null ? null : { ...anchor, time };
+      }
+      if (kind === "vertical" || kind === "regression-trend" || dy === 0) return anchor;
+      const price = series.coordinateToPrice(old.y + dy);
+      return price === null ? null : quantizePointerAnchor({ ...anchor, price });
+    };
     if (
       activeDrag.drawing.kind === "text" &&
       activeDrag.drawing.textWrap === true &&
@@ -714,9 +755,11 @@ export function createChartDrawingSession(
           dy = snapped.y - reference.y;
         }
       }
+      lockMovementAxis();
       const translated = activeDrag.group.map(({ drawing, points, cloneId }) => {
         const anchors = drawing.anchors.map((anchor, index) => {
           const old = points[index]!;
+          if (axis) return translateLockedAnchor(anchor, old, drawing.kind);
           if (drawing.kind === "horizontal") {
             const price = series.coordinateToPrice(old.y + dy);
             return price === null ? null : quantizePointerAnchor({ ...anchor, price });
@@ -758,7 +801,10 @@ export function createChartDrawingSession(
           (anchor, i) => !sameAnchor(activeDrag.group[index]!.drawing.anchors[i], anchor),
         ),
       );
-      if (activeDrag.clone && !activeDrag.moved) return;
+      if (activeDrag.clone && !activeDrag.moved) {
+        restoreUnmovedDrag();
+        return;
+      }
       const byId = new Map(next.map((drawing) => [drawing.id, drawing]));
       drawings = activeDrag.clone
         ? [...activeDrag.before, ...next]
@@ -794,6 +840,7 @@ export function createChartDrawingSession(
         }
       }
     }
+    lockMovementAxis();
     if (
       modifiers?.shiftKey &&
       supportsShiftLineAlignment(activeDrag.drawing.kind) &&
@@ -836,6 +883,8 @@ export function createChartDrawingSession(
     }
     const moved = activeDrag.drawing.anchors
       .map((anchor, index) => {
+        if (axis)
+          return translateLockedAnchor(anchor, activeDrag.points[index]!, activeDrag.drawing.kind);
         if (channelPoints) {
           const old = activeDrag.points[index]!;
           const next = channelPoints[index]!;
@@ -905,7 +954,11 @@ export function createChartDrawingSession(
         return moved && Math.abs(dx) < 1 ? { ...moved, time: anchor.time } : moved;
       })
       .map((anchor, index) =>
-        anchor && !vertical && !regression && anchor !== activeDrag.drawing.anchors[index]
+        anchor &&
+        axis !== "horizontal" &&
+        !vertical &&
+        !regression &&
+        anchor !== activeDrag.drawing.anchors[index]
           ? quantizePointerAnchor(anchor)
           : anchor,
       );
@@ -917,7 +970,10 @@ export function createChartDrawingSession(
     drag.moved = !moved.every((anchor, index) => sameAnchor(drag!.drawing.anchors[index], anchor!));
     const next = { ...drag.drawing, anchors: moved as DrawingAnchor[] };
     if (drag.clone) {
-      if (!drag.moved && !drag.cloneId) return;
+      if (!drag.moved) {
+        restoreUnmovedDrag();
+        return;
+      }
       const cloneId = drag.cloneId ?? randomUUID();
       const copy = {
         ...next,

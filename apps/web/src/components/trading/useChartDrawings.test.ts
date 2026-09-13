@@ -324,7 +324,7 @@ describe("Shift line alignment", () => {
     },
   );
 
-  it("keeps whole-line drag free and cancellation atomic while Shift is held", () => {
+  it("switches whole-line axes and restores free movement on stationary Shift release", () => {
     const original: ChartDrawing = {
       id: "line",
       kind: "trend",
@@ -338,14 +338,175 @@ describe("Shift line alignment", () => {
     const f = fixture("shift-body", JSON.stringify([original]));
     const session = f.open();
     expect(session.beginDrag({ x: 200, y: 300 })).toBe(true);
-    session.dragTo({ x: 220, y: 315 }, { shiftKey: true });
+    session.dragTo({ x: 280, y: 320 }, { shiftKey: true });
     expect(anchorPoints(session)).toEqual([
-      { x: 120, y: 365 },
-      { x: 320, y: 265 },
+      { x: 180, y: 350 },
+      { x: 380, y: 250 },
+    ]);
+    session.dragTo({ x: 220, y: 380 }, { shiftKey: true });
+    expect(anchorPoints(session)).toEqual([
+      { x: 100, y: 430 },
+      { x: 300, y: 330 },
+    ]);
+    session.setShiftPressed(false);
+    expect(anchorPoints(session)).toEqual([
+      { x: 120, y: 430 },
+      { x: 320, y: 330 },
+    ]);
+    session.setShiftPressed(true);
+    expect(anchorPoints(session)).toEqual([
+      { x: 100, y: 430 },
+      { x: 300, y: 330 },
     ]);
     session.endDrag(false);
     expect(session.getCommittedDrawings()).toEqual([original]);
     expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+
+  it.each([false, true])(
+    "preserves locked coordinates exactly across a logarithmic inverse and bar snapping (group: %s)",
+    (group) => {
+      const original: ChartDrawing = {
+        id: "a",
+        kind: "trend",
+        color: "#2962ff",
+        width: 2,
+        anchors: [
+          { time: 100.375 as Time, price: 3.123456789 },
+          { time: 300.125 as Time, price: 4.987654321 },
+        ],
+      };
+      const other = {
+        ...original,
+        id: "b",
+        anchors: original.anchors.map((anchor) => ({ ...anchor, price: anchor.price * 1.2 })),
+      };
+      const originals = group ? [original, other] : [original];
+      const f = fixture("shift-log", JSON.stringify(originals));
+      vi.spyOn(f.series, "priceToCoordinate").mockImplementation(
+        (price) => (500 - 100 * Math.log(price)) as Coordinate,
+      );
+      vi.spyOn(f.series, "coordinateToPrice").mockImplementation(
+        (y) => Math.exp((500 - y) / 100) as BarPrice,
+      );
+      const scale = f.chart.timeScale();
+      vi.spyOn(f.chart, "timeScale").mockReturnValue({
+        ...scale,
+        coordinateToTime: (x: number) => Math.round(x) as UTCTimestamp,
+      });
+      const session = f.open();
+      session.selectDrawing("a");
+      if (group) session.selectDrawing("b", { additive: true });
+      const origin = {
+        x: 200.25,
+        y:
+          original.anchors.reduce((sum, anchor) => sum + 500 - 100 * Math.log(anchor.price), 0) / 2,
+      };
+      expect(session.beginDrag(origin)).toBe(true);
+      session.dragTo({ x: origin.x + 80, y: origin.y + 20 }, { shiftKey: true });
+      session.getCommittedDrawings()!.forEach((drawing, index) => {
+        expect(drawing.anchors.map((anchor) => anchor.price)).toEqual(
+          originals[index]!.anchors.map((anchor) => anchor.price),
+        );
+        expect(drawing.anchors.map((anchor) => anchor.time)).toEqual([180, 380]);
+      });
+      session.dragTo({ x: origin.x + 20, y: origin.y + 80 }, { shiftKey: true });
+      session.getCommittedDrawings()!.forEach((drawing, index) => {
+        expect(drawing.anchors.map((anchor) => anchor.time)).toEqual(
+          originals[index]!.anchors.map((anchor) => anchor.time),
+        );
+        drawing.anchors.forEach((anchor) =>
+          expect(anchor.price / 0.01).toBeCloseTo(Math.round(anchor.price / 0.01)),
+        );
+      });
+      session.endDrag();
+      expect(f.writes()).toBe(1);
+      session.undo();
+      expect(session.getCommittedDrawings()).toEqual(originals);
+      session.dispose();
+    },
+  );
+
+  it.each([
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true],
+  ])("restores origin without a write or phantom copy (group: %s, clone: %s)", (group, clone) => {
+    const line = (id: string, y: number): ChartDrawing => ({
+      id,
+      kind: "trend",
+      color: "#2962ff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 5000 - y },
+        { time: 300 as Time, price: 5000 - y },
+      ],
+    });
+    const originals = group ? [line("a", 200), line("b", 300)] : [line("a", 200)];
+    const f = fixture("shift-origin", JSON.stringify(originals));
+    const session = f.open();
+    session.selectDrawing("a");
+    if (group) session.selectDrawing("b", { additive: true });
+    expect(session.beginDrag({ x: 200, y: 200 }, { clone, additive: group })).toBe(true);
+    session.dragTo({ x: 280, y: 220 }, { shiftKey: true });
+    const moved = session.getCommittedDrawings()!.slice(clone ? originals.length : 0);
+    expect(moved.map((drawing) => drawing.anchors[0])).toEqual(
+      originals.map((drawing) => ({ ...drawing.anchors[0], time: 180 })),
+    );
+    session.dragTo({ x: 200, y: 200 }, { shiftKey: true });
+    expect(session.getCommittedDrawings()).toEqual(originals);
+    session.endDrag();
+    expect(f.writes()).toBe(0);
+    // Returning to zero must not leave a stale clone id that loses the next preview.
+    session.selectDrawing("a");
+    if (group) session.selectDrawing("b", { additive: true });
+    session.beginDrag({ x: 200, y: 200 }, { clone, additive: group });
+    session.dragTo({ x: 280, y: 220 }, { shiftKey: true });
+    session.dragTo({ x: 200, y: 200 }, { shiftKey: true });
+    session.dragTo({ x: 220, y: 280 }, { shiftKey: true });
+    const changed = session.getCommittedDrawings()!.slice(clone ? originals.length : 0);
+    expect(changed.map((drawing) => drawing.anchors[0])).toEqual(
+      originals.map((drawing) => ({
+        ...drawing.anchors[0],
+        price: drawing.anchors[0]!.price - 80,
+      })),
+    );
+    session.endDrag();
+    expect(f.writes()).toBe(1);
+    expect(session.getCommittedDrawings()).toHaveLength(originals.length * (clone ? 2 : 1));
+    if (clone)
+      expect(session.getCommittedDrawings()!.slice(0, originals.length)).toEqual(originals);
+    session.undo();
+    expect(session.getCommittedDrawings()).toEqual(originals);
+    session.dispose();
+  });
+
+  it("chooses the movement axis before magnet snapping and preserves its locked price", () => {
+    const original: ChartDrawing = {
+      id: "a",
+      kind: "trend",
+      color: "#2962ff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 4800.12345 },
+        { time: 300 as Time, price: 4800.12345 },
+      ],
+    };
+    const f = fixture("shift-axis-magnet", JSON.stringify([original]), [
+      { time: 200 as UTCTimestamp, open: 4500, high: 4500, low: 4500, close: 4500 },
+    ]);
+    const session = f.open();
+    session.setMagnetMode("strong");
+    expect(session.beginDrag({ x: 200, y: 199.87655 })).toBe(true);
+    session.dragTo({ x: 280, y: 219.87655 }, { shiftKey: true });
+    expect(session.getCommittedDrawings()![0]!.anchors).toEqual([
+      { time: 200, price: 4800.12345 },
+      { time: 400, price: 4800.12345 },
+    ]);
+    session.endDrag(false);
+    expect(session.getCommittedDrawings()).toEqual([original]);
     session.dispose();
   });
 
