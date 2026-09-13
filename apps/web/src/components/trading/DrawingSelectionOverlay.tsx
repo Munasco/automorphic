@@ -835,6 +835,16 @@ export function DrawingSelectionOverlay({
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [compactToolbar, setCompactToolbar] = useState(false);
   const toolbarRef = useRef<HTMLDivElement>(null);
+  const toolbarControlsRef = useRef<HTMLDivElement>(null);
+  const revealToolbarControl = useCallback((control: Element | null) => {
+    const scroller = toolbarControlsRef.current;
+    // Portal popovers bubble React focus events but must not move the toolbar.
+    if (!scroller || !control || !scroller.contains(control)) return;
+    const viewport = scroller.getBoundingClientRect();
+    const bounds = control.getBoundingClientRect();
+    if (bounds.left < viewport.left) scroller.scrollLeft += bounds.left - viewport.left;
+    else if (bounds.right > viewport.right) scroller.scrollLeft += bounds.right - viewport.right;
+  }, []);
   const [settingsTab, setSettingsTab] = useState("Style");
   const [templateDrawing, setTemplateDrawing] = useState<ChartDrawing | null>(null);
   const drag = useRef<{ x: number; y: number; originX: number; originY: number } | null>(null);
@@ -856,6 +866,7 @@ export function DrawingSelectionOverlay({
         const y = Math.max(0, Math.min(bottom, previous.y));
         return x === previous.x && y === previous.y ? previous : { x, y };
       });
+      revealToolbarControl(document.activeElement);
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -864,7 +875,7 @@ export function DrawingSelectionOverlay({
     return () => observer.disconnect();
     // Selection/tool changes mount or replace the toolbar node observed above.
     // eslint-disable-next-line react/exhaustive-effect-dependencies
-  }, [selected?.id, drawings.tool, group]);
+  }, [selected?.id, drawings.tool, group, revealToolbarControl]);
   if (!selected || drawings.tool !== "cursor") return null;
   const regression =
     selected.kind === "regression-trend"
@@ -921,7 +932,7 @@ export function DrawingSelectionOverlay({
         ref={toolbarRef}
         role="toolbar"
         aria-label={group ? "Selected drawings" : "Selected drawing"}
-        className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center rounded-[6px] bg-[#1f1f1f] text-zinc-200 shadow-lg"
+        className="absolute left-1/2 top-3 z-20 flex w-max max-w-[calc(100%-16px)] -translate-x-1/2 items-center rounded-[6px] bg-[#1f1f1f] text-zinc-200 shadow-lg"
         style={{
           marginLeft: offset.x,
           marginTop: offset.y,
@@ -978,161 +989,179 @@ export function DrawingSelectionOverlay({
             )}
           </svg>
         </button>
-        <DrawingTemplateMenu compact drawing={selected} onApply={drawings.applySelectedTemplate} />
-        {group ? (
-          <>
-            <WidthPicker
-              variant="toolbar"
-              compact={compactToolbar}
+        <div
+          ref={toolbarControlsRef}
+          className="min-w-0 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          onFocusCapture={(event) => revealToolbarControl(event.target)}
+        >
+          <div className="flex w-max items-center">
+            <DrawingTemplateMenu
+              compact
               drawing={selected}
-              mixed={mixed((drawing) => drawing.width)}
-              onChange={drawings.updateSelected}
+              onApply={drawings.applySelectedTemplate}
             />
-            <LineStylePicker
-              variant="toolbar"
-              drawing={selected}
-              mixed={mixed((drawing) => drawing.lineStyle ?? "solid")}
-              onChange={drawings.updateSelected}
-            />
-            <ColorPicker
-              variant="toolbar"
-              value={selected.color}
-              icon="pencil"
-              mixed={mixed((drawing) => drawing.color)}
-              opacity={selected.lineOpacity ?? 1}
-              onOpacityChange={(lineOpacity) => drawings.updateSelected({ lineOpacity })}
-              onChange={(color) => drawings.updateSelected({ color })}
-            />
-            {drawings.selectedObjects.some((drawing) => supportsInlineDrawingText(drawing.kind)) ? (
-              <ColorPicker
+            {group ? (
+              <>
+                <WidthPicker
+                  variant="toolbar"
+                  compact={compactToolbar}
+                  drawing={selected}
+                  mixed={mixed((drawing) => drawing.width)}
+                  onChange={drawings.updateSelected}
+                />
+                <LineStylePicker
+                  variant="toolbar"
+                  drawing={selected}
+                  mixed={mixed((drawing) => drawing.lineStyle ?? "solid")}
+                  onChange={drawings.updateSelected}
+                />
+                <ColorPicker
+                  variant="toolbar"
+                  value={selected.color}
+                  icon="pencil"
+                  mixed={mixed((drawing) => drawing.color)}
+                  opacity={selected.lineOpacity ?? 1}
+                  onOpacityChange={(lineOpacity) => drawings.updateSelected({ lineOpacity })}
+                  onChange={(color) => drawings.updateSelected({ color })}
+                />
+                {drawings.selectedObjects.some((drawing) =>
+                  supportsInlineDrawingText(drawing.kind),
+                ) ? (
+                  <ColorPicker
+                    variant="toolbar"
+                    label="Text color"
+                    icon="letter-t"
+                    value={selected.textColor ?? selected.color}
+                    mixed={mixed((drawing) => drawing.textColor ?? drawing.color)}
+                    onChange={(textColor) => drawings.updateSelected({ textColor })}
+                  />
+                ) : null}
+              </>
+            ) : selected.kind === "regression-trend" ? (
+              <WidthPicker
                 variant="toolbar"
-                label="Text color"
-                icon="letter-t"
-                value={selected.textColor ?? selected.color}
-                mixed={mixed((drawing) => drawing.textColor ?? drawing.color)}
-                onChange={(textColor) => drawings.updateSelected({ textColor })}
-              />
-            ) : null}
-          </>
-        ) : selected.kind === "regression-trend" ? (
-          <WidthPicker
-            variant="toolbar"
-            compact={compactToolbar}
-            drawing={{ ...selected, width: regression!.regressionBaseLine.width }}
-            mixed={
-              new Set([
-                regression!.regressionBaseLine.width,
-                regression!.regressionUpperLine.width,
-                regression!.regressionLowerLine.width,
-              ]).size > 1
-            }
-            onChange={({ width }) => {
-              if (width === undefined) return;
-              const settings = { ...defaultRegressionDrawingSettings(), ...selected };
-              drawings.updateSelected({
-                regressionBaseLine: { ...settings.regressionBaseLine, width },
-                regressionUpperLine: { ...settings.regressionUpperLine, width },
-                regressionLowerLine: { ...settings.regressionLowerLine, width },
-              });
-            }}
-          />
-        ) : selected.kind === "text" ? (
-          <>
-            <ColorPicker
-              variant="toolbar"
-              label="Text color"
-              icon="letter-t"
-              value={selected.textColor ?? selected.color}
-              onChange={(textColor) => drawings.updateSelected({ textColor })}
-              opacity={selected.textOpacity ?? 1}
-              onOpacityChange={(textOpacity) => drawings.updateSelected({ textOpacity })}
-            />
-            {selected.background ? (
-              <ColorPicker
-                variant="toolbar"
-                label="Background color"
-                icon="bucket-droplet"
-                value={selected.backgroundColor ?? DEFAULT_DRAWING_TEXT_BACKGROUND_COLOR}
-                opacity={selected.backgroundOpacity ?? DEFAULT_DRAWING_TEXT_BACKGROUND_OPACITY}
-                onChange={(backgroundColor) => drawings.updateSelected({ backgroundColor })}
-                onOpacityChange={(backgroundOpacity) =>
-                  drawings.updateSelected({ backgroundOpacity })
+                compact={compactToolbar}
+                drawing={{ ...selected, width: regression!.regressionBaseLine.width }}
+                mixed={
+                  new Set([
+                    regression!.regressionBaseLine.width,
+                    regression!.regressionUpperLine.width,
+                    regression!.regressionLowerLine.width,
+                  ]).size > 1
                 }
+                onChange={({ width }) => {
+                  if (width === undefined) return;
+                  const settings = { ...defaultRegressionDrawingSettings(), ...selected };
+                  drawings.updateSelected({
+                    regressionBaseLine: { ...settings.regressionBaseLine, width },
+                    regressionUpperLine: { ...settings.regressionUpperLine, width },
+                    regressionLowerLine: { ...settings.regressionLowerLine, width },
+                  });
+                }}
               />
+            ) : selected.kind === "text" ? (
+              <>
+                <ColorPicker
+                  variant="toolbar"
+                  label="Text color"
+                  icon="letter-t"
+                  value={selected.textColor ?? selected.color}
+                  onChange={(textColor) => drawings.updateSelected({ textColor })}
+                  opacity={selected.textOpacity ?? 1}
+                  onOpacityChange={(textOpacity) => drawings.updateSelected({ textOpacity })}
+                />
+                {selected.background ? (
+                  <ColorPicker
+                    variant="toolbar"
+                    label="Background color"
+                    icon="bucket-droplet"
+                    value={selected.backgroundColor ?? DEFAULT_DRAWING_TEXT_BACKGROUND_COLOR}
+                    opacity={selected.backgroundOpacity ?? DEFAULT_DRAWING_TEXT_BACKGROUND_OPACITY}
+                    onChange={(backgroundColor) => drawings.updateSelected({ backgroundColor })}
+                    onOpacityChange={(backgroundOpacity) =>
+                      drawings.updateSelected({ backgroundOpacity })
+                    }
+                  />
+                ) : null}
+                <DrawingSelect
+                  label="Text size"
+                  value={String(selected.textFontSize ?? 14)}
+                  onChange={(value) => drawings.updateSelected({ textFontSize: Number(value) })}
+                  options={DRAWING_TEXT_FONT_SIZES.map(
+                    (size) => [String(size), String(size)] as const,
+                  )}
+                  className="w-16"
+                />
+              </>
+            ) : isFibTimeDrawing(selected.kind) ? (
+              <FibTimeToolbar drawing={selected} onChange={drawings.updateSelected} />
+            ) : (
+              <>
+                <ColorPicker
+                  variant="toolbar"
+                  value={toolbarAppearance.color}
+                  icon="pencil"
+                  mixed={
+                    channelLevels
+                      ? new Set(channelLevels.map((level) => level.color ?? selected.color)).size >
+                        1
+                      : false
+                  }
+                  opacity={toolbarAppearance.lineOpacity ?? 1}
+                  onOpacityChange={(lineOpacity) => updateLineAppearance({ lineOpacity })}
+                  onChange={(color) => updateLineAppearance({ color })}
+                />
+                {supportsInlineDrawingText(selected.kind) ? (
+                  <ColorPicker
+                    variant="toolbar"
+                    label="Text color"
+                    icon="letter-t"
+                    value={selected.textColor ?? selected.color}
+                    onChange={(textColor) => drawings.updateSelected({ textColor })}
+                    opacity={selected.textOpacity ?? 1}
+                    onOpacityChange={(textOpacity) => drawings.updateSelected({ textOpacity })}
+                  />
+                ) : null}
+                <WidthPicker
+                  variant="toolbar"
+                  compact={compactToolbar}
+                  drawing={toolbarAppearance}
+                  onChange={updateLineAppearance}
+                  mixed={
+                    channelLevels
+                      ? new Set(channelLevels.map((level) => level.width ?? selected.width)).size >
+                        1
+                      : false
+                  }
+                />
+                <LineStylePicker
+                  variant="toolbar"
+                  drawing={toolbarAppearance}
+                  onChange={updateLineAppearance}
+                />
+              </>
+            )}
+            {!compactToolbar ? (
+              <>
+                <IconButton label="Drawing settings" onClick={drawings.openSettings}>
+                  <DrawingToolIcon name="nut" className="size-7 rotate-90" />
+                </IconButton>
+                {!group && onCreateAlert && supportsDrawingAlert(selected) ? (
+                  <IconButton label="Add drawing alert" onClick={() => onCreateAlert(selected)}>
+                    <AlertIcon name="alarm-add" size={28} />
+                  </IconButton>
+                ) : null}
+                <IconButton
+                  label={allLocked ? "Unlock drawing" : "Lock drawing"}
+                  active={allLocked}
+                  onClick={() => drawings.updateSelected({ locked: !allLocked })}
+                >
+                  <DrawingToolIcon name={allLocked ? "lock" : "lock-open"} className="size-7" />
+                </IconButton>
+              </>
             ) : null}
-            <DrawingSelect
-              label="Text size"
-              value={String(selected.textFontSize ?? 14)}
-              onChange={(value) => drawings.updateSelected({ textFontSize: Number(value) })}
-              options={DRAWING_TEXT_FONT_SIZES.map((size) => [String(size), String(size)] as const)}
-              className="w-16"
-            />
-          </>
-        ) : isFibTimeDrawing(selected.kind) ? (
-          <FibTimeToolbar drawing={selected} onChange={drawings.updateSelected} />
-        ) : (
-          <>
-            <ColorPicker
-              variant="toolbar"
-              value={toolbarAppearance.color}
-              icon="pencil"
-              mixed={
-                channelLevels
-                  ? new Set(channelLevels.map((level) => level.color ?? selected.color)).size > 1
-                  : false
-              }
-              opacity={toolbarAppearance.lineOpacity ?? 1}
-              onOpacityChange={(lineOpacity) => updateLineAppearance({ lineOpacity })}
-              onChange={(color) => updateLineAppearance({ color })}
-            />
-            {supportsInlineDrawingText(selected.kind) ? (
-              <ColorPicker
-                variant="toolbar"
-                label="Text color"
-                icon="letter-t"
-                value={selected.textColor ?? selected.color}
-                onChange={(textColor) => drawings.updateSelected({ textColor })}
-                opacity={selected.textOpacity ?? 1}
-                onOpacityChange={(textOpacity) => drawings.updateSelected({ textOpacity })}
-              />
-            ) : null}
-            <WidthPicker
-              variant="toolbar"
-              compact={compactToolbar}
-              drawing={toolbarAppearance}
-              onChange={updateLineAppearance}
-              mixed={
-                channelLevels
-                  ? new Set(channelLevels.map((level) => level.width ?? selected.width)).size > 1
-                  : false
-              }
-            />
-            <LineStylePicker
-              variant="toolbar"
-              drawing={toolbarAppearance}
-              onChange={updateLineAppearance}
-            />
-          </>
-        )}
-        {!compactToolbar ? (
-          <>
-            <IconButton label="Drawing settings" onClick={drawings.openSettings}>
-              <DrawingToolIcon name="nut" className="size-7 rotate-90" />
-            </IconButton>
-            {!group && onCreateAlert && supportsDrawingAlert(selected) ? (
-              <IconButton label="Add drawing alert" onClick={() => onCreateAlert(selected)}>
-                <AlertIcon name="alarm-add" size={28} />
-              </IconButton>
-            ) : null}
-            <IconButton
-              label={allLocked ? "Unlock drawing" : "Lock drawing"}
-              active={allLocked}
-              onClick={() => drawings.updateSelected({ locked: !allLocked })}
-            >
-              <DrawingToolIcon name={allLocked ? "lock" : "lock-open"} className="size-7" />
-            </IconButton>
-          </>
-        ) : null}
+          </div>
+        </div>
         <IconButton label="Delete drawing" onClick={drawings.deleteSelected}>
           <ChartIcon name="trash" className="size-7" />
         </IconButton>

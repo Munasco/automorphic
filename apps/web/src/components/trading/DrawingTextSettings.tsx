@@ -63,7 +63,7 @@ export function DrawingTextSettings({
         onChange={(event) => onChange({ text: event.target.value })}
         className={cn(
           inputClass,
-          "w-full resize-none rounded-[8px] px-[7px] py-1 text-sm leading-[18px] focus:border-[#2962ff] focus:outline-2 focus:outline-offset-[-2px] focus:outline-[#2962ff] focus:[outline-style:solid]",
+          "block w-full resize-none rounded-[8px] px-[7px] py-1 text-sm leading-[18px] focus:border-[#2962ff] focus:outline-2 focus:outline-offset-[-2px] focus:outline-[#2962ff] focus:[outline-style:solid]",
           drawing.kind === "text" ? "h-[170px]" : "h-[100px]",
         )}
       />

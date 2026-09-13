@@ -910,7 +910,7 @@ export function DrawingSelect({ className, ...props }: ComponentProps<typeof Tra
       itemClassName="min-h-8 rounded-[4px] px-1 py-0.5 text-sm sm:min-h-8 data-selected:bg-foreground data-selected:text-background"
       className={cn(
         inputClass,
-        "min-h-[34px] shadow-none before:hidden dark:bg-transparent sm:min-h-[34px] sm:text-sm focus-visible:ring-1 [&[aria-expanded=true]_[data-slot=select-icon]]:rotate-180",
+        "min-h-[34px] shadow-none before:hidden dark:bg-transparent sm:min-h-[34px] sm:text-sm focus-visible:ring-1 [&_[data-slot=select-icon]_svg]:size-6 [&_[data-slot=select-icon]_svg]:text-[#dbdbdb] [&_[data-slot=select-icon]_svg]:opacity-60 [&[aria-expanded=true]_[data-slot=select-icon]]:rotate-180",
         className,
       )}
     />
