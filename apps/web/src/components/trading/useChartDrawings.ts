@@ -60,6 +60,12 @@ import {
 } from "./drawingClipboard";
 export type ChartDrawingTool = "cursor" | DrawingKind;
 type DrawingPointerModifiers = { shiftKey?: boolean };
+type DrawingSelectionOptions = {
+  additive?: boolean;
+  includeHidden?: boolean;
+  replaceSelection?: boolean;
+  range?: boolean;
+};
 const supportsShiftLineAlignment = (kind: ChartDrawingTool) =>
   ["trend", "ray", "extended-line", "info-line", "trend-angle", "arrow"].includes(kind);
 
@@ -2354,19 +2360,32 @@ export function createChartDrawingSession(
       preview = null;
       changed();
     },
-    selectDrawing: (id: string, options?: { additive?: boolean; includeHidden?: boolean }) => {
+    selectDrawing: (id: string, options: DrawingSelectionOptions = {}) => {
       if (
         disposed ||
         !drawings.some(
           (drawing) =>
             drawing.id === id &&
-            (!options?.additive || options.includeHidden || isVisible(drawing)),
+            ((!options.additive && !options.range) || options.includeHidden || isVisible(drawing)),
         )
       )
         return;
       setTool("cursor");
-      if (options?.includeHidden) hiddenSelectableIds.add(id);
-      chooseDrawing(id, options?.additive);
+      if (options.includeHidden) hiddenSelectableIds.add(id);
+      const anchorIndex = drawings.findIndex((drawing) => drawing.id === selectedId);
+      if (options.range && anchorIndex >= 0) {
+        const targetIndex = drawings.findIndex((drawing) => drawing.id === id);
+        const range = drawings
+          .slice(Math.min(anchorIndex, targetIndex), Math.max(anchorIndex, targetIndex) + 1)
+          .filter((drawing) => options.includeHidden || isVisible(drawing))
+          .map((drawing) => drawing.id);
+        if (options.includeHidden) range.forEach((id) => hiddenSelectableIds.add(id));
+        selectedIds = [...new Set([...selectedIds, ...range])];
+        selectedId = id;
+      } else if (options.replaceSelection) {
+        selectedIds = [id];
+        selectedId = id;
+      } else chooseDrawing(id, options.additive);
       emit();
     },
     updateDrawing,
@@ -2842,8 +2861,7 @@ export function useChartDrawings(
   }, [focusChart]);
   const redrawSelected = useCallback(() => session.current?.redrawSelected(), []);
   const selectDrawing = useCallback(
-    (id: string, options?: { additive?: boolean; includeHidden?: boolean }) =>
-      session.current?.selectDrawing(id, options),
+    (id: string, options?: DrawingSelectionOptions) => session.current?.selectDrawing(id, options),
     [],
   );
   const updateDrawing = useCallback(

@@ -6364,3 +6364,130 @@ describe("explicit hidden object-tree selection", () => {
     },
   );
 });
+
+describe("object-tree replacement and range selection", () => {
+  const setup = (patches: Partial<Record<string, Partial<ChartDrawing>>> = {}) => {
+    const objects: ChartDrawing[] = ["a", "b", "c", "d"].map((id, index) => ({
+      id,
+      kind: "trend",
+      color: "#2962ff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 4900 - index * 100 },
+        { time: 300 as Time, price: 4900 - index * 100 },
+      ],
+      ...patches[id],
+    }));
+    const f = fixture("tree-range", JSON.stringify(objects));
+    const session = f.open();
+    const state = () => f.change.mock.lastCall![0];
+    return { objects, f, session, state };
+  };
+
+  it.each([
+    ["a", "c"],
+    ["c", "a"],
+  ])("selects the contiguous %s→%s range and keeps later ranges additive", (from, to) => {
+    const { f, session, state } = setup();
+    session.selectDrawing(from!, { replaceSelection: true, includeHidden: true });
+    session.selectDrawing(to!, { range: true, includeHidden: true });
+    expect(new Set(state().selectedIds)).toEqual(new Set(["a", "b", "c"]));
+    expect(state().selected.id).toBe(to);
+    session.selectDrawing("b", { range: true, includeHidden: true });
+    expect(new Set(state().selectedIds)).toEqual(new Set(["a", "b", "c"]));
+    expect(state().selected.id).toBe("b");
+    session.selectDrawing("d", { additive: true, includeHidden: true });
+    session.selectDrawing("c", { range: true, includeHidden: true });
+    expect(new Set(state().selectedIds)).toEqual(new Set(["a", "b", "c", "d"]));
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+
+  it("explicit replacement isolates an existing member before opening its own settings", () => {
+    const { f, session, state } = setup();
+    session.selectDrawing("a");
+    session.selectDrawing("b", { additive: true });
+    session.selectDrawing("a", { replaceSelection: true, includeHidden: true });
+    expect(state().selectedIds).toEqual(["a"]);
+    expect(f.writes()).toBe(0);
+    expect(session.openSettings()).toBe(true);
+    expect(session.previewSettings({ text: "Only this line" })).toBe(true);
+    expect(session.applySettings({})).toBe(true);
+    expect(state().objects[0].text).toBe("Only this line");
+    expect(state().objects[1].text).toBeUndefined();
+    session.dispose();
+  });
+
+  it("keeps default canvas member selection and dragging group-preserving", () => {
+    const { objects, session, state } = setup();
+    session.selectDrawing("a");
+    session.selectDrawing("b", { additive: true });
+    session.selectDrawing("a");
+    expect(state().selectedIds).toEqual(["a", "b"]);
+    expect(session.beginDrag({ x: 150, y: 100 })).toBe(true);
+    session.dragTo({ x: 175, y: 125 });
+    session.endDrag();
+    expect(state().objects[0].anchors).not.toEqual(objects[0]!.anchors);
+    expect(state().objects[1].anchors).not.toEqual(objects[1]!.anchors);
+    expect(state().objects.slice(2)).toEqual(objects.slice(2));
+    session.dispose();
+  });
+
+  it.each([false, true])(
+    "range includes hidden members only with explicit permission (%s)",
+    (includeHidden) => {
+      const { f, session, state } = setup({ b: { hidden: true }, c: { locked: true } });
+      session.selectDrawing("a", { replaceSelection: true, includeHidden });
+      session.selectDrawing("d", { range: true, includeHidden });
+      expect(new Set(state().selectedIds)).toEqual(
+        new Set(includeHidden ? ["a", "b", "c", "d"] : ["a", "c", "d"]),
+      );
+      expect(state().selectedObjects.find((d: ChartDrawing) => d.id === "c").locked).toBe(true);
+      expect(f.writes()).toBe(0);
+      session.dispose();
+    },
+  );
+
+  it("ignores a removed target and falls back to the target alone when the primary anchor was deleted", () => {
+    const { f, session, state } = setup();
+    session.selectDrawing("a", { replaceSelection: true, includeHidden: true });
+    session.deleteDrawing("c");
+    const writes = f.writes();
+    session.selectDrawing("c", { range: true, includeHidden: true });
+    expect(state().selectedIds).toEqual(["a"]);
+    expect(f.writes()).toBe(writes);
+    session.deleteDrawing("a");
+    expect(state().selectedIds).toEqual([]);
+    session.selectDrawing("d", { range: true, includeHidden: true });
+    expect(state().selectedIds).toEqual(["d"]);
+    expect(state().selected.id).toBe("d");
+    expect(f.writes()).toBe(writes + 1);
+    session.dispose();
+  });
+
+  it.each(["delete", "reorder"] as const)(
+    "persists range-selected %s as one undoable operation",
+    (operation) => {
+      const { f, objects, session, state } = setup();
+      session.selectDrawing("a", { replaceSelection: true, includeHidden: true });
+      session.selectDrawing("c", { range: true, includeHidden: true });
+      if (operation === "delete") {
+        session.deleteSelected();
+        expect(state().objects.map((d: ChartDrawing) => d.id)).toEqual(["d"]);
+      } else {
+        expect(session.reorderSelected("front")).toBe(true);
+        expect(state().objects.map((d: ChartDrawing) => d.id)).toEqual(["d", "a", "b", "c"]);
+      }
+      expect(f.writes()).toBe(1);
+      const saved = f.saved();
+      session.undo();
+      expect(state().objects).toEqual(objects);
+      session.redo();
+      expect(f.saved()).toBe(saved);
+      session.dispose();
+      const reloaded = f.open();
+      expect(reloaded.getCommittedDrawings()).toEqual(JSON.parse(saved!));
+      reloaded.dispose();
+    },
+  );
+});

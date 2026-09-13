@@ -230,10 +230,15 @@ export function DrawingObjectTree({
                     drawings.selectDrawing(object.id, {
                       additive: event.metaKey || event.ctrlKey,
                       includeHidden: true,
+                      range: event.shiftKey,
+                      replaceSelection: !event.metaKey && !event.ctrlKey && !event.shiftKey,
                     })
                   }
                   onDoubleClick={() => {
-                    drawings.selectDrawing(object.id, { includeHidden: true });
+                    drawings.selectDrawing(object.id, {
+                      includeHidden: true,
+                      replaceSelection: true,
+                    });
                     drawings.openSettings();
                   }}
                   className={cn(
