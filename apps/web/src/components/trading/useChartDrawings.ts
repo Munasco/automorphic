@@ -2,7 +2,13 @@ import { applyDrawingChanges, mergeDrawingChanges } from "./drawingChanges";
 import { createDrawingDefaults, drawingAppearanceChanged } from "./drawingDefaults";
 import { createDrawingPaneExtensions, drawingPaneTimeAtCoordinate } from "./drawingPaneExtensions";
 import type { ChartInterval } from "./tradingIntervals";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { randomUUID } from "../../lib/utils";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
 import {
@@ -125,6 +131,25 @@ const EMPTY: DrawingState = {
   textEditing: false,
   contextPoint: null,
 };
+
+function drawingHistoryShortcut(event: KeyboardEvent): "undo" | "redo" | null {
+  if (
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.keyCode === 229 ||
+    event.altKey ||
+    !(event.metaKey || event.ctrlKey) ||
+    event.key.toLowerCase() !== "z"
+  )
+    return null;
+  const target = event.target;
+  if (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || target.closest("input,textarea,select,[role=textbox]"))
+  )
+    return null;
+  return event.shiftKey ? "redo" : "undo";
+}
 
 /** Each session binds to the workspace-scoped storage and the selected contract. */
 export function createChartDrawingSession(
@@ -2583,7 +2608,12 @@ export function useChartDrawings(
         (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
       )
         return;
-      if (event.key === "Escape") current.cancel();
+      if (
+        event.key === "Escape" &&
+        !event.defaultPrevented &&
+        element.contains(document.activeElement)
+      )
+        current.cancel();
       if (
         document.activeElement === element &&
         target === element &&
@@ -2605,10 +2635,10 @@ export function useChartDrawings(
         event.preventDefault();
         current.deleteSelected();
       }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+      const historyAction = drawingHistoryShortcut(event);
+      if (historyAction) {
         event.preventDefault();
-        if (event.shiftKey) current.redo();
-        else current.undo();
+        current[historyAction]();
       }
     };
     const shiftChanged = (event: KeyboardEvent) => {
@@ -2652,6 +2682,33 @@ export function useChartDrawings(
     () => session.current?.getCommittedDrawings() ?? null,
     [],
   );
+  const getChartElement = useCallback(() => {
+    if (!session.current) return null;
+    const element = chart?.chartElement();
+    return element?.isConnected ? element : null;
+  }, [chart]);
+  const focusChart = useCallback(() => {
+    getChartElement()?.focus({ preventScroll: true });
+  }, [getChartElement]);
+  const onHistoryKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLElement>) => {
+      const current = session.current;
+      // Form controls own their native Undo; settings drafts retain their existing
+      // explicit Apply/Cancel behavior. Portaled drawing menus belong to this root.
+      if (!current || state.settingsOpen) return;
+      const action = drawingHistoryShortcut(event.nativeEvent);
+      if (!action) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const focused = document.activeElement;
+      current[action]();
+      queueMicrotask(() => {
+        if (focused && !focused.isConnected && document.activeElement === document.body)
+          focusChart();
+      });
+    },
+    [focusChart, state.settingsOpen],
+  );
   const setTool = useCallback((tool: ChartDrawingTool) => session.current?.setTool(tool), []);
   const undo = useCallback(() => session.current?.undo(), []);
   const redo = useCallback(() => session.current?.redo(), []);
@@ -2668,15 +2725,24 @@ export function useChartDrawings(
   const toggleHidden = useCallback(() => session.current?.toggleHidden(), []);
   const toggleLocked = useCallback(() => session.current?.toggleLocked(), []);
   const removeDrawings = useCallback(
-    (includeLocked = false) => session.current?.removeDrawings(includeLocked),
-    [],
+    (includeLocked = false) => {
+      session.current?.removeDrawings(includeLocked);
+      focusChart();
+    },
+    [focusChart],
   );
   const setAlwaysRemoveLocked = useCallback(
     (enabled: boolean) => session.current?.setAlwaysRemoveLocked(enabled),
     [],
   );
-  const clear = useCallback(() => session.current?.clear(), []);
-  const deleteSelected = useCallback(() => session.current?.deleteSelected(), []);
+  const clear = useCallback(() => {
+    session.current?.clear();
+    focusChart();
+  }, [focusChart]);
+  const deleteSelected = useCallback(() => {
+    session.current?.deleteSelected();
+    focusChart();
+  }, [focusChart]);
   const redrawSelected = useCallback(() => session.current?.redrawSelected(), []);
   const selectDrawing = useCallback(
     (id: string, options?: { additive?: boolean }) => session.current?.selectDrawing(id, options),
@@ -2686,7 +2752,13 @@ export function useChartDrawings(
     (id: string, patch: DrawingPatch) => session.current?.updateDrawing(id, patch),
     [],
   );
-  const deleteDrawing = useCallback((id: string) => session.current?.deleteDrawing(id), []);
+  const deleteDrawing = useCallback(
+    (id: string) => {
+      session.current?.deleteDrawing(id);
+      focusChart();
+    },
+    [focusChart],
+  );
   const duplicateDrawing = useCallback((id: string) => session.current?.duplicateDrawing(id), []);
   const copyDrawing = useCallback(
     (id: string) => session.current?.copyDrawing(id) ?? Promise.resolve(false),
@@ -2799,6 +2871,8 @@ export function useChartDrawings(
   );
   return {
     ...state,
+    onHistoryKeyDown,
+    getChartElement,
     getCommittedDrawings,
     interval: intervalMinutes,
     channelPriceOffset,

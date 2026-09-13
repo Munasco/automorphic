@@ -836,6 +836,9 @@ export function DrawingSelectionOverlay({
   const [compactToolbar, setCompactToolbar] = useState(false);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const toolbarControlsRef = useRef<HTMLDivElement>(null);
+  const moreTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const optionsPopupRef = useRef<HTMLDivElement | null>(null);
+  const contextPopupRef = useRef<HTMLDivElement | null>(null);
   const revealToolbarControl = useCallback((control: Element | null) => {
     const scroller = toolbarControlsRef.current;
     // Portal popovers bubble React focus events but must not move the toolbar.
@@ -908,6 +911,28 @@ export function DrawingSelectionOverlay({
         ...(patch.lineOpacity === undefined ? {} : { opacity: patch.lineOpacity }),
       })),
     });
+  };
+  const menuFinalFocus = (returnToChart: boolean) => {
+    const stillExists = drawings
+      .getCommittedDrawings()
+      ?.some((drawing) => drawing.id === selected.id);
+    const active = document.activeElement;
+    // An explicit focus callback bypasses the popup's default outside-focus guard.
+    // Respect another chart or a newly opened dialog when it already owns focus.
+    if (
+      active &&
+      active !== document.body &&
+      active.isConnected &&
+      !optionsPopupRef.current?.contains(active) &&
+      !contextPopupRef.current?.contains(active) &&
+      !(!stillExists && toolbarRef.current?.contains(active))
+    )
+      return false;
+    // Removal unmounts the trigger. Let the popup's own focus cleanup
+    // return to this chart instead of falling back to the page body.
+    return !returnToChart && stillExists && moreTriggerRef.current?.isConnected
+      ? moreTriggerRef.current
+      : drawings.getChartElement();
   };
   const closeThen = (action: () => void) => {
     drawings.closeContextMenu();
@@ -1165,8 +1190,21 @@ export function DrawingSelectionOverlay({
         <IconButton label="Delete drawing" onClick={drawings.deleteSelected}>
           <ChartIcon name="trash" className="size-7" />
         </IconButton>
-        <Menu>
+        <Menu
+          onOpenChangeComplete={(open) => {
+            if (open) return;
+            // Popup cleanup can briefly return focus before removing the modal guards.
+            // Recover only abandoned page focus after that cleanup has finished.
+            requestAnimationFrame(() => {
+              if (document.activeElement === document.body)
+                (moreTriggerRef.current ?? drawings.getChartElement())?.focus({
+                  preventScroll: true,
+                });
+            });
+          }}
+        >
           <MenuTrigger
+            ref={moreTriggerRef}
             aria-label="More drawing options"
             className="flex size-[38px] shrink-0 items-center justify-center rounded hover:bg-white/10 aria-expanded:bg-white/10"
           >
@@ -1178,6 +1216,11 @@ export function DrawingSelectionOverlay({
           </MenuTrigger>
           <MenuPopup
             aria-label="Drawing options"
+            ref={(node) => {
+              // Retain the closing popup for the focus cleanup after unmount.
+              if (node) optionsPopupRef.current = node;
+            }}
+            finalFocus={() => menuFinalFocus(false)}
             className={drawingContextMenuPopupClass}
             style={drawingMenuStyle}
             onCopy={copyFromMenu}
@@ -1211,6 +1254,10 @@ export function DrawingSelectionOverlay({
         >
           <MenuPopup
             aria-label="Drawing context menu"
+            ref={(node) => {
+              if (node) contextPopupRef.current = node;
+            }}
+            finalFocus={() => menuFinalFocus(true)}
             onCopy={copyFromMenu}
             onMouseUpCapture={(event) => {
               // Canvas hit testing opens this virtual-anchor menu without a DOM trigger.
