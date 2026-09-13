@@ -356,7 +356,10 @@ export function DrawingObjectTree({
                 </RowAction>
                 <RowAction
                   label={`Remove ${label}`}
-                  onClick={() => drawings.deleteDrawing(object.id)}
+                  onClick={() => {
+                    if (isSelected) drawings.deleteSelected();
+                    else drawings.deleteDrawing(object.id);
+                  }}
                 >
                   <ChartIcon name="trash" className="size-4" />
                 </RowAction>

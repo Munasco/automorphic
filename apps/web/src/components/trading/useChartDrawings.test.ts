@@ -6758,6 +6758,68 @@ describe("locked group visibility actions", () => {
   });
 });
 
+describe("selected object-tree removal across peers", () => {
+  it.each([false, true])(
+    "deletes a mixed hidden/locked group atomically and preserves peer changes through history (remove locked: %s)",
+    (removeLocked) => {
+      const objects: ChartDrawing[] = ["hidden", "locked", "visible", "other"].map((id, index) => ({
+        id,
+        kind: "trend",
+        color: "#2962ff",
+        width: 2,
+        name: `Line ${id}`,
+        text: `Annotation ${index}`,
+        anchors: [
+          { time: 100 as Time, price: 4900 - index * 75 },
+          { time: 300 as Time, price: 4900 - index * 75 },
+        ],
+        ...(id === "hidden" || id === "locked" ? { hidden: true } : {}),
+        ...(id === "locked" ? { locked: true } : {}),
+      }));
+      const f = fixture("tree-group-removal", JSON.stringify(objects));
+      const session = f.open();
+      const other = fixture("tree-group-removal");
+      const peer = other.open(1, false, f.storage);
+      try {
+        session.setAlwaysRemoveLocked(removeLocked);
+        for (const id of ["hidden", "locked", "visible"])
+          session.selectDrawing(id, { additive: true, includeHidden: true });
+        session.deleteSelected();
+        const survivors = removeLocked ? [objects[3]!] : [objects[1]!, objects[3]!];
+        expect(session.getCommittedDrawings()).toEqual(survivors);
+        expect(peer.getCommittedDrawings()).toEqual(survivors);
+        expect(f.change.mock.lastCall![0].selectedIds).toEqual(removeLocked ? [] : ["locked"]);
+        expect(f.writes()).toBe(1);
+
+        const peerPatch = { color: "#ff0000", text: "Peer annotation" };
+        peer.updateDrawing("other", peerPatch);
+        const restored = objects.map((drawing) =>
+          drawing.id === "other" ? { ...drawing, ...peerPatch } : drawing,
+        );
+        const removed = survivors.map((drawing) =>
+          drawing.id === "other" ? { ...drawing, ...peerPatch } : drawing,
+        );
+        session.undo();
+        expect(session.getCommittedDrawings()).toEqual(restored);
+        expect(peer.getCommittedDrawings()).toEqual(restored);
+        session.redo();
+        expect(session.getCommittedDrawings()).toEqual(removed);
+        expect(peer.getCommittedDrawings()).toEqual(removed);
+        expect(JSON.parse(f.saved()!)).toEqual(removed);
+      } finally {
+        peer.dispose();
+        session.dispose();
+      }
+      const reloaded = f.open();
+      try {
+        expect(reloaded.getCommittedDrawings()).toEqual(JSON.parse(f.saved()!));
+      } finally {
+        reloaded.dispose();
+      }
+    },
+  );
+});
+
 describe("object-tree drop ordering", () => {
   const setup = (decorated = false) => {
     const objects: ChartDrawing[] = ["a", "b", "c", "d", "e"].map((id, index) => ({
