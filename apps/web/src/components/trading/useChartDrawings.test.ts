@@ -6943,3 +6943,120 @@ describe("object-tree drop ordering", () => {
     }
   });
 });
+
+describe("drawing metadata rename", () => {
+  const setup = (locked = false) => {
+    const objects: ChartDrawing[] = ["a", "b"].map((id, index) => ({
+      id,
+      kind: "trend",
+      color: "#2962ff",
+      width: 2,
+      text: `Annotation ${id}`,
+      anchors: [
+        { time: 100 as Time, price: 4900 - index * 100 },
+        { time: 300 as Time, price: 4900 - index * 100 },
+      ],
+      ...(locked && id === "a" ? { locked: true, hidden: true } : {}),
+    }));
+    const f = fixture("rename", JSON.stringify(objects));
+    const session = f.open();
+    return { objects, f, session, state: () => f.change.mock.lastCall![0] };
+  };
+  it("renames only a targeted locked hidden group member, normalizes names and persists one-step history", () => {
+    const { objects, f, session, state } = setup(true);
+    session.selectDrawing("a", { includeHidden: true });
+    session.selectDrawing("b", { additive: true });
+    const raw = `  ${"Opening range ".repeat(10)}  `;
+    const name = raw.trim().slice(0, 80);
+    expect(session.renameDrawing("a", raw)).toBe(true);
+    expect(state().objects).toEqual([{ ...objects[0], name }, objects[1]]);
+    expect(state().selectedIds).toEqual(["a", "b"]);
+    expect(f.writes()).toBe(1);
+    expect(f.controls.get(DRAWING_DEFAULTS_KEY)).toBeUndefined();
+    session.undo();
+    expect(state().objects).toEqual(objects);
+    session.redo();
+    expect(state().objects[0].name).toBe(name);
+    expect(session.renameDrawing("a", " \n\t ")).toBe(true);
+    expect(state().objects).toEqual([{ ...objects[0], name: "" }, objects[1]]);
+    session.undo();
+    expect(state().objects[0].name).toBe(name);
+    session.dispose();
+    const reloaded = f.open();
+    expect(reloaded.getCommittedDrawings()).toEqual([{ ...objects[0], name }, objects[1]]);
+    reloaded.dispose();
+  });
+  it("rejects stale, invalid, disposed and equivalent names without losing the redo branch", () => {
+    const { objects, f, session, state } = setup();
+    expect(session.renameDrawing("a", "  ")).toBe(false);
+    expect(session.renameDrawing("missing", "Name")).toBe(false);
+    expect(session.renameDrawing("a", null as unknown as string)).toBe(false);
+    expect(f.writes()).toBe(0);
+    expect(session.renameDrawing("a", "Target")).toBe(true);
+    expect(session.renameDrawing("a", " Target ")).toBe(false);
+    session.undo();
+    const writes = f.writes();
+    expect(session.renameDrawing("a", "\n")).toBe(false);
+    expect(state().canRedo).toBe(true);
+    expect(f.writes()).toBe(writes);
+    session.redo();
+    expect(state().objects).toEqual([{ ...objects[0], name: "Target" }, objects[1]]);
+    session.dispose();
+    expect(session.renameDrawing("a", "Late")).toBe(false);
+  });
+  it.each(["settings", "text", "drag"] as const)(
+    "cancels an active %s draft and commits only the name",
+    (draft) => {
+      const { objects, f, session, state } = setup();
+      session.selectDrawing("a");
+      if (draft === "settings") {
+        expect(session.openSettings()).toBe(true);
+        expect(session.previewSettings({ color: "#ff0000", text: "Unsaved" })).toBe(true);
+      } else if (draft === "text") {
+        expect(session.beginTextEdit()).toBe(true);
+        expect(session.previewText("Unsaved")).toBe(true);
+      } else {
+        expect(session.beginDrag({ x: 150, y: 100 })).toBe(true);
+        session.dragTo({ x: 180, y: 130 });
+      }
+      expect(session.renameDrawing("a", "Plan A")).toBe(true);
+      expect(state().objects).toEqual([{ ...objects[0], name: "Plan A" }, objects[1]]);
+      expect(state().settingsOpen).toBe(false);
+      expect(state().textEditing).toBe(false);
+      expect(f.writes()).toBe(1);
+      session.undo();
+      expect(state().objects).toEqual(objects);
+      session.dispose();
+    },
+  );
+  it("publishes renames and preserves peer geometry and styles through Undo, Redo and reload", () => {
+    const { objects, f, session } = setup();
+    const other = fixture("rename");
+    const peer = other.open(1, false, f.storage);
+    const anchors = objects[0]!.anchors.map((anchor) => ({ ...anchor, price: anchor.price + 10 }));
+    try {
+      peer.updateDrawing("a", { anchors });
+      expect(session.renameDrawing("a", "Trade plan")).toBe(true);
+      peer.updateDrawing("a", { color: "#ff0000" });
+      peer.updateDrawing("b", { text: "Peer notes" });
+      const latest = [
+        { ...objects[0], anchors, color: "#ff0000" },
+        { ...objects[1], text: "Peer notes" },
+      ];
+      session.undo();
+      expect(session.getCommittedDrawings()).toEqual(latest);
+      expect(peer.getCommittedDrawings()).toEqual(latest);
+      session.redo();
+      expect(peer.getCommittedDrawings()).toEqual([
+        { ...latest[0], name: "Trade plan" },
+        latest[1],
+      ]);
+    } finally {
+      peer.dispose();
+      session.dispose();
+    }
+    const reloaded = f.open();
+    expect(reloaded.getCommittedDrawings()).toEqual(JSON.parse(f.saved()!));
+    reloaded.dispose();
+  });
+});

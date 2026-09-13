@@ -1315,6 +1315,20 @@ export function createChartDrawingSession(
     drawings = drawings.map((drawing) => (drawing.id === id ? next : drawing));
     changed();
   };
+  const renameDrawing = (id: string, name: string): boolean => {
+    if (disposed || typeof name !== "string" || !drawings.some((drawing) => drawing.id === id))
+      return false;
+    setTool("cursor");
+    const current = drawings.find((drawing) => drawing.id === id)!;
+    const normalized = name.trim().slice(0, 80);
+    if ((current.name ?? "") === normalized) return false;
+    remember();
+    drawings = drawings.map((drawing) =>
+      drawing.id === id ? { ...drawing, name: normalized } : drawing,
+    );
+    changed();
+    return true;
+  };
   const reorderSelected = (direction: DrawingOrderDirection): boolean => {
     if (
       disposed ||
@@ -2433,6 +2447,7 @@ export function createChartDrawingSession(
       emit();
     },
     updateDrawing,
+    renameDrawing,
     deleteDrawing,
     duplicateDrawing: (id: string) => {
       if (disposed || drawings.length >= 100) return;
@@ -2913,6 +2928,10 @@ export function useChartDrawings(
     (id: string, patch: DrawingPatch) => session.current?.updateDrawing(id, patch),
     [],
   );
+  const renameDrawing = useCallback(
+    (id: string, name: string) => session.current?.renameDrawing(id, name) ?? false,
+    [],
+  );
   const deleteDrawing = useCallback(
     (id: string) => {
       session.current?.deleteDrawing(id);
@@ -3087,6 +3106,7 @@ export function useChartDrawings(
     closeContextMenu,
     selectDrawing,
     updateDrawing,
+    renameDrawing,
     deleteDrawing,
     duplicateDrawing,
     copyDrawing,

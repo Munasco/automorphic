@@ -1,3 +1,4 @@
+import { DrawingRenameDialog } from "./DrawingRenameDialog";
 import { mergeDrawingChanges } from "./drawingChanges";
 import { drawingKindLabel } from "./drawingNames";
 import {
@@ -858,6 +859,11 @@ export function DrawingSelectionOverlay({
   }, []);
   const [settingsTab, setSettingsTab] = useState("Style");
   const [templateDrawing, setTemplateDrawing] = useState<ChartDrawing | null>(null);
+  const [renameTarget, setRenameTarget] = useState<{
+    drawing: ChartDrawing;
+    trigger: HTMLElement | null;
+  } | null>(null);
+  if (renameTarget && drawings.selected?.id !== renameTarget.drawing.id) setRenameTarget(null);
   const drag = useRef<{ x: number; y: number; originX: number; originY: number } | null>(null);
   const selected = drawings.selected;
   const group = drawings.selectedObjects.length > 1;
@@ -1234,6 +1240,9 @@ export function DrawingSelectionOverlay({
             <DrawingMenuCommands
               drawings={drawings}
               onSaveTemplate={() => setTemplateDrawing(selected)}
+              onRename={() =>
+                setRenameTarget({ drawing: selected, trigger: moreTriggerRef.current })
+              }
               onOpenObjectTree={onOpenObjectTree}
               onCreateAlert={onCreateAlert}
             />
@@ -1291,11 +1300,28 @@ export function DrawingSelectionOverlay({
               drawings={drawings}
               onAction={closeThen}
               onSaveTemplate={() => setTemplateDrawing(selected)}
+              onRename={() =>
+                setRenameTarget({
+                  drawing: selected,
+                  trigger: drawings.getContextMenuTrigger() ?? moreTriggerRef.current,
+                })
+              }
               onOpenObjectTree={onOpenObjectTree}
               onCreateAlert={onCreateAlert}
             />
           </MenuPopup>
         </ContextMenu.Root>
+      ) : null}
+      {renameTarget && selected.id === renameTarget.drawing.id ? (
+        <DrawingRenameDialog
+          key={renameTarget.drawing.id}
+          drawing={renameTarget.drawing}
+          onRename={drawings.renameDrawing}
+          onClose={() => setRenameTarget(null)}
+          returnFocus={() =>
+            renameTarget.trigger?.isConnected ? renameTarget.trigger : drawings.getChartElement()
+          }
+        />
       ) : null}
       {templateDrawing ? (
         <DrawingTemplateSaveDialog
@@ -1319,12 +1345,14 @@ function DrawingMenuCommands({
   drawings,
   onAction = executeDrawingAction,
   onSaveTemplate,
+  onRename,
   onOpenObjectTree,
   onCreateAlert,
 }: {
   drawings: ChartDrawingsController;
   onAction?: (action: () => void) => void;
   onSaveTemplate: () => void;
+  onRename: () => void;
   onOpenObjectTree?: (() => void) | undefined;
   onCreateAlert?: ((drawing: ChartDrawing) => void) | undefined;
 }) {
@@ -1393,6 +1421,12 @@ function DrawingMenuCommands({
         <DrawingMenuIcon />
         Copy <MenuShortcut className="tracking-normal">{modifier} C</MenuShortcut>
       </MenuItem>
+      {!group ? (
+        <MenuItem className={drawingMenuItemClass} onClick={() => onAction(onRename)}>
+          <DrawingMenuIcon />
+          Rename
+        </MenuItem>
+      ) : null}
       <MenuSeparator />
       {[
         {
