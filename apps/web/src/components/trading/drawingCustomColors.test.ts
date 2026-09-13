@@ -101,6 +101,31 @@ describe("custom drawing colors", () => {
     }
   });
 
+  it("removes only the requested color, notifies peers, and persists across workspace reloads", async () => {
+    useDrawingCustomColors.getState().addColor("#112233");
+    useDrawingCustomColors.getState().addColor("#abcdef");
+    const subscriber = vi.fn();
+    const unsubscribe = useDrawingCustomColors.subscribe(subscriber);
+    try {
+      useDrawingCustomColors.getState().removeColor(" ABCDEF ");
+      expect(useDrawingCustomColors.getState().colors).toEqual(["#112233"]);
+      expect(subscriber).toHaveBeenCalledTimes(1);
+      const writes = workspace.writes.length;
+      useDrawingCustomColors.getState().removeColor("#abcdef");
+      useDrawingCustomColors.getState().removeColor("invalid");
+      expect(workspace.writes).toHaveLength(writes);
+      expect(subscriber).toHaveBeenCalledTimes(1);
+      await hydrate("second");
+      useDrawingCustomColors.getState().addColor("#abcdef");
+      await hydrate("first");
+      expect(useDrawingCustomColors.getState().colors).toEqual(["#112233"]);
+      await hydrate("second");
+      expect(useDrawingCustomColors.getState().colors).toEqual(["#abcdef"]);
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it("evicts only the oldest color when the bounded palette receives a new distinct color", () => {
     const colors = Array.from(
       { length: MAX_DRAWING_CUSTOM_COLORS },

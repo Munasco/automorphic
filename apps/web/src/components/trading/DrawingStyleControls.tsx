@@ -17,6 +17,7 @@ import {
   type ComponentProps,
   type CSSProperties,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { DrawingCustomColorEditor } from "./DrawingCustomColorEditor";
 import { useDrawingCustomColors } from "./drawingCustomColors";
@@ -277,6 +278,74 @@ function AppearanceLinePreview({
   );
 }
 
+function CustomColorSwatch({
+  color,
+  selected,
+  label,
+  onSelect,
+  onRemove,
+  fallbackFocus,
+}: {
+  color: string;
+  selected: boolean;
+  label: string;
+  onSelect: () => void;
+  onRemove: () => void;
+  fallbackFocus: RefObject<HTMLButtonElement | null>;
+}) {
+  const [open, setOpen] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
+  return (
+    <Menu open={open} onOpenChange={setOpen} modal={false}>
+      <button
+        ref={anchor}
+        type="button"
+        aria-label={`${label} custom ${color}`}
+        aria-pressed={selected}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={onSelect}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+            event.preventDefault();
+            event.stopPropagation();
+            setOpen(true);
+          }
+        }}
+        className={paletteSwatchClass}
+        style={{ background: color, color }}
+      />
+      <MenuPopup
+        anchor={anchor}
+        align="start"
+        sideOffset={4}
+        finalFocus={() => anchor.current ?? fallbackFocus.current}
+        style={drawingContextMenuStyle}
+        className="w-max min-w-0 rounded-[6px] [&>div]:px-0 [&>div]:py-1.5"
+      >
+        <MenuPrimitive.Item
+          onClick={onRemove}
+          className="flex h-8 cursor-pointer items-center gap-2.5 pr-2.5 pl-2 text-sm leading-5 text-[#dbdbdb] outline-none data-highlighted:bg-[#3d3d3d]"
+        >
+          <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true">
+            <path
+              d="M5 7.5h18M10.5 7V6a1.5 1.5 0 0 1 1.5-1.5h4A1.5 1.5 0 0 1 17.5 6v1M7.5 8l1.3 14.5a1 1 0 0 0 1 1h8.4a1 1 0 0 0 1-1L20.5 8"
+              fill="none"
+              stroke="currentColor"
+            />
+          </svg>
+          Remove color
+        </MenuPrimitive.Item>
+      </MenuPopup>
+    </Menu>
+  );
+}
+
 function ColorSettingsPanel({
   value,
   onChange,
@@ -300,6 +369,8 @@ function ColorSettingsPanel({
   const swatchRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const customColors = useDrawingCustomColors((state) => state.colors);
   const addCustomColor = useDrawingCustomColors((state) => state.addColor);
+  const removeCustomColor = useDrawingCustomColors((state) => state.removeColor);
+  const addColorButton = useRef<HTMLButtonElement>(null);
   if (custom) {
     return (
       <DrawingCustomColorEditor
@@ -352,18 +423,19 @@ function ColorSettingsPanel({
         <div className="my-3 h-px bg-[#4a4a4a]" />
         <div className="-mx-[3px] flex flex-wrap items-center">
           {customColors.map((color) => (
-            <button
-              type="button"
+            <CustomColorSwatch
               key={color}
-              aria-label={`${label} custom ${color}`}
-              aria-pressed={value === color}
-              onClick={() => onChange(color)}
-              className={paletteSwatchClass}
-              style={{ background: color, color }}
+              color={color}
+              label={label}
+              selected={value.toLowerCase() === color}
+              onSelect={() => onChange(color)}
+              onRemove={() => removeCustomColor(color)}
+              fallbackFocus={addColorButton}
             />
           ))}
           <button
             type="button"
+            ref={addColorButton}
             aria-label="Add custom color"
             onClick={() => setCustom(true)}
             className="m-[3px] flex size-[17px] items-center justify-center rounded hover:bg-white/10"

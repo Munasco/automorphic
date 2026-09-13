@@ -20,10 +20,17 @@ export function normalizeDrawingCustomColors(value: unknown): string[] {
 export const useDrawingCustomColors = create<{
   colors: string[];
   addColor: (color: string) => boolean;
+  removeColor: (color: string) => void;
 }>()(
   persist(
     (set, get) => ({
       colors: [],
+      removeColor: (input) => {
+        const color = normalizeDrawingColorHex(input);
+        const current = get().colors;
+        if (!color || !current.includes(color)) return;
+        set({ colors: current.filter((entry) => entry !== color) });
+      },
       addColor: (input) => {
         const color = typeof input === "string" ? normalizeDrawingColorHex(input) : null;
         if (!color) return false;
