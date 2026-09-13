@@ -1149,6 +1149,15 @@ export function DrawingSelectionOverlay({
                   variant="toolbar"
                   drawing={toolbarAppearance}
                   onChange={updateLineAppearance}
+                  mixed={
+                    channelLevels
+                      ? new Set(
+                          channelLevels.map(
+                            (level) => level.lineStyle ?? selected.lineStyle ?? "solid",
+                          ),
+                        ).size > 1
+                      : false
+                  }
                 />
               </>
             )}

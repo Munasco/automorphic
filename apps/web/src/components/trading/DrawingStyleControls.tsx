@@ -451,6 +451,29 @@ function DrawingToolbarSelectPopup({ children }: { children: ReactNode }) {
   );
 }
 
+function LineStyleGlyph({ style }: { style: NonNullable<ChartDrawing["lineStyle"]> }) {
+  return (
+    <svg
+      width="28"
+      height="28"
+      viewBox="0 0 28 28"
+      className="size-7 text-current"
+      aria-hidden="true"
+    >
+      {style === "solid" ? (
+        <path stroke="currentColor" d="M4 13.5h20" />
+      ) : style === "dashed" ? (
+        <path fill="currentColor" d="M4 13h5v1H4zM12 13h5v1h-5zM20 13h5v1h-5z" />
+      ) : (
+        <path
+          fill="currentColor"
+          d="M3 13h2v2H3zM8 13h2v2H8zM13 13h2v2h-2zM18 13h2v2h-2zM23 13h2v2h-2z"
+        />
+      )}
+    </svg>
+  );
+}
+
 export function LineStylePicker({
   drawing,
   onChange,
@@ -480,23 +503,7 @@ export function LineStylePicker({
         {mixed ? (
           <span aria-hidden="true">—</span>
         ) : (
-          <svg width="22" height="12" aria-hidden="true">
-            <line
-              x1="1"
-              y1="6"
-              x2="21"
-              y2="6"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeDasharray={
-                drawing.lineStyle === "dashed"
-                  ? "6 3"
-                  : drawing.lineStyle === "dotted"
-                    ? "2 3"
-                    : undefined
-              }
-            />
-          </svg>
+          <LineStyleGlyph style={drawing.lineStyle ?? "solid"} />
         )}
       </SelectPrimitive.Trigger>
       <DrawingToolbarSelectPopup>
@@ -514,24 +521,7 @@ export function LineStylePicker({
             className={cn(drawingToolbarOptionClass, "pl-2 pr-5")}
           >
             <span className="flex items-center gap-1.5">
-              <svg
-                width="28"
-                height="28"
-                viewBox="0 0 28 28"
-                className="size-7 text-current"
-                aria-hidden="true"
-              >
-                {style === "solid" ? (
-                  <path stroke="currentColor" d="M4 13.5h20" />
-                ) : style === "dashed" ? (
-                  <path fill="currentColor" d="M4 13h5v1H4zM12 13h5v1h-5zM20 13h5v1h-5z" />
-                ) : (
-                  <path
-                    fill="currentColor"
-                    d="M3 13h2v2H3zM8 13h2v2H8zM13 13h2v2h-2zM18 13h2v2h-2zM23 13h2v2h-2z"
-                  />
-                )}
-              </svg>
+              <LineStyleGlyph style={style} />
               {label}
             </span>
           </SelectItem>
@@ -562,6 +552,7 @@ export function WidthPicker({
     >
       <SelectPrimitive.Trigger
         aria-label="Line width"
+        style={{ fontFeatureSettings: '"lnum", "tnum"' }}
         className={cn(
           "flex h-8 shrink-0 items-center justify-center gap-2 rounded px-2 text-sm hover:bg-white/10 aria-expanded:bg-white/10",
           variant === "toolbar" && "h-[38px] gap-[7px] pl-[10px] pr-[11px]",
@@ -576,7 +567,10 @@ export function WidthPicker({
         ) : (
           <>
             {variant === "toolbar" && !compact ? (
-              <span className="w-[18px] bg-current" style={{ height: drawing.width }} />
+              <span
+                className="w-[18px] rounded-full bg-current"
+                style={{ height: drawing.width }}
+              />
             ) : null}
             {drawing.width}px
           </>
@@ -589,6 +583,7 @@ export function WidthPicker({
             value={width}
             hideIndicator
             className={cn(drawingToolbarOptionClass, "pl-[13px] pr-[14px]")}
+            style={{ fontFeatureSettings: '"lnum", "tnum"' }}
           >
             <span className="flex items-center gap-[11px]">
               <span className="w-[18px] rounded-full bg-current" style={{ height: width }} />
