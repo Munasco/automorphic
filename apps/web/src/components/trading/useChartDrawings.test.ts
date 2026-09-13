@@ -6757,3 +6757,127 @@ describe("locked group visibility actions", () => {
     session.dispose();
   });
 });
+
+describe("object-tree drop ordering", () => {
+  const setup = (decorated = false) => {
+    const objects: ChartDrawing[] = ["a", "b", "c", "d", "e"].map((id, index) => ({
+      id,
+      kind: "trend",
+      color: "#2962ff",
+      width: 2,
+      name: `Line ${id}`,
+      anchors: [
+        { time: 100 as Time, price: 4900 - index * 75 },
+        { time: 300 as Time, price: 4900 - index * 75 },
+      ],
+      ...(decorated && id === "b" ? { hidden: true } : {}),
+      ...(decorated && id === "d" ? { locked: true } : {}),
+    }));
+    const f = fixture("tree-drop", JSON.stringify(objects));
+    const session = f.open();
+    const state = () => f.change.mock.lastCall![0];
+    return { f, session, objects, state };
+  };
+
+  it.each([
+    ["c", "above", ["a", "c", "b", "d", "e"]],
+    ["c", "below", ["a", "b", "d", "c", "e"]],
+    ["e", "above", ["a", "c", "e", "b", "d"]],
+    ["a", "below", ["b", "d", "a", "c", "e"]],
+  ] as const)(
+    "places a reverse-clicked hidden/locked group %s %s in visual order",
+    (target, position, ids) => {
+      const { f, session, objects, state } = setup(true);
+      session.selectDrawing("d", { replaceSelection: true, includeHidden: true });
+      session.selectDrawing("b", { additive: true, includeHidden: true });
+      expect(session.moveSelectedTo(target, position)).toBe(true);
+      const expected = ids.map((id) => objects.find((drawing) => drawing.id === id)!);
+      expect(state().objects).toEqual(expected);
+      expect(state().selectedIds).toEqual(["d", "b"]);
+      expect(state().selected.id).toBe("b");
+      expect(f.writes()).toBe(1);
+      const saved = f.saved();
+      session.undo();
+      expect(state().objects).toEqual(objects);
+      session.redo();
+      expect(f.saved()).toBe(saved);
+      session.dispose();
+      const reloaded = f.open();
+      expect(reloaded.getCommittedDrawings()!).toEqual(expected);
+      reloaded.dispose();
+    },
+  );
+
+  it("rejects missing/selected targets and invalid positions without history, preserving redo for adjacent no-op drops", () => {
+    const { f, session, objects, state } = setup();
+    expect(session.moveSelectedTo("c", "above")).toBe(false);
+    session.selectDrawing("b");
+    expect(session.moveSelectedTo("b", "above")).toBe(false);
+    expect(session.moveSelectedTo("missing", "below")).toBe(false);
+    expect(session.moveSelectedTo("c", "sideways" as "above")).toBe(false);
+    expect(f.writes()).toBe(0);
+    expect(session.moveSelectedTo("e", "above")).toBe(true);
+    const reordered = f.saved();
+    session.undo();
+    expect(state().objects).toEqual(objects);
+    const writes = f.writes();
+    session.selectDrawing("b", { replaceSelection: true });
+    expect(session.moveSelectedTo("a", "above")).toBe(false);
+    expect(session.moveSelectedTo("c", "below")).toBe(false);
+    expect(f.writes()).toBe(writes);
+    expect(state().canRedo).toBe(true);
+    session.redo();
+    expect(f.saved()).toBe(reordered);
+    session.dispose();
+    expect(session.moveSelectedTo("a", "below")).toBe(false);
+  });
+
+  it.each(["settings", "drag"] as const)(
+    "cancels the %s draft and records only the object order",
+    (draft) => {
+      const { f, session, objects, state } = setup();
+      session.selectDrawing("b");
+      if (draft === "settings") {
+        expect(session.openSettings()).toBe(true);
+        expect(session.previewSettings({ color: "#ff0000", text: "Do not commit" })).toBe(true);
+      } else {
+        expect(session.beginDrag({ x: 150, y: 175 })).toBe(true);
+        session.dragTo({ x: 175, y: 200 });
+      }
+      expect(session.moveSelectedTo("e", "above")).toBe(true);
+      expect(state().objects).toEqual([objects[0], objects[2], objects[3], objects[4], objects[1]]);
+      expect(state().settingsOpen).toBe(false);
+      expect(state().tool).toBe("cursor");
+      expect(f.writes()).toBe(1);
+      expect(f.controls.get(DRAWING_DEFAULTS_KEY)).toBeUndefined();
+      session.undo();
+      expect(state().objects).toEqual(objects);
+      session.dispose();
+    },
+  );
+
+  it("publishes drop order to a peer and undo keeps the peer's later drawing edit", () => {
+    const { f, session, objects, state } = setup();
+    const other = fixture("tree-drop");
+    const peer = other.open(1, false, f.storage);
+    try {
+      session.selectDrawing("b");
+      session.selectDrawing("d", { additive: true });
+      expect(session.moveSelectedTo("c", "above")).toBe(true);
+      expect(peer.getCommittedDrawings()).toEqual([
+        objects[0],
+        objects[2],
+        objects[1],
+        objects[3],
+        objects[4],
+      ]);
+      peer.updateDrawing("a", { color: "#ff0000" });
+      session.undo();
+      expect(state().objects).toEqual([{ ...objects[0]!, color: "#ff0000" }, ...objects.slice(1)]);
+      expect(peer.getCommittedDrawings()).toEqual(state().objects);
+    } finally {
+      peer.dispose();
+      session.dispose();
+    }
+  });
+});

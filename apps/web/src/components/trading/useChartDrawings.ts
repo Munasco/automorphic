@@ -1350,6 +1350,28 @@ export function createChartDrawingSession(
     changed();
     return true;
   };
+  const moveSelectedTo = (targetId: string, position: "above" | "below"): boolean => {
+    if (
+      disposed ||
+      !["above", "below"].includes(position) ||
+      selectedIds.includes(targetId) ||
+      !drawings.some((drawing) => drawing.id === targetId) ||
+      !drawings.some((drawing) => selectedIds.includes(drawing.id))
+    )
+      return false;
+    setTool("cursor");
+    const selected = drawings.filter((drawing) => selectedIds.includes(drawing.id));
+    const others = drawings.filter((drawing) => !selectedIds.includes(drawing.id));
+    const targetIndex = others.findIndex((drawing) => drawing.id === targetId);
+    // The tree displays frontmost first, reversing the stored drawing order.
+    const index = targetIndex + (position === "above" ? 1 : 0);
+    const reordered = [...others.slice(0, index), ...selected, ...others.slice(index)];
+    if (reordered.every((drawing, index) => drawing === drawings[index])) return false;
+    remember();
+    drawings = reordered;
+    changed();
+    return true;
+  };
   const applySelectedTemplate = (patch: DrawingPatch) => {
     if (disposed) return false;
     const targets = drawings.filter((drawing) => selectedIds.includes(drawing.id));
@@ -2165,6 +2187,7 @@ export function createChartDrawingSession(
     applySettings,
     applySelectedTemplate,
     reorderSelected,
+    moveSelectedTo,
     beginTextEdit,
     previewText,
     commitText,
@@ -2979,6 +3002,11 @@ export function useChartDrawings(
     [],
   );
   const duplicateSelected = useCallback(() => session.current?.duplicateSelected(), []);
+  const moveSelectedTo = useCallback(
+    (targetId: string, position: "above" | "below") =>
+      session.current?.moveSelectedTo(targetId, position) ?? false,
+    [],
+  );
   const reorderSelected = useCallback(
     (direction: DrawingOrderDirection) => session.current?.reorderSelected(direction) ?? false,
     [],
@@ -3048,6 +3076,7 @@ export function useChartDrawings(
     applySettings,
     applySelectedTemplate,
     reorderSelected,
+    moveSelectedTo,
     beginTextEdit,
     previewText,
     commitText,

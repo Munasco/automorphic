@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { XIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -93,6 +93,11 @@ export function DrawingObjectTree({
     const rect = trigger.getBoundingClientRect();
     drawings.openDrawingContextMenu(id, point ?? { x: rect.left, y: rect.bottom }, trigger);
   };
+  const dragging = useRef<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    id: string;
+    position: "above" | "below";
+  } | null>(null);
   const selectedRow = useRef<HTMLLIElement>(null);
   const selected = drawings.selected;
   const selectedId = selected?.id;
@@ -222,6 +227,40 @@ export function DrawingObjectTree({
               <li
                 key={object.id}
                 ref={selected?.id === object.id ? selectedRow : undefined}
+                onDragOver={(event) => {
+                  if (!dragging.current || drawings.selectedIds.includes(object.id)) {
+                    setDropTarget(null);
+                    return;
+                  }
+                  event.preventDefault();
+                  event.stopPropagation();
+                  event.dataTransfer.dropEffect = "move";
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  const position = event.clientY < rect.top + rect.height / 2 ? "above" : "below";
+                  setDropTarget((current) =>
+                    current?.id === object.id && current.position === position
+                      ? current
+                      : { id: object.id, position },
+                  );
+                }}
+                onDragLeave={(event) => {
+                  if (
+                    event.relatedTarget instanceof Node &&
+                    event.currentTarget.contains(event.relatedTarget)
+                  )
+                    return;
+                  setDropTarget((current) => (current?.id === object.id ? null : current));
+                }}
+                onDrop={(event) => {
+                  if (!dragging.current) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  const position = event.clientY < rect.top + rect.height / 2 ? "above" : "below";
+                  dragging.current = null;
+                  setDropTarget(null);
+                  drawings.moveSelectedTo(object.id, position);
+                }}
                 onContextMenu={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -237,7 +276,11 @@ export function DrawingObjectTree({
                     );
                 }}
                 className={cn(
-                  "group/object flex h-[38px] items-center gap-0.5 pl-3 pr-1 hover:bg-white/5 focus-within:bg-white/5",
+                  "group/object relative flex h-[38px] items-center gap-0.5 pl-3 pr-1 hover:bg-white/5 focus-within:bg-white/5",
+                  dropTarget?.id === object.id &&
+                    "after:pointer-events-none after:absolute after:inset-x-0 after:z-10 after:h-0.5 after:bg-[#2962ff]",
+                  dropTarget?.id === object.id &&
+                    (dropTarget.position === "above" ? "after:top-0" : "after:bottom-0"),
                   isSelected && "bg-[#1e3260] hover:bg-[#1e3260] focus-within:bg-[#1e3260]",
                 )}
               >
@@ -245,6 +288,18 @@ export function DrawingObjectTree({
                   type="button"
                   aria-label={`Select ${label}`}
                   data-drawing-select
+                  draggable
+                  onDragStart={(event) => {
+                    drawings.selectDrawing(object.id, { includeHidden: true });
+                    dragging.current = object.id;
+                    setDropTarget(null);
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("application/x-automorphic-drawing", object.id);
+                  }}
+                  onDragEnd={() => {
+                    dragging.current = null;
+                    setDropTarget(null);
+                  }}
                   aria-haspopup="menu"
                   onKeyDown={(event) => {
                     if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey))
