@@ -98,7 +98,12 @@ function ranges(bars: readonly Candle[], period: number) {
   return result;
 }
 
-/** Selected-source SMA ± population standard deviation; defaults close / 20 bars / 2 deviations.
+export const BOLLINGER_BASIS_TYPES = ["sma", "ema", "rma", "wma", "vwma"] as const;
+export type BollingerBasisType = (typeof BOLLINGER_BASIS_TYPES)[number];
+
+/** Selected-source moving average ± unweighted population standard deviation.
+ * Defaults close / 20 bars / 2 deviations / SMA. Invalid VWMA volume restarts warmup;
+ * zero-volume windows have no basis value, without resetting later windows.
  * https://www.tradingview.com/support/solutions/43000501840-bollinger-bands-bb/
  */
 export function calculateBollingerBands(
@@ -106,25 +111,60 @@ export function calculateBollingerBands(
   period = 20,
   deviations = 2,
   source: PriceSource = "close",
+  basis: BollingerBasisType = "sma",
 ): IndicatorBands {
   const result = emptyBands();
-  if (!validPeriod(period) || !Number.isFinite(deviations) || deviations < 0) return result;
+  if (
+    !validPeriod(period) ||
+    !Number.isFinite(deviations) ||
+    deviations < 0 ||
+    !BOLLINGER_BASIS_TYPES.includes(basis)
+  )
+    return result;
   for (const segment of segments(
     bars,
-    (bar) => Number.isFinite(bar.time) && Number.isFinite(sourcePrice(bar, source)),
+    (bar) =>
+      Number.isFinite(bar.time) &&
+      Number.isFinite(sourcePrice(bar, source)) &&
+      (basis !== "vwma" || (Number.isFinite(bar.volume) && bar.volume >= 0)),
   )) {
+    const samples = segment.map((bar) => ({ time: bar.time, value: sourcePrice(bar, source) }));
+    const averages = new Map(
+      (basis === "ema" || basis === "rma"
+        ? smooth(samples, period, basis === "ema" ? 2 / (period + 1) : 1 / period)
+        : basis === "wma"
+          ? wma(samples, period)
+          : []
+      ).map((point) => [point.time, point.value]),
+    );
     for (let i = period - 1; i < segment.length; i += 1) {
       const baseline = sourcePrice(segment[i - period + 1]!, source);
       let offset = 0;
       for (let j = i - period + 1; j <= i; j += 1)
         offset += (sourcePrice(segment[j]!, source) - baseline) / period;
-      const middle = baseline + offset;
+      const mean = baseline + offset;
       let variance = 0;
       for (let j = i - period + 1; j <= i; j += 1)
-        variance += (sourcePrice(segment[j]!, source) - middle) ** 2 / period;
+        variance += (sourcePrice(segment[j]!, source) - mean) ** 2 / period;
+      const time = segment[i]!.time;
+      let middle = basis === "sma" ? mean : (averages.get(time) ?? NaN);
+      if (basis === "vwma") {
+        let maxVolume = 0;
+        for (let j = i - period + 1; j <= i; j += 1)
+          maxVolume = Math.max(maxVolume, segment[j]!.volume);
+        if (maxVolume === 0) continue;
+        // Normalize weights before multiplication to avoid volume/product overflow.
+        let totalWeight = 0;
+        let weightedOffset = 0;
+        for (let j = i - period + 1; j <= i; j += 1) {
+          const weight = segment[j]!.volume / maxVolume;
+          totalWeight += weight;
+          weightedOffset += (sourcePrice(segment[j]!, source) - baseline) * weight;
+        }
+        middle = baseline + weightedOffset / totalWeight;
+      }
       const width = deviations * Math.sqrt(variance);
       if (![middle, width, middle + width, middle - width].every(Number.isFinite)) continue;
-      const time = segment[i]!.time;
       add(result.middle, time, middle);
       add(result.upper, time, middle + width);
       add(result.lower, time, middle - width);

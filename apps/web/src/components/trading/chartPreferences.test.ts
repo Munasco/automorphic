@@ -54,16 +54,16 @@ it("preserves Bollinger sources through independent edits, duplication, and work
       .filter((i) => i.key === "bollinger")
       .map((i) => i.inputs);
   expect(inputs()).toEqual([
-    { period: 10, deviations: 1.5, source: 4 },
-    { period: 10, deviations: 1.5, source: 6 },
+    { period: 10, deviations: 1.5, source: 4, basisType: 0 },
+    { period: 10, deviations: 1.5, source: 6, basisType: 0 },
   ]);
   vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
   useChartPreferences.getState().setIndicatorInstanceInputs(duplicate, { source: 99 });
   expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
   useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
   expect(inputs()).toEqual([
-    { period: 10, deviations: 1.5, source: 4 },
-    { period: 20, deviations: 2, source: 0 },
+    { period: 10, deviations: 1.5, source: 4, basisType: 0 },
+    { period: 20, deviations: 2, source: 0, basisType: 0 },
   ]);
 });
 
@@ -930,4 +930,31 @@ it("persists independent MFI lengths, levels, appearance and visibility", async 
     getChartIndicatorInstances(useChartPreferences.getState()).find((i) => i.id === duplicate)!
       .inputs,
   ).toEqual({ period: 14, lowerLevel: 20, upperLevel: 80, showLevels: 1 });
+});
+
+it("persists independent Bollinger basis types and restores old charts to SMA", async () => {
+  const store = useChartPreferences.getState();
+  const base = store.addIndicator("bollinger")!;
+  expect(store.setIndicatorInstanceInputs(base, { period: 7, basisType: 1 })).toBe(true);
+  const duplicate = store.duplicateIndicatorInstance(base)!;
+  expect(store.setIndicatorInstanceInputs(duplicate, { basisType: 4, source: 1 })).toBe(true);
+  expect(store.setIndicatorInstanceInputs(duplicate, { basisType: 5 })).toBe(false);
+  expect(store.setIndicatorInstanceInputs(duplicate, { basisType: 1.5 })).toBe(false);
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  const instances = getChartIndicatorInstances(useChartPreferences.getState()).filter(
+    (i) => i.key === "bollinger",
+  );
+  expect(instances.map((i) => i.inputs)).toEqual([
+    { period: 7, basisType: 1, source: 0, deviations: 2 },
+    { period: 7, basisType: 4, source: 1, deviations: 2 },
+  ]);
+  expect(getIndicatorInputs("bollinger", { bollinger: { period: 12 } }).basisType).toBe(0);
+  useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
+  expect(
+    getChartIndicatorInstances(useChartPreferences.getState()).find((i) => i.id === duplicate)!
+      .inputs,
+  ).toEqual({ period: 20, basisType: 0, source: 0, deviations: 2 });
 });

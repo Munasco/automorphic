@@ -7,6 +7,7 @@ import {
   type IndicatorPoint,
 } from "./chartIndicators";
 import {
+  BOLLINGER_BASIS_TYPES,
   calculateADX,
   calculateATR,
   calculateBollingerBands,
@@ -117,14 +118,49 @@ const single = (
   points: readonly IndicatorPoint[],
   options: Partial<IndicatorPlot> = {},
 ): IndicatorResult => ({ plots: [{ id: "main", styleKey: "main", points, ...options }] });
-const bands = (result: ReturnType<typeof calculateBollingerBands>): IndicatorResult => ({
-  fills: [{ id: "background", styleKey: "background", upper: result.upper, lower: result.lower }],
-  plots: [
-    { id: "upper", styleKey: "upper", points: result.upper, primary: false },
-    { id: "middle", styleKey: "main", points: result.middle },
-    { id: "lower", styleKey: "lower", points: result.lower, primary: false },
-  ],
-});
+const bands = (
+  result: ReturnType<typeof calculateBollingerBands>,
+  candles?: readonly { time: number }[],
+): IndicatorResult => {
+  const nextTime =
+    candles && new Map(candles.map((bar, index) => [bar.time, candles[index + 1]?.time]));
+  const fills: NonNullable<IndicatorResult["fills"]> = [];
+  let start = 0;
+  for (let end = 1; end <= result.upper.length; end++) {
+    if (
+      end !== result.upper.length &&
+      (!nextTime || nextTime.get(result.upper[end - 1]!.time) === result.upper[end]!.time)
+    )
+      continue;
+    fills.push({
+      id: `background-${start}`,
+      styleKey: "background",
+      upper: result.upper.slice(start, end),
+      lower: result.lower.slice(start, end),
+    });
+    start = end;
+  }
+  return {
+    fills,
+    plots: [
+      {
+        id: "upper",
+        styleKey: "upper",
+        points: result.upper,
+        primary: false,
+        breakOnGaps: !!candles,
+      },
+      { id: "middle", styleKey: "main", points: result.middle, breakOnGaps: !!candles },
+      {
+        id: "lower",
+        styleKey: "lower",
+        points: result.lower,
+        primary: false,
+        breakOnGaps: !!candles,
+      },
+    ],
+  };
+};
 const stochasticPlots = (
   result: ReturnType<typeof calculateStochastic>,
   inputs: IndicatorInputValues,
@@ -296,6 +332,20 @@ export const INDICATOR_DEFINITIONS = [
     placement: "overlay",
     inputs: [
       length(20),
+      {
+        key: "basisType",
+        label: "Basis MA type",
+        kind: "select",
+        legend: false,
+        defaultValue: 0,
+        min: 0,
+        max: 4,
+        step: 1,
+        options: BOLLINGER_BASIS_TYPES.map((basis, value) => ({
+          value,
+          label: basis === "rma" ? "SMMA (RMA)" : basis.toUpperCase(),
+        })),
+      },
       priceSource,
       {
         key: "deviations",
@@ -319,7 +369,9 @@ export const INDICATOR_DEFINITIONS = [
           inputs.period,
           inputs.deviations,
           PRICE_SOURCES[inputs.source ?? 0],
+          BOLLINGER_BASIS_TYPES[inputs.basisType ?? 0],
         ),
+        bars,
       ),
   }),
   defineIndicator({

@@ -191,7 +191,7 @@ describe("indicator inputs", () => {
     });
     expect(restored.indicatorInputs).toEqual({
       sma: { period: 50, source: 0 },
-      bollinger: { period: 20, deviations: 1.5, source: 0 },
+      bollinger: { period: 20, deviations: 1.5, source: 0, basisType: 0 },
       keltner: { period: 20, atrPeriod: 8, multiplier: 2 },
       stochRsi: {
         rsiPeriod: 10,
@@ -239,6 +239,7 @@ describe("indicator inputs", () => {
         period: 20,
         deviations: 1.5,
         source: 0,
+        basisType: 0,
       });
       expect(useChartPreferences.getState().indicatorInputs.macd).toEqual({
         fast: 30,
@@ -556,4 +557,31 @@ describe.each(["rsi", "stochastic", "stochRsi", "mfi"] as const)("%s oscillator 
       expect(saved.indicatorInputs[key]).toEqual({ ...expected, showLevels: 0 });
     }
   });
+});
+
+it("keeps Bollinger fills separate across VWMA windows with no volume", () => {
+  const definition = INDICATOR_CATALOG.find((i) => i.key === "bollinger")!;
+  const bars = [1, 1, 1, 0, 0, 1, 1].map((volume, i) => ({
+    time: i + 1,
+    open: i + 5,
+    high: i + 7,
+    low: i + 3,
+    close: i + 5,
+    volume,
+  }));
+  const result = definition.calculate({
+    bars,
+    inputs: getIndicatorInputs("bollinger", { bollinger: { period: 2, basisType: 4 } }),
+    interval: 5,
+    session: DEFAULT_INITIAL_BALANCE,
+  });
+  expect(result.plots[1]!.points.map((p) => p.time)).toEqual([2, 3, 4, 6, 7]);
+  expect(result.fills?.map((f) => f.upper.map((p) => p.time))).toEqual([
+    [2, 3, 4],
+    [6, 7],
+  ]);
+  expect(result.fills?.map((f) => f.lower.map((p) => p.time))).toEqual([
+    [2, 3, 4],
+    [6, 7],
+  ]);
 });

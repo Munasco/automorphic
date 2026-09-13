@@ -636,3 +636,152 @@ describe("common chart indicators", () => {
     }
   });
 });
+
+describe("Bollinger Bands basis moving average", () => {
+  const basisTypes = ["sma", "ema", "rma", "wma", "vwma"] as const;
+  const input = () =>
+    bars([2, 4, 8, 6, 10]).map((bar, index) => ({
+      ...bar,
+      volume: [1, 2, 1, 4, 2][index]!,
+    }));
+
+  it.each([
+    { basis: "sma", centers: [14 / 3, 6, 8] },
+    { basis: "ema", centers: [14 / 3, 16 / 3, 23 / 3] },
+    { basis: "rma", centers: [14 / 3, 46 / 9, 182 / 27] },
+    { basis: "wma", centers: [17 / 3, 19 / 3, 25 / 3] },
+    { basis: "vwma", centers: [4.5, 40 / 7, 52 / 7] },
+  ] as const)(
+    "centers $basis bands on its average while keeping the unweighted population spread",
+    ({ basis, centers }) => {
+      const result = calculateBollingerBands(input(), 3, 2, "close", basis);
+      const widths = [2 * Math.sqrt(56 / 9), 2 * Math.sqrt(8 / 3), 2 * Math.sqrt(8 / 3)];
+      near(result.middle, [...centers]);
+      near(
+        result.upper,
+        centers.map((center, index) => center + widths[index]!),
+      );
+      near(
+        result.lower,
+        centers.map((center, index) => center - widths[index]!),
+      );
+      expect(result.middle.map((point) => point.time)).toEqual(
+        input()
+          .slice(2)
+          .map((bar) => bar.time),
+      );
+      if (basis === "sma") expect(result).toEqual(calculateBollingerBands(input(), 3, 2, "close"));
+    },
+  );
+
+  it.each(basisTypes)("uses the selected source in both %s basis and spread", (basis) => {
+    const original = input();
+    const selected = original.map((bar) => ({ ...bar, open: bar.close * 2 }));
+    const result = calculateBollingerBands(selected, 3, 2, "open", basis);
+    const close = calculateBollingerBands(original, 3, 2, "close", basis);
+    near(
+      result.middle,
+      values(close.middle).map((value) => value * 2),
+    );
+    near(
+      result.upper,
+      values(close.upper).map((value) => value * 2),
+    );
+    near(
+      result.lower,
+      values(close.lower).map((value) => value * 2),
+    );
+    expect(calculateBollingerBands(selected, 3, 2, "close", basis)).toEqual(close);
+  });
+
+  it.each(basisTypes)("restarts %s basis and variance after a selected-price gap", (basis) => {
+    const source = bars([2, 4, 8, 99, 10, 12, 14, 18]);
+    source[3]!.close = NaN;
+    const result = calculateBollingerBands(source, 3, 2, "close", basis);
+    const before = calculateBollingerBands(source.slice(0, 3), 3, 2, "close", basis);
+    const after = calculateBollingerBands(source.slice(4), 3, 2, "close", basis);
+    expect(result).toEqual({
+      middle: [...before.middle, ...after.middle],
+      upper: [...before.upper, ...after.upper],
+      lower: [...before.lower, ...after.lower],
+    });
+  });
+
+  it("requires valid nonnegative volume only for VWMA and restarts its warmup after invalid volume", () => {
+    for (const volume of [NaN, Infinity, -1]) {
+      const source = bars([2, 4, 8, 6, 10, 12, 14]);
+      const changed = source.map((bar, index) => (index === 3 ? { ...bar, volume } : bar));
+      for (const basis of ["sma", "ema", "rma", "wma"] as const)
+        expect(calculateBollingerBands(changed, 3, 2, "close", basis)).toEqual(
+          calculateBollingerBands(source, 3, 2, "close", basis),
+        );
+      expect(
+        calculateBollingerBands(changed, 3, 2, "close", "vwma").middle.map((point) => point.time),
+      ).toEqual([source[2]!.time, source[6]!.time]);
+    }
+  });
+
+  it("omits VWMA zero-volume windows and resumes as soon as a weighted bar enters the window", () => {
+    const source = bars([2, 4, 8, 6, 10, 12, 14]).map((bar, index) => ({
+      ...bar,
+      volume: index === 3 ? 10 : 0,
+    }));
+    const result = calculateBollingerBands(source, 3, 2, "close", "vwma");
+    expect(result.middle).toEqual(source.slice(3, 6).map((bar) => ({ time: bar.time, value: 6 })));
+    expect(result.upper).toHaveLength(3);
+    expect(result.lower).toHaveLength(3);
+    expect(
+      calculateBollingerBands(
+        source.map((bar) => ({ ...bar, volume: 0 })),
+        3,
+        2,
+        "close",
+        "vwma",
+      ),
+    ).toEqual({ middle: [], upper: [], lower: [] });
+  });
+
+  it.each(basisTypes)(
+    "preserves %s prefix values and updates the revised last candle without mutating input",
+    (basis) => {
+      const source = input();
+      const snapshot = structuredClone(source);
+      const full = calculateBollingerBands(source, 3, 2, "close", basis);
+      for (let end = 1; end <= source.length; end++) {
+        const prefix = calculateBollingerBands(source.slice(0, end), 3, 2, "close", basis);
+        for (const key of ["middle", "upper", "lower"] as const)
+          expect(prefix[key]).toEqual(full[key].slice(0, Math.max(0, end - 2)));
+      }
+      const revised = [...source.slice(0, -1), { ...source.at(-1)!, close: 20, volume: 20 }];
+      const changed = calculateBollingerBands(revised, 3, 2, "close", basis);
+      for (const key of ["middle", "upper", "lower"] as const) {
+        expect(changed[key].slice(0, -1)).toEqual(full[key].slice(0, -1));
+        expect(changed[key].at(-1)!.value).not.toBe(full[key].at(-1)!.value);
+      }
+      expect(calculateBollingerBands(source, 3, 2, "close", basis)).toEqual(full);
+      expect(source).toEqual(snapshot);
+    },
+  );
+
+  it.each(basisTypes)(
+    "keeps %s flat fractional bands exactly zero-width and supports period one",
+    (basis) => {
+      const source = bars(Array.from({ length: 30 }, () => 1.1));
+      const flat = calculateBollingerBands(source, 20, 2, "close", basis);
+      expect(flat.upper).toEqual(flat.middle);
+      expect(flat.lower).toEqual(flat.middle);
+      const one = calculateBollingerBands(input(), 1, 2, "close", basis);
+      expect(one.middle).toEqual(input().map((bar) => ({ time: bar.time, value: bar.close })));
+      expect(one.upper).toEqual(one.middle);
+      expect(one.lower).toEqual(one.middle);
+    },
+  );
+
+  it("computes VWMA without overflowing finite volume sums or source-volume products", () => {
+    const source = bars([1e12, 1e12 + 2, 1e12 + 4]).map((bar) => ({ ...bar, volume: 1e308 }));
+    const result = calculateBollingerBands(source, 3, 2, "close", "vwma");
+    const sma = calculateBollingerBands(source, 3, 2);
+    expect(result).toEqual(sma);
+    expect(result.middle[0]!.value).toBe(1e12 + 2);
+  });
+});
