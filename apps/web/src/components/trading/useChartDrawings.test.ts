@@ -128,6 +128,260 @@ function fixture(symbol: string, initial: string | null = null, candles: Candles
   };
 }
 
+describe("Shift line alignment", () => {
+  const anchorPoints = (session: ReturnType<ReturnType<typeof fixture>["open"]>) =>
+    session
+      .getCommittedDrawings()![0]!
+      .anchors.map(({ time, price }) => ({ x: time, y: 5000 - price }));
+  const straightKinds = [
+    "trend",
+    "ray",
+    "extended-line",
+    "info-line",
+    "trend-angle",
+    "arrow",
+  ] as const;
+
+  it.each(straightKinds)(
+    "constrains %s placement to dominant-axis coordinates and commits once",
+    (kind) => {
+      const f = fixture(`shift-${kind}`);
+      const session = f.open();
+      session.setTool(kind);
+      session.placeAt({ x: 100, y: 350 });
+      session.placeAt({ x: 300, y: 270 }, { shiftKey: true });
+      expect(anchorPoints(session)).toEqual([
+        { x: 100, y: 350 },
+        { x: 300, y: 350 },
+      ]);
+      expect(f.writes()).toBe(1);
+      session.undo();
+      expect(session.getCommittedDrawings()).toEqual([]);
+      session.dispose();
+    },
+  );
+
+  it.each([
+    [
+      { x: 300, y: 250 },
+      { x: 100 + Math.hypot(200, 100) / Math.SQRT2, y: 191.89 },
+    ],
+    [
+      { x: 120, y: 100 },
+      { x: 100, y: 100 },
+    ],
+    [
+      { x: 20, y: 150 },
+      { x: 100, y: 150 },
+    ],
+    [
+      { x: -100, y: 430 },
+      { x: -100, y: 350 },
+    ],
+  ])("uses radial diagonals and raw vertical/horizontal extents for %j", (point, expected) => {
+    const f = fixture("shift-octants");
+    const session = f.open();
+    session.setTool("trend");
+    session.placeAt({ x: 100, y: 350 });
+    session.placeAt(point, { shiftKey: true });
+    const actual = anchorPoints(session)[1]!;
+    expect(actual.x).toBeCloseTo(expected.x, 8);
+    expect(actual.y).toBeCloseTo(expected.y, 8);
+    session.dispose();
+  });
+
+  it("retains bar snapping and instrument ticks after projected diagonal alignment", () => {
+    const f = fixture("shift-snapped-bars");
+    const scale = f.chart.timeScale();
+    vi.spyOn(f.chart, "timeScale").mockReturnValue({
+      ...scale,
+      coordinateToTime: (x: number) => Math.round(x) as UTCTimestamp,
+    });
+    const options = f.series.options();
+    vi.spyOn(f.series, "options").mockReturnValue({
+      ...options,
+      priceFormat: { type: "price", minMove: 0.25, precision: 2 },
+    });
+    const session = f.open();
+    session.setTool("trend");
+    session.placeAt({ x: 100, y: 350 });
+    session.placeAt({ x: 300, y: 200 }, { shiftKey: true });
+    expect(anchorPoints(session)).toEqual([
+      { x: 100, y: 350 },
+      { x: 277, y: 173.25 },
+    ]);
+    session.dispose();
+  });
+
+  it.each([false, true])(
+    "updates canvas preview with stationary Shift (native placement: %s)",
+    (directPlacement) => {
+      const f = fixture("shift-preview");
+      const session = f.open(1, directPlacement);
+      session.setTool("trend");
+      session.placeAt({ x: 100, y: 350 });
+      const move = vi.mocked(f.chart.subscribeCrosshairMove).mock.calls[0]![0];
+      const primitive = vi.mocked(f.series.attachPrimitive).mock.calls[0]![0];
+      const renderer = primitive.paneViews!()[0]!.renderer()!;
+      const lineTo = vi.fn();
+      const context = new Proxy(
+        { lineTo, measureText: (text: string) => ({ width: text.length * 7 }) },
+        {
+          get: (target, key) => (key in target ? Reflect.get(target, key) : () => {}),
+        },
+      );
+      const endpoint = () => {
+        lineTo.mockClear();
+        renderer.draw({
+          useMediaCoordinateSpace: (draw: (scope: unknown) => void) => draw({ context }),
+        } as unknown as Parameters<typeof renderer.draw>[0]);
+        return lineTo.mock.calls[0];
+      };
+      if (directPlacement) session.previewAt({ x: 300, y: 250 });
+      else move({ point: { x: 300 as Coordinate, y: 250 as Coordinate }, seriesData: new Map() });
+      expect(endpoint()).toEqual([300, 250]);
+      session.setShiftPressed(true);
+      // The library may deliver an older event after the native modifier key has changed.
+      if (directPlacement)
+        move({ point: { x: 300 as Coordinate, y: 250 as Coordinate }, seriesData: new Map() });
+      expect(endpoint()![0]).toBeCloseTo(258.113883);
+      expect(endpoint()![1]).toBeCloseTo(191.89);
+      session.setShiftPressed(false);
+      expect(endpoint()).toEqual([300, 250]);
+      if (directPlacement) session.previewAt({ x: 300, y: 270 }, { shiftKey: true });
+      else
+        move({
+          point: { x: 300 as Coordinate, y: 270 as Coordinate },
+          seriesData: new Map(),
+          sourceEvent: { shiftKey: true } as NonNullable<MouseEventParams<Time>["sourceEvent"]>,
+        });
+      expect(endpoint()).toEqual([300, 350]);
+      expect(f.writes()).toBe(0);
+      if (directPlacement) {
+        for (const point of [
+          { x: -1, y: 250 },
+          { x: 1001, y: 250 },
+          { x: 300, y: -1 },
+          { x: 300, y: 501 },
+          { x: NaN, y: 250 },
+        ]) {
+          session.previewAt({ x: 300, y: 250 });
+          expect(endpoint()).toEqual([300, 250]);
+          session.previewAt(point);
+          session.setShiftPressed(true);
+          expect(endpoint()).toBeUndefined();
+        }
+        session.previewAt({ x: 300, y: 250 }, undefined, 1);
+        session.setShiftPressed(true);
+        expect(endpoint()).toBeUndefined();
+      }
+      session.clearPointerPreview();
+      session.setShiftPressed(true);
+      expect(endpoint()).toBeUndefined();
+      session.cancel();
+      session.setShiftPressed(false);
+      expect(endpoint()).toBeUndefined();
+      session.dispose();
+      session.setShiftPressed(true);
+      expect(f.writes()).toBe(0);
+    },
+  );
+
+  it.each([0, 1])(
+    "constrains endpoint %i about its opposite anchor and replays stationary key changes",
+    (handle) => {
+      const original: ChartDrawing = {
+        id: "line",
+        kind: "trend",
+        color: "#2962ff",
+        width: 2,
+        anchors: [
+          { time: 100 as Time, price: 4650 },
+          { time: 300 as Time, price: 4750 },
+        ],
+      };
+      const f = fixture(`shift-endpoint-${handle}`, JSON.stringify([original]));
+      const session = f.open();
+      session.selectDrawing("line");
+      const start = handle === 0 ? { x: 100, y: 350 } : { x: 300, y: 250 };
+      const pointer = handle === 0 ? { x: 100, y: 300 } : { x: 300, y: 270 };
+      expect(session.beginDrag(start)).toBe(true);
+      session.dragTo(pointer);
+      expect(anchorPoints(session)[handle]).toEqual(pointer);
+      session.setShiftPressed(true);
+      expect(anchorPoints(session)[handle]).toEqual({ x: pointer.x, y: handle === 0 ? 250 : 350 });
+      expect(session.getCommittedDrawings()![0]!.anchors[1 - handle]).toEqual(
+        original.anchors[1 - handle],
+      );
+      session.setShiftPressed(false);
+      expect(anchorPoints(session)[handle]).toEqual(pointer);
+      session.dragTo(pointer, { shiftKey: true });
+      session.endDrag();
+      expect(f.writes()).toBe(1);
+      session.undo();
+      expect(session.getCommittedDrawings()).toEqual([original]);
+      session.dispose();
+    },
+  );
+
+  it("keeps whole-line drag free and cancellation atomic while Shift is held", () => {
+    const original: ChartDrawing = {
+      id: "line",
+      kind: "trend",
+      color: "#2962ff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 4650 },
+        { time: 300 as Time, price: 4750 },
+      ],
+    };
+    const f = fixture("shift-body", JSON.stringify([original]));
+    const session = f.open();
+    expect(session.beginDrag({ x: 200, y: 300 })).toBe(true);
+    session.dragTo({ x: 220, y: 315 }, { shiftKey: true });
+    expect(anchorPoints(session)).toEqual([
+      { x: 120, y: 365 },
+      { x: 320, y: 265 },
+    ]);
+    session.endDrag(false);
+    expect(session.getCommittedDrawings()).toEqual([original]);
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+
+  it("constrains only the channel baseline and leaves its width placement free", () => {
+    const f = fixture("shift-channel");
+    const session = f.open();
+    session.setTool("channel");
+    session.placeAt({ x: 100, y: 350 });
+    session.placeAt({ x: 300, y: 270 }, { shiftKey: true });
+    session.placeAt({ x: 250, y: 225 }, { shiftKey: true });
+    expect(anchorPoints(session)).toEqual([
+      { x: 100, y: 350 },
+      { x: 300, y: 350 },
+      { x: 250, y: 225 },
+    ]);
+    session.dispose();
+  });
+
+  it("keeps the angle constraint after magnet OHLC snapping", () => {
+    const f = fixture("shift-magnet", null, [
+      { time: 100 as UTCTimestamp, open: 4650, high: 4650, low: 4650, close: 4650 },
+      { time: 300 as UTCTimestamp, open: 4720, high: 4720, low: 4720, close: 4720 },
+    ]);
+    const session = f.open();
+    session.setMagnetMode("strong");
+    session.setTool("trend");
+    session.placeAt({ x: 100, y: 350 });
+    session.placeAt({ x: 300, y: 270 }, { shiftKey: true });
+    expect(anchorPoints(session)).toEqual([
+      { x: 100, y: 350 },
+      { x: 300, y: 350 },
+    ]);
+    session.dispose();
+  });
+});
+
 describe("drawing bar coordinate inputs", () => {
   it("rounds fractional bar inputs before the native integer-only projection and keeps price unchanged", () => {
     const start = 1_700_000_000;

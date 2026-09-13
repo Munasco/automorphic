@@ -50,6 +50,20 @@ import {
   serializeDrawingsClipboard,
 } from "./drawingClipboard";
 export type ChartDrawingTool = "cursor" | DrawingKind;
+type DrawingPointerModifiers = { shiftKey?: boolean };
+const supportsShiftLineAlignment = (kind: ChartDrawingTool) =>
+  ["trend", "ray", "extended-line", "info-line", "trend-angle", "arrow"].includes(kind);
+
+/** Axis constraints retain the pointer's dominant coordinate; diagonals retain its radius. */
+function alignDrawingPoint(origin: DrawingPoint, point: DrawingPoint): DrawingPoint {
+  const dx = point.x - origin.x;
+  const dy = point.y - origin.y;
+  const octant = Math.round(Math.atan2(dy, dx) / (Math.PI / 4));
+  if (octant % 4 === 0) return { x: point.x, y: origin.y };
+  if (octant % 2 === 0) return { x: origin.x, y: point.y };
+  const component = Math.hypot(dx, dy) / Math.SQRT2;
+  return { x: origin.x + Math.sign(dx) * component, y: origin.y + Math.sign(dy) * component };
+}
 export type DrawingOrderDirection = "front" | "forward" | "backward" | "back";
 export type DrawingMagnetMode = "off" | "weak" | "strong";
 export type DrawingSelectionRect = { x: number; y: number; width: number; height: number };
@@ -191,6 +205,8 @@ export function createChartDrawingSession(
   };
   let strokeLastPoint: DrawingPoint | null = null;
   let preview: ChartDrawing | null = null;
+  let lastPreviewEvent: MouseEventParams<Time> | null = null;
+  let lastDragPoint: DrawingPoint | null = null;
   let drag: {
     drawing: ChartDrawing;
     origin: DrawingPoint;
@@ -403,6 +419,7 @@ export function createChartDrawingSession(
     endDrag(false);
     discardSettings();
     tool = next;
+    lastPreviewEvent = null;
     settingsOpen = false;
     contextPoint = null;
     anchors = [];
@@ -625,8 +642,28 @@ export function createChartDrawingSession(
     }
     return snapped;
   };
-  const dragTo = (point: DrawingPoint) => {
-    if (disposed) return;
+  const placementAnchor = (
+    anchor: DrawingAnchor,
+    point: DrawingPoint,
+    modifiers?: DrawingPointerModifiers,
+  ): DrawingAnchor | null => {
+    const snapped = snapAnchor(anchor, point);
+    if (
+      !modifiers?.shiftKey ||
+      anchors.length !== 1 ||
+      !(supportsShiftLineAlignment(tool) || tool === "channel")
+    )
+      return snapped;
+    const projection = drawingProjection(chart, series);
+    const origin = projection.project(anchors[0]!);
+    const candidate = magnetMode === "off" ? point : projection.project(snapped);
+    if (!origin || !candidate) return null;
+    const aligned = projection.unproject(alignDrawingPoint(origin, candidate));
+    return aligned ? quantizePointerAnchor(aligned) : null;
+  };
+  const dragTo = (point: DrawingPoint, modifiers?: DrawingPointerModifiers) => {
+    if (disposed || ![point.x, point.y].every(Number.isFinite)) return;
+    if (drag) lastDragPoint = point;
     if (marquee) {
       updateMarquee(point);
       return;
@@ -756,6 +793,17 @@ export function createChartDrawingSession(
           dy += projected.y - candidate.y;
         }
       }
+    }
+    if (
+      modifiers?.shiftKey &&
+      supportsShiftLineAlignment(activeDrag.drawing.kind) &&
+      (activeDrag.handle === 0 || activeDrag.handle === 1)
+    ) {
+      const origin = activeDrag.points[1 - activeDrag.handle];
+      if (!origin) return;
+      const aligned = alignDrawingPoint(origin, { x: reference.x + dx, y: reference.y + dy });
+      dx = aligned.x - reference.x;
+      dy = aligned.y - reference.y;
     }
     let channelPoints: DrawingPoint[] | undefined;
     if (activeDrag.drawing.kind === "channel" && activeDrag.handle >= 0) {
@@ -888,6 +936,7 @@ export function createChartDrawingSession(
     emit();
   };
   const endDrag = (commit = true) => {
+    lastDragPoint = null;
     if (marquee) {
       endMarquee(commit);
       return;
@@ -932,6 +981,7 @@ export function createChartDrawingSession(
     };
   };
   const commitDrawing = () => {
+    lastPreviewEvent = null;
     if (disposed || tool === "cursor" || !validDrawingAnchors(tool, anchors)) return false;
     const previous = drawings.find((drawing) => drawing.id === replacingId);
     const creatingText = tool === "text" && !previous;
@@ -971,8 +1021,12 @@ export function createChartDrawingSession(
       return false;
     return commitDrawing();
   };
-  const move = (event: MouseEventParams<Time>) => {
+  const move = (
+    event: MouseEventParams<Time>,
+    modifiers: DrawingPointerModifiers | undefined = event.sourceEvent,
+  ) => {
     if (disposed) return;
+    lastPreviewEvent = null;
     if (tool === "cursor") {
       hover(event.point ?? null, event.paneIndex);
       return;
@@ -984,6 +1038,7 @@ export function createChartDrawingSession(
       !isFreehandDrawingTool(tool) &&
       (event.paneIndex === undefined || event.paneIndex === series.getPane().paneIndex())
     ) {
+      lastPreviewEvent = event;
       const price = series.coordinateToPrice(event.point.y);
       const anchor =
         price === null
@@ -994,14 +1049,17 @@ export function createChartDrawingSession(
               ? { time: 0 as Time, price }
               : drawingProjection(chart, series).unproject(event.point);
       if (anchor) {
-        const next = snapAnchor(anchor, event.point);
-        updatePreview(sameAnchor(anchors.at(-1), next) ? anchors : [...anchors, next]);
+        const next = placementAnchor(anchor, event.point, modifiers);
+        if (next) updatePreview(sameAnchor(anchors.at(-1), next) ? anchors : [...anchors, next]);
       }
     }
     primitive.redraw();
     paneExtensions.redraw();
   };
-  const click = (event: Pick<MouseEventParams<Time>, "point" | "time" | "paneIndex">) => {
+  const click = (
+    event: Pick<MouseEventParams<Time>, "point" | "time" | "paneIndex" | "sourceEvent">,
+    modifiers: DrawingPointerModifiers | undefined = event.sourceEvent,
+  ) => {
     if (disposed || !event.point) return;
     if (tool === "cursor") {
       discardSettings();
@@ -1020,7 +1078,8 @@ export function createChartDrawingSession(
         : null;
     const time = event.time ?? fallback?.time ?? (tool === "horizontal" ? (0 as Time) : undefined);
     if (time === undefined || drawingTimeValue(time) === null) return;
-    const anchor = snapAnchor({ time, price }, event.point);
+    const anchor = placementAnchor({ time, price }, event.point, modifiers);
+    if (!anchor) return;
     if (
       anchors.length === 1 &&
       ["rectangle", "fib", "channel"].includes(tool) &&
@@ -1697,16 +1756,57 @@ export function createChartDrawingSession(
     if (!directPlacement) click(event);
   };
   chart.subscribeClick(chartClick);
-  chart.subscribeCrosshairMove(move);
+  const chartMove = (event: MouseEventParams<Time>) => {
+    // Native placement and modifier keys share one synchronous preview stream. A delayed
+    // crosshair event can otherwise restore a stale modifier after a stationary key press.
+    if (!directPlacement || tool === "cursor") move(event);
+  };
+  chart.subscribeCrosshairMove(chartMove);
   render();
   emit();
   return {
     getCommittedDrawings: () => (disposed ? null : drawings),
     setTool,
-    placeAt: (point: DrawingPoint) => {
+    placeAt: (point: DrawingPoint, modifiers?: DrawingPointerModifiers) => {
       if (disposed || tool === "cursor" || isFreehandDrawingTool(tool)) return false;
-      click({ point: { x: point.x as Coordinate, y: point.y as Coordinate } });
+      click({ point: { x: point.x as Coordinate, y: point.y as Coordinate } }, modifiers);
       return true;
+    },
+    previewAt: (
+      point: DrawingPoint | null,
+      modifiers?: DrawingPointerModifiers,
+      paneIndex?: number,
+    ) => {
+      if (disposed || tool === "cursor") return;
+      const inside =
+        point &&
+        Number.isFinite(point.x) &&
+        Number.isFinite(point.y) &&
+        point.x >= 0 &&
+        point.x <= chart.timeScale().width() &&
+        point.y >= 0 &&
+        point.y <= series.getPane().getHeight()
+          ? point
+          : null;
+      move(
+        {
+          ...(inside ? { point: { x: inside.x as Coordinate, y: inside.y as Coordinate } } : {}),
+          ...(paneIndex === undefined ? {} : { paneIndex }),
+          seriesData: new Map(),
+        },
+        modifiers,
+      );
+    },
+    setShiftPressed: (shiftKey: boolean) => {
+      if (disposed) return;
+      if (drag && lastDragPoint) dragTo(lastDragPoint, { shiftKey });
+      else if (lastPreviewEvent) move(lastPreviewEvent, { shiftKey });
+    },
+    clearPointerPreview: () => {
+      lastPreviewEvent = null;
+      if (tool !== "cursor") preview = null;
+      hover(null);
+      primitive.redraw();
     },
     beginDrag,
     beginMarquee,
@@ -2018,10 +2118,12 @@ export function createChartDrawingSession(
       settingsOpen = false;
       textEditing = false;
       disposed = true;
+      lastPreviewEvent = null;
+      lastDragPoint = null;
       paneExtensions.dispose();
       try {
         chart.unsubscribeClick(chartClick);
-        chart.unsubscribeCrosshairMove(move);
+        chart.unsubscribeCrosshairMove(chartMove);
         series.detachPrimitive(primitive.primitive);
       } catch {
         /* Chart already disposed. */
@@ -2115,15 +2217,18 @@ export function useChartDrawings(
         Math.hypot(point.x - clickOrigin.x, point.y - clickOrigin.y) >= 3
       )
         dragged = true;
-      if (event.pointerId !== pointerId) return;
-      if (point) current.dragTo(point);
+      if (event.pointerId !== pointerId) {
+        current.previewAt(point, { shiftKey: event.shiftKey }, point?.paneIndex);
+        return;
+      }
+      if (point) current.dragTo(point, { shiftKey: event.shiftKey });
       event.preventDefault();
       event.stopPropagation();
     };
     const finish = (event: PointerEvent) => {
       if (event.pointerId !== pointerId) return;
       const point = pointFor(event);
-      if (point && event.type === "pointerup") current.dragTo(point);
+      if (point && event.type === "pointerup") current.dragTo(point, { shiftKey: event.shiftKey });
       current.endDrag(event.type === "pointerup");
       pointerId = null;
       pointerPane = null;
@@ -2144,7 +2249,7 @@ export function useChartDrawings(
         point.pane !== series.getPane()
       )
         return;
-      if (current.placeAt(point)) {
+      if (current.placeAt(point, { shiftKey: event.shiftKey })) {
         event.preventDefault();
         event.stopPropagation();
       }
@@ -2173,7 +2278,7 @@ export function useChartDrawings(
       event.stopPropagation();
     };
     const leave = () => {
-      if (pointerId === null) current.hover(null);
+      if (pointerId === null) current.clearPointerPreview();
     };
     element.addEventListener("pointerleave", leave);
     element.addEventListener("click", place, true);
@@ -2248,10 +2353,24 @@ export function useChartDrawings(
         else current.undo();
       }
     };
+    const shiftChanged = (event: KeyboardEvent) => {
+      if (event.key !== "Shift") return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
+      )
+        return;
+      current.setShiftPressed(event.type === "keydown");
+    };
+    window.addEventListener("keydown", shiftChanged);
+    window.addEventListener("keyup", shiftChanged);
     window.addEventListener("keydown", keyboard);
     return () => {
       window.removeEventListener("keydown", cancelPointerGesture, true);
       window.removeEventListener("keydown", keyboard);
+      window.removeEventListener("keydown", shiftChanged);
+      window.removeEventListener("keyup", shiftChanged);
       element.removeEventListener("pointerleave", leave);
       element.removeEventListener("click", place, true);
       element.removeEventListener("dblclick", doubleClick, true);
