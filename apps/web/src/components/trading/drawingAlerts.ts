@@ -313,6 +313,26 @@ type Previous = {
   barId: string;
   barTime: number | null;
 };
+type DrawingAlertStorage = Pick<Storage, "getItem" | "setItem"> & {
+  subscribe?: (listener: () => void) => () => void;
+};
+type SharedAlertPeer = {
+  refresh: () => void;
+  reset: () => void;
+  observe: (sample: DrawingAlertSample) => void;
+  projection: DrawingAlertProjection;
+  armTime: () => number;
+};
+// A captured workspace store is shared by mounted charts in one document. Never key
+// this coordination by symbol alone: separate workspaces can use identical contracts.
+const sharedAlertStores = new WeakMap<
+  object,
+  {
+    peers: Set<SharedAlertPeer>;
+    evaluators: Map<string, Set<SharedAlertPeer>>;
+  }
+>();
+
 /** One evaluator per symbol/interval. Pass only committed drawing snapshots and fresh live feed events.
  * Geometry edits re-arm; deletion disables, including after undo until explicitly re-enabled.
  * Close events must be confirmed by the feed, once for each actual completed bar. Their timestamp
@@ -321,7 +341,7 @@ type Previous = {
  * accepted only with an ordered transport sequence in the same stream epoch; event timestamps remain unchanged. */
 export function createDrawingAlertSession(
   context: { symbol: string; intervalKey: string },
-  storage: Pick<Storage, "getItem" | "setItem">,
+  storage: DrawingAlertStorage,
   options: {
     projection: DrawingAlertProjection;
     extent?: DrawingAlertExtent;
@@ -332,7 +352,16 @@ export function createDrawingAlertSession(
 ) {
   const now = options.now ?? Date.now,
     id = options.id ?? randomUUID;
-  let state = parseDrawingAlerts(storage.getItem(DRAWING_ALERTS_KEY));
+  let persisted = storage.getItem(DRAWING_ALERTS_KEY);
+  let state = parseDrawingAlerts(persisted);
+  let publishing = false;
+  let shared = sharedAlertStores.get(storage);
+  if (!shared) {
+    shared = { peers: new Set(), evaluators: new Map() };
+    sharedAlertStores.set(storage, shared);
+  }
+  const coordinator = shared;
+  const contextKey = JSON.stringify([context.symbol, context.intervalKey]);
   let startedAt = now(),
     disposed = false;
   let drawings = new Map<string, ChartDrawing>();
@@ -357,7 +386,34 @@ export function createDrawingAlertSession(
   const listeners = new Set<() => void>();
   const relevant = (a: Pick<DrawingAlert, "symbol" | "intervalKey">) =>
     a.symbol === context.symbol && a.intervalKey === context.intervalKey;
-  const armTime = () => Math.max(now(), highWater.quote + 1, highWater["bar-close"] + 1);
+  const localArmTime = () => Math.max(now(), highWater.quote + 1, highWater["bar-close"] + 1);
+  const armTime = () =>
+    Math.max(
+      localArmTime(),
+      coordinator.evaluators.get(contextKey)?.values().next().value?.armTime() ?? 0,
+    );
+  const refresh = () => {
+    if (disposed || publishing) return;
+    const saved = storage.getItem(DRAWING_ALERTS_KEY);
+    if (saved === persisted) return;
+    const next = parseDrawingAlerts(saved);
+    for (const alert of state.alerts.filter(relevant)) {
+      const updated = next.alerts.find((item) => item.id === alert.id && relevant(item));
+      if (
+        !updated ||
+        updated.enabled !== alert.enabled ||
+        updated.geometry !== alert.geometry ||
+        updated.armedAt !== alert.armedAt ||
+        updated.condition !== alert.condition ||
+        updated.trigger !== alert.trigger ||
+        updated.targetKind !== alert.targetKind
+      )
+        previous.delete(alert.id);
+    }
+    persisted = saved;
+    state = next;
+    listeners.forEach((listener) => listener());
+  };
   const publish = (next: DrawingAlertState) => {
     // Other chart contexts share workspace persistence; preserve their most recent writes.
     const saved = parseDrawingAlerts(storage.getItem(DRAWING_ALERTS_KEY));
@@ -375,8 +431,16 @@ export function createDrawingAlertSession(
       alerts: [...saved.alerts.filter((a) => !relevant(a)), ...next.alerts.filter(relevant)],
       history,
     };
-    storage.setItem(DRAWING_ALERTS_KEY, JSON.stringify({ version: 1, ...merged }));
+    const serialized = JSON.stringify({ version: 1, ...merged });
+    publishing = true;
+    try {
+      storage.setItem(DRAWING_ALERTS_KEY, serialized);
+    } finally {
+      publishing = false;
+    }
+    persisted = serialized;
     state = merged;
+    for (const peer of coordinator.peers) peer.refresh();
     listeners.forEach((listener) => listener());
   };
   const expire = (alerts: DrawingAlert[], time: number) =>
@@ -385,7 +449,7 @@ export function createDrawingAlertSession(
         ? { ...a, enabled: false, disabledReason: "expired" as const }
         : a,
     );
-  return {
+  const session = {
     getSnapshot: () => state,
     subscribe(listener: () => void) {
       if (!disposed) listeners.add(listener);
@@ -395,6 +459,7 @@ export function createDrawingAlertSession(
     },
     syncDrawings(snapshot: readonly ChartDrawing[]) {
       if (disposed) return;
+      refresh();
       drawings = new Map(
         snapshot.filter(supportsDrawingAlert).map((d) => [d.id, structuredClone(d)]),
       );
@@ -416,6 +481,8 @@ export function createDrawingAlertSession(
       if (alerts.some((a, i) => a !== state.alerts[i])) publish({ ...state, alerts });
     },
     add(input: NewDrawingAlert): DrawingAlert | null {
+      if (disposed) return null;
+      refresh();
       const drawing = drawings.get(input.drawingId);
       if (
         disposed ||
@@ -454,6 +521,7 @@ export function createDrawingAlertSession(
     },
     update(alertId: string, input: NewDrawingAlert): boolean {
       if (disposed) return false;
+      refresh();
       const alert = state.alerts.find((item) => item.id === alertId && relevant(item));
       if (
         !alert ||
@@ -492,6 +560,7 @@ export function createDrawingAlertSession(
     },
     setEnabled(alertId: string, enabled: boolean) {
       if (disposed) return false;
+      refresh();
       const a = state.alerts.find((a) => a.id === alertId && relevant(a));
       if (
         !a ||
@@ -514,13 +583,16 @@ export function createDrawingAlertSession(
       return true;
     },
     remove(alertId: string) {
-      if (disposed || !state.alerts.some((a) => a.id === alertId && relevant(a))) return false;
+      if (disposed) return false;
+      refresh();
+      if (!state.alerts.some((a) => a.id === alertId && relevant(a))) return false;
       previous.delete(alertId);
       publish({ ...state, alerts: state.alerts.filter((a) => a.id !== alertId || !relevant(a)) });
       return true;
     },
     clearHistory() {
       if (disposed) return false;
+      refresh();
       if (!state.history.some(relevant)) return true;
       publish({ ...state, history: state.history.filter((event) => !relevant(event)) });
       return true;
@@ -531,11 +603,28 @@ export function createDrawingAlertSession(
     },
     checkExpiration() {
       if (disposed) return;
+      refresh();
       const alerts = expire(state.alerts, now());
       if (alerts.some((a, i) => a !== state.alerts[i])) publish({ ...state, alerts });
     },
     observe(sample: DrawingAlertSample) {
       if (disposed) return;
+      refresh();
+      const evaluator = coordinator.evaluators.get(contextKey)?.values().next().value;
+      if (evaluator && evaluator !== peer) {
+        let forwarded = sample;
+        if (sample.barTime !== undefined) {
+          try {
+            const logical = evaluator.projection.logicalAt(sample.barTime);
+            if (logical === null || !Number.isFinite(logical)) return;
+            forwarded = { ...sample, logical };
+          } catch {
+            return;
+          }
+        }
+        evaluator.observe(forwarded);
+        return;
+      }
       const time = now();
       const observedAt =
         sample.source === "bar-close" ? (sample.observedAt ?? sample.timestamp) : sample.timestamp;
@@ -564,6 +653,13 @@ export function createDrawingAlertSession(
         finite(sample.logical) &&
         identifier(sample.barId)
       ) {
+        const previousStream = orders.get(sample.source)?.streamId;
+        if (
+          sample.streamId !== undefined &&
+          previousStream != null &&
+          sample.streamId !== previousStream
+        )
+          previous.clear();
         highWater[sample.source] = sample.timestamp;
         orders.set(sample.source, {
           timestamp: sample.timestamp,
@@ -707,10 +803,35 @@ export function createDrawingAlertSession(
       events.forEach((event) => options.onTrigger?.(event));
     },
     dispose() {
+      if (disposed) return;
       disposed = true;
+      unsubscribe?.();
+      coordinator.peers.delete(peer);
+      const evaluators = coordinator.evaluators.get(contextKey);
+      const owned = evaluators?.values().next().value === peer;
+      evaluators?.delete(peer);
+      if (!evaluators?.size) coordinator.evaluators.delete(contextKey);
+      else if (owned) evaluators.values().next().value?.reset();
+      if (!coordinator.peers.size) sharedAlertStores.delete(storage);
       previous.clear();
       drawings.clear();
       listeners.clear();
     },
   };
+  const peer: SharedAlertPeer = {
+    refresh,
+    reset: session.resetConnection,
+    observe: session.observe,
+    projection: options.projection,
+    armTime: localArmTime,
+  };
+  coordinator.peers.add(peer);
+  let evaluators = coordinator.evaluators.get(contextKey);
+  if (!evaluators) {
+    evaluators = new Set();
+    coordinator.evaluators.set(contextKey, evaluators);
+  }
+  evaluators.add(peer);
+  const unsubscribe = storage.subscribe?.(refresh);
+  return session;
 }

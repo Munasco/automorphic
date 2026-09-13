@@ -22,7 +22,7 @@ const priceText = (price: number) => price.toLocaleString("en-US", { maximumFrac
 type Session = ReturnType<typeof createDrawingAlertSession>;
 type Feed = ReturnType<typeof createDrawingAlertFeed>;
 
-/** The mounted chart owns one evaluator; opening a dialog/sidebar never creates another. */
+/** Mounted charts coordinate evaluation by workspace, symbol and interval; panels never create sessions. */
 export function useDrawingAlerts({
   chart,
   series,

@@ -535,6 +535,167 @@ function harness() {
   };
 }
 
+describe("drawing alerts shared by mounted chart views", () => {
+  const input = (name?: string): NewDrawingAlert => ({
+    drawingId: "line",
+    condition: "crossing",
+    trigger: "once",
+    expiresAt: null,
+    ...(name ? { name } : {}),
+  });
+  it("keeps concurrent additions and publishes removals immediately to both views", () => {
+    const h = harness();
+    const second = h.open();
+    second.syncDrawings([line()]);
+    const changed = vi.fn();
+    second.subscribe(changed);
+    const a = h.session.add(input("A"))!;
+    const b = second.add(input("B"))!;
+    expect(h.session.getSnapshot().alerts.map((alert) => alert.name)).toEqual(["A", "B"]);
+    expect(second.getSnapshot()).toEqual(h.session.getSnapshot());
+    expect(
+      parseDrawingAlerts(h.values.get(DRAWING_ALERTS_KEY)!).alerts.map((alert) => alert.id),
+    ).toEqual([a.id, b.id]);
+    expect(h.session.remove(a.id)).toBe(true);
+    expect(second.getSnapshot().alerts.map((alert) => alert.id)).toEqual([b.id]);
+    expect(changed).toHaveBeenCalledTimes(3);
+    second.dispose();
+    h.session.dispose();
+  });
+
+  it("never fires or resurrects an alert deleted or paused from another view", () => {
+    const h = harness();
+    const alert = h.add();
+    const second = h.open();
+    second.syncDrawings([line()]);
+    h.session.observe(h.sample(99));
+    second.setEnabled(alert.id, false);
+    h.session.observe(h.sample(101));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    expect(h.session.getSnapshot().alerts[0]!.enabled).toBe(false);
+    second.setEnabled(alert.id, true);
+    h.session.observe(h.sample(99));
+    h.session.remove(alert.id);
+    second.observe(h.sample(101));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    expect(second.getSnapshot().alerts).toEqual([]);
+    expect(parseDrawingAlerts(h.values.get(DRAWING_ALERTS_KEY)!).alerts).toEqual([]);
+    second.dispose();
+    h.session.dispose();
+  });
+
+  it("retains crossing continuity when only the follower gets the next quote and notifies once", () => {
+    const h = harness();
+    const alert = h.add();
+    const second = h.open();
+    second.syncDrawings([line()]);
+    const before = h.sample(99, { sequence: 1, streamId: "live" });
+    h.session.observe(before);
+    second.observe(before);
+    expect(second.update(alert.id, input("Updated in follower"))).toBe(true);
+    const crossed = h.sample(101, { sequence: 2, streamId: "live" });
+    second.observe(crossed);
+    h.session.observe(crossed);
+    second.observe(crossed);
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    expect(h.onTrigger.mock.lastCall![0].name).toBe("Updated in follower");
+    expect(second.getSnapshot()).toEqual(h.session.getSnapshot());
+    h.session.clearHistory();
+    expect(second.getSnapshot().history).toEqual([]);
+    second.setEnabled(alert.id, true);
+    expect(parseDrawingAlerts(h.values.get(DRAWING_ALERTS_KEY)!).history).toEqual([]);
+    second.dispose();
+    h.session.dispose();
+  });
+
+  it("reprojects follower bar positions into the evaluator's chart before testing a sloping target", () => {
+    const h = harness();
+    const drawing = line({
+      anchors: [
+        { time: 0 as Time, price: 100 },
+        { time: 10 as Time, price: 200 },
+      ],
+    });
+    h.session.syncDrawings([drawing]);
+    h.add();
+    const second = createDrawingAlertSession(
+      { symbol: "GCZ6", intervalKey: "minute:5" },
+      h.storage,
+      {
+        projection: { ...projection, logicalAt: (time) => Number(time) + 100 },
+        now: h.time,
+        onTrigger: h.onTrigger,
+      },
+    );
+    second.syncDrawings([drawing]);
+    h.session.observe(h.sample(149, { logical: 5, barTime: 5 as Time }));
+    second.observe(h.sample(151, { logical: 105, barTime: 5 as Time }));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    expect(h.onTrigger.mock.lastCall![0].target).toBe(150);
+    second.dispose();
+    h.session.dispose();
+  });
+
+  it("warms a follower reconnect without treating a new stream as a live crossing", () => {
+    const h = harness();
+    h.add();
+    const second = h.open();
+    second.syncDrawings([line()]);
+    h.session.observe(h.sample(99, { sequence: 1, streamId: "old" }));
+    second.resetConnection();
+    second.observe(h.sample(101, { sequence: 1, streamId: "new" }));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    second.observe(h.sample(99, { sequence: 2, streamId: "new" }));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    second.dispose();
+    h.session.dispose();
+  });
+
+  it("hands evaluation to a surviving view on disposal without replaying the old crossing baseline", () => {
+    const h = harness();
+    h.add();
+    const second = h.open();
+    second.syncDrawings([line()]);
+    h.session.observe(h.sample(99));
+    h.session.dispose();
+    second.observe(h.sample(101));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    second.observe(h.sample(99));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    second.dispose();
+    const fresh = h.open();
+    fresh.syncDrawings([line()]);
+    const next = fresh.add(input())!;
+    fresh.observe(h.sample(99));
+    fresh.observe(h.sample(101));
+    expect(h.onTrigger).toHaveBeenCalledTimes(2);
+    expect(h.onTrigger.mock.lastCall![0].alertId).toBe(next.id);
+    fresh.dispose();
+  });
+
+  it("isolates evaluators by workspace storage identity as well as symbol and interval", () => {
+    const first = harness(),
+      second = harness();
+    first.add();
+    second.add();
+    first.session.observe(first.sample(99));
+    second.session.observe(second.sample(99));
+    first.session.observe(first.sample(101));
+    second.session.observe(second.sample(101));
+    expect(first.onTrigger).toHaveBeenCalledTimes(1);
+    expect(second.onTrigger).toHaveBeenCalledTimes(1);
+    const interval = first.open("GCZ6", "minute:15");
+    interval.syncDrawings([line()]);
+    interval.add(input());
+    interval.observe(first.sample(99, { intervalKey: "minute:15" }));
+    interval.observe(first.sample(101, { intervalKey: "minute:15" }));
+    expect(first.onTrigger).toHaveBeenCalledTimes(2);
+    interval.dispose();
+    first.session.dispose();
+    second.session.dispose();
+  });
+});
+
 describe("drawing alert line projection", () => {
   it("uses actual logical spacing across closed-market gaps, not timestamp distance", () => {
     const times = [0, 60, 259260];
@@ -714,6 +875,7 @@ describe("drawing alert sessions", () => {
       if (gap === "stale") h.advance(15_001);
       if (gap === "outside") session.observe(h.sample(99, { logical: 11 }));
       if (gap === "reload") {
+        session.dispose();
         session = h.open();
         session.syncDrawings([line()]);
       }

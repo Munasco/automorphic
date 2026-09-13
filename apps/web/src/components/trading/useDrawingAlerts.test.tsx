@@ -70,7 +70,15 @@ class FakeAudioContext {
     contexts.push(this);
   }
 }
-function Chart({ symbol = "NQU6", mounted = true }: { symbol?: string; mounted?: boolean }) {
+function Chart({
+  symbol = "NQU6",
+  mounted = true,
+  onController,
+}: {
+  symbol?: string;
+  mounted?: boolean;
+  onController?: (controller: DrawingAlertsController) => void;
+}) {
   const result = useDrawingAlerts({
     chart: mounted ? chart : null,
     series,
@@ -81,6 +89,7 @@ function Chart({ symbol = "NQU6", mounted = true }: { symbol?: string; mounted?:
   });
   useLayoutEffect(() => {
     controller = result;
+    onController?.(result);
   });
   return null;
 }
@@ -203,5 +212,49 @@ describe("saved drawing alert sound", () => {
     await gesture("keydown");
     expect(context.state).toBe("running");
     expect(context.resume).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("drawing alert views sharing one workspace", () => {
+  it("updates two mounted hook views after additions, edits and deletion without reopening either", async () => {
+    let first!: DrawingAlertsController, second!: DrawingAlertsController;
+    const onFirst = (value: DrawingAlertsController) => {
+      first = value;
+    };
+    const onSecond = (value: DrawingAlertsController) => {
+      second = value;
+    };
+    await act(() => {
+      renderer = create(
+        <>
+          <Chart onController={onFirst} />
+          <Chart onController={onSecond} />
+        </>,
+      );
+    });
+    const input = {
+      drawingId: "line",
+      condition: "crossing" as const,
+      trigger: "once" as const,
+      expiresAt: null,
+    };
+    await act(async () => {
+      expect(await first.create({ ...input, name: "A" })).toBeNull();
+    });
+    await act(async () => {
+      expect(await second.create({ ...input, name: "B" })).toBeNull();
+    });
+    expect(first.alerts.map((alert) => alert.name)).toEqual(["A", "B"]);
+    expect(second.alerts).toEqual(first.alerts);
+    const a = first.alerts[0]!;
+    await act(async () => {
+      expect(await second.update(a.id, { ...input, name: "Edited" })).toBeNull();
+    });
+    expect(first.alerts[0]!.name).toBe("Edited");
+    await act(() => {
+      expect(first.remove(a.id)).toBe(true);
+    });
+    expect(second.alerts.map((alert) => alert.name)).toEqual(["B"]);
+    expect(first.alerts).toEqual(second.alerts);
   });
 });
