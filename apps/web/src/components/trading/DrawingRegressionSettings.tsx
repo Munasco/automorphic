@@ -30,6 +30,8 @@ export function DrawingRegressionSettings({
                 <DrawingNumberField
                   label={`${side} deviation`}
                   step={0.1}
+                  min={-100}
+                  max={100}
                   value={settings[valueKey]}
                   onValueChange={(value) => onChange({ [valueKey]: value })}
                   className="w-28"
