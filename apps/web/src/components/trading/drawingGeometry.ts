@@ -2056,7 +2056,7 @@ export function validDrawingAnchors(kind: DrawingKind, anchors: DrawingAnchor[])
       drawingTimeValue(first.time) !== drawingTimeValue(second.time) &&
       (first.price !== second.price || third.price !== first.price)
     );
-  if (["trend", "rectangle", "fib", "channel", "regression-trend"].includes(kind))
+  if (["rectangle", "fib", "channel", "regression-trend"].includes(kind))
     return drawingTimeValue(first.time) !== drawingTimeValue(second.time);
   if (kind === "ellipse")
     return (

@@ -1023,7 +1023,7 @@ export function createChartDrawingSession(
     const anchor = snapAnchor({ time, price }, event.point);
     if (
       anchors.length === 1 &&
-      ["trend", "rectangle", "fib", "channel"].includes(tool) &&
+      ["rectangle", "fib", "channel"].includes(tool) &&
       drawingTimeValue(anchors[0]!.time) === drawingTimeValue(anchor.time)
     )
       return;

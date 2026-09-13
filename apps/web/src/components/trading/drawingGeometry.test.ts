@@ -41,6 +41,52 @@ const geometry = (shape: ChartDrawing) =>
   );
 
 describe("native drawing geometry", () => {
+  it.each([false, true])(
+    "accepts and hits a vertical trendline with reversed anchors %s",
+    (reversed) => {
+      const source = drawing(
+        "trend",
+        reversed
+          ? [
+              [100, 200],
+              [100, 400],
+            ]
+          : [
+              [100, 400],
+              [100, 200],
+            ],
+      );
+      expect(validDrawingAnchors(source.kind, source.anchors)).toBe(true);
+      expect(parseChartDrawings(JSON.stringify([source]))).toEqual([source]);
+      const shape = geometry(source);
+      expect(shape.lines).toEqual([{ from: shape.handles[0], to: shape.handles[1] }]);
+      expect(hitDrawingGeometry(shape, { x: 100, y: 200 })).toBe(true);
+      expect(hitDrawingGeometry(shape, { x: 125, y: 200 })).toBe(false);
+      expect(hitDrawingGeometry(shape, { x: 100, y: 50 })).toBe(false);
+      expect(validDrawingAnchors("trend", [source.anchors[0]!, source.anchors[0]!])).toBe(false);
+      const extended = geometry({ ...source, extendLeft: true, extendRight: true });
+      expect(extended.lines).toEqual([
+        {
+          from: { x: 100, y: reversed ? 500 : 0 },
+          to: { x: 100, y: reversed ? 0 : 500 },
+        },
+      ]);
+      expect(extended.handles).toEqual(shape.handles);
+      expect(hitDrawingGeometry(extended, { x: 100, y: 50 })).toBe(true);
+      expect(hitDrawingGeometry(extended, { x: 100, y: 450 })).toBe(true);
+      for (const extend of [{ extendLeft: true }, { extendRight: true }]) {
+        const oneSide = geometry({ ...source, ...extend });
+        expect(oneSide.lines).toHaveLength(1);
+        expect(oneSide.lines[0]!.from).toEqual(
+          extend.extendLeft ? { x: 100, y: reversed ? 500 : 0 } : shape.handles[0],
+        );
+        expect(oneSide.lines[0]!.to).toEqual(
+          extend.extendRight ? { x: 100, y: reversed ? 0 : 500 } : shape.handles[1],
+        );
+      }
+    },
+  );
+
   it("renders factory retracements with the documented palette and keeps level edits independent", () => {
     const shape: ChartDrawing = {
       ...drawing("fib", [

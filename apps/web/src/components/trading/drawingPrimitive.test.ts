@@ -651,6 +651,25 @@ describe("additional line primitive behavior", () => {
     ],
   });
 
+  it.each([false, true])("paints a same-bar trendline with extensions %s", (extended) => {
+    const drawing: ChartDrawing = {
+      ...line("trend"),
+      anchors: [
+        { time: 100 as Time, price: 400 },
+        { time: 100 as Time, price: 200 },
+      ],
+      extendLeft: extended,
+      extendRight: extended,
+    };
+    const f = renderFixture(drawing);
+    f.draw();
+    expect(f.ctx.moveTo).toHaveBeenCalledWith(100, extended ? 0 : 100);
+    expect(f.ctx.lineTo).toHaveBeenCalledWith(100, extended ? 500 : 300);
+    expect(f.ctx.stroke).toHaveBeenCalled();
+    expect(f.plugin.hitTest({ x: 100, y: extended ? 450 : 200 })?.drawing.id).toBe(drawing.id);
+    expect(f.plugin.hitTest({ x: 150, y: 200 })).toBeNull();
+  });
+
   it("renders wrapped text with independent fill, border and glyph opacities", () => {
     const drawing: ChartDrawing = {
       ...line("text"),

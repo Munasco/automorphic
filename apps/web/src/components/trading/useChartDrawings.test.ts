@@ -1117,7 +1117,7 @@ describe("native chart drawing lifecycle", () => {
     second.dispose();
   });
 
-  it("retains backwards trend anchors, ignores same-candle clicks, and avoids inserting artificial series data", () => {
+  it("retains backwards trend anchors, ignores identical clicks, and avoids inserting artificial series data", () => {
     const f = fixture("draw-test-trend"),
       session = f.open();
     session.setTool("trend");
@@ -1125,7 +1125,7 @@ describe("native chart drawing lifecycle", () => {
     expect(f.change).toHaveBeenLastCalledWith(
       expect.objectContaining({ tool: "trend", count: 0, pending: true }),
     );
-    f.click(200, 130);
+    f.click(200, 100);
     expect(f.lines).toHaveLength(0);
     f.click(100, 150);
     expect(JSON.parse(f.saved()!)[0].anchors).toEqual([
@@ -1134,6 +1134,31 @@ describe("native chart drawing lifecycle", () => {
     ]);
     expect(f.lines).toHaveLength(0);
     session.dispose();
+  });
+
+  it.each([
+    [100, 150],
+    [150, 100],
+  ])("creates and restores same-bar trend endpoints at y %s and %s", (firstY, secondY) => {
+    const f = fixture(`vertical-trend-${firstY}`),
+      session = f.open();
+    session.setTool("trend");
+    f.click(200, firstY);
+    f.click(200, secondY);
+    const [created] = JSON.parse(f.saved()!) as ChartDrawing[];
+    expect(created?.anchors).toEqual([
+      { time: 200, price: 5000 - firstY },
+      { time: 200, price: 5000 - secondY },
+    ]);
+    expect(f.lines).toHaveLength(0);
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toEqual([]);
+    session.redo();
+    expect(JSON.parse(f.saved()!)).toEqual([created]);
+    session.dispose();
+    const reopened = f.open();
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ objects: [created] }));
+    reopened.dispose();
   });
 
   it("cancels an unfinished trend without removing a committed drawing, then undoes it", () => {
@@ -1170,7 +1195,7 @@ describe("native chart drawing lifecycle", () => {
     session.dispose();
   });
 
-  it("rejects corrupt records and equal-time trends during persistence restore", () => {
+  it("rejects corrupt records and identical trend endpoints during persistence restore", () => {
     const f = fixture(
       "draw-test-invalid",
       JSON.stringify([
@@ -1181,7 +1206,7 @@ describe("native chart drawing lifecycle", () => {
           from: { time: "2026-02-30", price: 1 },
           to: { time: "2026-03-01", price: 2 },
         },
-        { kind: "trend", from: { time: 100, price: 1 }, to: { time: 100, price: 2 } },
+        { kind: "trend", from: { time: 100, price: 1 }, to: { time: 100, price: 1 } },
       ]),
     );
     const session = f.open();
@@ -1314,7 +1339,7 @@ describe("native chart drawing lifecycle", () => {
     f.click(200, 200);
     const before = f.saved();
     expect(session.beginDrag({ x: 200, y: 200 })).toBe(true);
-    session.dragTo({ x: 100, y: 250 });
+    session.dragTo({ x: 100, y: 100 });
     session.endDrag();
     expect(f.saved()).toBe(before);
     session.beginDrag({ x: 200, y: 200 });
@@ -2172,6 +2197,42 @@ describe("trend-angle coordinate helpers", () => {
 });
 
 describe("drawing settings preview transactions", () => {
+  it("previews and saves same-bar trendline coordinates in one reversible edit", () => {
+    const f = fixture("same-bar-trend-settings"),
+      session = f.open();
+    session.setTool("trend");
+    f.click(100, 100);
+    f.click(200, 200);
+    const [original] = JSON.parse(f.saved()!) as ChartDrawing[];
+    const anchors = [
+      { time: 152 as Time, price: 4410.32 },
+      { time: 152 as Time, price: 4420.1 },
+    ];
+    const writes = f.writes();
+    session.openSettings();
+    expect(session.previewSettings({ anchors })).toBe(true);
+    expect(f.change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: expect.objectContaining({ anchors }) }),
+    );
+    expect(f.writes()).toBe(writes);
+    session.closeSettings();
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ selected: original }));
+    session.openSettings();
+    expect(session.previewSettings({ anchors, extendLeft: true, extendRight: true })).toBe(true);
+    expect(session.applySettings({})).toBe(true);
+    const [saved] = JSON.parse(f.saved()!) as ChartDrawing[];
+    expect(saved).toMatchObject({ anchors, extendLeft: true, extendRight: true });
+    expect(f.writes()).toBe(writes + 1);
+    session.undo();
+    expect(JSON.parse(f.saved()!)).toEqual([original]);
+    session.redo();
+    expect(JSON.parse(f.saved()!)).toEqual([saved]);
+    session.dispose();
+    const reopened = f.open();
+    expect(f.change).toHaveBeenLastCalledWith(expect.objectContaining({ objects: [saved] }));
+    reopened.dispose();
+  });
+
   it("previews channel levels without writes, cancels, then saves all settings in one undoable edit", () => {
     const original = {
       id: "parallel",
@@ -2362,7 +2423,7 @@ describe("drawing settings preview transactions", () => {
       session.applySettings({
         anchors: [
           { time: 100 as UTCTimestamp, price: 4900 },
-          { time: 100 as UTCTimestamp, price: 4800 },
+          { time: 100 as UTCTimestamp, price: 4900 },
         ],
       }),
     ).toBe(false);
