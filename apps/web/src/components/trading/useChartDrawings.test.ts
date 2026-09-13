@@ -171,6 +171,138 @@ describe("drawing sessions sharing one workspace store", () => {
     };
   };
 
+  it.each(["cancel", "save"] as const)(
+    "a sparse single template clears peer-only appearance without absorbing peer placement (%s)",
+    (action) => {
+      const { text: _text, ...source } = initial[0]!;
+      const original: ChartDrawing = { ...source, lineStyle: "solid" };
+      const f = setup([original]);
+      try {
+        f.a.selectDrawing(original.id);
+        expect(f.a.openSettings()).toBe(true);
+        f.b.updateDrawing(original.id, {
+          anchors: movedAnchors,
+          name: "Peer setup",
+          locked: true,
+          hidden: true,
+          textBold: true,
+          extendRight: true,
+          textColor: "#ff0000",
+        });
+        const peer = f.saved()[0]!;
+        const writes = f.first.writes();
+        const template = {
+          color: original.color,
+          width: original.width,
+          lineStyle: "solid" as const,
+        };
+        expect(f.a.previewSettings(template, { replace: true })).toBe(true);
+        const expected: ChartDrawing = {
+          ...original,
+          anchors: movedAnchors,
+          name: "Peer setup",
+          locked: true,
+          hidden: true,
+        };
+        expect(f.first.change.mock.lastCall![0].selected).toEqual(expected);
+        expect(f.saved()).toEqual([peer]);
+        expect(f.first.writes()).toBe(writes);
+        if (action === "cancel") {
+          f.a.closeSettings();
+          expect(f.first.change.mock.lastCall![0].selected).toEqual(peer);
+          expect(f.saved()).toEqual([peer]);
+          expect(f.first.writes()).toBe(writes);
+        } else {
+          expect(f.a.applySettings({})).toBe(true);
+          expect(f.saved()).toEqual([expected]);
+          expect(f.b.getCommittedDrawings()).toEqual([expected]);
+          expect(f.first.writes()).toBe(writes + 1);
+          f.a.undo();
+          expect(f.saved()).toEqual([peer]);
+          f.a.redo();
+          expect(f.saved()).toEqual([expected]);
+          const reopened = f.first.open();
+          expect(reopened.getCommittedDrawings()).toEqual([expected]);
+          reopened.dispose();
+        }
+      } finally {
+        f.dispose();
+      }
+    },
+  );
+
+  it.each(["cancel", "save"] as const)(
+    "group template replacement preserves peer text/visibility and skips locked members (%s)",
+    (action) => {
+      const originals: ChartDrawing[] = [
+        ...initial.map((drawing) => ({ ...drawing, lineStyle: "solid" as const })),
+        { ...initial[1]!, id: "locked", lineStyle: "solid", locked: true },
+      ];
+      const f = setup(originals);
+      try {
+        f.a.selectDrawing("a");
+        f.a.selectDrawing("b", { additive: true });
+        f.a.selectDrawing("locked", { additive: true });
+        expect(f.a.openSettings()).toBe(true);
+        const visibility = sanitizeDrawingVisibility({
+          hours: { enabled: false, min: 1, max: 24 },
+        });
+        f.b.updateDrawing("a", {
+          anchors: movedAnchors,
+          name: "Peer group member",
+          text: "Peer annotation",
+          visibility,
+          textBold: true,
+          extendRight: true,
+        });
+        f.b.updateDrawing("b", { textItalic: true, textColor: "#ff0000" });
+        f.b.updateDrawing("locked", { color: "#00ff00", textBold: true, extendRight: true });
+        const peers = f.saved();
+        const writes = f.first.writes();
+        expect(
+          f.a.previewSettings(
+            { color: originals[0]!.color, width: originals[0]!.width, lineStyle: "solid" },
+            { replace: true },
+          ),
+        ).toBe(true);
+        const expected: ChartDrawing[] = [
+          {
+            ...originals[0]!,
+            anchors: movedAnchors,
+            name: "Peer group member",
+            text: "Peer annotation",
+            visibility: sanitizeDrawingVisibility(visibility),
+          },
+          originals[1]!,
+          peers[2]!,
+        ];
+        expect(f.first.change.mock.lastCall![0].selectedObjects).toEqual(expected);
+        expect(f.saved()).toEqual(peers);
+        expect(f.first.writes()).toBe(writes);
+        if (action === "cancel") {
+          f.a.closeSettings();
+          expect(f.first.change.mock.lastCall![0].objects).toEqual(peers);
+          expect(f.saved()).toEqual(peers);
+          expect(f.first.writes()).toBe(writes);
+        } else {
+          expect(f.a.applySettings({})).toBe(true);
+          expect(f.saved()).toEqual(expected);
+          expect(f.b.getCommittedDrawings()).toEqual(expected);
+          expect(f.first.writes()).toBe(writes + 1);
+          f.a.undo();
+          expect(f.saved()).toEqual(peers);
+          f.a.redo();
+          expect(f.saved()).toEqual(expected);
+          const reopened = f.first.open();
+          expect(reopened.getCommittedDrawings()).toEqual(expected);
+          reopened.dispose();
+        }
+      } finally {
+        f.dispose();
+      }
+    },
+  );
+
   it.each(["before-preview", "after-preview"] as const)(
     "preserves another chart's endpoint coordinate change received %s through save, undo and reload",
     (timing) => {

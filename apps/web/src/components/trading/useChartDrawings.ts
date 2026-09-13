@@ -197,7 +197,11 @@ export function createChartDrawingSession(
     appearanceReplaced?: boolean;
     created?: boolean;
   } | null = null;
-  let groupSettingsDraft: { originals: ChartDrawing[]; drawings: ChartDrawing[] } | null = null;
+  let groupSettingsDraft: {
+    originals: ChartDrawing[];
+    drawings: ChartDrawing[];
+    appearanceReplaced: Set<string>;
+  } | null = null;
   let contextPoint: DrawingPoint | null = null;
   let replacingId: string | null = null;
   let disposed = false;
@@ -286,13 +290,35 @@ export function createChartDrawingSession(
     const price = normalizeCoordinatePrice(anchor.price);
     return price === anchor.price ? anchor : { ...anchor, price };
   };
+  const resolveSettingsDrawing = (
+    original: ChartDrawing | undefined,
+    draft: ChartDrawing | undefined,
+    current: ChartDrawing,
+    replaceAppearance = false,
+    preserveGroupContent = false,
+  ) => {
+    const merged = mergeDrawingChanges(original, draft, current);
+    if (!draft || !replaceAppearance) return merged;
+    // A template replaces even styles added by peers after the dialog opened.
+    // Geometry and object metadata still follow the field-level edit merge.
+    const resolved = applyDrawingTemplate(merged, draft);
+    if (preserveGroupContent) {
+      for (const key of ["text", "visibility"] as const) {
+        if (merged[key] === undefined) delete resolved[key];
+        else Object.assign(resolved, { [key]: merged[key] });
+      }
+    }
+    return resolved;
+  };
   const displayedDrawings = () =>
     groupSettingsDraft
       ? drawings.map((drawing) =>
-          mergeDrawingChanges(
+          resolveSettingsDrawing(
             groupSettingsDraft!.originals.find((item) => item.id === drawing.id),
             groupSettingsDraft!.drawings.find((item) => item.id === drawing.id),
             drawing,
+            groupSettingsDraft!.appearanceReplaced.has(drawing.id),
+            true,
           ),
         )
       : settingsDraft
@@ -300,7 +326,12 @@ export function createChartDrawingSession(
           ? [...drawings, settingsDraft.drawing]
           : drawings.map((drawing) =>
               drawing.id === settingsDraft!.original.id
-                ? mergeDrawingChanges(settingsDraft!.original, settingsDraft!.drawing, drawing)
+                ? resolveSettingsDrawing(
+                    settingsDraft!.original,
+                    settingsDraft!.drawing,
+                    drawing,
+                    settingsDraft!.appearanceReplaced,
+                  )
                 : drawing,
             )
         : drawings;
@@ -1397,6 +1428,12 @@ export function createChartDrawingSession(
       return normalized ? { ...drawing, ...normalized } : null;
     });
     if (next.some((drawing) => drawing === null)) return false;
+    if (options.replace) {
+      next.forEach((drawing, index) => {
+        if (drawing !== groupSettingsDraft!.drawings[index])
+          groupSettingsDraft!.appearanceReplaced.add(drawing!.id);
+      });
+    }
     groupSettingsDraft.drawings = next as ChartDrawing[];
     render();
     emit();
@@ -1495,23 +1532,16 @@ export function createChartDrawingSession(
     if (disposed) return false;
     if (groupSettingsDraft) {
       if (!previewGroupSettings(patch, Object.keys(patch).length ? options : {})) return false;
-      const { originals, drawings: drafts } = groupSettingsDraft;
+      const resolved = displayedDrawings();
       groupSettingsDraft = null;
       settingsOpen = false;
-      if (JSON.stringify(originals) === JSON.stringify(drafts)) {
+      if (JSON.stringify(drawings) === JSON.stringify(resolved)) {
         render();
         emit();
         return true;
       }
       remember();
-      const next = new Map(drafts.map((drawing) => [drawing.id, drawing]));
-      drawings = drawings.map((drawing) =>
-        mergeDrawingChanges(
-          originals.find((item) => item.id === drawing.id),
-          next.get(drawing.id),
-          drawing,
-        ),
-      );
+      drawings = resolved;
       changed();
       return true;
     }
@@ -1524,6 +1554,12 @@ export function createChartDrawingSession(
   const finishSettingsDraft = (next: ChartDrawing, forceAppearance = false) => {
     if (!settingsDraft) return false;
     const { original, created } = settingsDraft;
+    const replaceAppearance = forceAppearance || settingsDraft.appearanceReplaced;
+    const resolved = drawings.map((drawing) =>
+      drawing.id === original.id
+        ? resolveSettingsDrawing(original, next, drawing, replaceAppearance)
+        : drawing,
+    );
     if (
       !textEditing &&
       (forceAppearance ||
@@ -1545,11 +1581,9 @@ export function createChartDrawingSession(
         render();
         emit();
       }
-    } else if (JSON.stringify(original) !== JSON.stringify(next)) {
+    } else if (JSON.stringify(drawings) !== JSON.stringify(resolved)) {
       remember();
-      drawings = drawings.map((drawing) =>
-        drawing.id === original.id ? mergeDrawingChanges(original, next, drawing) : drawing,
-      );
+      drawings = resolved;
       changed();
     } else {
       render();
@@ -2152,7 +2186,11 @@ export function createChartDrawingSession(
       if (point) chooseDrawing(hit(point, paneIndex)?.id ?? null);
       if (selectedIds.length > 1) {
         const originals = drawings.filter((drawing) => selectedIds.includes(drawing.id));
-        groupSettingsDraft = { originals, drawings: originals.slice() };
+        groupSettingsDraft = {
+          originals,
+          drawings: originals.slice(),
+          appearanceReplaced: new Set(),
+        };
         settingsOpen = true;
         contextPoint = null;
         emit();
