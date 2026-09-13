@@ -6627,3 +6627,133 @@ describe("object-tree context menu entry", () => {
     session.dispose();
   });
 });
+
+describe("locked group visibility actions", () => {
+  const setup = (allLocked = true) => {
+    const objects: ChartDrawing[] = ["a", "b", "c"].map((id, index) => ({
+      id,
+      kind: "trend",
+      color: "#2962ff",
+      width: 2,
+      lineStyle: "solid",
+      ...(index !== 1 || allLocked ? { locked: true } : {}),
+      anchors: [
+        { time: 100 as Time, price: 4900 - index * 100 },
+        { time: 300 as Time, price: 4900 - index * 100 },
+      ],
+    }));
+    const f = fixture(`locked-group-visibility-${allLocked}`, JSON.stringify(objects));
+    const session = f.open();
+    session.selectDrawing("a", { includeHidden: true, replaceSelection: true });
+    session.selectDrawing("b", { additive: true, includeHidden: true });
+    const state = () => f.change.mock.lastCall![0];
+    return { objects, f, session, state };
+  };
+  const normalizeFlags = (objects: readonly ChartDrawing[]) =>
+    objects.map((drawing) => ({ ...drawing, locked: !!drawing.locked, hidden: !!drawing.hidden }));
+
+  it.each([true, false])(
+    "shows and hides a group without changing locks, geometry or style (all locked: %s)",
+    (allLocked) => {
+      const { objects, f, session, state } = setup(allLocked);
+      session.updateSelected({ hidden: true });
+      const hidden = objects.map((d, i) => (i < 2 ? { ...d, hidden: true } : d));
+      expect(state().objects).toEqual(hidden);
+      expect(state().selectedIds).toEqual(["a", "b"]);
+      expect(f.writes()).toBe(1);
+      session.updateSelected({ hidden: false });
+      const shown = objects.map((d, i) => (i < 2 ? { ...d, hidden: false } : d));
+      expect(state().objects).toEqual(shown);
+      expect(f.writes()).toBe(2);
+      session.undo();
+      expect(state().objects).toEqual(hidden);
+      session.undo();
+      expect(state().objects).toEqual(objects);
+      session.redo();
+      session.redo();
+      expect(state().objects).toEqual(shown);
+      const saved = f.saved();
+      session.dispose();
+      const reopened = f.open();
+      expect(normalizeFlags(reopened.getCommittedDrawings()!)).toEqual(
+        normalizeFlags(JSON.parse(saved!)),
+      );
+      reopened.dispose();
+    },
+  );
+
+  it("filters mixed patches per member, preserving locked style and interval visibility", () => {
+    const { objects, f, session, state } = setup(false);
+    const visibility = sanitizeDrawingVisibility({ minutes: { enabled: false } });
+    session.updateSelected({
+      hidden: true,
+      color: "#ff0000",
+      width: 4,
+      extendRight: true,
+      visibility,
+    });
+    expect(state().objects).toEqual([
+      { ...objects[0]!, hidden: true },
+      { ...objects[1]!, hidden: true, color: "#ff0000", width: 4, extendRight: true, visibility },
+      objects[2],
+    ]);
+    expect(f.writes()).toBe(1);
+    session.undo();
+    expect(state().objects).toEqual(objects);
+    session.dispose();
+  });
+
+  it.each(["cancel", "save"] as const)(
+    "normal group visibility preview filters locked style and supports %s",
+    (action) => {
+      const { objects, f, session, state } = setup(false);
+      expect(session.openSettings()).toBe(true);
+      expect(session.previewSettings({ hidden: true, color: "#ff0000", width: 4 })).toBe(true);
+      const expected = [
+        { ...objects[0]!, hidden: true },
+        { ...objects[1]!, hidden: true, color: "#ff0000", width: 4 },
+      ];
+      expect(state().selectedObjects).toEqual(expected);
+      expect(state().objects).toEqual(objects);
+      expect(f.writes()).toBe(0);
+      if (action === "cancel") {
+        session.closeSettings();
+        expect(state().objects).toEqual(objects);
+        expect(f.writes()).toBe(0);
+      } else {
+        expect(session.applySettings({})).toBe(true);
+        expect(state().objects).toEqual([...expected, objects[2]]);
+        expect(f.writes()).toBe(1);
+        session.undo();
+        expect(state().objects).toEqual(objects);
+      }
+      session.dispose();
+    },
+  );
+
+  it("retains locked template and interval guards, but explicit unlock still permits style edits", () => {
+    const { objects, f, session, state } = setup();
+    session.updateSelected({
+      visibility: sanitizeDrawingVisibility({ minutes: { enabled: false } }),
+    });
+    expect(state().objects).toEqual(objects);
+    expect(f.writes()).toBe(0);
+    expect(session.openSettings()).toBe(true);
+    expect(
+      session.previewSettings({ color: "#ff0000", width: 4, hidden: true }, { replace: true }),
+    ).toBe(true);
+    expect(state().selectedObjects).toEqual(objects.slice(0, 2));
+    expect(session.previewSelectedVisibility({ minutes: { enabled: false } })).toBe(true);
+    expect(state().selectedObjects).toEqual(objects.slice(0, 2));
+    session.closeSettings();
+    expect(f.writes()).toBe(0);
+    session.updateSelected({ locked: false, color: "#ff0000", width: 4 });
+    expect(state().objects).toEqual(
+      objects.map((d, i) => (i < 2 ? { ...d, locked: false, color: "#ff0000", width: 4 } : d)),
+    );
+    expect(f.writes()).toBe(1);
+    session.undo();
+    expect(state().objects).toEqual(objects);
+    session.dispose();
+  });
+});

@@ -287,7 +287,11 @@ export function DrawingObjectTree({
                 <RowAction
                   label={`${object.hidden ? "Show" : "Hide"} ${label}`}
                   active={!!object.hidden}
-                  onClick={() => drawings.updateDrawing(object.id, { hidden: !object.hidden })}
+                  onClick={() => {
+                    const patch = { hidden: !object.hidden };
+                    if (isSelected) drawings.updateSelected(patch);
+                    else drawings.updateDrawing(object.id, patch);
+                  }}
                 >
                   <DrawingToolIcon name={object.hidden ? "eye-off" : "eye"} className="size-4" />
                 </RowAction>

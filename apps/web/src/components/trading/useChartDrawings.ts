@@ -1400,7 +1400,14 @@ export function createChartDrawingSession(
     delete common.regressionLowerLine;
     return common;
   };
-  const normalizedGroupPatch = (drawing: ChartDrawing, common: DrawingPatch) => {
+  const normalizedGroupPatch = (drawing: ChartDrawing, patch: DrawingPatch) => {
+    // Lock protects edits, but visibility must remain reversible for selected objects.
+    const common =
+      drawing.locked && patch.locked !== false
+        ? patch.hidden === undefined
+          ? {}
+          : { hidden: patch.hidden }
+        : patch;
     const normalized = normalizePatch(drawing, common);
     if (!normalized) return null;
     const linePatch = {
@@ -1430,8 +1437,8 @@ export function createChartDrawingSession(
     if (!groupSettingsDraft || !settingsOpen) return false;
     const common = commonGroupPatch(patch);
     const next = groupSettingsDraft.drawings.map((drawing) => {
-      if (drawing.locked && common.locked !== false) return drawing;
       if (options.replace) {
+        if (drawing.locked && common.locked !== false) return drawing;
         const applied = applyDrawingTemplate(drawing, patch);
         if (applied === drawing) return null;
         const next = { ...applied };
@@ -2458,8 +2465,7 @@ export function createChartDrawingSession(
       const common = commonGroupPatch(patch);
       const changes = new Map<string, ChartDrawing>();
       for (const drawing of drawings) {
-        if (!selectedIds.includes(drawing.id) || (drawing.locked && common.locked !== false))
-          continue;
+        if (!selectedIds.includes(drawing.id)) continue;
         const normalized = normalizedGroupPatch(drawing, common);
         if (!normalized) return;
         const next = { ...drawing, ...normalized };
