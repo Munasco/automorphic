@@ -23,6 +23,8 @@ import { useDrawingCustomColors } from "./drawingCustomColors";
 import { TradingSelect } from "./TradingSelect";
 const transparencyPattern =
   'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%228%22 height=%228%22%3E%3Cpath fill=%22%232a2e39%22 fill-opacity=%22.4%22 d=%22M0 0h4v4H0zM4 4h4v4H4z%22/%3E%3C/svg%3E")';
+const paletteSwatchClass =
+  "relative m-[3px] size-[17px] rounded-[2px] border border-current outline-none after:pointer-events-none after:absolute after:-inset-[5px] after:rounded-[6px] after:border-2 after:border-transparent after:transition-[border-color] after:duration-[350ms] after:ease-[ease] hover:after:border-[#575757] aria-pressed:after:border-[#dbdbdb] aria-pressed:hover:after:border-[#dbdbdb] focus-visible:after:border-[#2962ff] aria-pressed:focus-visible:after:border-[#2962ff] motion-reduce:after:transition-none";
 const colors = [
   "#ffffff",
   "#dbdbdb",
@@ -339,13 +341,8 @@ function ColorSettingsPanel({
                 swatchRefs.current[index + offset]?.focus();
               }}
               onClick={() => onChange(color)}
-              className={cn(
-                "m-[3px] size-[17px] rounded-[1px] border border-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white",
-                index >= 20 && index < 30 && "mt-[9px]",
-                color === value.toLowerCase() &&
-                  "ring-2 ring-white ring-offset-2 ring-offset-[#202020]",
-              )}
-              style={{ background: color }}
+              className={cn(paletteSwatchClass, index >= 20 && index < 30 && "mt-[9px]")}
+              style={{ background: color, color }}
             />
           ))}
         </div>
@@ -358,8 +355,8 @@ function ColorSettingsPanel({
               aria-label={`${label} custom ${color}`}
               aria-pressed={value === color}
               onClick={() => onChange(color)}
-              className="m-[3px] size-[17px] rounded-[1px] border border-white/20 aria-pressed:ring-2 aria-pressed:ring-white"
-              style={{ background: color }}
+              className={paletteSwatchClass}
+              style={{ background: color, color }}
             />
           ))}
           <button
