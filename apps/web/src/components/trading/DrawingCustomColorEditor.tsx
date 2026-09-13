@@ -57,16 +57,16 @@ export function DrawingCustomColorEditor({
     },
   });
   const planeKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
     const next = { ...draft.hsv },
-      step = event.shiftKey ? 0.1 : 0.01;
+      step = 0.01;
     if (event.key === "ArrowLeft") next.s -= step;
     else if (event.key === "ArrowRight") next.s += step;
     else if (event.key === "ArrowUp") next.v += step;
     else if (event.key === "ArrowDown") next.v -= step;
-    else if (event.key === "Home") next.s = 0;
-    else if (event.key === "End") next.s = 1;
     else return;
     event.preventDefault();
+    event.stopPropagation();
     next.s = Math.max(0, Math.min(1, next.s));
     next.v = Math.max(0, Math.min(1, next.v));
     updateHsv(next);
@@ -78,6 +78,7 @@ export function DrawingCustomColorEditor({
     else if (event.key === "ArrowDown") h += 3.6;
     else return;
     event.preventDefault();
+    event.stopPropagation();
     updateHsv({ ...draft.hsv, h: Math.max(0, Math.min(360, h)) });
   };
   return (
@@ -140,8 +141,7 @@ export function DrawingCustomColorEditor({
         </button>
       </div>
       <span id={instructionsId} className="sr-only">
-        Use left and right arrows for saturation, up and down for brightness. Hold Shift for larger
-        changes.
+        Use left and right arrows for saturation, up and down for brightness.
       </span>
       <div className="flex gap-[7px]">
         <div
@@ -153,7 +153,7 @@ export function DrawingCustomColorEditor({
           aria-valuemax={100}
           aria-valuenow={Math.round(draft.hsv.s * 100)}
           aria-valuetext={`Saturation ${Math.round(draft.hsv.s * 100)}%, brightness ${Math.round(draft.hsv.v * 100)}%`}
-          className="relative h-[184px] w-[200px] shrink-0 cursor-crosshair touch-none rounded-[2px] outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="relative h-[184px] w-[200px] shrink-0 cursor-crosshair touch-none rounded-[2px] outline-none after:pointer-events-none after:absolute after:-inset-1 after:rounded-[6px] after:border-2 after:border-transparent focus-visible:after:border-[#2962ff]"
           style={{
             backgroundColor: `hsl(${draft.hsv.h} 100% 50%)`,
             backgroundImage:
@@ -162,10 +162,12 @@ export function DrawingCustomColorEditor({
           {...pointerHandlers("plane")}
           onKeyDown={planeKeyDown}
         >
-          <span
-            className="pointer-events-none absolute -mt-[6px] -ml-[6px] size-[14px] rounded-full border-2 border-white shadow-[0_1px_2px_rgb(0_0_0/50%)]"
-            style={{ left: `${draft.hsv.s * 100}%`, top: `${(1 - draft.hsv.v) * 100}%` }}
-          />
+          <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[2px]">
+            <span
+              className="absolute -mt-[6px] -ml-[6px] size-[14px] rounded-full border-2 border-white shadow-[0_1px_2px_rgb(0_0_0/50%)]"
+              style={{ left: `${draft.hsv.s * 100}%`, top: `${(1 - draft.hsv.v) * 100}%` }}
+            />
+          </div>
         </div>
         <div
           role="slider"
@@ -175,7 +177,7 @@ export function DrawingCustomColorEditor({
           aria-valuemin={0}
           aria-valuemax={360}
           aria-valuenow={Math.round(draft.hsv.h)}
-          className="relative h-[184px] w-[17px] shrink-0 cursor-pointer touch-none rounded-[2px] outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="relative h-[184px] w-[17px] shrink-0 cursor-pointer touch-none rounded-[2px] outline-none after:pointer-events-none after:absolute after:-inset-1 after:rounded-[6px] after:border-2 after:border-transparent focus-visible:after:border-[#2962ff]"
           style={{
             background:
               "linear-gradient(to bottom, #f00 0, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00)",
