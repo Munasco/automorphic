@@ -5925,3 +5925,87 @@ describe("parallel channel endpoint coordinate edits", () => {
     session.dispose();
   });
 });
+
+describe("human-readable copy names", () => {
+  it.each(["paste", "duplicate-selected", "duplicate-object"] as const)(
+    "%s persists human-readable unnamed tool names, with one undoable operation",
+    (operation) => {
+      const original: ChartDrawing = {
+        id: "unnamed-regression",
+        kind: "regression-trend",
+        anchors: [
+          { time: 100 as Time, price: 4900 },
+          { time: 300 as Time, price: 4800 },
+        ],
+        color: "#123456",
+        width: 1,
+      };
+      const f = fixture(`copy-name-${operation}`, JSON.stringify([original]));
+      const session = f.open();
+      session.selectDrawing(original.id);
+      if (operation === "paste")
+        expect(session.pasteDrawing(session.copySelectedSerialized()!)).toBe(true);
+      else if (operation === "duplicate-selected") session.duplicateSelected();
+      else session.duplicateDrawing(original.id);
+      const saved = f.saved();
+      expect(JSON.parse(saved!)).toEqual([
+        original,
+        expect.objectContaining({ name: "Regression trend copy" }),
+      ]);
+      expect(f.writes()).toBe(1);
+      session.undo();
+      expect(JSON.parse(f.saved()!)).toEqual([original]);
+      session.redo();
+      expect(f.saved()).toBe(saved);
+      session.dispose();
+      const reopened = f.open();
+      expect(reopened.getCommittedDrawings()?.[1]?.name).toBe("Regression trend copy");
+      reopened.dispose();
+    },
+  );
+
+  it.each([false, true])(
+    "modifier drag uses display labels in preview and persisted clones (group: %s)",
+    (group) => {
+      const original: ChartDrawing = {
+        id: "unnamed-ray",
+        kind: "horizontal-ray",
+        anchors: [{ time: 100 as Time, price: 4900 }],
+        color: "#123456",
+        width: 1,
+      };
+      const second: ChartDrawing = {
+        ...original,
+        id: "named-ray",
+        anchors: [{ time: 100 as Time, price: 4800 }],
+        name: "A+ setup",
+        text: "Retest",
+      };
+      const originals = group ? [original, second] : [original];
+      const f = fixture(`copy-name-drag-${group}`, JSON.stringify(originals));
+      const session = f.open();
+      session.selectDrawing(original.id);
+      if (group) session.selectDrawing(second.id, { additive: true });
+      expect(session.beginDrag({ x: 150, y: 100 }, { clone: true })).toBe(true);
+      session.dragTo({ x: 200, y: 125 });
+      const expectedNames = group
+        ? ["Horizontal Ray copy", "A+ setup copy"]
+        : ["Horizontal Ray copy"];
+      expect(
+        f.change.mock.lastCall![0].objects.slice(originals.length).map((d: ChartDrawing) => d.name),
+      ).toEqual(expectedNames);
+      expect(f.writes()).toBe(0);
+      session.endDrag();
+      expect(JSON.parse(f.saved()!).slice(0, originals.length)).toEqual(originals);
+      expect(
+        JSON.parse(f.saved()!)
+          .slice(originals.length)
+          .map((d: ChartDrawing) => d.name),
+      ).toEqual(expectedNames);
+      expect(f.writes()).toBe(1);
+      session.undo();
+      expect(JSON.parse(f.saved()!)).toEqual(originals);
+      session.dispose();
+    },
+  );
+});

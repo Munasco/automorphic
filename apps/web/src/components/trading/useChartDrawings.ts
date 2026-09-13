@@ -1,3 +1,4 @@
+import { drawingCopyName } from "./drawingNames";
 import { applyDrawingChanges, mergeDrawingChanges } from "./drawingChanges";
 import { createDrawingDefaults, drawingAppearanceChanged } from "./drawingDefaults";
 import { createDrawingPaneExtensions, drawingPaneTimeAtCoordinate } from "./drawingPaneExtensions";
@@ -838,7 +839,7 @@ export function createChartDrawingSession(
           ...(activeDrag.clone
             ? {
                 id: cloneId,
-                name: `${drawing.name || drawing.text || drawing.kind} copy`.slice(0, 80),
+                name: drawingCopyName(drawing),
                 locked: false,
               }
             : {}),
@@ -1028,7 +1029,7 @@ export function createChartDrawingSession(
       const copy = {
         ...next,
         id: cloneId,
-        name: `${next.name || next.text || next.kind} copy`.slice(0, 80),
+        name: drawingCopyName(next),
         locked: false,
         hidden: false,
       };
@@ -1638,7 +1639,7 @@ export function createChartDrawingSession(
     const copies = originals.map((drawing) => ({
       ...structuredClone(drawing),
       id: randomUUID(),
-      name: `${drawing.name || drawing.text || drawing.kind} copy`.slice(0, 80),
+      name: drawingCopyName(drawing),
       locked: false,
     }));
     remember();
@@ -1679,7 +1680,7 @@ export function createChartDrawingSession(
           ...original,
           anchors,
           id: randomUUID(),
-          name: `${original.name || original.text || original.kind} copy`.slice(0, 80),
+          name: drawingCopyName(original),
           locked: false,
           hidden: false,
         });
@@ -2318,7 +2319,7 @@ export function createChartDrawingSession(
       const copy = {
         ...original,
         id: randomUUID(),
-        name: `${original.name || original.text || original.kind} copy`.slice(0, 80),
+        name: drawingCopyName(original),
         anchors: original.anchors.map((anchor) => ({ ...anchor })),
         locked: false,
       };

@@ -1,3 +1,4 @@
+import { drawingKindLabel } from "./drawingNames";
 import {
   DEFAULT_DRAWING_TEXT_BACKGROUND_COLOR,
   DEFAULT_DRAWING_TEXT_BACKGROUND_OPACITY,
@@ -107,25 +108,7 @@ const lineKinds = new Set([
   "disjoint-channel",
 ]);
 function titleFor(drawing: ChartDrawing) {
-  const labels: Record<string, string> = {
-    trend: "Trendline",
-    "trend-angle": "Trend angle",
-    "info-line": "Info line",
-    horizontal: "Horizontal Line",
-    "horizontal-ray": "Horizontal Ray",
-    fib: "Fib Retracement",
-    "fib-time-zone": "Fib Time Zone",
-    "fib-trend-time": "Trend-based Fib Time",
-    channel: "Parallel channel",
-    "flat-channel": "Flat top/bottom",
-    "disjoint-channel": "Disjoint channel",
-    "rotated-rectangle": "Rotated Rectangle",
-    "double-curve": "Double Curve",
-  };
-  return (
-    labels[drawing.kind] ??
-    drawing.kind.replaceAll("-", " ").replace(/\b\w/g, (c) => c.toUpperCase())
-  );
+  return drawingKindLabel(drawing.kind);
 }
 function settingsEntryField(panel: HTMLDivElement | null) {
   if (panel?.id === "drawing-panel-Coordinates")
