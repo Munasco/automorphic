@@ -78,7 +78,12 @@ export function applyChartBarBatch(
 }
 
 /** Format real exchange time; never expose synthetic microsecond offsets to the user. */
-export function createChartTimeFormatters(read: (key: number) => Candle | undefined) {
+export function createChartTimeFormatters(
+  read: (key: number) => Candle | undefined,
+  timeZone = "UTC",
+  intraday = true,
+  secondsVisible = true,
+) {
   const formats = new Map<string, Intl.DateTimeFormat>();
   const formatter = (locale: string, type: TickMarkType | "crosshair") => {
     const key = `${locale}:${type}`;
@@ -90,9 +95,13 @@ export function createChartTimeFormatters(read: (key: number) => Candle | undefi
               year: "numeric",
               month: "short",
               day: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
+              ...(intraday
+                ? {
+                    hour: "2-digit" as const,
+                    minute: "2-digit" as const,
+                    ...(secondsVisible ? { second: "2-digit" as const } : {}),
+                  }
+                : {}),
             }
           : type === TickMarkType.Year
             ? { year: "numeric" }
@@ -103,7 +112,13 @@ export function createChartTimeFormatters(read: (key: number) => Candle | undefi
                 : type === TickMarkType.Time
                   ? { hour: "2-digit", minute: "2-digit" }
                   : { hour: "2-digit", minute: "2-digit", second: "2-digit" };
-      value = new Intl.DateTimeFormat(locale, { ...options, timeZone: "UTC", hourCycle: "h23" });
+      // Change labels only: drawings, sessions and replay retain their UTC keys.
+      // Daily/weekly/monthly bars represent trading dates, not local clock times.
+      value = new Intl.DateTimeFormat(locale, {
+        ...options,
+        timeZone: intraday ? timeZone : "UTC",
+        hourCycle: "h23",
+      });
       formats.set(key, value);
     }
     return value;

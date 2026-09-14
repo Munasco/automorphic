@@ -24,6 +24,7 @@ import {
   type ChartLineMarkerRadius,
 } from "./chartPreferences";
 import { PRICE_SOURCES, type PriceSource } from "./chartIndicators";
+import { CHART_TIME_ZONES } from "./chartTimeZones";
 import { DEFAULT_INITIAL_BALANCE } from "./initialBalanceSettings";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
 import { getIndicatorInputs } from "./indicatorCatalog";
@@ -3056,4 +3057,101 @@ it("persists independent RSI background appearance without changing indicator in
     { color: "#abcdef", opacity: 0.5, visible: false },
   ]);
   expect(instances[0]!.inputs).toEqual(instances[1]!.inputs);
+});
+
+describe("chart display time zone preferences", () => {
+  const invalidZones = [
+    undefined,
+    null,
+    "",
+    "utc",
+    "EST",
+    "America/Toronto",
+    "America/New_York ",
+    "Not/A_Zone",
+    0,
+    true,
+    {},
+    ["UTC"],
+  ];
+
+  it("defaults legacy and unsupported saved zones to UTC without changing session settings", () => {
+    expect(useChartPreferences.getInitialState().timeZone).toBe("UTC");
+    expect(normalizeChartPreferences({}).timeZone).toBe("UTC");
+    const session = { ...DEFAULT_INITIAL_BALANCE, timeZone: "America/Chicago", startTime: "08:30" };
+    for (const timeZone of invalidZones)
+      expect(
+        normalizeChartPreferences({
+          timeZone,
+          initialBalance: session,
+          lineChartColor: "#abcdef",
+          priceScaleMode: "percentage",
+        }),
+      ).toMatchObject({
+        timeZone: "UTC",
+        initialBalance: session,
+        lineChartColor: "#abcdef",
+        priceScaleMode: "percentage",
+      });
+  });
+
+  it("rejects unsupported and unchanged selections without writes or notifications", () => {
+    configure().setTimeZone("Asia/Tokyo");
+    const before = useChartPreferences.getState();
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    const listener = vi.fn();
+    const unsubscribe = useChartPreferences.subscribe(listener);
+    try {
+      for (const value of invalidZones) before.setTimeZone(value as string);
+      before.setTimeZone("Asia/Tokyo");
+      expect(useChartPreferences.getState()).toBe(before);
+      expect(listener).not.toHaveBeenCalled();
+      expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+      before.setTimeZone("Europe/London");
+      expect(useChartPreferences.getState().timeZone).toBe("Europe/London");
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it.each(CHART_TIME_ZONES)(
+    "persists $value independently of session and chart appearance",
+    async ({ value: timeZone }) => {
+      const store = configure();
+      store.setLineChartColor("#123456");
+      store.setLineChartWidth(4);
+      store.setGridMode("none");
+      store.toggleCandleWicks();
+      store.setTimeZone(timeZone === "UTC" ? "America/New_York" : "UTC");
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      store.setTimeZone(timeZone);
+      const expected = { ...before, timeZone };
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      const serialized = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      expect(JSON.parse(serialized).state.timeZone).toBe(timeZone);
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(serialized);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      expect(typeof useChartPreferences.getState().setTimeZone).toBe("function");
+    },
+  );
+
+  it("keeps display zones workspace-specific and defaults older workspaces to UTC", async () => {
+    const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+    for (const [saved, expected] of [
+      [{ timeZone: "America/Los_Angeles" }, "America/Los_Angeles"],
+      [{ timeZone: "Australia/Sydney" }, "Australia/Sydney"],
+      [{}, "UTC"],
+      [{ timeZone: "America/Los_Angeles" }, "America/Los_Angeles"],
+    ] as const) {
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+        JSON.stringify({ version: 0, state: saved }),
+      );
+      await hydrate();
+      expect(useChartPreferences.getState().timeZone).toBe(expected);
+    }
+  });
 });

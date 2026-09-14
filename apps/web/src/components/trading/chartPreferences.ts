@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
 import { PRICE_SOURCES, type PriceSource } from "./chartIndicators";
+import { CHART_TIME_ZONES } from "./chartTimeZones";
 import { randomUUID } from "../../lib/utils";
 import {
   DEFAULT_VOLUME_COLORS,
@@ -75,6 +76,8 @@ const validGridMode = (value: unknown): value is ChartGridMode =>
   value === "both" || value === "horizontal" || value === "vertical" || value === "none";
 const validCrosshairMode = (value: unknown): value is ChartCrosshairMode =>
   value === "normal" || value === "magnet" || value === "ohlc" || value === "hidden";
+const validTimeZone = (value: unknown): value is string =>
+  typeof value === "string" && CHART_TIME_ZONES.some((zone) => zone.value === value);
 const validColor = (value: unknown): value is string =>
   typeof value === "string" && /^#[a-f0-9]{6}$/i.test(value);
 const hiddenDefaults = () =>
@@ -94,6 +97,7 @@ function mergeAppearance(
 
 type SavedChartPreferences = {
   style: ChartStyle;
+  timeZone: string;
   crosshairMode: ChartCrosshairMode;
   crosshairColor: string;
   crosshairLineStyle: ChartCrosshairLineStyle;
@@ -176,6 +180,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
       ? resolveInitialBalanceSettings(saved.initialBalance)
       : { ...DEFAULT_INITIAL_BALANCE },
     replaySpeed: validReplaySpeed(saved.replaySpeed) ? saved.replaySpeed : 1,
+    timeZone: validTimeZone(saved.timeZone) ? saved.timeZone : "UTC",
     crosshairColor: validColor(saved.crosshairColor) ? saved.crosshairColor : "#9598A1",
     crosshairLineStyle: validCrosshairLineStyle(saved.crosshairLineStyle)
       ? saved.crosshairLineStyle
@@ -213,6 +218,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
 }
 export const useChartPreferences = create<{
   style: ChartStyle;
+  timeZone: string;
   crosshairMode: ChartCrosshairMode;
   crosshairColor: string;
   crosshairLineStyle: ChartCrosshairLineStyle;
@@ -245,6 +251,7 @@ export const useChartPreferences = create<{
   priceScaleMode: ChartPriceScaleMode;
   invertScale: boolean;
   setStyle: (style: ChartStyle) => void;
+  setTimeZone: (timeZone: string) => void;
   setCrosshairMode: (mode: ChartCrosshairMode) => void;
   setReplaySpeed: (speed: ChartReplaySpeed) => void;
   setCrosshairColor: (color: string) => void;
@@ -291,6 +298,7 @@ export const useChartPreferences = create<{
   persist(
     (set, get) => ({
       style: "candles",
+      timeZone: "UTC",
       crosshairMode: "normal",
       crosshairColor: "#9598A1",
       crosshairLineStyle: "largeDashed",
@@ -326,6 +334,9 @@ export const useChartPreferences = create<{
       priceScaleMode: "normal",
       invertScale: false,
       setStyle: (style) => set({ style }),
+      setTimeZone: (timeZone) => {
+        if (validTimeZone(timeZone) && timeZone !== get().timeZone) set({ timeZone });
+      },
       setCrosshairMode: (crosshairMode) => {
         if (validCrosshairMode(crosshairMode) && crosshairMode !== get().crosshairMode)
           set({ crosshairMode });

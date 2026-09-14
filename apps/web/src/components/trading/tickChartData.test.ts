@@ -124,3 +124,47 @@ describe("tick chart data", () => {
     ).toBe("00:01");
   });
 });
+
+describe("chart time zones", () => {
+  const stamp = (date: string) => (Date.parse(date) / 1000) as UTCTimestamp;
+  it("uses historical DST offsets without altering candle keys", () => {
+    const formatter = createChartTimeFormatters(() => undefined, "America/New_York", true, false);
+    const label = (date: string) =>
+      formatter.tickMarkFormatter(stamp(date), TickMarkType.Time, "en-US");
+    expect(label("2026-03-08T06:59:00Z")).toBe("01:59");
+    expect(label("2026-03-08T07:00:00Z")).toBe("03:00");
+    expect(label("2026-11-01T05:30:00Z")).toBe("01:30");
+    expect(label("2026-11-01T06:30:00Z")).toBe("01:30");
+    expect(formatter.timeFormatter(stamp("2026-09-12T00:00:00Z"))).toBe("Sep 11, 2026, 20:00");
+  });
+  it("formats axes and crosshair on either side of the UTC date boundary", () => {
+    const time = stamp("2026-12-31T20:15:30Z");
+    const formatter = createChartTimeFormatters(() => undefined, "Asia/Tokyo");
+    expect(formatter.tickMarkFormatter(time, TickMarkType.Year, "en-US")).toBe("2027");
+    expect(formatter.tickMarkFormatter(time, TickMarkType.Month, "en-US")).toBe("Jan");
+    expect(formatter.tickMarkFormatter(time, TickMarkType.DayOfMonth, "en-US")).toBe("1");
+    expect(formatter.tickMarkFormatter(time, TickMarkType.TimeWithSeconds, "en-US")).toBe(
+      "05:15:30",
+    );
+    expect(formatter.timeFormatter(time)).toBe("Jan 1, 2027, 05:15:30");
+  });
+  it("keeps daily trading dates stable in any zone and omits clock time", () => {
+    for (const zone of ["UTC", "America/Chicago", "Asia/Tokyo"]) {
+      const formatter = createChartTimeFormatters(() => undefined, zone, false);
+      const time = stamp("2026-09-12T00:00:00Z");
+      expect(formatter.tickMarkFormatter(time, TickMarkType.DayOfMonth, "en-US")).toBe("12");
+      expect(formatter.timeFormatter(time)).toBe("Sep 12, 2026");
+      expect(formatter.timeFormatter({ year: 2026, month: 9, day: 12 })).toBe("2026-09-12");
+      expect(formatter.timeFormatter("2026-09-12")).toBe("2026-09-12");
+    }
+  });
+  it("resolves tick bar exchange times before converting zones, including after corrections", () => {
+    const key = stamp("2026-09-12T00:00:00Z");
+    const bar = { ...candle(key, "tick"), actualTime: key - 1 };
+    const formatter = createChartTimeFormatters(() => bar, "America/Chicago");
+    expect(formatter.timeFormatter(key)).toBe("Sep 11, 2026, 18:59:59");
+    bar.actualTime = key + 1;
+    expect(formatter.timeFormatter(key)).toBe("Sep 11, 2026, 19:00:01");
+    expect(bar.time).toBe(key);
+  });
+});

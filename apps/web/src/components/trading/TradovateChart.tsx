@@ -42,6 +42,7 @@ import {
 import type { MarketQuote } from "./InstrumentHeader";
 import { INSTRUMENTS } from "./InstrumentHeader";
 import { TradingSelect } from "./TradingSelect";
+import { CHART_TIME_ZONES } from "./chartTimeZones";
 import { ChartToolbar, PRICE_SCALE_OPTIONS } from "./ChartToolbar";
 import {
   useChartPreferences,
@@ -308,6 +309,7 @@ export function TradovateChart({
   const inputSettings = useRef(settings.indicatorInputs);
   const volumeColors = useRef(settings.volumeColors);
   const lineChartSource = useRef(settings.lineChartSource);
+  const chartTimeZone = useRef(settings.timeZone);
   const initialBalanceSettings = useRef(settings.initialBalance);
   const [initialBalanceStatus, setInitialBalanceStatus] = useState("");
   const [initialBalanceStatuses, setInitialBalanceStatuses] = useState<Record<string, string>>({});
@@ -331,6 +333,20 @@ export function TradovateChart({
     !engine.disposed
       ? engine
       : null;
+  useEffect(() => {
+    chartTimeZone.current = settings.timeZone;
+    if (!activeEngine) return;
+    const formatters = createChartTimeFormatters(
+      (time) => activeEngine.bars.get(time),
+      settings.timeZone,
+      intraday,
+      interval.unit === "second" || interval.unit === "tick",
+    );
+    activeEngine.chart.applyOptions({
+      localization: { timeFormatter: formatters.timeFormatter },
+      timeScale: { tickMarkFormatter: formatters.tickMarkFormatter },
+    });
+  }, [activeEngine, settings.timeZone, intraday, interval.unit]);
   const drawings = useChartDrawings(
     activeEngine?.chart ?? null,
     activeEngine?.prices[settings.style] ?? null,
@@ -398,7 +414,12 @@ export function TradovateChart({
     let receivedQuote = false;
     const bars = new Map<number, Candle>();
     const heikinAshiBars = new Map<number, Candle>();
-    const timeFormatters = createChartTimeFormatters((time) => bars.get(time));
+    const timeFormatters = createChartTimeFormatters(
+      (time) => bars.get(time),
+      chartTimeZone.current,
+      intraday,
+      interval.unit === "second" || interval.unit === "tick",
+    );
     const chart = createChart(host.current, {
       autoSize: true,
       layout: {
@@ -409,13 +430,9 @@ export function TradovateChart({
         panes: { separatorColor: "#242730", separatorHoverColor: "#454b59", enableResize: true },
       },
       grid: { vertLines: { color: "#171a23" }, horzLines: { color: "#171a23" } },
-      ...(interval.unit === "tick"
-        ? { localization: { timeFormatter: timeFormatters.timeFormatter } }
-        : {}),
+      localization: { timeFormatter: timeFormatters.timeFormatter },
       timeScale: {
-        ...(interval.unit === "tick"
-          ? { tickMarkFormatter: timeFormatters.tickMarkFormatter }
-          : {}),
+        tickMarkFormatter: timeFormatters.tickMarkFormatter,
         timeVisible: intraday,
         secondsVisible: interval.unit === "second" || interval.unit === "tick",
         borderColor: "#242730",
@@ -641,7 +658,12 @@ export function TradovateChart({
       if (replaceHistory || changes.some((b) => b.time < renderedTime) || bars.size > 1300) {
         const sorted = [...bars.values()].sort((a, b) => a.time - b.time).slice(-1200);
         if (replaceHistory && interval.unit === "tick") {
-          const formatters = createChartTimeFormatters((time) => bars.get(time));
+          const formatters = createChartTimeFormatters(
+            (time) => bars.get(time),
+            chartTimeZone.current,
+            intraday,
+            true,
+          );
           chart.applyOptions({
             localization: { timeFormatter: formatters.timeFormatter },
             timeScale: { tickMarkFormatter: formatters.tickMarkFormatter },
@@ -1306,7 +1328,14 @@ export function TradovateChart({
         >
           auto
         </button>
-        <span className="px-1 text-zinc-500">UTC</span>
+        <TradingSelect
+          label="Chart time zone"
+          value={settings.timeZone}
+          options={CHART_TIME_ZONES.map(({ value, label }) => [value, label] as const)}
+          onChange={settings.setTimeZone}
+          variant="ghost"
+          className="h-7 w-28 text-[11px]"
+        />
         {settingsControl}
       </div>
       {notice ? (
