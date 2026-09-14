@@ -77,8 +77,8 @@ export function useChartAlerts(symbol: string) {
       onTrigger: (event) =>
         toastManager.add({
           type: "info",
-          title: `${event.symbol} price alert`,
-          description: `${conditionLabel[event.condition]} ${priceLabel(event.target)} · Last ${priceLabel(event.price)}`,
+          title: event.name || `${event.symbol} price alert`,
+          description: `${event.name ? `${event.symbol} · ` : ""}${conditionLabel[event.condition]} ${priceLabel(event.target)} · Last ${priceLabel(event.price)}`,
         }),
     });
     // Register evaluators only for committed mounts, including Strict Mode effect remounts.
@@ -158,6 +158,7 @@ export function ChartAlerts({
   const [searching, setSearching] = useState(false);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<"newest" | "oldest" | "symbol">("newest");
+  const [name, setName] = useState("");
   const [target, setTarget] = useState("");
   const [condition, setCondition] = useState<AlertCondition>("crossing");
   const [repeat, setRepeat] = useState(false);
@@ -189,6 +190,7 @@ export function ChartAlerts({
       controller.alerts.some((alert) => alert.id === editingPrice.id && alert.symbol === symbol));
   const openPriceEdit = (alert: ChartPriceAlert) => {
     setEditingPrice({ id: alert.id, symbol: alert.symbol, update: controller.update });
+    setName(alert.name ?? "");
     setTarget(String(alert.price));
     setCondition(alert.condition);
     setRepeat(alert.repeat);
@@ -200,9 +202,9 @@ export function ChartAlerts({
     ...controller.alerts.map((alert) => ({
       key: `price:${alert.id}`,
       symbol: alert.symbol,
-      title: alert.symbol,
+      title: alert.name || alert.symbol,
       description: `${conditionLabel[alert.condition]} ${priceLabel(alert.price)}`,
-      searchText: `${alert.symbol} price ${conditionLabel[alert.condition]} ${alert.price}`,
+      searchText: `${alert.name ?? ""} ${alert.symbol} price ${conditionLabel[alert.condition]} ${alert.price}`,
       enabled: alert.enabled,
       armedAt: alert.armedAt,
       status: alert.enabled
@@ -215,7 +217,7 @@ export function ChartAlerts({
       frequency: alert.repeat ? "Repeating" : "Once",
       edit: alert.symbol === symbol ? () => openPriceEdit(alert) : null,
       canEnable: true,
-      actionLabel: `${alert.symbol} alert at ${alert.price}`,
+      actionLabel: `${alert.name ? `${alert.name} · ` : ""}${alert.symbol} alert at ${alert.price}`,
       toggle: () => {
         controller.setEnabled(alert.id, !alert.enabled);
         return true;
@@ -271,9 +273,9 @@ export function ChartAlerts({
     ...controller.history.map((event) => ({
       ...event,
       key: `price:${event.id}`,
-      title: `${event.symbol} · ${conditionLabel[event.condition]} ${priceLabel(event.target)}`,
+      title: `${event.name ? `${event.name} · ` : ""}${event.symbol} · ${conditionLabel[event.condition]} ${priceLabel(event.target)}`,
       description: `Last ${priceLabel(event.price)}`,
-      searchText: `${event.symbol} price ${conditionLabel[event.condition]} ${event.target}`,
+      searchText: `${event.name ?? ""} ${event.symbol} price ${conditionLabel[event.condition]} ${event.target}`,
     })),
     ...(drawings?.history ?? []).map((event) => ({
       ...event,
@@ -294,6 +296,7 @@ export function ChartAlerts({
     );
   const openCreate = () => {
     setEditingPrice(null);
+    setName("");
     setCondition("crossing");
     setRepeat(false);
     setCooldownMs(60_000);
@@ -609,7 +612,7 @@ export function ChartAlerts({
               event.preventDefault();
               try {
                 if (!target.trim()) throw Error("Enter a target price.");
-                const input = { price: Number(target), condition, repeat, cooldownMs };
+                const input = { name, price: Number(target), condition, repeat, cooldownMs };
                 if (editingPrice) {
                   if (!priceEditorAvailable || !controller.update(editingPrice.id, input))
                     throw Error("Could not save this alert. Check its settings and try again.");
@@ -623,6 +626,17 @@ export function ChartAlerts({
               }
             }}
           >
+            <label htmlFor={`${formId}-name`} className="block text-sm text-zinc-400">
+              Alert name
+              <input
+                id={`${formId}-name`}
+                className={fieldClass}
+                maxLength={80}
+                placeholder="Optional"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
+            </label>
             <div className="grid grid-cols-2 gap-3">
               <label htmlFor={`${formId}-condition`} className="text-sm text-zinc-400">
                 Condition

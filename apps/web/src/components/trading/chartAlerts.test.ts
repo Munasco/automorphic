@@ -699,3 +699,150 @@ describe("price alerts shared by mounted chart views", () => {
     expect(listeners.size).toBe(0);
   });
 });
+
+describe("price alert names", () => {
+  it("trims names on add and reload, accepts 80 characters, and preserves legacy unnamed rows and events", () => {
+    const h = harness(),
+      session = h.open();
+    const named = session.add({ ...crossing, name: "  Initial balance breakout  " });
+    const legacy = session.add({ ...crossing, price: 200 });
+    const limit = session.add({ ...crossing, price: 300, name: `  ${"x".repeat(80)}  ` });
+    expect(named.name).toBe("Initial balance breakout");
+    expect(limit.name).toHaveLength(80);
+    expect(legacy).not.toHaveProperty("name");
+    session.observeQuote(h.quote(99));
+    session.observeQuote(h.quote(100));
+    const raw = JSON.parse(h.values.get(CHART_ALERTS_KEY)!);
+    raw.alerts[0].name = "  Revised stored name  ";
+    raw.history[0].name = "  Initial balance breakout  ";
+    raw.history.push({ ...raw.history[0], id: "legacy-event", name: undefined });
+    const restored = parseChartAlerts(JSON.stringify(raw));
+    expect(restored.alerts[0]!.name).toBe("Revised stored name");
+    expect(restored.history[0]!.name).toBe("Initial balance breakout");
+    expect(restored.history[1]).not.toHaveProperty("name");
+    expect(restored.alerts[1]).not.toHaveProperty("name");
+    session.dispose();
+    expect(h.open().getSnapshot().alerts[0]!.name).toBe("Initial balance breakout");
+  });
+
+  it("rejects invalid provided names atomically in add/update and excludes malformed stored rows", () => {
+    const h = harness(),
+      session = h.open();
+    const alert = session.add({ ...crossing, name: "Valid" });
+    session.observeQuote(h.quote(99));
+    session.observeQuote(h.quote(100));
+    const before = session.getSnapshot();
+    h.storage.setItem.mockClear();
+    for (const name of [null, 123, false, {}, [], "x".repeat(81)]) {
+      expect(() => session.add({ ...crossing, name } as NewChartAlert)).toThrow();
+      expect(session.update(alert.id, { ...crossing, name } as NewChartAlert)).toBe(false);
+      const payload = {
+        version: 1,
+        alerts: [before.alerts[0], { ...before.alerts[0], id: "bad", name }],
+        history: [before.history[0], { ...before.history[0], id: "bad-event", name }],
+      };
+      expect(parseChartAlerts(JSON.stringify(payload))).toEqual(before);
+    }
+    expect(session.getSnapshot()).toBe(before);
+    expect(h.storage.setItem).not.toHaveBeenCalled();
+  });
+
+  it("preserves a pending crossing on rename and snapshots the name at trigger time", () => {
+    const h = harness(),
+      session = h.open();
+    const alert = session.add({ ...crossing, name: "Original" });
+    session.observeQuote(h.quote(99));
+    h.advance(500);
+    expect(session.update(alert.id, { ...crossing, name: "  Breakout  " })).toBe(true);
+    expect(session.getSnapshot().alerts[0]).toEqual({ ...alert, name: "Breakout" });
+    session.observeQuote(h.quote(100));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    const event = session.getSnapshot().history[0]!;
+    expect(event.name).toBe("Breakout");
+    const fired = session.getSnapshot().alerts[0]!;
+    h.advance(100);
+    expect(session.update(alert.id, { ...crossing, name: "Reviewed trade" })).toBe(true);
+    expect(session.getSnapshot().alerts[0]).toEqual({ ...fired, name: "Reviewed trade" });
+    expect(session.getSnapshot().history[0]).toBe(event);
+    expect(h.onTrigger.mock.calls[0]![0].name).toBe("Breakout");
+    session.dispose();
+    const restored = h.open().getSnapshot();
+    expect(restored.alerts[0]!.name).toBe("Reviewed trade");
+    expect(restored.history[0]!.name).toBe("Breakout");
+  });
+
+  it("does not reset cooldown or notification timestamps when a repeating alert is renamed", () => {
+    const h = harness(),
+      session = h.open();
+    const rule = { ...crossing, condition: "above" as const, repeat: true, cooldownMs: 1000 };
+    const alert = session.add({ ...rule, name: "First" });
+    session.observeQuote(h.quote(101));
+    const fired = session.getSnapshot().alerts[0]!;
+    h.advance(500);
+    session.update(alert.id, { ...rule, name: "Second" });
+    expect(session.getSnapshot().alerts[0]).toEqual({ ...fired, name: "Second" });
+    session.observeQuote(h.quote(102));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    session.observeQuote(h.quote(103, 499));
+    expect(h.onTrigger).toHaveBeenCalledTimes(2);
+    expect(session.getSnapshot().history.map((event) => event.name)).toEqual(["Second", "First"]);
+  });
+
+  it("preserves omitted names, clears explicit blank names, and avoids identical normalized writes", () => {
+    const h = harness(),
+      session = h.open();
+    const alert = session.add({ ...crossing, name: "Breakout" });
+    const listener = vi.fn(),
+      unsubscribe = session.subscribe(listener);
+    h.storage.setItem.mockClear();
+    try {
+      expect(session.update(alert.id, crossing)).toBe(true);
+      expect(session.update(alert.id, { ...crossing, name: "  Breakout  " })).toBe(true);
+      expect(h.storage.setItem).not.toHaveBeenCalled();
+      expect(listener).not.toHaveBeenCalled();
+      expect(session.update(alert.id, { ...crossing, name: " \t " })).toBe(true);
+      expect(session.getSnapshot().alerts[0]).not.toHaveProperty("name");
+      expect(session.getSnapshot().alerts[0]!.armedAt).toBe(alert.armedAt);
+      expect(h.storage.setItem).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenCalledTimes(1);
+      session.update(alert.id, { ...crossing, name: "" });
+      expect(h.storage.setItem).toHaveBeenCalledTimes(1);
+      expect(session.add({ ...crossing, name: " " })).not.toHaveProperty("name");
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("retains existing rearm semantics on rule changes while preserving an omitted name", () => {
+    const h = harness(),
+      session = h.open();
+    const alert = session.add({ ...crossing, name: "Original" });
+    session.observeQuote(h.quote(99));
+    h.advance(5);
+    session.update(alert.id, { ...crossing, price: 110 });
+    const updated = session.getSnapshot().alerts[0]!;
+    expect(updated.name).toBe("Original");
+    expect(updated.armedAt).toBeGreaterThan(alert.armedAt);
+    session.observeQuote(h.quote(111));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    session.observeQuote(h.quote(109));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+  });
+
+  it("synchronizes a peer rename without losing the shared pending crossing or duplicating history", () => {
+    const h = harness(),
+      a = h.open(),
+      b = h.open();
+    const alert = a.add({ ...crossing, name: "Old" });
+    a.observeQuote(h.quote(99));
+    h.advance(10);
+    expect(b.update(alert.id, { ...crossing, name: "Peer name" })).toBe(true);
+    expect(a.getSnapshot().alerts[0]).toEqual({ ...alert, name: "Peer name" });
+    const next = h.quote(100);
+    a.observeQuote(next);
+    b.observeQuote(next);
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    expect(a.getSnapshot().history[0]!.name).toBe("Peer name");
+    expect(b.getSnapshot()).toEqual(a.getSnapshot());
+  });
+});

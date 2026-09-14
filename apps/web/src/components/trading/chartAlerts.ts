@@ -12,6 +12,7 @@ export const ALERT_CONDITIONS = [
 export type AlertCondition = (typeof ALERT_CONDITIONS)[number];
 export type ChartPriceAlert = {
   id: string;
+  name?: string;
   symbol: string;
   price: number;
   condition: AlertCondition;
@@ -24,6 +25,7 @@ export type ChartPriceAlert = {
 };
 export type ChartAlertEvent = {
   id: string;
+  name?: string;
   alertId: string;
   symbol: string;
   condition: AlertCondition;
@@ -33,7 +35,10 @@ export type ChartAlertEvent = {
   quoteAt: number;
 };
 export type ChartAlertState = { alerts: ChartPriceAlert[]; history: ChartAlertEvent[] };
-export type NewChartAlert = Pick<ChartPriceAlert, "price" | "condition" | "repeat" | "cooldownMs">;
+export type NewChartAlert = Pick<
+  ChartPriceAlert,
+  "price" | "condition" | "repeat" | "cooldownMs" | "name"
+>;
 type AlertStorage = Pick<Storage, "getItem" | "setItem"> & {
   subscribe?: (listener: () => void) => () => void;
 };
@@ -70,6 +75,16 @@ const condition = (value: unknown): value is AlertCondition =>
 const cooldown = (value: unknown): value is number =>
   finite(value) && value >= 1000 && value <= 86_400_000;
 
+const validName = (value: unknown): value is string | undefined =>
+  value === undefined || (typeof value === "string" && value.trim().length <= 80);
+const named = <T extends { name?: string }>(item: T, name: string | undefined): T => {
+  const result = { ...item };
+  delete result.name;
+  const normalized = name?.trim();
+  if (normalized) result.name = normalized;
+  return result;
+};
+
 export function parseChartAlerts(raw: string | null): ChartAlertState {
   const empty = { alerts: [], history: [] };
   try {
@@ -81,6 +96,7 @@ export function parseChartAlerts(raw: string | null): ChartAlertState {
       if (
         !record(item) ||
         !identifier(item.id) ||
+        !validName(item.name) ||
         ids.has(item.id) ||
         !contract(item.symbol) ||
         !finite(item.price) ||
@@ -94,7 +110,7 @@ export function parseChartAlerts(raw: string | null): ChartAlertState {
       )
         continue;
       ids.add(item.id);
-      alerts.push(item as ChartPriceAlert);
+      alerts.push(named(item as ChartPriceAlert, item.name));
     }
     const eventIds = new Set<string>();
     const history: ChartAlertEvent[] = [];
@@ -102,6 +118,7 @@ export function parseChartAlerts(raw: string | null): ChartAlertState {
       if (
         !record(item) ||
         !identifier(item.id) ||
+        !validName(item.name) ||
         eventIds.has(item.id) ||
         !identifier(item.alertId) ||
         !contract(item.symbol) ||
@@ -113,7 +130,7 @@ export function parseChartAlerts(raw: string | null): ChartAlertState {
       )
         continue;
       eventIds.add(item.id);
-      history.push(item as ChartAlertEvent);
+      history.push(named(item as ChartAlertEvent, item.name));
     }
     return { alerts, history };
   } catch {
@@ -192,6 +209,7 @@ export function createChartAlertSession(
       if (!finite(input.price)) throw Error("Enter a valid target price.");
       if (
         !condition(input.condition) ||
+        !validName(input.name) ||
         typeof input.repeat !== "boolean" ||
         !cooldown(input.cooldownMs)
       )
@@ -199,7 +217,7 @@ export function createChartAlertSession(
       if (state.alerts.length >= MAX_ALERTS)
         throw Error("Delete an alert before adding another (100 per workspace).");
       const alert: ChartPriceAlert = {
-        ...input,
+        ...named(input, input.name),
         id: newId(),
         symbol,
         enabled: true,
@@ -218,26 +236,27 @@ export function createChartAlertSession(
         !alert ||
         !finite(input.price) ||
         !condition(input.condition) ||
+        !validName(input.name) ||
         typeof input.repeat !== "boolean" ||
         !cooldown(input.cooldownMs)
       )
         return false;
-      if (
-        alert.price === input.price &&
-        alert.condition === input.condition &&
-        alert.repeat === input.repeat &&
-        alert.cooldownMs === input.cooldownMs
-      )
-        return true;
-      // Editing changes the next rule evaluation, not whether the alert is paused or
-      // the time of its last notification. A running repeating cooldown still applies.
+      const name = input.name === undefined ? alert.name : input.name.trim() || undefined;
+      const ruleChanged =
+        alert.price !== input.price ||
+        alert.condition !== input.condition ||
+        alert.repeat !== input.repeat ||
+        alert.cooldownMs !== input.cooldownMs;
+      if (!ruleChanged && alert.name === name) return true;
+      // Rule edits rearm evaluation; renaming preserves a pending crossing. Neither
+      // changes pause state, notification timestamps, or a running repeat cooldown.
       const updated: ChartPriceAlert = {
-        ...alert,
+        ...named(alert, name),
         price: input.price,
         condition: input.condition,
         repeat: input.repeat,
         cooldownMs: input.cooldownMs,
-        armedAt: armTime(),
+        armedAt: ruleChanged ? armTime() : alert.armedAt,
       };
       publish({ ...state, alerts: state.alerts.map((item) => (item === alert ? updated : item)) });
       return true;
@@ -337,6 +356,7 @@ export function createChartAlertSession(
         events.push({
           id: newId(),
           alertId: alert.id,
+          ...(alert.name ? { name: alert.name } : {}),
           symbol,
           condition: alert.condition,
           target: alert.price,
