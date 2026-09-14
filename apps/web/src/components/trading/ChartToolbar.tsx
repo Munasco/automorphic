@@ -65,6 +65,8 @@ export type ChartToolbarProps = {
   gridColor: string;
   onGridColorChange: (value: string) => void;
   onGridModeChange: (value: ChartGridMode) => void;
+  showCandleWicks: boolean;
+  onToggleCandleWicks: () => void;
   showPriceLine: boolean;
   onTogglePriceLine: () => void;
   showPriceLabel: boolean;
@@ -115,6 +117,8 @@ export function ChartToolbar({
   gridColor,
   onGridColorChange,
   onGridModeChange,
+  showCandleWicks,
+  onToggleCandleWicks,
   showPriceLine,
   onTogglePriceLine,
   showPriceLabel,
@@ -450,6 +454,19 @@ export function ChartToolbar({
           </Tooltip>
           <PopoverPopup align="end" className="w-56" viewportClassName="px-3 py-3">
             <PopoverTitle className="px-1 pb-2 text-xs">Chart display</PopoverTitle>
+            {(style === "candles" || style === "hollow" || style === "heikin-ashi") && (
+              <label
+                htmlFor={`${id}-candle-wicks`}
+                className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"
+              >
+                <Checkbox
+                  id={`${id}-candle-wicks`}
+                  checked={showCandleWicks}
+                  onCheckedChange={onToggleCandleWicks}
+                />
+                Candle wicks
+              </label>
+            )}
             <div className="flex flex-col gap-2 px-2 pb-2">
               <label htmlFor={`${id}-crosshair`} className="text-xs">
                 Crosshair

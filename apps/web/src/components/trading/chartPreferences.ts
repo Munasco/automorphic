@@ -98,6 +98,7 @@ type SavedChartPreferences = {
   gridMode: ChartGridMode;
   gridLineStyle: ChartGridLineStyle;
   gridColor: string;
+  showCandleWicks: boolean;
   showPriceLine: boolean;
   showPriceLabel: boolean;
   priceScaleMode: ChartPriceScaleMode;
@@ -168,6 +169,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
         : "both",
     gridLineStyle: validGridLineStyle(saved.gridLineStyle) ? saved.gridLineStyle : "solid",
     gridColor: validColor(saved.gridColor) ? saved.gridColor : "#171a23",
+    showCandleWicks: typeof saved.showCandleWicks === "boolean" ? saved.showCandleWicks : true,
     showPriceLine: typeof saved.showPriceLine === "boolean" ? saved.showPriceLine : true,
     showPriceLabel: typeof saved.showPriceLabel === "boolean" ? saved.showPriceLabel : true,
     priceScaleMode: validPriceScaleMode(saved.priceScaleMode)
@@ -197,6 +199,7 @@ export const useChartPreferences = create<{
   gridMode: ChartGridMode;
   gridLineStyle: ChartGridLineStyle;
   gridColor: string;
+  showCandleWicks: boolean;
   showPriceLine: boolean;
   showPriceLabel: boolean;
   priceScaleMode: ChartPriceScaleMode;
@@ -230,6 +233,7 @@ export const useChartPreferences = create<{
   setGridMode: (mode: ChartGridMode) => void;
   setGridLineStyle: (style: ChartGridLineStyle) => void;
   setGridColor: (color: string) => void;
+  toggleCandleWicks: () => void;
   togglePriceLine: () => void;
   togglePriceLabel: () => void;
   setPriceScaleMode: (mode: ChartPriceScaleMode) => void;
@@ -258,6 +262,7 @@ export const useChartPreferences = create<{
       gridMode: "both",
       gridLineStyle: "solid",
       gridColor: "#171a23",
+      showCandleWicks: true,
       showPriceLine: true,
       showPriceLabel: true,
       priceScaleMode: "normal",
@@ -510,6 +515,7 @@ export const useChartPreferences = create<{
       setGridColor: (gridColor) => {
         if (validColor(gridColor) && gridColor !== get().gridColor) set({ gridColor });
       },
+      toggleCandleWicks: () => set((state) => ({ showCandleWicks: !state.showCandleWicks })),
       togglePriceLine: () => set((state) => ({ showPriceLine: !state.showPriceLine })),
       togglePriceLabel: () => set((state) => ({ showPriceLabel: !state.showPriceLabel })),
       setPriceScaleMode: (priceScaleMode) => {
