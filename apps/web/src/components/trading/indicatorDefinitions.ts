@@ -1,3 +1,4 @@
+import { calculateIndicatorBollingerBands } from "./indicatorBollingerBands";
 import { indicatorLevelFills } from "./indicatorLevelFill";
 import { calculateIndicatorMovingAverage } from "./indicatorMovingAverage";
 import {
@@ -495,7 +496,7 @@ export const INDICATOR_DEFINITIONS = [
         legend: false,
         defaultValue: 0,
         min: 0,
-        max: 4,
+        max: 5,
         step: 1,
         options: [
           { value: 0, label: "None" },
@@ -503,9 +504,20 @@ export const INDICATOR_DEFINITIONS = [
           { value: 2, label: "EMA" },
           { value: 3, label: "RMA" },
           { value: 4, label: "WMA" },
+          { value: 5, label: "SMA + Bollinger Bands" },
         ],
       },
       { ...length(14, "smoothingPeriod", "Smoothing length"), legend: false },
+      {
+        key: "smoothingDeviations",
+        label: "BB standard deviations",
+        defaultValue: 2,
+        min: 0,
+        max: 20,
+        step: 0.1,
+        legend: false,
+        shownWhen: { key: "smoothingType", value: 5 },
+      },
       ...oscillatorLevelInputs(30, 70),
     ],
     validateInputs: validOscillatorLevels,
@@ -514,6 +526,20 @@ export const INDICATOR_DEFINITIONS = [
       style("main", "Line", "#c084fc", true),
       style("smoothing", "Moving average", "#facc15", false, 2),
       { ...style("background", "Background", "#c084fc"), kind: "fill", opacity: 0.08 },
+      {
+        ...style("smoothingUpper", "BB upper", "#4ade80"),
+        shownWhen: { key: "smoothingType", value: 5 },
+      },
+      {
+        ...style("smoothingLower", "BB lower", "#4ade80"),
+        shownWhen: { key: "smoothingType", value: 5 },
+      },
+      {
+        ...style("smoothingBackground", "BB background", "#4ade80"),
+        kind: "fill",
+        opacity: 0.1,
+        shownWhen: { key: "smoothingType", value: 5 },
+      },
     ],
     calculate: ({ bars, inputs }) => {
       const points = calculateRSI(bars, inputs.period ?? 14, PRICE_SOURCES[inputs.source ?? 0]);
@@ -543,6 +569,35 @@ export const INDICATOR_DEFINITIONS = [
             method,
           ),
         });
+      if (inputs.smoothingType === 5) {
+        const smoothed = bands(
+          calculateIndicatorBollingerBands(
+            bars,
+            points,
+            inputs.smoothingPeriod ?? 14,
+            inputs.smoothingDeviations ?? 2,
+          ),
+          bars,
+        );
+        const keys = { upper: "smoothingUpper", middle: "smoothing", lower: "smoothingLower" };
+        for (const plot of smoothed.plots) {
+          const id = keys[plot.id as keyof typeof keys];
+          result.plots.push({
+            ...plot,
+            id,
+            styleKey: id,
+            primary: false,
+            title: plot.id === "middle" ? "RSI MA" : "",
+          });
+        }
+        result.fills.push(
+          ...(smoothed.fills ?? []).map((fill) => ({
+            ...fill,
+            id: `smoothing-${fill.id}`,
+            styleKey: "smoothingBackground",
+          })),
+        );
+      }
       return result;
     },
   }),

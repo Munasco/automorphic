@@ -110,6 +110,7 @@ it("persists independent RSI sources and smoothing and resets only the selected 
       source: 1,
       smoothingType: 2,
       smoothingPeriod: 5,
+      smoothingDeviations: 2,
       lowerLevel: 30,
       upperLevel: 70,
       showLevels: 1,
@@ -119,6 +120,7 @@ it("persists independent RSI sources and smoothing and resets only the selected 
       source: 5,
       smoothingType: 4,
       smoothingPeriod: 3,
+      smoothingDeviations: 2,
       lowerLevel: 30,
       upperLevel: 70,
       showLevels: 1,
@@ -127,7 +129,7 @@ it("persists independent RSI sources and smoothing and resets only the selected 
   vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
   useChartPreferences.getState().setIndicatorInstanceInputs(duplicate, { source: 99 });
   expect(
-    useChartPreferences.getState().setIndicatorInstanceInputs(base, { smoothingType: 5 }),
+    useChartPreferences.getState().setIndicatorInstanceInputs(base, { smoothingType: 6 }),
   ).toBe(false);
   expect(
     useChartPreferences.getState().setIndicatorInstanceInputs(base, { smoothingPeriod: 0 }),
@@ -140,6 +142,7 @@ it("persists independent RSI sources and smoothing and resets only the selected 
       source: 1,
       smoothingType: 2,
       smoothingPeriod: 5,
+      smoothingDeviations: 2,
       lowerLevel: 30,
       upperLevel: 70,
       showLevels: 1,
@@ -149,6 +152,7 @@ it("persists independent RSI sources and smoothing and resets only the selected 
       source: 0,
       smoothingType: 0,
       smoothingPeriod: 14,
+      smoothingDeviations: 2,
       lowerLevel: 30,
       upperLevel: 70,
       showLevels: 1,
@@ -3154,4 +3158,55 @@ describe("chart display time zone preferences", () => {
       expect(useChartPreferences.getState().timeZone).toBe(expected);
     }
   });
+});
+
+it("persists independent RSI Bollinger smoothing inputs and band styles", async () => {
+  const store = useChartPreferences.getState();
+  const base = store.addIndicator("rsi")!;
+  store.setIndicatorInstanceInputs(base, {
+    smoothingType: 5,
+    smoothingPeriod: 9,
+    smoothingDeviations: 1.5,
+  });
+  store.setIndicatorInstanceAppearance(base, {
+    plots: {
+      smoothingUpper: { color: "#f59e0b" },
+      smoothingBackground: { opacity: 0.25, visible: false },
+    },
+  });
+  const duplicate = store.duplicateIndicatorInstance(base)!;
+  store.setIndicatorInstanceInputs(duplicate, { smoothingDeviations: 3 });
+  store.setIndicatorInstanceAppearance(duplicate, {
+    plots: { smoothingBackground: { visible: true } },
+  });
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  const instances = () =>
+    getChartIndicatorInstances(useChartPreferences.getState()).filter((i) => i.key === "rsi");
+  expect(
+    instances().map((i) => [
+      i.inputs.smoothingType,
+      i.inputs.smoothingPeriod,
+      i.inputs.smoothingDeviations,
+      i.appearance.plots?.smoothingBackground?.visible,
+    ]),
+  ).toEqual([
+    [5, 9, 1.5, false],
+    [5, 9, 3, true],
+  ]);
+  expect(instances()[0]!.appearance.plots?.smoothingUpper?.color).toBe("#f59e0b");
+  expect(instances()[1]!.appearance.plots?.smoothingBackground?.opacity).toBe(0.25);
+  useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
+  expect(
+    instances().map((i) => [
+      i.inputs.smoothingType,
+      i.inputs.smoothingPeriod,
+      i.inputs.smoothingDeviations,
+    ]),
+  ).toEqual([
+    [5, 9, 1.5],
+    [0, 14, 2],
+  ]);
 });

@@ -979,3 +979,55 @@ it("shades RSI between its configured levels independently of the level lines", 
   expect(hidden.plots[0]!.levels).toEqual([]);
   expect(hidden.plots[0]!.points).toEqual(result.plots[0]!.points);
 });
+
+it("adds RSI Bollinger smoothing around its SMA without changing RSI or level shading", () => {
+  const definition = INDICATOR_CATALOG.find((i) => i.key === "rsi")!;
+  const bars = [10, 12, 11, 15, 12, 16, 11, 14, 10, 17].map((close, i) => ({
+    time: i + 1,
+    open: close,
+    high: close + 1,
+    low: close - 1,
+    close,
+    volume: 10,
+  }));
+  const inputs = { ...getIndicatorInputs("rsi"), period: 2, smoothingPeriod: 3 };
+  const run = (smoothingType: number, smoothingDeviations = 2) =>
+    definition.calculate({
+      bars,
+      inputs: { ...inputs, smoothingType, smoothingDeviations },
+      interval: 5,
+      session: DEFAULT_INITIAL_BALANCE,
+    });
+  const baseline = run(0),
+    sma = run(1);
+  for (const deviations of [0, 1.5, 2, 5]) {
+    const result = run(5, deviations);
+    expect(result.plots[0]).toEqual(baseline.plots[0]);
+    expect(result.plots).toHaveLength(4);
+    const middle = result.plots.find((p) => p.id === "smoothing")!;
+    const upper = result.plots.find((p) => p.id === "smoothingUpper")!;
+    const lower = result.plots.find((p) => p.id === "smoothingLower")!;
+    expect(middle.primary).toBe(false);
+    middle.points.forEach((p, i) => {
+      expect(p.value).toBeCloseTo(sma.plots[1]!.points[i]!.value, 10);
+      const window = baseline.plots[0]!.points.slice(i, i + 3);
+      const sd = Math.sqrt(window.reduce((sum, v) => sum + (v.value - p.value) ** 2, 0) / 3);
+      expect(upper.points[i]!.value).toBeCloseTo(p.value + deviations * sd, 10);
+      expect(lower.points[i]!.value).toBeCloseTo(p.value - deviations * sd, 10);
+    });
+    expect(result.fills?.filter((f) => f.styleKey === "background")).toEqual(baseline.fills);
+    expect(result.fills?.filter((f) => f.styleKey === "smoothingBackground")).toEqual([
+      expect.objectContaining({ upper: upper.points, lower: lower.points }),
+    ]);
+    expect(
+      getIndicatorLabel("rsi", {
+        rsi: { ...inputs, smoothingType: 5, smoothingDeviations: deviations },
+      }),
+    ).toBe(getIndicatorLabel("rsi", { rsi: inputs }));
+  }
+  expect(run(1).fills).toEqual(baseline.fills);
+  for (const smoothingDeviations of [-1, 21, NaN, Infinity]) {
+    expect(updateIndicatorInputs("rsi", { rsi: inputs }, { smoothingDeviations })).toBeNull();
+    expect(getIndicatorInputs("rsi", { rsi: { smoothingDeviations } }).smoothingDeviations).toBe(2);
+  }
+});
