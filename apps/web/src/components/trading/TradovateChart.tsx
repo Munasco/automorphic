@@ -49,7 +49,7 @@ import {
   type IndicatorKey,
   type ChartIndicators,
 } from "./chartPreferences";
-import type { Candle } from "./chartIndicators";
+import { sourcePrice, type Candle } from "./chartIndicators";
 import { hollowCandleColors } from "./hollowCandles";
 import { calculateHeikinAshi, heikinAshiBar } from "./heikinAshi";
 import { INDICATOR_CATALOG, getIndicatorDefinition, getIndicatorLabel } from "./indicatorCatalog";
@@ -89,6 +89,7 @@ type ChartEngine = {
   bars: Map<number, Candle>;
   heikinAshiBars: Map<number, Candle>;
   refreshIndicators: () => void;
+  refreshLineSource: () => void;
   showReplay: (bars: readonly Candle[] | null) => void;
   disposed: boolean;
 };
@@ -305,6 +306,7 @@ export function TradovateChart({
   const appearanceSettings = useRef(settings.appearance);
   const inputSettings = useRef(settings.indicatorInputs);
   const volumeColors = useRef(settings.volumeColors);
+  const lineChartSource = useRef(settings.lineChartSource);
   const initialBalanceSettings = useRef(settings.initialBalance);
   const [initialBalanceStatus, setInitialBalanceStatus] = useState("");
   const [initialBalanceStatuses, setInitialBalanceStatuses] = useState<Record<string, string>>({});
@@ -362,6 +364,11 @@ export function TradovateChart({
     drawingAlertsRef.current.reset();
     activeEngine.showReplay(replay.visible);
   }, [activeEngine, replay.visible]);
+
+  useEffect(() => {
+    lineChartSource.current = settings.lineChartSource;
+    if (engine && !engine.disposed) engine.refreshLineSource();
+  }, [engine, settings.lineChartSource]);
 
   useEffect(() => {
     auxiliaryHistoryRef.current = auxiliaryHistory;
@@ -527,6 +534,17 @@ export function TradovateChart({
           syncCache();
         }
       },
+      refreshLineSource: () => {
+        if (state.disposed) return;
+        const points = [...bars.values()]
+          .sort((a, b) => a.time - b.time)
+          .map((bar) => ({
+            time: bar.time as UTCTimestamp,
+            value: sourcePrice(bar, lineChartSource.current),
+          }));
+        prices.line.setData(points);
+        prices.area.setData(points);
+      },
       refreshIndicators: () => {
         if (state.disposed) return;
         const sorted = [...bars.values()].sort((a, b) => a.time - b.time);
@@ -631,7 +649,10 @@ export function TradovateChart({
         bars.clear();
         for (const bar of sorted) bars.set(bar.time, bar);
         const ohlc = sorted.map((b) => ({ ...b, time: b.time as UTCTimestamp }));
-        const closes = sorted.map((b) => ({ time: b.time as UTCTimestamp, value: b.close }));
+        const sourcePoints = sorted.map((b) => ({
+          time: b.time as UTCTimestamp,
+          value: sourcePrice(b, lineChartSource.current),
+        }));
         prices.candles.setData(ohlc);
         prices.hollow.setData(sorted.map((bar, index) => hollowPoint(bar, sorted[index - 1])));
         const averaged = calculateHeikinAshi(sorted);
@@ -645,15 +666,18 @@ export function TradovateChart({
         hollowLatest = sorted.at(-1);
         hollowPrevious = sorted.at(-2);
         prices.bars.setData(ohlc);
-        prices.line.setData(closes);
-        prices.area.setData(closes);
+        prices.line.setData(sourcePoints);
+        prices.area.setData(sourcePoints);
         volume.setData(sorted.map(volumePoint));
         renderedTime = sorted.at(-1)?.time ?? -Infinity;
         replaceHistory = false;
       } else {
         for (const bar of changes) {
           const ohlc = { ...bar, time: bar.time as UTCTimestamp };
-          const close = { time: bar.time as UTCTimestamp, value: bar.close };
+          const sourcePoint = {
+            time: bar.time as UTCTimestamp,
+            value: sourcePrice(bar, lineChartSource.current),
+          };
           prices.candles.update(ohlc);
           // Same-bar revisions still compare against the preceding candle, never
           // the previous tick. Corrections to earlier history use the rebuild above.
@@ -665,8 +689,8 @@ export function TradovateChart({
           heikinAshiBars.set(bar.time, heikinLatest);
           prices["heikin-ashi"].update({ ...heikinLatest, time: bar.time as UTCTimestamp });
           prices.bars.update(ohlc);
-          prices.line.update(close);
-          prices.area.update(close);
+          prices.line.update(sourcePoint);
+          prices.area.update(sourcePoint);
           volume.update(volumePoint(bar));
           renderedTime = bar.time;
         }
@@ -931,6 +955,8 @@ export function TradovateChart({
         onToggleBarOpen={settings.toggleBarOpen}
         showCandleWicks={settings.showCandleWicks}
         showCandleBorders={settings.showCandleBorders}
+        lineChartSource={settings.lineChartSource}
+        onLineChartSourceChange={settings.setLineChartSource}
         lineChartColor={settings.lineChartColor}
         lineChartWidth={settings.lineChartWidth}
         onLineChartColorChange={settings.setLineChartColor}

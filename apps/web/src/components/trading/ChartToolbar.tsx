@@ -1,3 +1,4 @@
+import { PRICE_SOURCES, type PriceSource } from "./chartIndicators";
 import { TradingSelect } from "./TradingSelect";
 import type {
   ChartCrosshairMode,
@@ -72,6 +73,8 @@ export type ChartToolbarProps = {
   onToggleBarOpen: () => void;
   showCandleWicks: boolean;
   showCandleBorders: boolean;
+  lineChartSource: PriceSource;
+  onLineChartSourceChange: (source: PriceSource) => void;
   lineChartColor: string;
   lineChartWidth: ChartLineWidth;
   onLineChartColorChange: (color: string) => void;
@@ -134,6 +137,8 @@ export function ChartToolbar({
   onToggleBarOpen,
   showCandleWicks,
   showCandleBorders,
+  lineChartSource,
+  onLineChartSourceChange,
   lineChartColor,
   lineChartWidth,
   onLineChartColorChange,
@@ -529,6 +534,22 @@ export function ChartToolbar({
             )}
             {(style === "line" || style === "area") && (
               <div className="space-y-2 px-2 py-2.5">
+                <label htmlFor={`${id}-line-source`} className="text-xs text-zinc-400">
+                  Price source
+                </label>
+                <TradingSelect
+                  id={`${id}-line-source`}
+                  label="Price source"
+                  value={lineChartSource}
+                  options={PRICE_SOURCES.map((source) => [
+                    source,
+                    /\d/.test(source)
+                      ? source.toUpperCase()
+                      : source[0]!.toUpperCase() + source.slice(1),
+                  ])}
+                  onChange={(value) => onLineChartSourceChange(value as PriceSource)}
+                  className="w-full"
+                />
                 <label htmlFor={`${id}-line-width`} className="text-xs text-zinc-400">
                   Line appearance
                 </label>

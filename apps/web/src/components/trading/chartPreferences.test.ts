@@ -21,6 +21,7 @@ import {
   type ChartReplaySpeed,
   type ChartLineWidth,
 } from "./chartPreferences";
+import { PRICE_SOURCES, type PriceSource } from "./chartIndicators";
 import { DEFAULT_INITIAL_BALANCE } from "./initialBalanceSettings";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
 import { getIndicatorInputs } from "./indicatorCatalog";
@@ -2602,6 +2603,116 @@ describe("line and area appearance preferences", () => {
       [second, { ...second, showCandleWicks: true }],
       [{ lineChartWidth: 3 }, { ...defaults, lineChartWidth: 3 }],
       [{}, defaults],
+      [first, first],
+    ] as const) {
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+        JSON.stringify({ version: 0, state: saved }),
+      );
+      await hydrate();
+      expect(useChartPreferences.getState()).toMatchObject(expected);
+    }
+  });
+});
+
+describe("line and area price source preferences", () => {
+  const invalidSources = [
+    undefined,
+    null,
+    "",
+    "Close",
+    "HL2",
+    "volume",
+    "hlcc4",
+    0,
+    1,
+    true,
+    {},
+    ["open"],
+  ];
+
+  it("defaults legacy or malformed sources to Close while preserving custom appearance", () => {
+    expect(useChartPreferences.getInitialState().lineChartSource).toBe("close");
+    expect(normalizeChartPreferences({}).lineChartSource).toBe("close");
+    for (const lineChartSource of invalidSources)
+      expect(
+        normalizeChartPreferences({
+          lineChartSource,
+          lineChartColor: "#abcdef",
+          lineChartWidth: 4,
+          showCandleWicks: false,
+        }),
+      ).toMatchObject({
+        lineChartSource: "close",
+        lineChartColor: "#abcdef",
+        lineChartWidth: 4,
+        showCandleWicks: false,
+      });
+  });
+
+  it("rejects invalid or repeated selections without writes or notifications", () => {
+    configure().setLineChartSource("hlc3");
+    const before = useChartPreferences.getState();
+    const listener = vi.fn();
+    const unsubscribe = useChartPreferences.subscribe(listener);
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    try {
+      for (const value of invalidSources) before.setLineChartSource(value as PriceSource);
+      before.setLineChartSource("hlc3");
+      expect(useChartPreferences.getState()).toBe(before);
+      expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+      expect(listener).not.toHaveBeenCalled();
+      before.setLineChartSource("ohlc4");
+      expect(useChartPreferences.getState().lineChartSource).toBe("ohlc4");
+      expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it.each(PRICE_SOURCES)(
+    "persists %s across chart style changes and reload without altering line appearance",
+    async (lineChartSource) => {
+      const store = configure();
+      store.setLineChartColor("#123456");
+      store.setLineChartWidth(3);
+      store.setGridMode("none");
+      store.toggleCandleWicks();
+      store.setLineChartSource(lineChartSource === "close" ? "open" : "close");
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      store.setLineChartSource(lineChartSource);
+      const expected = { ...before, lineChartSource };
+      for (const style of ["line", "area", "candles", "line"] as const) {
+        store.setStyle(style);
+        expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+          ...expected,
+          style,
+        });
+      }
+      const serialized = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      expect(JSON.parse(serialized).state.lineChartSource).toBe(lineChartSource);
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(serialized);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+        ...expected,
+        style: "line",
+      });
+      expect(typeof useChartPreferences.getState().setLineChartSource).toBe("function");
+    },
+  );
+
+  it("keeps source choices workspace-specific and defaults older workspaces to Close", async () => {
+    const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+    const first = { lineChartSource: "high", lineChartColor: "#abcdef", lineChartWidth: 4 };
+    const old = { lineChartColor: "#123456", lineChartWidth: 1 };
+    for (const [saved, expected] of [
+      [first, first],
+      [
+        { lineChartSource: "low" },
+        { lineChartSource: "low", lineChartColor: "#6097ee", lineChartWidth: 2 },
+      ],
+      [old, { ...old, lineChartSource: "close" }],
       [first, first],
     ] as const) {
       vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(

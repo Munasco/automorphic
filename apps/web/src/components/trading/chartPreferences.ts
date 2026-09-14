@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
+import { PRICE_SOURCES, type PriceSource } from "./chartIndicators";
 import { randomUUID } from "../../lib/utils";
 import {
   DEFAULT_VOLUME_COLORS,
@@ -45,6 +46,8 @@ export type ChartReplaySpeed = 0.5 | 1 | 2 | 5 | 10;
 const validReplaySpeed = (value: unknown): value is ChartReplaySpeed =>
   value === 0.5 || value === 1 || value === 2 || value === 5 || value === 10;
 export type ChartLineWidth = 1 | 2 | 3 | 4;
+const validLineChartSource = (value: unknown): value is PriceSource =>
+  typeof value === "string" && PRICE_SOURCES.some((source) => source === value);
 const validLineChartWidth = (value: unknown): value is ChartLineWidth =>
   value === 1 || value === 2 || value === 3 || value === 4;
 export type ChartCrosshairLineWidth = 1 | 2 | 3;
@@ -101,6 +104,7 @@ type SavedChartPreferences = {
   gridMode: ChartGridMode;
   gridLineStyle: ChartGridLineStyle;
   gridColor: string;
+  lineChartSource: PriceSource;
   lineChartColor: string;
   lineChartWidth: ChartLineWidth;
   thinBars: boolean;
@@ -177,6 +181,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
         : "both",
     gridLineStyle: validGridLineStyle(saved.gridLineStyle) ? saved.gridLineStyle : "solid",
     gridColor: validColor(saved.gridColor) ? saved.gridColor : "#171a23",
+    lineChartSource: validLineChartSource(saved.lineChartSource) ? saved.lineChartSource : "close",
     lineChartColor: validColor(saved.lineChartColor) ? saved.lineChartColor : "#6097ee",
     lineChartWidth: validLineChartWidth(saved.lineChartWidth) ? saved.lineChartWidth : 2,
     thinBars: typeof saved.thinBars === "boolean" ? saved.thinBars : true,
@@ -213,6 +218,7 @@ export const useChartPreferences = create<{
   gridMode: ChartGridMode;
   gridLineStyle: ChartGridLineStyle;
   gridColor: string;
+  lineChartSource: PriceSource;
   lineChartColor: string;
   lineChartWidth: ChartLineWidth;
   thinBars: boolean;
@@ -252,6 +258,7 @@ export const useChartPreferences = create<{
   setGridMode: (mode: ChartGridMode) => void;
   setGridLineStyle: (style: ChartGridLineStyle) => void;
   setGridColor: (color: string) => void;
+  setLineChartSource: (source: PriceSource) => void;
   setLineChartColor: (color: string) => void;
   setLineChartWidth: (width: ChartLineWidth) => void;
   toggleThinBars: () => void;
@@ -286,6 +293,7 @@ export const useChartPreferences = create<{
       gridMode: "both",
       gridLineStyle: "solid",
       gridColor: "#171a23",
+      lineChartSource: "close",
       lineChartColor: "#6097ee",
       lineChartWidth: 2,
       thinBars: true,
@@ -540,6 +548,10 @@ export const useChartPreferences = create<{
       setGridLineStyle: (gridLineStyle) => {
         if (validGridLineStyle(gridLineStyle) && gridLineStyle !== get().gridLineStyle)
           set({ gridLineStyle });
+      },
+      setLineChartSource: (lineChartSource) => {
+        if (validLineChartSource(lineChartSource) && lineChartSource !== get().lineChartSource)
+          set({ lineChartSource });
       },
       setLineChartColor: (lineChartColor) => {
         if (validColor(lineChartColor) && lineChartColor !== get().lineChartColor)
