@@ -1,5 +1,5 @@
 import { TradingSelect } from "./TradingSelect";
-import type { ChartCrosshairMode, ChartGridMode } from "./chartPreferences";
+import type { ChartCrosshairMode, ChartGridMode, ChartGridLineStyle } from "./chartPreferences";
 
 import {
   CHART_INTERVALS,
@@ -53,6 +53,10 @@ export type ChartToolbarProps = {
   onToggleFavoriteIndicator: (key: IndicatorKey) => void;
   indicatorLimitReached?: boolean;
   gridMode: ChartGridMode;
+  gridLineStyle: ChartGridLineStyle;
+  onGridLineStyleChange: (value: ChartGridLineStyle) => void;
+  gridColor: string;
+  onGridColorChange: (value: string) => void;
   onGridModeChange: (value: ChartGridMode) => void;
   showPriceLine: boolean;
   onTogglePriceLine: () => void;
@@ -87,6 +91,10 @@ export function ChartToolbar({
   onToggleFavoriteIndicator,
   indicatorLimitReached = false,
   gridMode,
+  gridLineStyle,
+  onGridLineStyleChange,
+  gridColor,
+  onGridColorChange,
   onGridModeChange,
   showPriceLine,
   onTogglePriceLine,
@@ -453,6 +461,34 @@ export function ChartToolbar({
                 className="w-full"
               />
             </div>
+            {gridMode !== "none" && (
+              <div className="space-y-2 px-2 pb-2.5">
+                <label htmlFor={`${id}-grid-style`} className="text-xs text-zinc-400">
+                  Grid style
+                </label>
+                <div className="flex items-center gap-2">
+                  <TradingSelect
+                    id={`${id}-grid-style`}
+                    label="Grid style"
+                    value={gridLineStyle}
+                    options={[
+                      ["solid", "Solid"],
+                      ["dotted", "Dotted"],
+                      ["dashed", "Dashed"],
+                    ]}
+                    onChange={(value) => onGridLineStyleChange(value as ChartGridLineStyle)}
+                    className="min-w-0 flex-1"
+                  />
+                  <input
+                    type="color"
+                    aria-label="Grid color"
+                    value={gridColor}
+                    onChange={(event) => onGridColorChange(event.target.value)}
+                    className="h-7 w-8 shrink-0 cursor-pointer rounded border border-white/15 bg-transparent"
+                  />
+                </div>
+              </div>
+            )}
             <label
               htmlFor={`${id}-price-line`}
               className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"

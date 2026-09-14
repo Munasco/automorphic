@@ -41,6 +41,9 @@ export type { IndicatorAppearance } from "./indicatorStyles";
 export type ChartAppearance = Partial<Record<IndicatorKey, IndicatorAppearance>>;
 export type ChartCrosshairMode = "normal" | "magnet" | "ohlc" | "hidden";
 export type ChartGridMode = "both" | "horizontal" | "vertical" | "none";
+export type ChartGridLineStyle = "solid" | "dotted" | "dashed";
+const validGridLineStyle = (value: unknown): value is ChartGridLineStyle =>
+  value === "solid" || value === "dotted" || value === "dashed";
 const validGridMode = (value: unknown): value is ChartGridMode =>
   value === "both" || value === "horizontal" || value === "vertical" || value === "none";
 const validCrosshairMode = (value: unknown): value is ChartCrosshairMode =>
@@ -74,6 +77,8 @@ type SavedChartPreferences = {
   volumeColors: typeof DEFAULT_VOLUME_COLORS;
   initialBalance: InitialBalanceSettings;
   gridMode: ChartGridMode;
+  gridLineStyle: ChartGridLineStyle;
+  gridColor: string;
   showPriceLine: boolean;
   showPriceLabel: boolean;
   logScale: boolean;
@@ -134,6 +139,8 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
       : saved.showGrid === false
         ? "none"
         : "both",
+    gridLineStyle: validGridLineStyle(saved.gridLineStyle) ? saved.gridLineStyle : "solid",
+    gridColor: validColor(saved.gridColor) ? saved.gridColor : "#171a23",
     showPriceLine: typeof saved.showPriceLine === "boolean" ? saved.showPriceLine : true,
     showPriceLabel: typeof saved.showPriceLabel === "boolean" ? saved.showPriceLabel : true,
     logScale: typeof saved.logScale === "boolean" ? saved.logScale : false,
@@ -153,6 +160,8 @@ export const useChartPreferences = create<{
   initialBalance: InitialBalanceSettings;
   setInitialBalance: (settings: InitialBalanceSettings) => void;
   gridMode: ChartGridMode;
+  gridLineStyle: ChartGridLineStyle;
+  gridColor: string;
   showPriceLine: boolean;
   showPriceLabel: boolean;
   logScale: boolean;
@@ -180,6 +189,8 @@ export const useChartPreferences = create<{
   setIndicatorInstanceInitialBalance: (id: string, settings: InitialBalanceSettings) => void;
   setIndicatorInstanceVolumeColors: (id: string, colors: typeof DEFAULT_VOLUME_COLORS) => void;
   setGridMode: (mode: ChartGridMode) => void;
+  setGridLineStyle: (style: ChartGridLineStyle) => void;
+  setGridColor: (color: string) => void;
   togglePriceLine: () => void;
   togglePriceLabel: () => void;
   toggleLogScale: () => void;
@@ -202,6 +213,8 @@ export const useChartPreferences = create<{
           set({ initialBalance: resolveInitialBalanceSettings(settings) });
       },
       gridMode: "both",
+      gridLineStyle: "solid",
+      gridColor: "#171a23",
       showPriceLine: true,
       showPriceLabel: true,
       logScale: false,
@@ -424,6 +437,13 @@ export const useChartPreferences = create<{
       },
       setGridMode: (gridMode) => {
         if (validGridMode(gridMode) && gridMode !== get().gridMode) set({ gridMode });
+      },
+      setGridLineStyle: (gridLineStyle) => {
+        if (validGridLineStyle(gridLineStyle) && gridLineStyle !== get().gridLineStyle)
+          set({ gridLineStyle });
+      },
+      setGridColor: (gridColor) => {
+        if (validColor(gridColor) && gridColor !== get().gridColor) set({ gridColor });
       },
       togglePriceLine: () => set((state) => ({ showPriceLine: !state.showPriceLine })),
       togglePriceLabel: () => set((state) => ({ showPriceLabel: !state.showPriceLabel })),

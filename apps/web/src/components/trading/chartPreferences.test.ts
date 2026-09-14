@@ -14,6 +14,7 @@ import {
   normalizeChartPreferences,
   type ChartCrosshairMode,
   type ChartGridMode,
+  type ChartGridLineStyle,
 } from "./chartPreferences";
 import { DEFAULT_INITIAL_BALANCE } from "./initialBalanceSettings";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
@@ -1417,4 +1418,189 @@ it("saves independent volume average lengths and styles alongside histogram colo
     getChartIndicatorInstances(useChartPreferences.getState()).find((i) => i.id === duplicate)!
       .inputs.period,
   ).toBe(20);
+});
+
+describe("chart grid line appearance preferences", () => {
+  it("uses the existing solid dark grid by default and preserves legacy orientation migration", () => {
+    expect(useChartPreferences.getInitialState()).toMatchObject({
+      gridMode: "both",
+      gridLineStyle: "solid",
+      gridColor: "#171a23",
+    });
+    for (const saved of [undefined, null, {}, { showGrid: false }, { gridMode: "vertical" }])
+      expect(normalizeChartPreferences(saved)).toMatchObject({
+        gridLineStyle: "solid",
+        gridColor: "#171a23",
+      });
+    expect(
+      normalizeChartPreferences({ showGrid: false, gridLineStyle: "dotted", gridColor: "#123ABC" }),
+    ).toMatchObject({ gridMode: "none", gridLineStyle: "dotted", gridColor: "#123ABC" });
+    expect(
+      normalizeChartPreferences({
+        gridMode: "horizontal",
+        showGrid: false,
+        gridLineStyle: "dashed",
+        gridColor: "#abcdef",
+      }),
+    ).toMatchObject({ gridMode: "horizontal", gridLineStyle: "dashed", gridColor: "#abcdef" });
+  });
+
+  it("normalizes malformed saved style and color independently without affecting valid neighboring fields", () => {
+    for (const gridLineStyle of [undefined, null, "", "Solid", "dash", 0, 1, false, {}, ["dotted"]])
+      expect(
+        normalizeChartPreferences({ gridMode: "vertical", gridLineStyle, gridColor: "#abcdef" }),
+      ).toMatchObject({ gridMode: "vertical", gridLineStyle: "solid", gridColor: "#abcdef" });
+    for (const gridColor of [
+      undefined,
+      null,
+      "",
+      "#fff",
+      "abcdef",
+      "#12345678",
+      "#gggggg",
+      "#123456 ",
+      " #123456",
+      "rgb(1,2,3)",
+      "transparent",
+      "var(--grid)",
+      123456,
+      true,
+      {},
+      ["#123456"],
+    ])
+      expect(
+        normalizeChartPreferences({ showGrid: false, gridLineStyle: "dashed", gridColor }),
+      ).toMatchObject({ gridMode: "none", gridLineStyle: "dashed", gridColor: "#171a23" });
+  });
+
+  it("does not write or notify for unchanged or invalid runtime appearance values", () => {
+    const store = configure();
+    store.setGridMode("horizontal");
+    store.setGridLineStyle("dotted");
+    store.setGridColor("#123456");
+    const before = useChartPreferences.getState(),
+      listener = vi.fn(),
+      unsubscribe = useChartPreferences.subscribe(listener);
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    try {
+      for (const invalid of [undefined, null, "Solid", "dot", "", 1, false, {}, ["dashed"]])
+        before.setGridLineStyle(invalid as ChartGridLineStyle);
+      for (const invalid of [
+        undefined,
+        null,
+        "#fff",
+        "#12345678",
+        "#abcdef ",
+        "#zzzzzz",
+        "red",
+        1,
+        false,
+        {},
+        ["#abcdef"],
+      ])
+        before.setGridColor(invalid as string);
+      before.setGridLineStyle("dotted");
+      before.setGridColor("#123456");
+      expect(useChartPreferences.getState()).toBe(before);
+      expect(listener).not.toHaveBeenCalled();
+      expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+      before.setGridLineStyle("dashed");
+      before.setGridColor("#abcdef");
+      expect(listener).toHaveBeenCalledTimes(2);
+      expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(2);
+      expect(useChartPreferences.getState()).toMatchObject({
+        gridMode: "horizontal",
+        gridLineStyle: "dashed",
+        gridColor: "#abcdef",
+      });
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it.each(["solid", "dotted", "dashed"] as const)(
+    "persists %s lines and color alongside orientation, scales and configured indicators",
+    async (gridLineStyle) => {
+      const store = configure();
+      store.setGridMode("vertical");
+      store.setStyle("heikin-ashi");
+      store.toggleLogScale();
+      store.toggleInvertScale();
+      store.setCrosshairMode("ohlc");
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      store.setGridLineStyle(gridLineStyle);
+      store.setGridColor("#A1B2C3");
+      const expected = { ...before, gridLineStyle, gridColor: "#A1B2C3" };
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+      expect(saved[0]).toBe("automorphic:chart:v1");
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      useChartPreferences.getState().setGridMode("none");
+      expect(useChartPreferences.getState()).toMatchObject({
+        gridMode: "none",
+        gridLineStyle,
+        gridColor: "#A1B2C3",
+      });
+      expect(typeof useChartPreferences.getState().setGridLineStyle).toBe("function");
+      expect(typeof useChartPreferences.getState().setGridColor).toBe("function");
+    },
+  );
+
+  it("keeps workspace appearances independent through the registered hydrator and restores defaults for older workspaces", async () => {
+    const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+    const workspaceA = JSON.stringify({
+      version: 0,
+      state: {
+        gridMode: "horizontal",
+        gridLineStyle: "dashed",
+        gridColor: "#123456",
+        invertScale: true,
+      },
+    });
+    const workspaceB = JSON.stringify({
+      version: 0,
+      state: {
+        gridMode: "vertical",
+        gridLineStyle: "dotted",
+        gridColor: "#abcdef",
+        logScale: true,
+      },
+    });
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(workspaceA);
+    await hydrate();
+    expect(useChartPreferences.getState()).toMatchObject({
+      gridMode: "horizontal",
+      gridLineStyle: "dashed",
+      gridColor: "#123456",
+      invertScale: true,
+      logScale: false,
+    });
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(workspaceB);
+    await hydrate();
+    expect(useChartPreferences.getState()).toMatchObject({
+      gridMode: "vertical",
+      gridLineStyle: "dotted",
+      gridColor: "#abcdef",
+      invertScale: false,
+      logScale: true,
+    });
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(workspaceA);
+    await hydrate();
+    expect(useChartPreferences.getState()).toMatchObject({
+      gridLineStyle: "dashed",
+      gridColor: "#123456",
+    });
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+      JSON.stringify({ version: 0, state: { showGrid: false } }),
+    );
+    await hydrate();
+    expect(useChartPreferences.getState()).toMatchObject({
+      gridMode: "none",
+      gridLineStyle: "solid",
+      gridColor: "#171a23",
+    });
+  });
 });

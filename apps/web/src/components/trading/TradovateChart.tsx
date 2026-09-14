@@ -31,6 +31,7 @@ import {
   ColorType,
   CrosshairMode,
   PriceScaleMode,
+  LineStyle,
   type UTCTimestamp,
   type IChartApi,
   type ISeriesApi,
@@ -756,6 +757,12 @@ export function TradovateChart({
       });
     // The shared scale takes its formatter from the first series, including hidden ones.
     engine.prices[settings.style].setSeriesOrder(0);
+    const gridStyle =
+      settings.gridLineStyle === "dotted"
+        ? LineStyle.Dotted
+        : settings.gridLineStyle === "dashed"
+          ? LineStyle.Dashed
+          : LineStyle.Solid;
     engine.chart.applyOptions({
       crosshair: {
         mode:
@@ -768,8 +775,16 @@ export function TradovateChart({
                 : CrosshairMode.Normal,
       },
       grid: {
-        vertLines: { visible: settings.gridMode === "both" || settings.gridMode === "vertical" },
-        horzLines: { visible: settings.gridMode === "both" || settings.gridMode === "horizontal" },
+        vertLines: {
+          visible: settings.gridMode === "both" || settings.gridMode === "vertical",
+          color: settings.gridColor,
+          style: gridStyle,
+        },
+        horzLines: {
+          visible: settings.gridMode === "both" || settings.gridMode === "horizontal",
+          color: settings.gridColor,
+          style: gridStyle,
+        },
       },
     });
     engine.chart.priceScale("right", 0).applyOptions({
@@ -780,6 +795,8 @@ export function TradovateChart({
     engine,
     settings.style,
     settings.gridMode,
+    settings.gridLineStyle,
+    settings.gridColor,
     settings.logScale,
     settings.invertScale,
     settings.crosshairMode,
@@ -852,6 +869,10 @@ export function TradovateChart({
         onToggleFavoriteIndicator={settings.toggleFavoriteIndicator}
         indicatorLimitReached={indicatorInstances.length >= MAX_CHART_INDICATORS}
         gridMode={settings.gridMode}
+        gridLineStyle={settings.gridLineStyle}
+        onGridLineStyleChange={settings.setGridLineStyle}
+        gridColor={settings.gridColor}
+        onGridColorChange={settings.setGridColor}
         onGridModeChange={settings.setGridMode}
         showPriceLine={settings.showPriceLine}
         onTogglePriceLine={settings.togglePriceLine}
