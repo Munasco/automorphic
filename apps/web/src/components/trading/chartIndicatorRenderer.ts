@@ -226,6 +226,9 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
         plot.series.removePriceLine(plot.levels.pop()!.line);
       if (!options.histogram) {
         plot.series.applyOptions({
+          // Hidden auxiliary oscillator lines must not stretch the remaining plots.
+          // Keep primary/overlay hosts visible for independent reference levels and fills.
+          visible: pane === 0 || options.primary !== false || style.visible,
           color: indicatorStyleColor(style),
           lineVisible: !options.invisible && !options.markers && style.visible,
           crosshairMarkerVisible: !options.invisible && style.visible,

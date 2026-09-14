@@ -394,15 +394,40 @@ describe("native indicator renderer", () => {
         },
       },
     ]);
+    expect(highest.options.visible).toBe(false);
     expect(highest.options.lineVisible).toBe(false);
     expect(highest.options.lastValueVisible).toBe(false);
     expect(lowest.options.color).toBe("#a78bfa");
     expect(lowest.options.lineWidth).toBe(3);
+    expect(series.options.visible).toBe(true);
     expect(series.options.lineVisible).toBe(true);
     expect(series.data).toEqual(before);
     renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [instance]);
+    expect(highest.options.visible).toBe(true);
     expect(highest.options.lineVisible).toBe(true);
     expect(harness.series).toHaveLength(3);
+  });
+
+  it("keeps primary oscillator reference levels available when its stroke is hidden", () => {
+    const harness = chartHarness(),
+      renderer = createIndicatorRenderer(harness.chart, 0.25);
+    const instance = {
+      ...createIndicatorInstance("rsi", "base:rsi"),
+      appearance: { plots: { main: { visible: false } } },
+    };
+    renderer.update(inputBars(40), disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [
+      instance,
+    ]);
+    const primary = harness.series[0]!;
+    expect(primary.options.visible).toBe(true);
+    expect(primary.options.lineVisible).toBe(false);
+    expect(primary.priceLines.map((line) => line.options.price)).toEqual([30, 70]);
+    const lines = [...primary.priceLines];
+    renderer.update(inputBars(40), disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [
+      { ...instance, appearance: {} },
+    ]);
+    expect(primary.options.lineVisible).toBe(true);
+    expect(primary.priceLines).toEqual(lines);
   });
 
   it("keeps Bollinger %B unbounded and breaks its line across zero-width windows", () => {
@@ -748,13 +773,21 @@ describe("native indicator renderer", () => {
       DEFAULT_INITIAL_BALANCE,
       1,
       {
-        vwap: { plots: { upper1: { visible: false }, fill1: { opacity: 0.4, color: "#abcdef" } } },
+        vwap: {
+          plots: {
+            main: { visible: false },
+            upper1: { visible: false },
+            fill1: { opacity: 0.4, color: "#abcdef" },
+          },
+        },
       },
       { vwap: { band2Enabled: 1, band3Enabled: 1, band3Multiplier: 4 } },
     );
     expect(harness.series).toHaveLength(7);
     expect(harness.series[1]?.options.lineVisible).toBe(false);
     expect(host.primitives).toHaveLength(1);
+    expect(host.options.lineVisible).toBe(false);
+    expect(host.options.visible).toBe(true);
     renderer.update(input, enabled, DEFAULT_INITIAL_BALANCE, 1, {}, { vwap: { band1Enabled: 0 } });
     expect(harness.series).toEqual([host]);
     renderer.update(input, disabled, DEFAULT_INITIAL_BALANCE, 1);
