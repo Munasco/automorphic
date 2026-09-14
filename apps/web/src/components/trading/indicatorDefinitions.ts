@@ -433,6 +433,7 @@ export const INDICATOR_DEFINITIONS = [
     placement: "overlay",
     inputs: [
       length(20, "period", "EMA length"),
+      priceSource,
       length(10, "atrPeriod", "ATR length"),
       { key: "multiplier", label: "ATR multiplier", defaultValue: 2, min: 0, max: 20, step: 0.1 },
     ],
@@ -443,7 +444,16 @@ export const INDICATOR_DEFINITIONS = [
       { ...style("background", "Background", "#f472b6"), kind: "fill", opacity: 0.05 },
     ],
     calculate: ({ bars, inputs }) =>
-      bands(calculateKeltnerChannels(bars, inputs.period, inputs.atrPeriod, inputs.multiplier)),
+      bands(
+        calculateKeltnerChannels(
+          bars,
+          inputs.period,
+          inputs.atrPeriod,
+          inputs.multiplier,
+          PRICE_SOURCES[inputs.source ?? 0],
+        ),
+        bars,
+      ),
   }),
   defineIndicator({
     key: "rsi",

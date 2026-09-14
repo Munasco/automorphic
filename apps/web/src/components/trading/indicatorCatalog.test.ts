@@ -202,7 +202,7 @@ describe("indicator inputs", () => {
     expect(restored.indicatorInputs).toEqual({
       sma: { period: 50, source: 0 },
       bollinger: { period: 20, deviations: 1.5, source: 0, basisType: 0 },
-      keltner: { period: 20, atrPeriod: 8, multiplier: 2 },
+      keltner: { period: 20, atrPeriod: 8, multiplier: 2, source: 0 },
       stochRsi: {
         rsiPeriod: 10,
         stochasticPeriod: 14,
@@ -748,4 +748,35 @@ describe("CCI reference levels", () => {
       upperLevel: 210.5,
     });
   });
+});
+
+it("keeps Keltner lines and fills separate when its selected source is missing", () => {
+  const definition = INDICATOR_CATALOG.find((i) => i.key === "keltner")!;
+  const bars = Array.from({ length: 10 }, (_, i) => ({
+    time: i + 1,
+    open: i === 4 ? NaN : 100 + i,
+    close: 100 + i,
+    high: 102 + i,
+    low: 98 + i,
+    volume: 10,
+  }));
+  const inputs = { ...getIndicatorInputs("keltner"), period: 2, atrPeriod: 2, source: 1 };
+  const result = definition.calculate({
+    bars,
+    inputs,
+    interval: 5,
+    session: DEFAULT_INITIAL_BALANCE,
+  });
+  expect(result.plots.map((p) => p.points.map((p) => p.time))).toEqual(
+    Array.from({ length: 3 }, () => [2, 3, 4, 7, 8, 9, 10]),
+  );
+  expect(result.plots.every((p) => p.breakOnGaps)).toBe(true);
+  expect(result.fills?.map((f) => f.upper.map((p) => p.time))).toEqual([
+    [2, 3, 4],
+    [7, 8, 9, 10],
+  ]);
+  expect(getIndicatorLabel("keltner", { keltner: inputs })).toBe(
+    getIndicatorLabel("keltner", { keltner: { ...inputs, source: 0 } }),
+  );
+  expect(updateIndicatorInputs("keltner", { keltner: inputs }, { source: 7 })).toBeNull();
 });

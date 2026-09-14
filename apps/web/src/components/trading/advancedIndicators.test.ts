@@ -1025,3 +1025,133 @@ describe("CCI price sources", () => {
     }
   });
 });
+
+describe("Keltner channel price sources", () => {
+  const input = () =>
+    bars([11, 22, 15, 27, 18]).map((bar, index) => ({
+      ...bar,
+      open: [10, 20, 16, 25, 19][index]!,
+      high: [12, 24, 20, 28, 23][index]!,
+      low: [8, 18, 14, 21, 17][index]!,
+    }));
+  // Three-sample SMA seed, then EMA alpha 1/2, calculated independently for each source.
+  const middle: Record<PriceSource, number[]> = {
+    close: [16, 21.5, 19.75],
+    open: [46 / 3, 121 / 6, 235 / 12],
+    high: [56 / 3, 70 / 3, 139 / 6],
+    low: [40 / 3, 103 / 6, 205 / 12],
+    hl2: [16, 20.25, 20.125],
+    hlc3: [16, 62 / 3, 20],
+    ohlc4: [95 / 6, 493 / 24, 955 / 48],
+  };
+  // Actual H/L and previous close produce TR [4,13,8,13,10], Wilder ATR2 below.
+  const atr = [33 / 4, 85 / 8, 165 / 16];
+
+  it.each(PRICE_SOURCES)("uses %s for the EMA while retaining actual-price ATR", (source) => {
+    const result = calculateKeltnerChannels(input(), 3, 2, 2, source);
+    near(result.middle, middle[source]);
+    near(
+      result.upper,
+      middle[source].map((value, index) => value + 2 * atr[index]!),
+    );
+    near(
+      result.lower,
+      middle[source].map((value, index) => value - 2 * atr[index]!),
+    );
+    for (const series of [result.upper, result.middle, result.lower])
+      expect(series.map((point) => point.time)).toEqual(
+        input()
+          .slice(2)
+          .map((bar) => bar.time),
+      );
+  });
+
+  it("preserves close defaults and aligns both warmups, including a zero multiplier", () => {
+    const candles = input();
+    expect(calculateKeltnerChannels(candles)).toEqual(
+      calculateKeltnerChannels(candles, 20, 10, 2, "close"),
+    );
+    expect(calculateKeltnerChannels(candles, 3, 2, 2)).toEqual(
+      calculateKeltnerChannels(candles, 3, 2, 2, "close"),
+    );
+    const laterATR = calculateKeltnerChannels(candles, 2, 4, 2, "open");
+    expect(laterATR.middle.map((point) => point.time)).toEqual(
+      candles.slice(3).map((bar) => bar.time),
+    );
+    for (const source of PRICE_SOURCES) {
+      const zero = calculateKeltnerChannels(candles, 3, 2, 0, source);
+      near(zero.middle, middle[source]);
+      expect(zero.upper).toEqual(zero.middle);
+      expect(zero.lower).toEqual(zero.middle);
+    }
+  });
+
+  it.each(["open", "ohlc4"] as const)(
+    "rewarms %s after missing open without resetting valid ATR history",
+    (source) => {
+      const candles = input();
+      const broken = candles.map((bar, index) => (index === 1 ? { ...bar, open: NaN } : bar));
+      const result = calculateKeltnerChannels(broken, 2, 2, 1, source);
+      expect(result.middle.map((point) => point.time)).toEqual(
+        candles.slice(3).map((bar) => bar.time),
+      );
+      result.upper.forEach((point, index) =>
+        expect(point.value - result.middle[index]!.value).toBeCloseTo(
+          [85 / 8, 165 / 16][index]!,
+          10,
+        ),
+      );
+      const afterGapOnly = calculateKeltnerChannels(candles.slice(2), 2, 2, 1, source);
+      expect(result.middle).toEqual(afterGapOnly.middle);
+      expect(result.upper).not.toEqual(afterGapOnly.upper);
+    },
+  );
+
+  it.each(PRICE_SOURCES)(
+    "resets both calculations after invalid ATR fields or time for %s",
+    (source) => {
+      const candles = input();
+      for (const field of ["high", "low", "close", "time"] as const) {
+        for (const invalid of [NaN, Infinity, undefined]) {
+          const broken = candles.map((bar, index) =>
+            index === 1 ? ({ ...bar, [field]: invalid } as Candle) : bar,
+          );
+          expect(calculateKeltnerChannels(broken, 2, 2, 1, source)).toEqual(
+            calculateKeltnerChannels(candles.slice(2), 2, 2, 1, source),
+          );
+        }
+      }
+    },
+  );
+
+  it("ignores missing unused open and volume for sources that do not require them", () => {
+    const candles = input();
+    const poisoned = candles.map((bar) => ({ ...bar, open: NaN, volume: NaN }));
+    for (const source of ["close", "high", "low", "hl2", "hlc3"] as const)
+      expect(calculateKeltnerChannels(poisoned, 3, 2, 2, source)).toEqual(
+        calculateKeltnerChannels(candles, 3, 2, 2, source),
+      );
+  });
+
+  it.each(PRICE_SOURCES)(
+    "recomputes %s candle revisions without altering prior windows or input",
+    (source) => {
+      const candles = input();
+      const snapshot = structuredClone(candles);
+      const full = calculateKeltnerChannels(candles, 3, 2, 2, source);
+      const prefix = calculateKeltnerChannels(candles.slice(0, -1), 3, 2, 2, source);
+      const revised = [
+        ...candles.slice(0, -1),
+        { ...candles.at(-1)!, open: 30, high: 35, low: 28, close: 32 },
+      ];
+      const changed = calculateKeltnerChannels(revised, 3, 2, 2, source);
+      for (const key of ["middle", "upper", "lower"] as const) {
+        expect(prefix[key]).toEqual(full[key].slice(0, -1));
+        expect(changed[key].slice(0, -1)).toEqual(full[key].slice(0, -1));
+      }
+      expect(changed.middle.at(-1)!.value).not.toBe(full.middle.at(-1)!.value);
+      expect(candles).toEqual(snapshot);
+      expect(calculateKeltnerChannels(candles, 3, 2, 2, source)).toEqual(full);
+    },
+  );
+});

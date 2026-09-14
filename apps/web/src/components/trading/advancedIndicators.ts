@@ -468,21 +468,20 @@ export function calculateStochasticRSI(
   return result;
 }
 
-/** EMA basis ± multiplier × Wilder ATR, aligned after both complete their warmup.
- * https://www.tradingview.com/support/solutions/43000502266-keltner-channels-kc/
- */
+/** Selected EMA basis ± multiplier × Wilder ATR, aligned after both finish warmup. */
 export function calculateKeltnerChannels(
   bars: readonly Candle[],
   period = 20,
   atrPeriod = 10,
   multiplier = 2,
+  source: PriceSource = "close",
 ): IndicatorBands {
   const result = emptyBands();
   if (![period, atrPeriod].every(validPeriod) || !Number.isFinite(multiplier) || multiplier < 0)
     return result;
   for (const segment of segments(bars, validRange)) {
     const atr = new Map(calculateATR(segment, atrPeriod).map((point) => [point.time, point.value]));
-    for (const point of calculateEMA(segment, period)) {
+    for (const point of calculateEMA(segment, period, source)) {
       const range = atr.get(point.time);
       if (range === undefined) continue;
       const upper = point.value + multiplier * range;
