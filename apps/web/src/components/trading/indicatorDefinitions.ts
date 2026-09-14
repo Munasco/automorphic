@@ -773,10 +773,14 @@ export const INDICATOR_DEFINITIONS = [
     detail: "Commodity channel index",
     category: "Oscillators",
     placement: "pane",
-    inputs: [length(20)],
+    inputs: [length(20), { ...priceSource, defaultValue: 5 }],
     styles: [style("main", "Line", "#a78bfa", true)],
     calculate: ({ bars, inputs }) =>
-      single(calculateCCI(bars, inputs.period), { title: "CCI", levels: [-100, 0, 100] }),
+      single(calculateCCI(bars, inputs.period, PRICE_SOURCES[inputs.source ?? 5]), {
+        title: "CCI",
+        levels: [-100, 0, 100],
+        breakOnGaps: true,
+      }),
   }),
   defineIndicator({
     key: "williams",

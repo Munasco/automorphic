@@ -910,3 +910,118 @@ describe("ROC price sources", () => {
     }
   });
 });
+
+describe("CCI price sources", () => {
+  const input = () =>
+    bars([20, 10, 30, 40]).map((bar, index) => ({
+      ...bar,
+      open: [10, 20, 25, 10][index]!,
+      high: [30, 40, 50, 60][index]!,
+      low: [0, 5, 10, 20][index]!,
+    }));
+  // Three-bar windows, mean absolute deviation, and Lambert's 0.015 divisor.
+  const expected: Record<PriceSource, number[]> = {
+    close: [100, 80],
+    open: [80, -100],
+    high: [100, 100],
+    low: [100, 100],
+    hl2: [100, 100],
+    hlc3: [100, 95],
+    ohlc4: [100, 1400 / 19],
+  };
+  const required: Record<PriceSource, (keyof Pick<Candle, "open" | "high" | "low" | "close">)[]> = {
+    close: ["close"],
+    open: ["open"],
+    high: ["high"],
+    low: ["low"],
+    hl2: ["high", "low"],
+    hlc3: ["high", "low", "close"],
+    ohlc4: ["open", "high", "low", "close"],
+  };
+
+  it.each(PRICE_SOURCES)("calculates hand-computed %s windows", (source) => {
+    const result = calculateCCI(input(), 3, source);
+    near(result, expected[source]);
+    expect(result.map((point) => point.time)).toEqual(
+      input()
+        .slice(2)
+        .map((bar) => bar.time),
+    );
+  });
+
+  it("keeps HLC3 as the default source and twenty bars as the default window", () => {
+    expect(calculateCCI(input(), 3)).toEqual(calculateCCI(input(), 3, "hlc3"));
+    const candles = bars(Array.from({ length: 21 }, (_, index) => index + 1));
+    near(calculateCCI(candles), [380 / 3, 380 / 3]);
+    expect(calculateCCI(candles)[0]!.time).toBe(candles[19]!.time);
+  });
+
+  it.each(PRICE_SOURCES)(
+    "restarts %s warmup after invalid selected fields or time, without requiring unused fields",
+    (source) => {
+      const clean = bars([10, 20, 30, 40, 50, 60, 70]);
+      for (const field of [...required[source], "time"] as const) {
+        for (const invalid of [NaN, Infinity, undefined]) {
+          const broken = clean.map((bar, index) =>
+            index === 3 ? ({ ...bar, [field]: invalid } as Candle) : bar,
+          );
+          expect(calculateCCI(broken, 3, source)).toEqual([
+            ...calculateCCI(clean.slice(0, 3), 3, source),
+            ...calculateCCI(clean.slice(4), 3, source),
+          ]);
+        }
+      }
+      const unused = (["open", "high", "low", "close"] as const).filter(
+        (field) => !required[source].includes(field),
+      );
+      const poisoned = clean.map((bar) => ({
+        ...bar,
+        volume: NaN,
+        ...Object.fromEntries(unused.map((field) => [field, NaN])),
+      }));
+      expect(calculateCCI(poisoned, 3, source)).toEqual(calculateCCI(clean, 3, source));
+    },
+  );
+
+  it.each(PRICE_SOURCES)("returns zero for flat %s prices and period one", (source) => {
+    const flat = bars([1.1, 1.1, 1.1, 1.1]);
+    expect(values(calculateCCI(flat, 3, source))).toEqual([0, 0]);
+    expect(values(calculateCCI(input(), 1, source))).toEqual([0, 0, 0, 0]);
+  });
+
+  it.each(PRICE_SOURCES)(
+    "recalculates %s revisions without changing earlier windows or input",
+    (source) => {
+      const candles = input();
+      const snapshot = structuredClone(candles);
+      const full = calculateCCI(candles, 3, source);
+      expect(calculateCCI(candles.slice(0, -1), 3, source)).toEqual(full.slice(0, -1));
+      const revised = [
+        ...candles.slice(0, -1),
+        { ...candles.at(-1)!, open: 5, high: 6, low: 4, close: 5 },
+      ];
+      const result = calculateCCI(revised, 3, source);
+      expect(result.slice(0, -1)).toEqual(full.slice(0, -1));
+      expect(result.at(-1)!.value).not.toBe(full.at(-1)!.value);
+      expect(candles).toEqual(snapshot);
+      expect(calculateCCI(candles, 3, source)).toEqual(full);
+    },
+  );
+
+  it("rescales extreme finite prices when intermediate arithmetic overflows", () => {
+    const huge = bars([Number.MAX_VALUE, -Number.MAX_VALUE, 0, Number.MAX_VALUE]);
+    near(calculateCCI(huge, 3, "close"), [0, 100]);
+    expect(calculateCCI(huge, 3, "close").map((point) => point.value)).toEqual(
+      calculateCCI(bars([1, -1, 0, 1]), 3, "close").map((point) => point.value),
+    );
+  });
+
+  it("rejects invalid periods and waits for a complete window", () => {
+    for (const source of PRICE_SOURCES) {
+      for (const period of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])
+        expect(calculateCCI(input(), period, source)).toEqual([]);
+      expect(calculateCCI(input(), 5, source)).toEqual([]);
+      expect(calculateCCI([], 1, source)).toEqual([]);
+    }
+  });
+});

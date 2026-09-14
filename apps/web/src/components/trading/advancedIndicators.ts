@@ -366,23 +366,40 @@ export function calculateOBV(bars: readonly Candle[]): IndicatorPoint[] {
   return result;
 }
 
-/** HLC3 CCI20 with mean absolute deviation and Lambert's 0.015 constant; flat = 0.
- * https://www.tradingview.com/support/solutions/43000502001-commodity-channel-index-cci/
- */
-export function calculateCCI(bars: readonly Candle[], period = 20): IndicatorPoint[] {
+/** CCI uses mean absolute deviation and Lambert's 0.015 constant; flat windows return zero. */
+export function calculateCCI(
+  bars: readonly Candle[],
+  period = 20,
+  source: PriceSource = "hlc3",
+): IndicatorPoint[] {
   if (!validPeriod(period)) return [];
   const result: IndicatorPoint[] = [];
-  for (const segment of segments(bars, validRange)) {
-    const typical = segment.map((bar) => bar.high / 3 + bar.low / 3 + bar.close / 3);
-    for (let i = period - 1; i < typical.length; i += 1) {
-      const baseline = typical[i - period + 1]!;
+  for (const segment of segments(
+    bars,
+    (bar) => Number.isFinite(bar.time) && Number.isFinite(sourcePrice(bar, source)),
+  )) {
+    const prices = segment.map((bar) => sourcePrice(bar, source));
+    const windowValue = (end: number, scale: number) => {
+      const start = end - period + 1;
+      const baseline = prices[start]! / scale;
       let offset = 0;
-      for (let j = i - period + 1; j <= i; j += 1) offset += (typical[j]! - baseline) / period;
+      for (let j = start; j <= end; j += 1) offset += (prices[j]! / scale - baseline) / period;
       const mean = baseline + offset;
       let deviation = 0;
-      for (let j = i - period + 1; j <= i; j += 1)
-        deviation += Math.abs(typical[j]! - mean) / period;
-      add(result, segment[i]!.time, deviation === 0 ? 0 : (typical[i]! - mean) / deviation / 0.015);
+      for (let j = start; j <= end; j += 1)
+        deviation += Math.abs(prices[j]! / scale - mean) / period;
+      if (!Number.isFinite(mean) || !Number.isFinite(deviation)) return NaN;
+      return deviation === 0 ? 0 : (prices[end]! / scale - mean) / deviation / 0.015;
+    };
+    for (let i = period - 1; i < prices.length; i += 1) {
+      let value = windowValue(i, 1);
+      if (!Number.isFinite(value)) {
+        // CCI is scale invariant; rescale only when finite prices overflow intermediate sums.
+        let scale = 0;
+        for (let j = i - period + 1; j <= i; j += 1) scale = Math.max(scale, Math.abs(prices[j]!));
+        value = windowValue(i, scale);
+      }
+      add(result, segment[i]!.time, value);
     }
   }
   return result;

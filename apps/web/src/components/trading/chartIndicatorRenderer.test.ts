@@ -98,6 +98,30 @@ const disabled = Object.fromEntries(
 ) as ChartIndicators;
 
 describe("native indicator renderer", () => {
+  it("leaves a CCI gap through invalid selected prices and reconnects a corrected window", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.25);
+    const bars = inputBars(7).map((bar, i) => ({ ...bar, open: i === 3 ? NaN : i + 1 }));
+    const instance = {
+      ...createIndicatorInstance("cci", "base:cci"),
+      inputs: { period: 2, source: 1 },
+    };
+    renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [instance]);
+    const series = harness.series[0]!;
+    expect(series.pane).toBe(1);
+    expect(series.data[2]!.value).toBeCloseTo(100 / 1.5, 10);
+    expect(series.data[2]!.color).toBe("transparent");
+    expect(series.data[3]).toEqual({ time: bars[3]!.time });
+    expect(series.data[4]).toEqual({ time: bars[4]!.time });
+    expect(series.data[5]!.value).toBeCloseTo(100 / 1.5, 10);
+    expect(series.priceLines.map((line) => line.options.price)).toEqual([-100, 0, 100]);
+    const revised = bars.map((bar, i) => (i === 3 ? { ...bar, open: 4 } : bar));
+    renderer.update(revised, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [instance]);
+    expect(harness.series[0]).toBe(series);
+    expect(series.data[3]!.value).toBeCloseTo(100 / 1.5, 10);
+    expect(series.data[2]!.color).not.toBe("transparent");
+  });
+
   it("breaks ROC at a zero source baseline and restores the line on revision", () => {
     const harness = chartHarness();
     const renderer = createIndicatorRenderer(harness.chart, 0.25);

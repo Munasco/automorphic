@@ -137,6 +137,40 @@ it("persists independent ROC sources, rejects invalid edits and resets one insta
   ).toEqual({ period: 18, source: 0 });
 });
 
+it("persists independent CCI sources, rejects invalid edits and resets one instance", async () => {
+  const store = useChartPreferences.getState();
+  const base = store.addIndicator("cci")!;
+  store.setIndicatorInstanceInputs(base, { period: 5, source: 1 });
+  const duplicate = store.duplicateIndicatorInstance(base)!;
+  store.setIndicatorInstanceInputs(duplicate, { period: 12, source: 5 });
+  const serialized = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(serialized);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  const inputs = () =>
+    getChartIndicatorInstances(useChartPreferences.getState())
+      .filter((i) => i.key === "cci")
+      .map((i) => i.inputs);
+  expect(inputs()).toEqual([
+    { period: 5, source: 1 },
+    { period: 12, source: 5 },
+  ]);
+  vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+  useChartPreferences.getState().setIndicatorInstanceInputs(duplicate, { source: 99 });
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
+  expect(inputs()).toEqual([
+    { period: 5, source: 1 },
+    { period: 20, source: 5 },
+  ]);
+  expect(
+    getIndicatorInputs(
+      "cci",
+      normalizeChartPreferences({ indicatorInputs: { cci: { period: 18 } } }).indicatorInputs,
+    ),
+  ).toEqual({ period: 18, source: 5 });
+});
+
 describe("global indicator actions", () => {
   it("hides and shows enabled indicators atomically while retaining disabled states and configuration", () => {
     const original = configure();
