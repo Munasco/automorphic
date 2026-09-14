@@ -5,6 +5,7 @@ import {
   calculateEMA,
   PRICE_SOURCES,
   calculateRSI,
+  sourcePrice,
   calculateSMA,
   calculateVWAPBands,
   type IndicatorPoint,
@@ -351,6 +352,28 @@ export const INDICATOR_DEFINITIONS = [
           title: "WMA",
           breakOnGaps: true,
         },
+      ),
+  }),
+  defineIndicator({
+    key: "vwma",
+    label: "VWMA 20",
+    detail: "Volume-weighted moving average",
+    category: "Overlays",
+    placement: "overlay",
+    inputs: [length(20), priceSource],
+    styles: [style("main", "Line", "#e879f9", true, 2)],
+    calculate: ({ bars, inputs }) =>
+      single(
+        calculateIndicatorMovingAverage(
+          bars,
+          bars.map((bar) => ({
+            time: bar.time,
+            value: sourcePrice(bar, PRICE_SOURCES[inputs.source ?? 0] ?? "close"),
+          })),
+          inputs.period ?? 20,
+          "vwma",
+        ),
+        { title: "VWMA", breakOnGaps: true },
       ),
   }),
   defineIndicator({

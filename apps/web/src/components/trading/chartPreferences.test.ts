@@ -1208,7 +1208,7 @@ it("persists independent Bollinger basis types and restores old charts to SMA", 
   ).toEqual({ period: 20, basisType: 0, source: 0, deviations: 2 });
 });
 
-it.each(["hma", "wma"] as const)(
+it.each(["hma", "wma", "vwma"] as const)(
   "persists independent %s lengths, sources and appearance",
   async (key) => {
     const store = useChartPreferences.getState();
@@ -1239,7 +1239,10 @@ it.each(["hma", "wma"] as const)(
     expect(
       getChartIndicatorInstances(useChartPreferences.getState()).find((i) => i.id === duplicate)!
         .inputs,
-    ).toEqual({ period: 9, source: 0 });
+    ).toEqual({ period: key === "vwma" ? 20 : 9, source: 0 });
+    expect(
+      getChartIndicatorInstances(useChartPreferences.getState()).find((i) => i.id === base)!.inputs,
+    ).toEqual({ period: 16, source: 5 });
   },
 );
 

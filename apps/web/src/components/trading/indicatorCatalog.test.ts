@@ -109,6 +109,7 @@ describe("indicator catalog and saved preferences", () => {
       "sma",
       "ema",
       "wma",
+      "vwma",
       "hma",
       "keltner",
     ]);
@@ -126,6 +127,7 @@ describe("indicator catalog and saved preferences", () => {
       "sma",
       "ema",
       "wma",
+      "vwma",
       "hma",
       "bollinger",
       "donchian",
@@ -1077,4 +1079,110 @@ it("weights RSI smoothing by matching candle volumes while retaining original RS
   expect(getIndicatorLabel("rsi", { rsi: { ...inputs, smoothingType: 6 } })).toBe(
     getIndicatorLabel("rsi", { rsi: inputs }),
   );
+});
+
+describe("standalone VWMA overlay", () => {
+  const definition = INDICATOR_CATALOG.find((item) => item.key === "vwma")!;
+  const bars = [10, 20, 30].map((close, index) => ({
+    time: index + 1,
+    close,
+    open: [6, 11, 26][index]!,
+    high: [15, 25, 35][index]!,
+    low: [0, 5, 20][index]!,
+    volume: [1, 3, 2][index]!,
+  }));
+
+  it("is discoverable and defaults to a disabled20-period Close overlay in older workspaces", () => {
+    expect(findIndicators("volume-weighted moving average").map((item) => item.key)).toEqual([
+      "vwma",
+    ]);
+    expect(findIndicators("VWMA").map((item) => item.key)).toEqual(["vwma"]);
+    expect(definition).toMatchObject({
+      placement: "overlay",
+      category: "Overlays",
+      styles: [expect.objectContaining({ key: "main", color: "#e879f9", lineWidth: 2 })],
+    });
+    expect(DEFAULT_INDICATORS.vwma).toBe(false);
+    expect(normalizeChartPreferences({ indicators: { ema: true } }).indicators).toMatchObject({
+      ema: true,
+      vwma: false,
+    });
+    expect(getIndicatorInputs("vwma")).toEqual({ period: 20, source: 0 });
+    expect(getIndicatorInputs("vwma", { vwma: { period: 7, source: 99 } })).toEqual({
+      period: 7,
+      source: 0,
+    });
+    expect(getIndicatorInputs("vwma", { vwma: { period: 0, source: 5 } })).toEqual({
+      period: 20,
+      source: 5,
+    });
+  });
+
+  it.each([
+    { source: 0, values: [17.5, 24] },
+    { source: 1, values: [9.75, 17] },
+    { source: 2, values: [22.5, 29] },
+    { source: 3, values: [3.75, 11] },
+    { source: 4, values: [13.125, 20] },
+    { source: 5, values: [175 / 12, 64 / 3] },
+    { source: 6, values: [13.375, 20.25] },
+  ])("routes source$source into independently calculated weighted values", ({ source, values }) => {
+    const result = definition.calculate({
+      bars,
+      inputs: { period: 2, source },
+      interval: 5,
+      session: DEFAULT_INITIAL_BALANCE,
+    });
+    expect(result.plots).toHaveLength(1);
+    const plot = result.plots[0]!;
+    expect(plot).toMatchObject({ id: "main", styleKey: "main", title: "VWMA", breakOnGaps: true });
+    expect(plot.bounds).toBeUndefined();
+    expect(plot.points.map((point) => point.time)).toEqual([2, 3]);
+    plot.points.forEach((point, index) => expect(point.value).toBeCloseTo(values[index]!, 10));
+  });
+
+  it("leaves a zero-volume window undefined and resumes without substituting an unweighted average", () => {
+    const candles = [10, 20, 30, 40].map((close, index) => ({
+      time: index + 1,
+      open: close,
+      high: close + 1,
+      low: close - 1,
+      close,
+      volume: [1, 0, 0, 1][index]!,
+    }));
+    const run = (input: typeof candles) =>
+      definition.calculate({
+        bars: input,
+        inputs: { period: 2, source: 0 },
+        interval: 5,
+        session: DEFAULT_INITIAL_BALANCE,
+      });
+    expect(run(candles).plots[0]!.points).toEqual([
+      { time: 2, value: 10 },
+      { time: 4, value: 40 },
+    ]);
+    const corrected = candles.map((bar) => (bar.time === 3 ? { ...bar, volume: 2 } : bar));
+    const result = run(corrected).plots[0]!.points;
+    expect(result.map((point) => point.time)).toEqual([2, 3, 4]);
+    expect(result[1]!.value).toBe(30);
+    expect(result[2]!.value).toBeCloseTo(100 / 3, 10);
+  });
+
+  it("rejects malformed input edits atomically", () => {
+    const current = { vwma: { period: 7, source: 5 } };
+    for (const patch of [
+      { period: 0 },
+      { period: 1.5 },
+      { period: 501 },
+      { source: -1 },
+      { source: 7 },
+      { source: 1.5 },
+      { source: NaN },
+    ])
+      expect(updateIndicatorInputs("vwma", current, patch)).toBeNull();
+    expect(current).toEqual({ vwma: { period: 7, source: 5 } });
+    expect(updateIndicatorInputs("vwma", current, { period: 1, source: 6 })).toEqual({
+      vwma: { period: 1, source: 6 },
+    });
+  });
 });
