@@ -107,13 +107,14 @@ it("persists independent RSI sources and resets only the selected instance", asy
   ]);
 });
 
-it("persists independent Keltner sources and basis types, rejects invalid edits and resets one instance", async () => {
+it("persists independent Keltner sources, bases and band styles, rejects invalid edits and resets one instance", async () => {
   const store = useChartPreferences.getState();
   const base = store.addIndicator("keltner")!;
   store.setIndicatorInstanceInputs(base, {
     period: 5,
     source: 1,
     basisType: 1,
+    rangeType: 2,
     atrPeriod: 3,
     multiplier: 1.5,
   });
@@ -122,6 +123,7 @@ it("persists independent Keltner sources and basis types, rejects invalid edits 
     period: 12,
     source: 5,
     basisType: 0,
+    rangeType: 1,
     atrPeriod: 3,
     multiplier: 1.5,
   });
@@ -134,26 +136,29 @@ it("persists independent Keltner sources and basis types, rejects invalid edits 
       .filter((i) => i.key === "keltner")
       .map((i) => i.inputs);
   expect(inputs()).toEqual([
-    { period: 5, source: 1, basisType: 1, atrPeriod: 3, multiplier: 1.5 },
-    { period: 12, source: 5, basisType: 0, atrPeriod: 3, multiplier: 1.5 },
+    { period: 5, source: 1, basisType: 1, rangeType: 2, atrPeriod: 3, multiplier: 1.5 },
+    { period: 12, source: 5, basisType: 0, rangeType: 1, atrPeriod: 3, multiplier: 1.5 },
   ]);
   vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
   useChartPreferences.getState().setIndicatorInstanceInputs(duplicate, { source: 99 });
   expect(useChartPreferences.getState().setIndicatorInstanceInputs(base, { basisType: 2 })).toBe(
     false,
   );
+  expect(useChartPreferences.getState().setIndicatorInstanceInputs(base, { rangeType: 3 })).toBe(
+    false,
+  );
   expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
   useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
   expect(inputs()).toEqual([
-    { period: 5, source: 1, basisType: 1, atrPeriod: 3, multiplier: 1.5 },
-    { period: 20, source: 0, basisType: 0, atrPeriod: 10, multiplier: 2 },
+    { period: 5, source: 1, basisType: 1, rangeType: 2, atrPeriod: 3, multiplier: 1.5 },
+    { period: 20, source: 0, basisType: 0, rangeType: 0, atrPeriod: 10, multiplier: 2 },
   ]);
   expect(
     getIndicatorInputs(
       "keltner",
       normalizeChartPreferences({ indicatorInputs: { keltner: { period: 18 } } }).indicatorInputs,
     ),
-  ).toEqual({ period: 18, source: 0, basisType: 0, atrPeriod: 10, multiplier: 2 });
+  ).toEqual({ period: 18, source: 0, basisType: 0, rangeType: 0, atrPeriod: 10, multiplier: 2 });
 });
 
 it("persists independent ROC sources, rejects invalid edits and resets one instance", async () => {

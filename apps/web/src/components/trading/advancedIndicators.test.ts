@@ -1283,3 +1283,84 @@ describe("Keltner moving-average basis", () => {
       );
   });
 });
+
+describe("Keltner range styles", () => {
+  const input = () =>
+    [10, 20, 15, 25, 24].map((close, i) => ({
+      time: i + 1,
+      open: close - 1,
+      close,
+      high: close + 2 + i,
+      low: close - 2,
+      volume: 10,
+    }));
+  it.each(["ema", "sma"] as const)(
+    "uses unsmoothed true range and MA-length Wilder high-low with %s basis",
+    (basis) => {
+      const candles = input();
+      const expected = {
+        atr: [8.5, 7.75, 11.375, 9.6875],
+        trueRange: [13, 7, 15, 8],
+        highLow: [4.5, 5.25, 6.125, 7.0625],
+      };
+      for (const mode of ["atr", "trueRange", "highLow"] as const) {
+        const result = calculateKeltnerChannels(candles, 2, 2, 1, "close", basis, mode);
+        expect(result.middle).toHaveLength(4);
+        result.middle.forEach((point, i) => {
+          expect(result.upper[i]!.value - point.value).toBeCloseTo(expected[mode][i]!, 10);
+          expect(point.value - result.lower[i]!.value).toBeCloseTo(expected[mode][i]!, 10);
+        });
+        if (mode !== "atr") {
+          expect(calculateKeltnerChannels(candles, 2, 500, 1, "close", basis, mode)).toEqual(
+            result,
+          );
+        }
+      }
+      expect(calculateKeltnerChannels(candles, 2, 2, 1, "close", basis)).toEqual(
+        calculateKeltnerChannels(candles, 2, 2, 1, "close", basis, "atr"),
+      );
+    },
+  );
+  it.each(["trueRange", "highLow"] as const)(
+    "restarts %s range and basis after invalid OHLC, with independent source gaps",
+    (mode) => {
+      const candles = [...input(), ...input().map((b) => ({ ...b, time: b.time + 5 }))];
+      const broken = candles.map((b, i) => (i === 4 ? { ...b, high: NaN } : b));
+      const actual = calculateKeltnerChannels(broken, 2, 3, 2, "open", "ema", mode);
+      const before = calculateKeltnerChannels(candles.slice(0, 4), 2, 3, 2, "open", "ema", mode);
+      const after = calculateKeltnerChannels(candles.slice(5), 2, 3, 2, "open", "ema", mode);
+      for (const key of ["upper", "middle", "lower"] as const)
+        expect(actual[key]).toEqual([...before[key], ...after[key]]);
+      const sourceGap = candles.map((b, i) => (i === 4 ? { ...b, open: NaN } : b));
+      const gapped = calculateKeltnerChannels(sourceGap, 2, 3, 2, "open", "ema", mode);
+      const whole = calculateKeltnerChannels(candles, 2, 3, 2, "open", "ema", mode);
+      expect(gapped.middle.some((p) => p.time === 5 || p.time === 6)).toBe(false);
+      const index = whole.middle.findIndex((p) => p.time === 7);
+      const resumed = gapped.middle.findIndex((p) => p.time === 7);
+      expect(gapped.upper[resumed]!.value - gapped.middle[resumed]!.value).toBeCloseTo(
+        whole.upper[index]!.value - whole.middle[index]!.value,
+        10,
+      );
+    },
+  );
+  it("rejects invalid styles and never emits nonfinite bands after overflowing ranges", () => {
+    for (const mode of ["", "ATR", null, undefined, 0]) {
+      if (mode === undefined) continue;
+      expect(calculateKeltnerChannels(input(), 2, 2, 1, "close", "ema", mode as "atr")).toEqual({
+        upper: [],
+        middle: [],
+        lower: [],
+      });
+    }
+    for (const mode of ["atr", "trueRange", "highLow"] as const) {
+      const extreme = [
+        { time: 0, open: 0, high: 1e308, low: -1e308, close: 0, volume: 0 },
+        ...input(),
+      ];
+      const result = calculateKeltnerChannels(extreme, 1, 1, 1, "close", "ema", mode);
+      expect(result.middle.at(-1)!.time).toBe(5);
+      for (const key of ["upper", "middle", "lower"] as const)
+        expect(result[key].every((p) => Number.isFinite(p.value))).toBe(true);
+    }
+  });
+});

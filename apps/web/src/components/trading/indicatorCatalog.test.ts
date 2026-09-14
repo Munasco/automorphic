@@ -204,7 +204,7 @@ describe("indicator inputs", () => {
     expect(restored.indicatorInputs).toEqual({
       sma: { period: 50, source: 0 },
       bollinger: { period: 20, deviations: 1.5, source: 0, basisType: 0 },
-      keltner: { period: 20, atrPeriod: 8, multiplier: 2, source: 0, basisType: 0 },
+      keltner: { period: 20, atrPeriod: 8, multiplier: 2, source: 0, basisType: 0, rangeType: 0 },
       stochRsi: {
         rsiPeriod: 10,
         stochasticPeriod: 14,
@@ -819,4 +819,48 @@ it("changes Keltner basis without changing its ATR spread or legend and rejects 
   expect(getIndicatorInputs("keltner", { keltner: { period: 3, basisType: 99 } }).basisType).toBe(
     0,
   );
+});
+
+it("selects Keltner range calculations without changing its basis and rejects invalid modes", () => {
+  const definition = INDICATOR_CATALOG.find((i) => i.key === "keltner")!;
+  const bars = [10, 20, 15, 25, 24].map((close, i) => ({
+    time: i + 1,
+    open: close,
+    close,
+    high: close + 2,
+    low: close - 2,
+    volume: 10,
+  }));
+  const inputs = { ...getIndicatorInputs("keltner"), period: 2, atrPeriod: 2, multiplier: 1 };
+  const calculate = (rangeType: number) =>
+    definition.calculate({
+      bars,
+      inputs: { ...inputs, rangeType },
+      interval: 5,
+      session: DEFAULT_INITIAL_BALANCE,
+    });
+  const results = [0, 1, 2].map(calculate);
+  const widths = [
+    [8, 7.5, 9.75, 6.875],
+    [12, 7, 12, 4],
+    [4, 4, 4, 4],
+  ];
+  for (let mode = 0; mode < 3; mode++) {
+    const result = results[mode]!;
+    expect(result.plots[1]!.points).toEqual(results[0]!.plots[1]!.points);
+    result.plots[0]!.points.forEach((point, i) => {
+      expect(point.value - result.plots[1]!.points[i]!.value).toBeCloseTo(widths[mode]![i]!, 10);
+      expect(result.plots[1]!.points[i]!.value - result.plots[2]!.points[i]!.value).toBeCloseTo(
+        widths[mode]![i]!,
+        10,
+      );
+    });
+    expect(getIndicatorLabel("keltner", { keltner: { ...inputs, rangeType: mode } })).toBe(
+      getIndicatorLabel("keltner", { keltner: inputs }),
+    );
+  }
+  for (const rangeType of [-1, 3, 0.5, NaN, Infinity]) {
+    expect(updateIndicatorInputs("keltner", { keltner: inputs }, { rangeType })).toBeNull();
+    expect(getIndicatorInputs("keltner", { keltner: { rangeType } }).rangeType).toBe(0);
+  }
 });

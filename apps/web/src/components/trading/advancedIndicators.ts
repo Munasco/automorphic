@@ -468,7 +468,7 @@ export function calculateStochasticRSI(
   return result;
 }
 
-/** Selected moving-average basis ± multiplier × Wilder ATR, aligned after both finish warmup. */
+/** Moving-average basis ± selected range. High-low uses Wilder smoothing over the MA period. */
 export function calculateKeltnerChannels(
   bars: readonly Candle[],
   period = 20,
@@ -476,20 +476,35 @@ export function calculateKeltnerChannels(
   multiplier = 2,
   source: PriceSource = "close",
   basisType: "ema" | "sma" = "ema",
+  rangeType: "atr" | "trueRange" | "highLow" = "atr",
 ): IndicatorBands {
   const result = emptyBands();
   if (
     ![period, atrPeriod].every(validPeriod) ||
     !Number.isFinite(multiplier) ||
     multiplier < 0 ||
-    (basisType !== "ema" && basisType !== "sma")
+    (basisType !== "ema" && basisType !== "sma") ||
+    !["atr", "trueRange", "highLow"].includes(rangeType)
   )
     return result;
   for (const segment of segments(bars, validRange)) {
-    const atr = new Map(calculateATR(segment, atrPeriod).map((point) => [point.time, point.value]));
+    const ranges =
+      rangeType === "atr"
+        ? calculateATR(segment, atrPeriod)
+        : rangeType === "trueRange"
+          ? segment.map((bar, index) => ({
+              time: bar.time,
+              value: trueRange(bar, segment[index - 1]),
+            }))
+          : smooth(
+              segment.map((bar) => ({ time: bar.time, value: bar.high - bar.low })),
+              period,
+              1 / period,
+            );
+    const rangeByTime = new Map(ranges.map((point) => [point.time, point.value]));
     const basis = basisType === "ema" ? calculateEMA : calculateSMA;
     for (const point of basis(segment, period, source)) {
-      const range = atr.get(point.time);
+      const range = rangeByTime.get(point.time);
       if (range === undefined) continue;
       const upper = point.value + multiplier * range;
       const lower = point.value - multiplier * range;
