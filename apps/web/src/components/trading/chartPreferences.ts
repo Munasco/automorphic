@@ -101,6 +101,7 @@ type SavedChartPreferences = {
   thinBars: boolean;
   showBarOpen: boolean;
   showCandleWicks: boolean;
+  showCandleBorders: boolean;
   showPriceLine: boolean;
   showPriceLabel: boolean;
   priceScaleMode: ChartPriceScaleMode;
@@ -174,6 +175,8 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     thinBars: typeof saved.thinBars === "boolean" ? saved.thinBars : true,
     showBarOpen: typeof saved.showBarOpen === "boolean" ? saved.showBarOpen : true,
     showCandleWicks: typeof saved.showCandleWicks === "boolean" ? saved.showCandleWicks : true,
+    showCandleBorders:
+      typeof saved.showCandleBorders === "boolean" ? saved.showCandleBorders : true,
     showPriceLine: typeof saved.showPriceLine === "boolean" ? saved.showPriceLine : true,
     showPriceLabel: typeof saved.showPriceLabel === "boolean" ? saved.showPriceLabel : true,
     priceScaleMode: validPriceScaleMode(saved.priceScaleMode)
@@ -206,6 +209,7 @@ export const useChartPreferences = create<{
   thinBars: boolean;
   showBarOpen: boolean;
   showCandleWicks: boolean;
+  showCandleBorders: boolean;
   showPriceLine: boolean;
   showPriceLabel: boolean;
   priceScaleMode: ChartPriceScaleMode;
@@ -242,6 +246,7 @@ export const useChartPreferences = create<{
   toggleThinBars: () => void;
   toggleBarOpen: () => void;
   toggleCandleWicks: () => void;
+  toggleCandleBorders: () => void;
   togglePriceLine: () => void;
   togglePriceLabel: () => void;
   setPriceScaleMode: (mode: ChartPriceScaleMode) => void;
@@ -273,6 +278,7 @@ export const useChartPreferences = create<{
       thinBars: true,
       showBarOpen: true,
       showCandleWicks: true,
+      showCandleBorders: true,
       showPriceLine: true,
       showPriceLabel: true,
       priceScaleMode: "normal",
@@ -528,6 +534,7 @@ export const useChartPreferences = create<{
       toggleThinBars: () => set((state) => ({ thinBars: !state.thinBars })),
       toggleBarOpen: () => set((state) => ({ showBarOpen: !state.showBarOpen })),
       toggleCandleWicks: () => set((state) => ({ showCandleWicks: !state.showCandleWicks })),
+      toggleCandleBorders: () => set((state) => ({ showCandleBorders: !state.showCandleBorders })),
       togglePriceLine: () => set((state) => ({ showPriceLine: !state.showPriceLine })),
       togglePriceLabel: () => set((state) => ({ showPriceLabel: !state.showPriceLabel })),
       setPriceScaleMode: (priceScaleMode) => {

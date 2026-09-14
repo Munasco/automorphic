@@ -2397,3 +2397,86 @@ describe("bar chart appearance preferences", () => {
     }
   });
 });
+
+describe("candle border visibility preferences", () => {
+  it("defaults legacy and malformed values to visible without changing wick or bar choices", () => {
+    expect(useChartPreferences.getInitialState().showCandleBorders).toBe(true);
+    expect(normalizeChartPreferences({}).showCandleBorders).toBe(true);
+    for (const showCandleBorders of [undefined, null, "false", "true", 0, 1, {}, [], [false]])
+      expect(
+        normalizeChartPreferences({
+          showCandleBorders,
+          showCandleWicks: false,
+          thinBars: false,
+          showBarOpen: false,
+        }),
+      ).toMatchObject({
+        showCandleBorders: true,
+        showCandleWicks: false,
+        thinBars: false,
+        showBarOpen: false,
+      });
+    for (const showCandleBorders of [false, true])
+      expect(normalizeChartPreferences({ showCandleBorders }).showCandleBorders).toBe(
+        showCandleBorders,
+      );
+  });
+
+  it.each([false, true])(
+    "persists border visibility=%s independently through style changes and reload",
+    async (showCandleBorders) => {
+      const store = configure();
+      store.toggleCandleWicks();
+      store.toggleThinBars();
+      store.toggleBarOpen();
+      store.setPriceScaleMode("logarithmic");
+      store.setGridColor("#abcdef");
+      if (showCandleBorders) store.toggleCandleBorders();
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+      store.toggleCandleBorders();
+      expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(1);
+      const expected = { ...before, showCandleBorders };
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      for (const style of ["hollow", "heikin-ashi", "bars", "candles"] as const) {
+        store.setStyle(style);
+        expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+          ...expected,
+          style,
+        });
+      }
+      const serialized = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      expect(JSON.parse(serialized).state.showCandleBorders).toBe(showCandleBorders);
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(serialized);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+        ...expected,
+        style: "candles",
+      });
+      expect(typeof useChartPreferences.getState().toggleCandleBorders).toBe("function");
+    },
+  );
+
+  it("restores workspace border choices and resets older workspaces without inheriting the prior choice", async () => {
+    const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+    const hidden = {
+      showCandleBorders: false,
+      showCandleWicks: true,
+      thinBars: false,
+      showBarOpen: true,
+    };
+    const legacy = { showCandleWicks: false, thinBars: true, showBarOpen: false };
+    for (const [saved, expected] of [
+      [hidden, hidden],
+      [legacy, { ...legacy, showCandleBorders: true }],
+      [hidden, hidden],
+    ] as const) {
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+        JSON.stringify({ version: 0, state: saved }),
+      );
+      await hydrate();
+      expect(useChartPreferences.getState()).toMatchObject(expected);
+    }
+  });
+});

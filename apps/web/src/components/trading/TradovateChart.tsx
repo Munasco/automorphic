@@ -425,7 +425,9 @@ export function TradovateChart({
       candles: chart.addSeries(CandlestickSeries, {
         upColor: "#26a69a",
         downColor: "#ef5350",
-        borderVisible: false,
+        borderUpColor: "#26a69a",
+        borderDownColor: "#ef5350",
+        borderVisible: true,
         wickUpColor: "#26a69a",
         wickDownColor: "#ef5350",
         priceFormat,
@@ -443,7 +445,9 @@ export function TradovateChart({
         title: "HA",
         upColor: "#26a69a",
         downColor: "#ef5350",
-        borderVisible: false,
+        borderUpColor: "#26a69a",
+        borderDownColor: "#ef5350",
+        borderVisible: true,
         wickUpColor: "#26a69a",
         wickDownColor: "#ef5350",
         visible: false,
@@ -758,7 +762,10 @@ export function TradovateChart({
         title: style === "heikin-ashi" && settings.showPriceLabel ? "HA" : "",
       });
     for (const style of ["candles", "hollow", "heikin-ashi"] as const)
-      engine.prices[style].applyOptions({ wickVisible: settings.showCandleWicks });
+      engine.prices[style].applyOptions({
+        wickVisible: settings.showCandleWicks,
+        borderVisible: settings.showCandleBorders,
+      });
     engine.prices.bars.applyOptions({
       thinBars: settings.thinBars,
       openVisible: settings.showBarOpen,
@@ -831,6 +838,7 @@ export function TradovateChart({
     settings.thinBars,
     settings.showBarOpen,
     settings.showCandleWicks,
+    settings.showCandleBorders,
     settings.showPriceLine,
     settings.showPriceLabel,
   ]);
@@ -910,7 +918,9 @@ export function TradovateChart({
         showBarOpen={settings.showBarOpen}
         onToggleBarOpen={settings.toggleBarOpen}
         showCandleWicks={settings.showCandleWicks}
+        showCandleBorders={settings.showCandleBorders}
         onToggleCandleWicks={settings.toggleCandleWicks}
+        onToggleCandleBorders={settings.toggleCandleBorders}
         showPriceLine={settings.showPriceLine}
         onTogglePriceLine={settings.togglePriceLine}
         showPriceLabel={settings.showPriceLabel}

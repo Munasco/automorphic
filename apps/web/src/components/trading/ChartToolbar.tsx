@@ -70,7 +70,9 @@ export type ChartToolbarProps = {
   showBarOpen: boolean;
   onToggleBarOpen: () => void;
   showCandleWicks: boolean;
+  showCandleBorders: boolean;
   onToggleCandleWicks: () => void;
+  onToggleCandleBorders: () => void;
   showPriceLine: boolean;
   onTogglePriceLine: () => void;
   showPriceLabel: boolean;
@@ -126,7 +128,9 @@ export function ChartToolbar({
   showBarOpen,
   onToggleBarOpen,
   showCandleWicks,
+  showCandleBorders,
   onToggleCandleWicks,
+  onToggleCandleBorders,
   showPriceLine,
   onTogglePriceLine,
   showPriceLabel,
@@ -489,17 +493,30 @@ export function ChartToolbar({
               </>
             )}
             {(style === "candles" || style === "hollow" || style === "heikin-ashi") && (
-              <label
-                htmlFor={`${id}-candle-wicks`}
-                className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"
-              >
-                <Checkbox
-                  id={`${id}-candle-wicks`}
-                  checked={showCandleWicks}
-                  onCheckedChange={onToggleCandleWicks}
-                />
-                Candle wicks
-              </label>
+              <>
+                <label
+                  htmlFor={`${id}-candle-borders`}
+                  className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"
+                >
+                  <Checkbox
+                    id={`${id}-candle-borders`}
+                    checked={showCandleBorders}
+                    onCheckedChange={onToggleCandleBorders}
+                  />
+                  Candle borders
+                </label>
+                <label
+                  htmlFor={`${id}-candle-wicks`}
+                  className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"
+                >
+                  <Checkbox
+                    id={`${id}-candle-wicks`}
+                    checked={showCandleWicks}
+                    onCheckedChange={onToggleCandleWicks}
+                  />
+                  Candle wicks
+                </label>
+              </>
             )}
             <div className="flex flex-col gap-2 px-2 pb-2">
               <label htmlFor={`${id}-crosshair`} className="text-xs">
