@@ -1407,10 +1407,16 @@ it("persists independent Bollinger BandWidth inputs and appearance", async () =>
       period: 10,
       source: 5,
       deviations: 1.5,
+      expansionLength: 12,
+      contractionLength: 8,
     }),
   ).toBe(true);
   store.setIndicatorInstanceAppearance(base, {
-    plots: { main: { color: "#ff00aa", lineWidth: 3 } },
+    plots: {
+      main: { color: "#ff00aa", lineWidth: 3 },
+      highest: { visible: false, color: "#facc15", lineWidth: 2 },
+      lowest: { color: "#a78bfa" },
+    },
   });
   const duplicate = store.duplicateIndicatorInstance(base)!;
   expect(
@@ -1418,10 +1424,18 @@ it("persists independent Bollinger BandWidth inputs and appearance", async () =>
       period: 21,
       source: 1,
       deviations: 3,
+      expansionLength: 30,
+      contractionLength: 20,
     }),
   ).toBe(true);
   store.toggleIndicatorInstanceVisibility(duplicate);
-  for (const invalid of [{ period: 0 }, { deviations: -1 }, { source: 7 }])
+  for (const invalid of [
+    { period: 0 },
+    { deviations: -1 },
+    { source: 7 },
+    { expansionLength: 0 },
+    { contractionLength: 1.5 },
+  ])
     expect(store.setIndicatorInstanceInputs(base, invalid)).toBe(false);
   const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
   vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
@@ -1431,16 +1445,22 @@ it("persists independent Bollinger BandWidth inputs and appearance", async () =>
     (i) => i.key === "bbWidth",
   );
   expect(instances.map((i) => i.inputs)).toEqual([
-    { period: 10, source: 5, deviations: 1.5 },
-    { period: 21, source: 1, deviations: 3 },
+    { period: 10, source: 5, deviations: 1.5, expansionLength: 12, contractionLength: 8 },
+    { period: 21, source: 1, deviations: 3, expansionLength: 30, contractionLength: 20 },
   ]);
   expect(instances.map((i) => i.hidden)).toEqual([false, true]);
   expect(instances[0]!.appearance.plots?.main).toEqual({ color: "#ff00aa", lineWidth: 3 });
+  expect(instances[0]!.appearance.plots?.highest).toEqual({
+    visible: false,
+    color: "#facc15",
+    lineWidth: 2,
+  });
+  expect(instances[1]!.appearance.plots?.lowest).toEqual({ color: "#a78bfa" });
   useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
   expect(
     getChartIndicatorInstances(useChartPreferences.getState()).find((i) => i.id === duplicate)!
       .inputs,
-  ).toEqual({ period: 20, source: 0, deviations: 2 });
+  ).toEqual({ period: 20, source: 0, deviations: 2, expansionLength: 125, contractionLength: 125 });
 });
 
 it("persists independent Bollinger %B inputs, levels and appearance", async () => {

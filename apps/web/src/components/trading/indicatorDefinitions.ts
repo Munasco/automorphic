@@ -38,7 +38,10 @@ import { calculateSupertrend } from "./supertrend";
 import { calculateMoneyFlowIndex } from "./moneyFlowIndex";
 import { calculateHullMovingAverage } from "./hullMovingAverage";
 import { calculateWeightedMovingAverage } from "./weightedMovingAverage";
-import { calculateBollingerBandwidth } from "./bollingerBandwidth";
+import {
+  calculateBollingerBandwidth,
+  calculateBollingerBandwidthExtremes,
+} from "./bollingerBandwidth";
 import { calculateBollingerPercentB } from "./bollingerPercentB";
 import { calculateVolumeMovingAverage } from "./volumeMovingAverage";
 import { calculateAwesomeOscillator } from "./awesomeOscillator";
@@ -678,18 +681,47 @@ export const INDICATOR_DEFINITIONS = [
         max: 10,
         step: 0.1,
       },
+      { ...length(125, "expansionLength", "Highest expansion length"), legend: false },
+      { ...length(125, "contractionLength", "Lowest contraction length"), legend: false },
     ],
-    styles: [style("main", "Line", "#22d3ee", true, 2)],
-    calculate: ({ bars, inputs }) =>
-      single(
-        calculateBollingerBandwidth(
-          bars,
-          inputs.period,
-          inputs.deviations,
-          PRICE_SOURCES[inputs.source ?? 0],
-        ),
-        { title: "BBW", breakOnGaps: true },
-      ),
+    styles: [
+      style("main", "Line", "#22d3ee", true, 2),
+      style("highest", "Highest expansion", "#ef5350"),
+      style("lowest", "Lowest contraction", "#26a69a"),
+    ],
+    calculate: ({ bars, inputs }) => {
+      const points = calculateBollingerBandwidth(
+        bars,
+        inputs.period,
+        inputs.deviations,
+        PRICE_SOURCES[inputs.source ?? 0],
+      );
+      const extremes = calculateBollingerBandwidthExtremes(
+        bars,
+        points,
+        inputs.expansionLength,
+        inputs.contractionLength,
+      );
+      return {
+        plots: [
+          { id: "main", styleKey: "main", points, title: "BBW", breakOnGaps: true },
+          {
+            id: "highest",
+            styleKey: "highest",
+            points: extremes.highest,
+            primary: false,
+            breakOnGaps: true,
+          },
+          {
+            id: "lowest",
+            styleKey: "lowest",
+            points: extremes.lowest,
+            primary: false,
+            breakOnGaps: true,
+          },
+        ],
+      };
+    },
   }),
   defineIndicator({
     key: "bbPercentB",

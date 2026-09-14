@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 import { PRICE_SOURCES, type Candle, type PriceSource } from "./chartIndicators";
-import { calculateBollingerBandwidth } from "./bollingerBandwidth";
+import {
+  calculateBollingerBandwidth,
+  calculateBollingerBandwidthExtremes,
+} from "./bollingerBandwidth";
 
 const bars = (prices: number[]): Candle[] =>
   prices.map((close, index) => ({
@@ -163,5 +166,152 @@ describe("Bollinger BandWidth", () => {
       expect(calculateBollingerBandwidth(bars([2, 4]), 2, deviations)).toEqual([]);
     expect(calculateBollingerBandwidth(bars([2, 4]), 3)).toEqual([]);
     expect(calculateBollingerBandwidth([], 1)).toEqual([]);
+  });
+});
+
+describe("Bollinger BandWidth rolling extremes", () => {
+  const chart = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({ time: index + 1 }));
+  const points = (values: number[]) => values.map((value, index) => ({ time: index + 1, value }));
+
+  it("uses independent inclusive chart-bar windows and partial warmup", () => {
+    const bandwidth = points([4, 7, 2, 9, 5, 3]);
+    const result = calculateBollingerBandwidthExtremes(chart(6), bandwidth, 3, 2);
+    expect(result.highest).toEqual(points([4, 7, 7, 9, 9, 9]));
+    expect(result.lowest).toEqual(points([4, 4, 2, 2, 5, 3]));
+    expect(calculateBollingerBandwidthExtremes(chart(6), bandwidth, 1, 1)).toEqual({
+      highest: bandwidth,
+      lowest: bandwidth,
+    });
+  });
+
+  it("starts at the first valid width, retains zero and negative readings, and ignores unrelated points", () => {
+    const bandwidth = [
+      { time: 3, value: 0 },
+      { time: 4, value: -4 },
+      { time: 5, value: 2 },
+      { time: 999, value: 1000 },
+    ];
+    expect(calculateBollingerBandwidthExtremes(chart(5), bandwidth, 2, 2)).toEqual({
+      highest: [
+        { time: 3, value: 0 },
+        { time: 4, value: 0 },
+        { time: 5, value: 2 },
+      ],
+      lowest: [
+        { time: 3, value: 0 },
+        { time: 4, value: -4 },
+        { time: 5, value: -4 },
+      ],
+    });
+  });
+
+  it("expires widths by chart-bar index across gaps rather than by valid sample count", () => {
+    const bandwidth = [
+      { time: 1, value: 100 },
+      { time: 2, value: 1 },
+      { time: 4, value: 5 },
+      { time: 7, value: 8 },
+    ];
+    expect(calculateBollingerBandwidthExtremes(chart(7), bandwidth, 3, 4)).toEqual({
+      highest: [
+        { time: 1, value: 100 },
+        { time: 2, value: 100 },
+        { time: 4, value: 5 },
+        { time: 7, value: 8 },
+      ],
+      lowest: [
+        { time: 1, value: 100 },
+        { time: 2, value: 1 },
+        { time: 4, value: 1 },
+        { time: 7, value: 5 },
+      ],
+    });
+  });
+
+  it("gaps zero-basis BandWidth output while preserving valid extrema until their bar expires", () => {
+    const candles = bars([1, 3, -3, 3, 4]);
+    const bandwidth = calculateBollingerBandwidth(candles, 2);
+    expect(bandwidth.map((point) => point.time)).toEqual([2, 5]);
+    const result = calculateBollingerBandwidthExtremes(candles, bandwidth, 3, 4);
+    expect(result.highest).toEqual(bandwidth);
+    expect(result.lowest).toEqual(bandwidth);
+  });
+
+  it("counts timestamp gaps as one bar each and invalid chart timestamps as missing bars", () => {
+    const candles = [{ time: 1 }, { time: 1000 }, { time: NaN }, { time: 100000 }];
+    const bandwidth = [
+      { time: 1, value: 100 },
+      { time: 1000, value: 5 },
+      { time: NaN, value: 500 },
+      { time: 100000, value: 10 },
+    ];
+    expect(calculateBollingerBandwidthExtremes(candles, bandwidth, 2, 3)).toEqual({
+      highest: [
+        { time: 1, value: 100 },
+        { time: 1000, value: 100 },
+        { time: 100000, value: 10 },
+      ],
+      lowest: [
+        { time: 1, value: 100 },
+        { time: 1000, value: 5 },
+        { time: 100000, value: 5 },
+      ],
+    });
+  });
+
+  it("treats nonfinite current widths as gaps and validates each length independently", () => {
+    const bandwidth = points([4, NaN, Infinity, 2, 3]);
+    const valid = [
+      { time: 1, value: 4 },
+      { time: 4, value: 2 },
+      { time: 5, value: 3 },
+    ];
+    const result = calculateBollingerBandwidthExtremes(chart(5), bandwidth, 2, 2);
+    expect(result.highest).toEqual(valid);
+    expect(result.lowest).toEqual([
+      { time: 1, value: 4 },
+      { time: 4, value: 2 },
+      { time: 5, value: 2 },
+    ]);
+    for (const invalid of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(calculateBollingerBandwidthExtremes(chart(5), bandwidth, invalid, 2)).toEqual({
+        highest: [],
+        lowest: result.lowest,
+      });
+      expect(calculateBollingerBandwidthExtremes(chart(5), bandwidth, 2, invalid)).toEqual({
+        highest: result.highest,
+        lowest: [],
+      });
+    }
+    expect(calculateBollingerBandwidthExtremes([], bandwidth)).toEqual({ highest: [], lowest: [] });
+    expect(calculateBollingerBandwidthExtremes(chart(5), [])).toEqual({ highest: [], lowest: [] });
+  });
+
+  it("defaults to125 chart bars and expires old extrema on the126th", () => {
+    const bandwidth = points([1000, ...Array.from({ length: 124 }, () => 5), 10]);
+    const result = calculateBollingerBandwidthExtremes(chart(126), bandwidth);
+    expect(result.highest[124]).toEqual({ time: 125, value: 1000 });
+    expect(result.highest[125]).toEqual({ time: 126, value: 10 });
+    expect(result.lowest[125]).toEqual({ time: 126, value: 5 });
+  });
+
+  it("recomputes revisions without changing prior output or input and handles long sliding windows", () => {
+    const candles = chart(5000);
+    const bandwidth = points(Array.from({ length: 5000 }, (_, index) => index));
+    const snapshot = structuredClone({ candles, bandwidth });
+    const result = calculateBollingerBandwidthExtremes(candles, bandwidth, 3, 4);
+    expect(result.highest).toEqual(bandwidth);
+    expect(result.lowest).toEqual(
+      points(Array.from({ length: 5000 }, (_, index) => Math.max(0, index - 3))),
+    );
+    const revised = [...bandwidth.slice(0, -1), { time: 5000, value: -1 }];
+    const changed = calculateBollingerBandwidthExtremes(candles, revised, 3, 4);
+    expect(changed.highest.slice(0, -1)).toEqual(result.highest.slice(0, -1));
+    expect(changed.lowest.slice(0, -1)).toEqual(result.lowest.slice(0, -1));
+    expect(changed.highest.at(-1)).toEqual({ time: 5000, value: 4998 });
+    expect(changed.lowest.at(-1)).toEqual({ time: 5000, value: -1 });
+    expect({ candles, bandwidth }).toEqual(snapshot);
+    expect(calculateBollingerBandwidthExtremes(candles, bandwidth, 3, 4)).toEqual(result);
   });
 });
