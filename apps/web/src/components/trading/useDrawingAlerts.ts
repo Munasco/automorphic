@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { IChartApi, ISeriesApi, SeriesType } from "lightweight-charts";
 import {
   createDrawingAlertSession,
@@ -13,7 +13,7 @@ import { tradingWorkspaceStorage } from "./workspaceStorage";
 import { chartIntervalKey, formatChartInterval, type ChartInterval } from "./tradingIntervals";
 import type { ChartDrawingsController } from "./useChartDrawings";
 import type { ChartMarketSnapshot } from "./chartMarketQuery";
-import { toastManager } from "../ui/toast";
+import { useAlertNotifications } from "./useAlertNotifications";
 
 const EMPTY: DrawingAlertState = { alerts: [], history: [] };
 const noSubscribe = () => () => {};
@@ -42,13 +42,6 @@ export function useDrawingAlerts({
     tradingWorkspaceStorage.subscribe,
     tradingWorkspaceStorage.getSnapshot,
   );
-  const sound = useRef<AudioContext | null>(null);
-  const prepareSound = useCallback(async () => {
-    if (!sound.current || sound.current.state === "closed") sound.current = new AudioContext();
-    const context = sound.current;
-    if (context.state !== "running") await context.resume();
-    return context.state === "running";
-  }, []);
   const intervalKey = chartIntervalKey(interval);
   const identity = useMemo(
     () => ({
@@ -69,58 +62,31 @@ export function useDrawingAlerts({
   } | null>(null);
   const active = bundle?.identity === identity ? bundle : null;
   const { getCommittedDrawings } = drawings;
-  const deliver = useCallback((event: DrawingAlertEvent) => {
-    const title = event.name || `${event.symbol} drawing alert`;
-    const description =
-      event.message || `Price ${priceText(event.price)} · ${drawingAlertTargetLabel(event)}`;
-    if (event.notifications?.toast !== false)
-      toastManager.add({ type: "info", title, description });
-    if (
-      event.notifications?.desktop &&
-      typeof Notification !== "undefined" &&
-      Notification.permission === "granted"
-    ) {
-      try {
-        const notification = new Notification(title, { body: description, tag: event.id });
-        notification.addEventListener(
-          "click",
-          () => {
-            window.focus();
-            notification.close();
-          },
-          { once: true },
-        );
-      } catch {
-        /* Toast and history remain available when the OS rejects delivery. */
-      }
-    }
-    if (event.notifications?.sound && sound.current?.state === "running") {
-      const context = sound.current;
-      for (const [offset, frequency] of [
-        [0, 880],
-        [0.15, 1174],
-      ] as const) {
-        const oscillator = context.createOscillator();
-        const gain = context.createGain();
-        oscillator.frequency.value = frequency;
-        gain.gain.setValueAtTime(0, context.currentTime + offset);
-        gain.gain.linearRampToValueAtTime(0.12, context.currentTime + offset + 0.01);
-        gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + offset + 0.2);
-        oscillator.connect(gain);
-        gain.connect(context.destination);
-        oscillator.start(context.currentTime + offset);
-        oscillator.stop(context.currentTime + offset + 0.21);
-        oscillator.addEventListener(
-          "ended",
-          () => {
-            oscillator.disconnect();
-            gain.disconnect();
-          },
-          { once: true },
-        );
-      }
-    }
-  }, []);
+  const state = useSyncExternalStore(
+    active?.session.subscribe ?? noSubscribe,
+    active?.session.getSnapshot ?? emptySnapshot,
+    emptySnapshot,
+  );
+  const hasSoundAlerts = state.alerts.some(
+    (alert) =>
+      alert.enabled &&
+      alert.symbol === symbol &&
+      alert.intervalKey === intervalKey &&
+      alert.notifications?.sound,
+  );
+  const { prepare, deliver: notify } = useAlertNotifications(hasSoundAlerts);
+  const deliver = useCallback(
+    (event: DrawingAlertEvent) => {
+      notify({
+        id: event.id,
+        title: event.name || `${event.symbol} drawing alert`,
+        body:
+          event.message || `Price ${priceText(event.price)} · ${drawingAlertTargetLabel(event)}`,
+        ...(event.notifications ? { notifications: event.notifications } : {}),
+      });
+    },
+    [notify],
+  );
   useEffect(() => {
     if (!chart || !series || !symbol || !workspace.ready) return;
     const projection = {
@@ -169,37 +135,6 @@ export function useDrawingAlerts({
     // Changing the price transform invalidates the previous line-relative crossing baseline.
     // eslint-disable-next-line react/exhaustive-effect-dependencies
   }, [active, logScale]);
-  useEffect(
-    () => () => {
-      const context = sound.current;
-      sound.current = null;
-      if (context && context.state !== "closed") void context.close().catch(() => {});
-    },
-    [],
-  );
-  const state = useSyncExternalStore(
-    active?.session.subscribe ?? noSubscribe,
-    active?.session.getSnapshot ?? emptySnapshot,
-    emptySnapshot,
-  );
-  const hasSoundAlerts = state.alerts.some(
-    (alert) =>
-      alert.symbol === symbol && alert.intervalKey === intervalKey && alert.notifications?.sound,
-  );
-  useEffect(() => {
-    if (!active || !hasSoundAlerts) return;
-    // Saved alerts survive reloads, AudioContexts do not. Resume on an ordinary
-    // user gesture as well as Create, including after the browser suspends audio.
-    const activate = () => {
-      void prepareSound().catch(() => {});
-    };
-    document.addEventListener("pointerdown", activate, true);
-    document.addEventListener("keydown", activate, true);
-    return () => {
-      document.removeEventListener("pointerdown", activate, true);
-      document.removeEventListener("keydown", activate, true);
-    };
-  }, [active, hasSoundAlerts, prepareSound]);
   useEffect(() => {
     if (!active) return;
     const next = state.alerts
@@ -229,23 +164,10 @@ export function useDrawingAlerts({
   const saveAlert = useCallback(
     async (input: NewDrawingAlert, alertId?: string): Promise<string | null> => {
       if (!active) return "The chart is still loading. Try again in a moment.";
-      if (input.notifications?.desktop) {
-        if (typeof Notification === "undefined")
-          return "Desktop notifications aren't supported here. Choose a toast or sound instead.";
-        const permission =
-          Notification.permission === "default"
-            ? await Notification.requestPermission()
-            : Notification.permission;
-        if (permission !== "granted")
-          return "Allow desktop notifications, or turn that option off.";
-      }
-      if (input.notifications?.sound) {
-        try {
-          if (!(await prepareSound())) return "Sound couldn't start. Turn sound off or try again.";
-        } catch {
-          return "Sound isn't available here. Turn sound off to save the alert.";
-        }
-      }
+      const notificationError = await prepare(
+        input.notifications ?? { toast: true, sound: false, desktop: false },
+      );
+      if (notificationError) return notificationError;
       const committed = getCommittedDrawings();
       if (!committed) return "The drawing is no longer available.";
       active.session.syncDrawings(committed);
@@ -259,7 +181,7 @@ export function useDrawingAlerts({
         return "Couldn't save the alert. Check your workspace connection and try again.";
       }
     },
-    [active, getCommittedDrawings, prepareSound],
+    [active, getCommittedDrawings, prepare],
   );
   return useMemo(
     () => ({

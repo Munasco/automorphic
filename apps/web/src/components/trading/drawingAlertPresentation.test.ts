@@ -28,6 +28,24 @@ describe("drawing alert target labels", () => {
       "Line 24,301.25",
     );
   });
+  it("identifies the channel boundary that triggered", () => {
+    expect(
+      drawingAlertTargetLabel({
+        ...common,
+        targetKind: "price",
+        target: 24301.25,
+        channelBoundary: "upper",
+      }),
+    ).toBe("Upper channel 24,301.25");
+    expect(
+      drawingAlertTargetLabel({
+        ...common,
+        targetKind: "price",
+        target: 24000,
+        channelBoundary: "lower",
+      }),
+    ).toBe("Lower channel 24,000");
+  });
   it("shows a vertical boundary as a UTC date and time, never as a price", () => {
     expect(drawingAlertTargetLabel(timeEvent((Date.UTC(2026, 8, 12, 14, 30) / 1000) as Time))).toBe(
       "Vertical line · Sep 12, 2026, 02:30 PM UTC",

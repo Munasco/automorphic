@@ -6,10 +6,16 @@ import { DrawingAlertExpiration } from "./DrawingAlertExpiration";
 import { AlertIcon } from "./AlertIcon";
 import { DrawingSelect, inputClass } from "./DrawingStyleControls";
 import type { ChartDrawing } from "./drawingGeometry";
-import type { DrawingAlert, DrawingAlertCondition, DrawingAlertTrigger } from "./drawingAlerts";
+import type {
+  DrawingAlert,
+  DrawingAlertCondition,
+  DrawingAlertTrigger,
+  DrawingAlertChannelBoundary,
+} from "./drawingAlerts";
 
 export type DrawingAlertDialogInput = {
   drawingId: string;
+  channelBoundary?: DrawingAlertChannelBoundary;
   condition: DrawingAlertCondition;
   trigger: DrawingAlertTrigger;
   expiresAt: number | null;
@@ -47,6 +53,7 @@ const drawingLabels: Partial<Record<ChartDrawing["kind"], string>> = {
   horizontal: "Horizontal line",
   "horizontal-ray": "Horizontal ray",
   vertical: "Vertical line",
+  channel: "Parallel channel",
 };
 
 function monthAhead(now = Date.now()) {
@@ -96,7 +103,12 @@ export function DrawingAlertDialog({
   const [expiresAt, setExpiresAt] = useState<number | null>(() =>
     alert ? alert.expiresAt : monthAhead(),
   );
-  const label = drawing.name || drawingLabels[drawing.kind] || "Drawing";
+  const channel = drawing.kind === "channel";
+  const [channelBoundary, setChannelBoundary] = useState<DrawingAlertChannelBoundary>(
+    alert?.channelBoundary ?? "upper",
+  );
+  const baseLabel = drawing.name || drawingLabels[drawing.kind] || "Drawing";
+  const label = channel ? `${baseLabel} ${channelBoundary} boundary` : baseLabel;
   const [message, setMessage] = useState<MessageDraft>(() => ({
     name: alert?.name ?? "",
     message: alert
@@ -162,6 +174,7 @@ export function DrawingAlertDialog({
     try {
       const failure = await onSubmit({
         drawingId: drawing.id,
+        ...(channel ? { channelBoundary } : {}),
         condition: vertical ? "crossing" : condition,
         trigger: vertical ? "once" : trigger,
         expiresAt,
@@ -178,7 +191,7 @@ export function DrawingAlertDialog({
     }
   }
 
-  const mainHeight = vertical ? 445 : 475;
+  const mainHeight = vertical ? 445 : channel ? 517 : 475;
   const height = page === "main" ? mainHeight : page === "message" ? 508 : 406;
   return (
     <Dialog
@@ -236,7 +249,9 @@ export function DrawingAlertDialog({
 
         <div className="min-h-0 overflow-y-auto text-sm">
           {page === "main" ? (
-            <div className={`${vertical ? "min-h-[307px]" : "min-h-[337px]"} px-5 py-4`}>
+            <div
+              className={`${vertical ? "min-h-[307px]" : channel ? "min-h-[379px]" : "min-h-[337px]"} px-5 py-4`}
+            >
               <div className="grid grid-cols-[minmax(90px,30%)_minmax(0,1fr)] gap-x-0 gap-y-2 pr-[5px]">
                 <span className="self-center text-[#8c8c8c]">Condition</span>
                 <div className={`${inputClass} flex items-center`}>Price</div>
@@ -270,9 +285,37 @@ export function DrawingAlertDialog({
                 <input
                   aria-label="Drawing"
                   className={`${inputClass} w-full bg-white/5`}
-                  value={label}
+                  value={baseLabel}
                   readOnly
                 />
+                {channel ? (
+                  <>
+                    <span className="self-center text-[#8c8c8c]">Boundary</span>
+                    <DrawingSelect
+                      label="Channel boundary"
+                      value={channelBoundary}
+                      options={[
+                        ["upper", "Upper boundary"],
+                        ["lower", "Lower boundary"],
+                      ]}
+                      className="h-[34px] w-full"
+                      onChange={(value) => {
+                        if (value !== "upper" && value !== "lower") return;
+                        const conditionLabel = conditions.find(([key]) => key === condition)![1];
+                        const previousDefault = `${symbol}, ${messageInterval} ${conditionLabel} ${label.toLowerCase()}`;
+                        setMessage((current) =>
+                          current.message === previousDefault
+                            ? {
+                                ...current,
+                                message: `${symbol}, ${messageInterval} ${conditionLabel} ${baseLabel.toLowerCase()} ${value} boundary`,
+                              }
+                            : current,
+                        );
+                        setChannelBoundary(value);
+                      }}
+                    />
+                  </>
+                ) : null}
               </div>
               <div className="mb-4 mt-[50px] border-t border-white/10" />
               <div className="grid grid-cols-[minmax(90px,30%)_minmax(0,1fr)] items-center pr-[5px] leading-[18px]">

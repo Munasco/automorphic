@@ -3,7 +3,7 @@ import type { DrawingAlertEvent } from "./drawingAlerts";
 /** Time targets must never pass through the price formatter (including synthetic tick keys). */
 export function drawingAlertTargetLabel(event: DrawingAlertEvent): string {
   if (event.targetKind === "price")
-    return `Line ${event.target.toLocaleString("en-US", { maximumFractionDigits: 6 })}`;
+    return `${event.channelBoundary === "upper" ? "Upper channel" : event.channelBoundary === "lower" ? "Lower channel" : "Line"} ${event.target.toLocaleString("en-US", { maximumFractionDigits: 6 })}`;
   if (event.intervalKey.startsWith("tick:")) return "Vertical line";
   const time = event.targetTime;
   if (typeof time === "number") {

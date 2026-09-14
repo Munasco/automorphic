@@ -10,7 +10,15 @@ export const ALERT_CONDITIONS = [
   "below",
 ] as const;
 export type AlertCondition = (typeof ALERT_CONDITIONS)[number];
+export type ChartAlertNotifications = { toast: boolean; sound: boolean; desktop: boolean };
+export const DEFAULT_CHART_ALERT_NOTIFICATIONS: Readonly<ChartAlertNotifications> = Object.freeze({
+  toast: true,
+  sound: false,
+  desktop: false,
+});
 export type ChartPriceAlert = {
+  expiresAt?: number | null;
+  notifications?: ChartAlertNotifications;
   id: string;
   name?: string;
   message?: string;
@@ -25,6 +33,7 @@ export type ChartPriceAlert = {
   lastQuoteAt: number | null;
 };
 export type ChartAlertEvent = {
+  notifications?: ChartAlertNotifications;
   id: string;
   name?: string;
   message?: string;
@@ -39,7 +48,14 @@ export type ChartAlertEvent = {
 export type ChartAlertState = { alerts: ChartPriceAlert[]; history: ChartAlertEvent[] };
 export type NewChartAlert = Pick<
   ChartPriceAlert,
-  "price" | "condition" | "repeat" | "cooldownMs" | "name" | "message"
+  | "price"
+  | "condition"
+  | "repeat"
+  | "cooldownMs"
+  | "name"
+  | "message"
+  | "expiresAt"
+  | "notifications"
 >;
 type AlertStorage = Pick<Storage, "getItem" | "setItem"> & {
   subscribe?: (listener: () => void) => () => void;
@@ -77,6 +93,20 @@ const condition = (value: unknown): value is AlertCondition =>
 const cooldown = (value: unknown): value is number =>
   finite(value) && value >= 1000 && value <= 86_400_000;
 
+const validExpiration = (value: unknown): value is number | null | undefined =>
+  value === undefined || value === null || stamp(value);
+const validNotifications = (value: unknown): value is ChartAlertNotifications | undefined =>
+  value === undefined ||
+  (record(value) &&
+    typeof value.toast === "boolean" &&
+    typeof value.sound === "boolean" &&
+    typeof value.desktop === "boolean");
+const notificationsFor = (value: ChartAlertNotifications | undefined): ChartAlertNotifications => ({
+  ...(value ?? DEFAULT_CHART_ALERT_NOTIFICATIONS),
+});
+const sameNotifications = (a: ChartAlertNotifications, b: ChartAlertNotifications) =>
+  a.toast === b.toast && a.sound === b.sound && a.desktop === b.desktop;
+
 const validName = (value: unknown): value is string | undefined =>
   value === undefined || (typeof value === "string" && value.trim().length <= 80);
 const validMessage = (value: unknown): value is string | undefined =>
@@ -109,6 +139,8 @@ export function parseChartAlerts(raw: string | null): ChartAlertState {
         !identifier(item.id) ||
         !validName(item.name) ||
         !validMessage(item.message) ||
+        !validNotifications(item.notifications) ||
+        !validExpiration(item.expiresAt) ||
         ids.has(item.id) ||
         !contract(item.symbol) ||
         !finite(item.price) ||
@@ -122,7 +154,17 @@ export function parseChartAlerts(raw: string | null): ChartAlertState {
       )
         continue;
       ids.add(item.id);
-      alerts.push(withText(item as ChartPriceAlert, item.name, item.message));
+      alerts.push(
+        withText(
+          {
+            ...(item as ChartPriceAlert),
+            expiresAt: item.expiresAt ?? null,
+            notifications: notificationsFor(item.notifications),
+          },
+          item.name,
+          item.message,
+        ),
+      );
     }
     const eventIds = new Set<string>();
     const history: ChartAlertEvent[] = [];
@@ -132,6 +174,7 @@ export function parseChartAlerts(raw: string | null): ChartAlertState {
         !identifier(item.id) ||
         !validName(item.name) ||
         !validMessage(item.message) ||
+        !validNotifications(item.notifications) ||
         eventIds.has(item.id) ||
         !identifier(item.alertId) ||
         !contract(item.symbol) ||
@@ -143,7 +186,13 @@ export function parseChartAlerts(raw: string | null): ChartAlertState {
       )
         continue;
       eventIds.add(item.id);
-      history.push(withText(item as ChartAlertEvent, item.name, item.message));
+      history.push(
+        withText(
+          { ...(item as ChartAlertEvent), notifications: notificationsFor(item.notifications) },
+          item.name,
+          item.message,
+        ),
+      );
     }
     return { alerts, history };
   } catch {
@@ -207,7 +256,21 @@ export function createChartAlertSession(
   };
   const armTime = (targetSymbol = symbol) =>
     Math.max(now(), (coordinator.symbols.get(targetSymbol)?.highWater ?? 0) + 1);
+  const checkExpiration = () => {
+    if (disposed) return false;
+    refresh();
+    const time = now();
+    let changed = false;
+    const alerts = state.alerts.map((alert) => {
+      if (!alert.enabled || alert.expiresAt == null || alert.expiresAt > time) return alert;
+      changed = true;
+      return { ...alert, enabled: false };
+    });
+    if (changed) publish({ ...state, alerts });
+    return changed;
+  };
   const session = {
+    checkExpiration,
     getSnapshot: () => state,
     subscribe: (listener: () => void) => {
       if (!disposed) listeners.add(listener);
@@ -224,6 +287,9 @@ export function createChartAlertSession(
         !condition(input.condition) ||
         !validName(input.name) ||
         !validMessage(input.message) ||
+        !validNotifications(input.notifications) ||
+        !validExpiration(input.expiresAt) ||
+        (input.expiresAt != null && input.expiresAt <= now()) ||
         typeof input.repeat !== "boolean" ||
         !cooldown(input.cooldownMs)
       )
@@ -232,6 +298,8 @@ export function createChartAlertSession(
         throw Error("Delete an alert before adding another (100 per workspace).");
       const alert: ChartPriceAlert = {
         ...withText(input, input.name, input.message),
+        expiresAt: input.expiresAt ?? null,
+        notifications: notificationsFor(input.notifications),
         id: newId(),
         symbol,
         enabled: true,
@@ -245,6 +313,7 @@ export function createChartAlertSession(
     update: (id: string, input: NewChartAlert): boolean => {
       if (disposed) return false;
       refresh();
+      checkExpiration();
       const alert = state.alerts.find((item) => item.id === id && item.symbol === symbol);
       if (
         !alert ||
@@ -252,6 +321,9 @@ export function createChartAlertSession(
         !condition(input.condition) ||
         !validName(input.name) ||
         !validMessage(input.message) ||
+        !validNotifications(input.notifications) ||
+        !validExpiration(input.expiresAt) ||
+        (input.expiresAt != null && input.expiresAt <= now()) ||
         typeof input.repeat !== "boolean" ||
         !cooldown(input.cooldownMs)
       )
@@ -264,11 +336,22 @@ export function createChartAlertSession(
         alert.condition !== input.condition ||
         alert.repeat !== input.repeat ||
         alert.cooldownMs !== input.cooldownMs;
-      if (!ruleChanged && alert.name === name && alert.message === message) return true;
-      // Rule edits rearm evaluation; text edits preserve a pending crossing. Neither
-      // changes pause state, notification timestamps, or a running repeat cooldown.
+      const expiresAt = input.expiresAt === undefined ? (alert.expiresAt ?? null) : input.expiresAt;
+      const notifications = notificationsFor(input.notifications ?? alert.notifications);
+      if (
+        !ruleChanged &&
+        alert.name === name &&
+        alert.message === message &&
+        (alert.expiresAt ?? null) === expiresAt &&
+        sameNotifications(notificationsFor(alert.notifications), notifications)
+      )
+        return true;
+      // Rule edits rearm evaluation; text and delivery settings preserve pending crossings.
+      // Neither changes pause state, notification timestamps, or a running repeat cooldown.
       const updated: ChartPriceAlert = {
         ...withText(alert, name, message),
+        expiresAt,
+        notifications,
         price: input.price,
         condition: input.condition,
         repeat: input.repeat,
@@ -281,8 +364,14 @@ export function createChartAlertSession(
     setEnabled: (id: string, enabled: boolean) => {
       if (disposed) return false;
       refresh();
+      checkExpiration();
       const alert = state.alerts.find((item) => item.id === id);
-      if (!alert || typeof enabled !== "boolean") return false;
+      if (
+        !alert ||
+        typeof enabled !== "boolean" ||
+        (enabled && alert.expiresAt != null && alert.expiresAt <= now())
+      )
+        return false;
       if (alert.enabled === enabled) return true;
       publish({
         ...state,
@@ -307,7 +396,7 @@ export function createChartAlertSession(
     },
     observeQuote: (quote: MarketQuote | null) => {
       if (disposed) return;
-      refresh();
+      checkExpiration();
       if (quote === null) {
         // A newly mounted peer's initial empty snapshot is not a feed disconnect.
         if (receivedLiveQuote) {
@@ -373,6 +462,7 @@ export function createChartAlertSession(
         events.push({
           id: newId(),
           alertId: alert.id,
+          notifications: notificationsFor(alert.notifications),
           ...(alert.name ? { name: alert.name } : {}),
           ...(alert.message ? { message: alert.message } : {}),
           symbol,

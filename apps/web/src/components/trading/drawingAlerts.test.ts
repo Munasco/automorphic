@@ -1099,3 +1099,221 @@ describe("drawing alert sessions", () => {
     });
   });
 });
+
+describe("parallel channel boundary alerts", () => {
+  const channel = (patch: Partial<ChartDrawing> = {}): ChartDrawing =>
+    line({
+      kind: "channel",
+      anchors: [
+        { time: 0 as Time, price: 100 },
+        { time: 10 as Time, price: 110 },
+        { time: 3 as Time, price: 123 },
+      ],
+      ...patch,
+    });
+  const rule = (channelBoundary: "upper" | "lower"): NewDrawingAlert => ({
+    drawingId: "line",
+    channelBoundary,
+    condition: "crossing",
+    trigger: "once",
+    expiresAt: null,
+  });
+
+  it("projects both original rails through the third anchor and chooses actual upper/lower price", () => {
+    const drawing = channel();
+    expect(supportsDrawingAlert(drawing)).toBe(true);
+    expect(drawingAlertTarget(drawing, 5, projection, "visible", "upper")).toBe(125);
+    expect(drawingAlertTarget(drawing, 5, projection, "visible", "lower")).toBe(105);
+    const reversed = channel({
+      anchors: [drawing.anchors[1]!, drawing.anchors[0]!, drawing.anchors[2]!],
+    });
+    expect(drawingAlertTarget(reversed, 5, projection, "visible", "upper")).toBe(125);
+    const inverted = {
+      ...projection,
+      priceToCoordinate: (price: number) => price,
+      coordinateToPrice: (y: number) => y,
+    };
+    expect(drawingAlertTarget(drawing, 5, inverted, "visible", "upper")).toBe(125);
+    expect(drawingAlertTarget(drawing, 5, inverted, "visible", "lower")).toBe(105);
+    const below = channel({
+      anchors: [drawing.anchors[0]!, drawing.anchors[1]!, { time: 3 as Time, price: 83 }],
+    });
+    expect(drawingAlertTarget(below, 5, projection, "visible", "upper")).toBe(105);
+    expect(drawingAlertTarget(below, 5, projection, "visible", "lower")).toBe(85);
+  });
+
+  it("matches the logarithmic projected channel offset rather than an arithmetic price offset", () => {
+    const drawing = channel({
+      anchors: [
+        { time: 0 as Time, price: 100 },
+        { time: 10 as Time, price: 400 },
+        { time: 5 as Time, price: 400 },
+      ],
+    });
+    const log = { ...projection, priceToCoordinate: Math.log, coordinateToPrice: Math.exp };
+    expect(drawingAlertTarget(drawing, 5, log, "visible", "upper")).toBeCloseTo(400, 10);
+    expect(drawingAlertTarget(drawing, 5, log, "visible", "lower")).toBeCloseTo(200, 10);
+  });
+
+  it("honors extensions, rejects missing third-anchor projection and does not infer a boundary", () => {
+    expect(drawingAlertTarget(channel(), 5, projection)).toBeNull();
+    expect(drawingAlertTarget(line(), 5, projection, "visible", "upper")).toBeNull();
+    expect(drawingAlertTarget(channel(), 12, projection, "visible", "upper")).toBeNull();
+    expect(
+      drawingAlertTarget(channel({ extendRight: true }), 12, projection, "visible", "upper"),
+    ).toBe(132);
+    expect(drawingAlertTarget(channel(), -2, projection, "infinite", "lower")).toBe(98);
+    expect(
+      drawingAlertTarget(
+        channel(),
+        5,
+        { ...projection, logicalAt: (time) => (Number(time) === 3 ? null : Number(time)) },
+        "visible",
+        "upper",
+      ),
+    ).toBeNull();
+  });
+
+  it("requires explicit valid boundaries for channels and rejects boundaries for ordinary/time lines atomically", () => {
+    const h = harness();
+    h.session.syncDrawings([channel()]);
+    h.storage.setItem.mockClear();
+    expect(h.add()).toBeNull();
+    expect(
+      h.session.add({ ...rule("upper"), channelBoundary: "middle" } as unknown as NewDrawingAlert),
+    ).toBeNull();
+    expect(h.storage.setItem).not.toHaveBeenCalled();
+    const alert = h.session.add(rule("upper"))!;
+    h.storage.setItem.mockClear();
+    const { channelBoundary: _boundary, ...missing } = rule("upper");
+    expect(h.session.update(alert.id, missing)).toBe(false);
+    expect(h.storage.setItem).not.toHaveBeenCalled();
+    h.session.syncDrawings([line()]);
+    expect(h.session.add(rule("upper"))).toBeNull();
+    expect(h.session.getSnapshot().alerts[0]!.disabledReason).toBe("deleted");
+    expect(h.session.setEnabled(alert.id, true)).toBe(false);
+  });
+
+  it("evaluates boundaries independently and persists their exact targets in history", () => {
+    const h = harness();
+    h.session.syncDrawings([channel({ hidden: true, locked: true })]);
+    const upper = h.session.add(rule("upper"))!;
+    const lower = h.session.add(rule("lower"))!;
+    h.session.observe(h.sample(104));
+    h.session.observe(h.sample(106));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    expect(h.onTrigger.mock.lastCall![0]).toMatchObject({
+      alertId: lower.id,
+      channelBoundary: "lower",
+      target: 105,
+      price: 106,
+    });
+    h.session.observe(h.sample(126));
+    expect(h.onTrigger).toHaveBeenCalledTimes(2);
+    expect(h.onTrigger.mock.lastCall![0]).toMatchObject({
+      alertId: upper.id,
+      channelBoundary: "upper",
+      target: 125,
+      price: 126,
+    });
+    const parsed = parseDrawingAlerts(h.values.get(DRAWING_ALERTS_KEY)!);
+    expect(parsed).toEqual(h.session.getSnapshot());
+    expect(parsed.history.map((event) => event.channelBoundary)).toEqual(["upper", "lower"]);
+    h.session.dispose();
+    const reopened = h.open();
+    reopened.syncDrawings([channel()]);
+    expect(reopened.getSnapshot().history).toEqual(parsed.history);
+    expect(reopened.getSnapshot().alerts.map((alert) => alert.channelBoundary)).toEqual([
+      "upper",
+      "lower",
+    ]);
+    reopened.dispose();
+  });
+
+  it("rearms changed boundaries without crossing from the old target and retains paused state/history", () => {
+    const h = harness();
+    h.session.syncDrawings([channel()]);
+    const alert = h.session.add(rule("upper"))!;
+    h.session.observe(h.sample(120));
+    expect(h.session.update(alert.id, rule("lower"))).toBe(true);
+    h.session.observe(h.sample(106));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    h.session.observe(h.sample(104));
+    expect(h.onTrigger.mock.lastCall![0]).toMatchObject({ channelBoundary: "lower", target: 105 });
+    const history = h.session.getSnapshot().history;
+    expect(h.session.update(alert.id, rule("upper"))).toBe(true);
+    expect(h.session.getSnapshot().alerts[0]).toMatchObject({
+      channelBoundary: "upper",
+      enabled: false,
+    });
+    expect(h.session.getSnapshot().history).toEqual(history);
+  });
+
+  it("rearms when the third anchor moves without fabricating a cross from changed channel width", () => {
+    const h = harness();
+    h.session.syncDrawings([channel()]);
+    h.session.add(rule("upper"));
+    h.session.observe(h.sample(120));
+    const changed = channel();
+    changed.anchors[2] = { time: 3 as Time, price: 113 };
+    h.session.syncDrawings([changed]);
+    h.session.observe(h.sample(120));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    h.session.observe(h.sample(114));
+    expect(h.onTrigger.mock.lastCall![0]).toMatchObject({ channelBoundary: "upper", target: 115 });
+  });
+
+  it("retains the old boundary and crossing baseline if a boundary edit cannot be saved", () => {
+    const h = harness();
+    h.session.syncDrawings([channel()]);
+    const alert = h.session.add(rule("upper"))!;
+    h.session.observe(h.sample(120));
+    const before = h.session.getSnapshot();
+    h.storage.setItem.mockImplementationOnce(() => {
+      throw Error("Storage unavailable");
+    });
+    expect(() => h.session.update(alert.id, rule("lower"))).toThrow("Storage unavailable");
+    expect(h.session.getSnapshot()).toBe(before);
+    h.session.observe(h.sample(126));
+    expect(h.onTrigger.mock.lastCall![0]).toMatchObject({ channelBoundary: "upper", target: 125 });
+  });
+
+  it("rearms the evaluating view after a peer changes boundaries and notifies only once", () => {
+    const h = harness();
+    h.session.syncDrawings([channel()]);
+    const peer = h.open();
+    peer.syncDrawings([channel()]);
+    const alert = h.session.add(rule("upper"))!;
+    h.session.observe(h.sample(120));
+    expect(peer.update(alert.id, rule("lower"))).toBe(true);
+    h.session.observe(h.sample(106));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    const crossed = h.sample(104);
+    peer.observe(crossed);
+    h.session.observe(crossed);
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    expect(h.onTrigger.mock.lastCall![0]).toMatchObject({ channelBoundary: "lower", target: 105 });
+    expect(peer.getSnapshot()).toEqual(h.session.getSnapshot());
+    peer.dispose();
+  });
+
+  it("rejects malformed persisted boundary selectors while retaining older ordinary alerts", () => {
+    const h = harness();
+    const old = h.add();
+    h.session.syncDrawings([channel()]);
+    const alert = h.session.add(rule("upper"))!;
+    const raw = {
+      version: 1,
+      alerts: [
+        old,
+        alert,
+        { ...alert, id: "bad", channelBoundary: "middle" },
+        { ...alert, id: "bad-time", targetKind: "time" },
+      ],
+      history: [],
+    };
+    const parsed = parseDrawingAlerts(JSON.stringify(raw));
+    expect(parsed.alerts.map((item) => item.id)).toEqual([old.id, alert.id]);
+    expect(parsed.alerts[0]).not.toHaveProperty("channelBoundary");
+  });
+});

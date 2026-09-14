@@ -4,6 +4,8 @@ import {
   tickHistoryNotice,
   type TickHistoryQuality,
 } from "./tickChartData";
+import { supportsDrawingAlert } from "./drawingAlerts";
+import { AlertIcon } from "./AlertIcon";
 import { useInitialBalanceHistory } from "./useInitialBalanceHistory";
 import {
   chartIntervalKey,
@@ -20,7 +22,15 @@ import { tradingQueryScope } from "./tradingQueries";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
 import { cancelInactiveTradingStream } from "./tradingStreamIterable";
 import { ChartIcon } from "./ChartIcon";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import {
   createChart,
   CandlestickSeries,
@@ -365,6 +375,39 @@ export function TradovateChart({
     drawings,
     logScale: settings.priceScaleMode === "logarithmic",
   });
+  const createAlert = useCallback(() => {
+    if (
+      drawings.selected &&
+      drawings.selectedIds.length === 1 &&
+      supportsDrawingAlert(drawings.selected)
+    )
+      setAlertDrawing(drawings.selected);
+    else if (last && onAddPriceAlert) onAddPriceAlert(last.close);
+  }, [drawings.selected, drawings.selectedIds.length, last, onAddPriceAlert]);
+  useEffect(() => {
+    const element = activeEngine?.chart.chartElement();
+    if (!element || technicals) return;
+    const shortcut = (event: KeyboardEvent) => {
+      if (
+        !event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        event.code !== "KeyA" ||
+        event.defaultPrevented
+      )
+        return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]')
+      )
+        return;
+      event.preventDefault();
+      createAlert();
+    };
+    element.addEventListener("keydown", shortcut);
+    return () => element.removeEventListener("keydown", shortcut);
+  }, [activeEngine, technicals, createAlert]);
   const drawingAlertsRef = useRef(drawingAlerts);
   useEffect(() => {
     drawingAlertsRef.current = drawingAlerts;
@@ -1040,6 +1083,15 @@ export function TradovateChart({
               <ChartIcon name="arrow-back-up" className="size-[18px] -scale-x-100" />
             </ChartAction>
           </div>
+        }
+        alertControl={
+          <ChartAction
+            label="Create alert (Alt+A)"
+            disabled={technicals || (!drawings.selected && (!last || !onAddPriceAlert))}
+            onClick={createAlert}
+          >
+            <AlertIcon name="alarm-add" size={22} />
+          </ChartAction>
         }
         replayControl={
           <Tooltip>

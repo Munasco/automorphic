@@ -112,7 +112,7 @@ function ReadyTradingPanel({
       {!settings.useTradingView
         ? [
             { name: "list-details" as const, label: "Watchlist", view: "watchlist" as const },
-            { name: "bell" as const, label: "Price alerts", view: "alerts" as const },
+            { name: "bell" as const, label: "Alerts", view: "alerts" as const },
           ].map((item) => (
             <Tooltip key={item.view}>
               <TooltipTrigger

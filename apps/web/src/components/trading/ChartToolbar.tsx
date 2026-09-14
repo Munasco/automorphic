@@ -111,6 +111,7 @@ export type ChartToolbarProps = {
   panelActions?: ReactNode;
   navigationControl?: ReactNode;
   replayControl?: ReactNode;
+  alertControl?: ReactNode;
   historyControls?: ReactNode;
 };
 export const PRICE_SCALE_OPTIONS = [
@@ -183,6 +184,7 @@ export function ChartToolbar({
   panelActions,
   navigationControl,
   replayControl,
+  alertControl,
   historyControls,
 }: ChartToolbarProps) {
   const id = useId();
@@ -474,6 +476,7 @@ export function ChartToolbar({
           </DialogPopup>
         </Dialog>
         <span className="mx-1 h-4 w-px shrink-0 bg-white/10" aria-hidden="true" />
+        {alertControl}
         {replayControl}
         {replayControl ? (
           <span className="mx-1 h-4 w-px shrink-0 bg-white/10" aria-hidden="true" />

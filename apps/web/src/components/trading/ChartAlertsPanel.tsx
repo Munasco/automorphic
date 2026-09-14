@@ -4,6 +4,7 @@ import {
   useId,
   useMemo,
   useReducer,
+  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -15,7 +16,6 @@ import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { DrawingAlertDialog } from "./DrawingAlertDialog";
 import { ChartIcon } from "./ChartIcon";
 import { AlertIcon } from "./AlertIcon";
-import { toastManager } from "../ui/toast";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
 import {
   CHART_ALERT_SORT_OPTIONS,
@@ -32,6 +32,8 @@ import {
 } from "./chartAlerts";
 import type { DrawingAlertsController } from "./useDrawingAlerts";
 import type { DrawingAlertCondition, DrawingAlertTrigger } from "./drawingAlerts";
+import { useAlertNotifications } from "./useAlertNotifications";
+import { parseExpirationDateTime } from "./drawingAlertDates";
 import { drawingAlertTargetLabel } from "./drawingAlertPresentation";
 
 const getAlertSortSnapshot = () => readChartAlertSort(tradingWorkspaceStorage);
@@ -49,6 +51,7 @@ const INACTIVE_SESSION: PriceAlertSession = {
   remove: () => false,
   clearHistory: () => false,
   observeQuote: () => {},
+  checkExpiration: () => false,
   dispose: () => {},
 };
 const priceLabel = (price: number) => price.toLocaleString("en-US", { maximumFractionDigits: 6 });
@@ -87,12 +90,21 @@ export function useChartAlerts(symbol: string) {
     identity: typeof identity;
     session: PriceAlertSession;
   } | null>(null);
+  const session = bundle?.identity === identity ? bundle.session : INACTIVE_SESSION;
+  const state = useSyncExternalStore(session.subscribe, session.getSnapshot, () => EMPTY);
+  const { prepare, deliver } = useAlertNotifications(
+    state.alerts.some(
+      (alert) => alert.enabled && alert.symbol === symbol && alert.notifications?.sound,
+    ),
+  );
   useEffect(() => {
     if (!identity.ready) return;
     const session = createChartAlertSession(identity.symbol, tradingWorkspaceStorage.capture(), {
       onTrigger: (event) =>
-        toastManager.add({
-          type: "info",
+        deliver({
+          id: event.id,
+          body: `${event.message ? `${event.message} · ` : ""}${event.symbol} · ${conditionLabel[event.condition]} ${priceLabel(event.target)} · Last ${priceLabel(event.price)}`,
+          ...(event.notifications ? { notifications: event.notifications } : {}),
           title: event.name || `${event.symbol} price alert`,
           description: (
             <span className="block">
@@ -114,12 +126,30 @@ export function useChartAlerts(symbol: string) {
     // eslint-disable-next-line react/set-state-in-effect
     setBundle({ identity, session });
     return () => session.dispose();
-  }, [identity]);
-  const session = bundle?.identity === identity ? bundle.session : INACTIVE_SESSION;
-  const state = useSyncExternalStore(session.subscribe, session.getSnapshot, () => EMPTY);
+  }, [identity, deliver]);
+  useEffect(() => {
+    const next = state.alerts.reduce(
+      (earliest, alert) =>
+        alert.enabled && alert.expiresAt != null ? Math.min(earliest, alert.expiresAt) : earliest,
+      Infinity,
+    );
+    if (!Number.isFinite(next)) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const remaining = next - Date.now();
+      if (remaining <= 0) {
+        session.checkExpiration();
+        return;
+      }
+      timer = setTimeout(schedule, Math.min(2_147_483_647, remaining));
+    };
+    schedule();
+    return () => clearTimeout(timer);
+  }, [session, state.alerts]);
   return {
     ...session,
     ...state,
+    prepareNotifications: prepare,
     ready: session !== INACTIVE_SESSION,
     activeCount: state.alerts.filter((alert) => alert.enabled && alert.symbol === symbol).length,
   };
@@ -205,6 +235,31 @@ export function ChartAlerts({
   const [cooldownMs, setCooldownMs] = useState(60_000);
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
+  const [expiresText, setExpiresText] = useState("");
+  const [notifications, setNotifications] = useState({ toast: true, sound: false, desktop: false });
+  const [saving, setSaving] = useState(false);
+  const submitting = useRef(false);
+  const currentController = useRef(controller);
+  useEffect(() => {
+    currentController.current = controller;
+  }, [controller]);
+  const [expirationClock, setExpirationClock] = useState(Date.now);
+  useEffect(() => {
+    // Paused alerts also need their displayed expiration to advance without a quote.
+    const next = controller.alerts.reduce(
+      (earliest, alert) =>
+        alert.expiresAt != null && alert.expiresAt > expirationClock
+          ? Math.min(earliest, alert.expiresAt)
+          : earliest,
+      Infinity,
+    );
+    if (!Number.isFinite(next)) return;
+    const timer = setTimeout(
+      () => setExpirationClock(Date.now()),
+      Math.min(2_147_483_647, Math.max(0, next - Date.now())),
+    );
+    return () => clearTimeout(timer);
+  }, [controller.alerts, expirationClock]);
   const query = search.trim().toLowerCase();
   const drawingLoading = drawingController !== undefined && !drawingController?.ready;
   const drawings = drawingController?.symbol === symbol ? drawingController : null;
@@ -233,6 +288,13 @@ export function ChartAlerts({
     setName(alert.name ?? "");
     setMessage(alert.message ?? "");
     setTarget(String(alert.price));
+    const expiry = alert.expiresAt == null ? null : new Date(alert.expiresAt);
+    setExpiresText(
+      expiry
+        ? `${expiry.getFullYear()}-${String(expiry.getMonth() + 1).padStart(2, "0")}-${String(expiry.getDate()).padStart(2, "0")}T${String(expiry.getHours()).padStart(2, "0")}:${String(expiry.getMinutes()).padStart(2, "0")}`
+        : "",
+    );
+    setNotifications(alert.notifications ?? { toast: true, sound: false, desktop: false });
     setCondition(alert.condition);
     setRepeat(alert.repeat);
     setCooldownMs(alert.cooldownMs);
@@ -251,20 +313,22 @@ export function ChartAlerts({
       searchText: `${alert.name ?? ""} ${alert.message ?? ""} ${alert.symbol} price ${conditionLabel[alert.condition]} ${alert.price}`,
       enabled: alert.enabled,
       armedAt: alert.armedAt,
-      status: alert.enabled
-        ? alert.symbol === symbol
-          ? "Active"
-          : "Waiting for chart"
-        : alert.lastTriggeredAt !== null && !alert.repeat
-          ? "Triggered"
-          : "Paused",
+      status:
+        alert.expiresAt != null && alert.expiresAt <= expirationClock
+          ? "Expired"
+          : alert.enabled
+            ? alert.symbol === symbol
+              ? "Active"
+              : "Waiting for chart"
+            : alert.lastTriggeredAt !== null && !alert.repeat
+              ? "Triggered"
+              : "Paused",
       frequency: alert.repeat ? "Repeating" : "Once",
       edit: alert.symbol === symbol ? () => openPriceEdit(alert) : null,
-      canEnable: true,
+      canEnable: alert.expiresAt == null || alert.expiresAt > expirationClock,
       actionLabel: `${alert.name ? `${alert.name} · ` : ""}${alert.symbol} alert at ${alert.price}`,
       toggle: () => {
-        controller.setEnabled(alert.id, !alert.enabled);
-        return true;
+        return controller.setEnabled(alert.id, !alert.enabled);
       },
       remove: () => {
         controller.remove(alert.id);
@@ -339,6 +403,8 @@ export function ChartAlerts({
     setRepeat(false);
     setCooldownMs(60_000);
     setTarget(Number.isFinite(lastPrice) ? String(lastPrice) : "");
+    setExpiresText("");
+    setNotifications({ toast: true, sound: false, desktop: false });
     setError("");
     setEditorOpen(true);
   };
@@ -641,7 +707,12 @@ export function ChartAlerts({
           onClose={() => setEditingDrawingId(null)}
         />
       ) : null}
-      <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
+      <Dialog
+        open={editorOpen}
+        onOpenChange={(open) => {
+          if (!submitting.current) setEditorOpen(open);
+        }}
+      >
         <DialogPopup className="w-[min(420px,calc(100vw-32px))] overflow-y-auto bg-[#161616] p-6">
           <DialogTitle className="text-lg font-semibold">
             {editingPrice ? "Edit alert" : "Create alert"}
@@ -651,11 +722,28 @@ export function ChartAlerts({
           </DialogDescription>
           <form
             className="mt-6 space-y-4"
-            onSubmit={(event) => {
+            onSubmit={async (event) => {
               event.preventDefault();
+              if (submitting.current) return;
+              submitting.current = true;
+              setSaving(true);
               try {
                 if (!target.trim()) throw Error("Enter a target price.");
+                const expiresAt = expiresText
+                  ? parseExpirationDateTime(expiresText.slice(0, 10), expiresText.slice(11, 16))
+                  : null;
+                if (expiresText && (expiresAt === null || expiresAt <= Date.now()))
+                  throw Error("Choose an expiration in the future.");
+                const notificationError = await controller.prepareNotifications(notifications);
+                if (notificationError) throw Error(notificationError);
+                if (
+                  currentController.current.add !== controller.add ||
+                  !currentController.current.ready
+                )
+                  throw Error("The workspace changed. Close this editor and try again.");
                 const input = {
+                  expiresAt,
+                  notifications,
                   name,
                   message,
                   price: Number(target),
@@ -673,6 +761,9 @@ export function ChartAlerts({
                 setEditorOpen(false);
               } catch (cause) {
                 setError(cause instanceof Error ? cause.message : "Could not save the alert.");
+              } finally {
+                submitting.current = false;
+                setSaving(false);
               }
             }}
           >
@@ -765,6 +856,44 @@ export function ChartAlerts({
                 onChange={(event) => setMessage(event.target.value)}
               />
             </label>
+            <label className="block text-sm text-zinc-400" htmlFor={`${formId}-expiration`}>
+              Expiration
+              <input
+                id={`${formId}-expiration`}
+                aria-label="Expiration"
+                type="datetime-local"
+                value={expiresText}
+                onChange={(event) => setExpiresText(event.target.value)}
+                className={fieldClass}
+              />
+              <span className="mt-1 block text-xs text-zinc-500">
+                {expiresText ? "Your local time" : "Open-ended"}
+              </span>
+            </label>
+            <fieldset className="space-y-2 text-sm">
+              <legend className="mb-2 text-zinc-400">Notifications</legend>
+              <div className="flex flex-wrap gap-4">
+                {(
+                  [
+                    ["toast", "Toast"],
+                    ["sound", "Sound"],
+                    ["desktop", "Desktop"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-2 text-zinc-200">
+                    <input
+                      type="checkbox"
+                      checked={notifications[key]}
+                      onChange={(event) =>
+                        setNotifications((value) => ({ ...value, [key]: event.target.checked }))
+                      }
+                      className="size-4 accent-blue-500"
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             {!priceEditorAvailable || error ? (
               <p role="alert" className="text-sm text-red-400">
                 {!priceEditorAvailable
@@ -776,16 +905,17 @@ export function ChartAlerts({
               <button
                 type="button"
                 className="rounded px-3 py-2 text-sm text-zinc-400 hover:text-white"
+                disabled={saving}
                 onClick={() => setEditorOpen(false)}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                disabled={!symbol || !priceEditorAvailable}
+                disabled={saving || !symbol || !priceEditorAvailable}
                 className={primaryClass}
               >
-                {editingPrice ? "Save" : "Create"}
+                {saving ? "Saving…" : editingPrice ? "Save" : "Create"}
               </button>
             </div>
           </form>

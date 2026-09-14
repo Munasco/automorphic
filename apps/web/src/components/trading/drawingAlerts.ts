@@ -24,6 +24,12 @@ export const DRAWING_ALERT_TRIGGERS = [
 export type DrawingAlertCondition = (typeof DRAWING_ALERT_CONDITIONS)[number];
 export type DrawingAlertTrigger = (typeof DRAWING_ALERT_TRIGGERS)[number];
 export type DrawingAlertExtent = "visible" | "infinite";
+export const DRAWING_ALERT_CHANNEL_BOUNDARIES = ["upper", "lower"] as const;
+export type DrawingAlertChannelBoundary = (typeof DRAWING_ALERT_CHANNEL_BOUNDARIES)[number];
+const isChannelBoundary = (value: unknown): value is DrawingAlertChannelBoundary =>
+  value === "upper" || value === "lower";
+const validChannelBoundary = (drawing: ChartDrawing, value: unknown) =>
+  drawing.kind === "channel" ? isChannelBoundary(value) : value === undefined;
 export type DrawingAlertProjection = {
   /** Use actual chart bar positions, including the drawing renderer's interpolation between bars. */
   logicalAt: (time: Time) => number | null;
@@ -40,6 +46,7 @@ const KINDS = new Set([
   "horizontal",
   "horizontal-ray",
   "vertical",
+  "channel",
 ]);
 export const supportsDrawingAlert = (drawing: ChartDrawing) =>
   KINDS.has(drawing.kind) && validDrawingAnchors(drawing.kind, drawing.anchors);
@@ -77,8 +84,14 @@ export function drawingAlertTarget(
   logical: number,
   projection: DrawingAlertProjection,
   extent: DrawingAlertExtent = "visible",
+  channelBoundary?: DrawingAlertChannelBoundary,
 ): number | null {
-  if (!supportsDrawingAlert(drawing) || drawing.kind === "vertical" || !finite(logical))
+  if (
+    !supportsDrawingAlert(drawing) ||
+    drawing.kind === "vertical" ||
+    !finite(logical) ||
+    !validChannelBoundary(drawing, channelBoundary)
+  )
     return null;
   try {
     const a = drawing.anchors[0]!;
@@ -100,8 +113,19 @@ export function drawingAlertTarget(
     const ay = projection.priceToCoordinate(a.price),
       by = projection.priceToCoordinate(b.price);
     if (!finite(ay) || !finite(by)) return null;
-    const price = projection.coordinateToPrice(ay + ((by - ay) * (logical - ax)) / (bx - ax));
-    return finite(price) ? price : null;
+    const y = ay + ((by - ay) * (logical - ax)) / (bx - ax);
+    const price = projection.coordinateToPrice(y);
+    if (!finite(price)) return null;
+    if (drawing.kind !== "channel") return price;
+    const third = drawing.anchors[2]!;
+    const cx = projection.logicalAt(third.time);
+    const cy = projection.priceToCoordinate(third.price);
+    if (!finite(cx) || !finite(cy)) return null;
+    const baselineAtThird = ay + ((by - ay) * (cx - ax)) / (bx - ax);
+    const opposite = projection.coordinateToPrice(y + cy - baselineAtThird);
+    if (!finite(opposite)) return null;
+    // Upper/lower refer to actual price, even if the chart's axis is inverted.
+    return channelBoundary === "upper" ? Math.max(price, opposite) : Math.min(price, opposite);
   } catch {
     return null;
   }
@@ -148,6 +172,7 @@ export type DrawingAlert = DrawingAlertPresentation & {
   drawingId: string;
   geometry: string;
   targetKind: "price" | "time";
+  channelBoundary?: DrawingAlertChannelBoundary;
   condition: DrawingAlertCondition;
   trigger: DrawingAlertTrigger;
   expiresAt: number | null;
@@ -161,6 +186,7 @@ export type DrawingAlert = DrawingAlertPresentation & {
   lastBarId: string | null;
 };
 export type DrawingAlertEvent = DrawingAlertPresentation & {
+  channelBoundary?: DrawingAlertChannelBoundary;
   id: string;
   alertId: string;
   drawingId: string;
@@ -180,7 +206,7 @@ export type NewDrawingAlert = Pick<
   DrawingAlert,
   "drawingId" | "condition" | "trigger" | "expiresAt"
 > &
-  DrawingAlertPresentation;
+  DrawingAlertPresentation & { channelBoundary?: DrawingAlertChannelBoundary };
 export type DrawingAlertSample = {
   symbol: string;
   intervalKey: string;
@@ -219,6 +245,8 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
         a.geometry.length > 2000 ||
         ![undefined, "price", "time"].includes(a.targetKind as undefined) ||
         !supportedRule(a.targetKind === "time" ? "time" : "price", a.condition, a.trigger) ||
+        (a.channelBoundary !== undefined &&
+          (!isChannelBoundary(a.channelBoundary) || a.targetKind === "time")) ||
         !(a.expiresAt === null || stamp(a.expiresAt)) ||
         typeof a.enabled !== "boolean" ||
         ![null, "user", "deleted", "expired", "triggered"].includes(a.disabledReason as null) ||
@@ -231,6 +259,7 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
       ids.add(a.id);
       empty.alerts.push({
         ...presentation(a),
+        ...(isChannelBoundary(a.channelBoundary) ? { channelBoundary: a.channelBoundary } : {}),
         id: a.id,
         symbol: a.symbol,
         intervalKey: a.intervalKey,
@@ -265,6 +294,8 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
         !identifier(e.intervalKey) ||
         !identifier(e.barId) ||
         !isCondition(e.condition) ||
+        (e.channelBoundary !== undefined &&
+          (!isChannelBoundary(e.channelBoundary) || e.targetKind === "time")) ||
         !finite(e.price) ||
         !(e.targetKind === "time"
           ? e.condition === "crossing" &&
@@ -279,6 +310,7 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
       ids.add(e.id);
       empty.history.push({
         ...presentation(e),
+        ...(isChannelBoundary(e.channelBoundary) ? { channelBoundary: e.channelBoundary } : {}),
         id: e.id,
         alertId: e.alertId,
         drawingId: e.drawingId,
@@ -406,7 +438,8 @@ export function createDrawingAlertSession(
         updated.armedAt !== alert.armedAt ||
         updated.condition !== alert.condition ||
         updated.trigger !== alert.trigger ||
-        updated.targetKind !== alert.targetKind
+        updated.targetKind !== alert.targetKind ||
+        updated.channelBoundary !== alert.channelBoundary
       )
         previous.delete(alert.id);
     }
@@ -467,7 +500,11 @@ export function createDrawingAlertSession(
         state.alerts.map((a) => {
           if (!relevant(a)) return a;
           const drawing = drawings.get(a.drawingId);
-          if (!drawing || targetKindFor(drawing) !== a.targetKind) {
+          if (
+            !drawing ||
+            targetKindFor(drawing) !== a.targetKind ||
+            !validChannelBoundary(drawing, a.channelBoundary)
+          ) {
             previous.delete(a.id);
             return a.enabled ? { ...a, enabled: false, disabledReason: "deleted" as const } : a;
           }
@@ -487,6 +524,7 @@ export function createDrawingAlertSession(
       if (
         disposed ||
         !drawing ||
+        !validChannelBoundary(drawing, input.channelBoundary) ||
         !identifier(context.symbol) ||
         !identifier(context.intervalKey) ||
         !supportedRule(targetKindFor(drawing), input.condition, input.trigger) ||
@@ -499,6 +537,7 @@ export function createDrawingAlertSession(
         return null;
       const alert: DrawingAlert = {
         ...presentation(input),
+        ...(input.channelBoundary ? { channelBoundary: input.channelBoundary } : {}),
         id: id(),
         ...context,
         drawingId: input.drawingId,
@@ -528,18 +567,24 @@ export function createDrawingAlertSession(
         input.drawingId !== alert.drawingId ||
         !drawings.has(alert.drawingId) ||
         targetKindFor(drawings.get(alert.drawingId)!) !== alert.targetKind ||
+        !validChannelBoundary(drawings.get(alert.drawingId)!, input.channelBoundary) ||
         !supportedRule(alert.targetKind, input.condition, input.trigger) ||
         !(input.expiresAt === null || (stamp(input.expiresAt) && input.expiresAt > now()))
       )
         return false;
-      const rearm = alert.condition !== input.condition || alert.trigger !== input.trigger;
+      const rearm =
+        alert.condition !== input.condition ||
+        alert.trigger !== input.trigger ||
+        alert.channelBoundary !== input.channelBoundary;
       const retained = { ...alert };
       // Editable presentation fields are replacements, so clearing a field removes its old value.
       delete retained.name;
       delete retained.message;
+      delete retained.channelBoundary;
       const updated: DrawingAlert = {
         ...retained,
         ...presentation(input),
+        ...(input.channelBoundary ? { channelBoundary: input.channelBoundary } : {}),
         condition: input.condition,
         trigger: input.trigger,
         expiresAt: input.expiresAt,
@@ -568,6 +613,7 @@ export function createDrawingAlertSession(
         (enabled &&
           (!drawings.has(a.drawingId) ||
             targetKindFor(drawings.get(a.drawingId)!) !== a.targetKind ||
+            !validChannelBoundary(drawings.get(a.drawingId)!, a.channelBoundary) ||
             (a.expiresAt !== null && a.expiresAt <= now())))
       )
         return false;
@@ -698,6 +744,7 @@ export function createDrawingAlertSession(
                 sample.logical,
                 options.projection,
                 options.extent,
+                a.channelBoundary,
               );
           }
           if (
@@ -766,6 +813,7 @@ export function createDrawingAlertSession(
             return a;
           events.push({
             ...presentation(a),
+            ...(a.channelBoundary ? { channelBoundary: a.channelBoundary } : {}),
             id: id(),
             alertId: a.id,
             drawingId: a.drawingId,

@@ -982,3 +982,207 @@ describe("price alert messages", () => {
     }
   });
 });
+
+describe("price alert expiration and notification preferences", () => {
+  const silent = { toast: false, sound: false, desktop: false };
+  const custom = { toast: false, sound: true, desktop: true };
+  const defaults = { toast: true, sound: false, desktop: false };
+
+  it("defaults legacy alerts/history and preserves explicit preferences through reopen", () => {
+    const h = harness(),
+      session = h.open();
+    const alert = session.add({ ...crossing, expiresAt: EPOCH + 60_000, notifications: custom });
+    session.observeQuote(h.quote(99));
+    session.observeQuote(h.quote(101));
+    const saved = JSON.parse(h.values.get(CHART_ALERTS_KEY)!);
+    const event = session.getSnapshot().history[0]!;
+    expect(event.notifications).toEqual(custom);
+    expect(event.notifications).not.toBe(alert.notifications);
+    session.dispose();
+    const reopened = h.open();
+    expect(reopened.getSnapshot().alerts[0]).toMatchObject({
+      expiresAt: EPOCH + 60_000,
+      notifications: custom,
+    });
+    expect(reopened.getSnapshot().history[0]!.notifications).toEqual(custom);
+    delete saved.alerts[0].expiresAt;
+    delete saved.alerts[0].notifications;
+    delete saved.history[0].notifications;
+    const legacy = parseChartAlerts(JSON.stringify(saved));
+    expect(legacy.alerts[0]).toMatchObject({ expiresAt: null, notifications: defaults });
+    expect(legacy.history[0]!.notifications).toEqual(defaults);
+    expect(legacy.alerts[0]!.notifications).not.toBe(legacy.history[0]!.notifications);
+  });
+
+  it("rejects malformed expiry and notification payloads without changing existing alerts", () => {
+    const h = harness(),
+      session = h.open();
+    const alert = session.add(crossing);
+    const saved = JSON.parse(h.values.get(CHART_ALERTS_KEY)!);
+    h.storage.setItem.mockClear();
+    for (const patch of [
+      ...[-1, NaN, Infinity, "tomorrow", 8_640_000_000_000_001].map((expiresAt) => ({ expiresAt })),
+      ...[null, {}, { toast: true }, { ...custom, sound: 1 }, []].map((notifications) => ({
+        notifications,
+      })),
+    ]) {
+      expect(() => session.add({ ...crossing, ...patch } as NewChartAlert)).toThrow();
+      expect(session.update(alert.id, { ...crossing, ...patch } as NewChartAlert)).toBe(false);
+      // NaN/Infinity serialize as null, which deliberately means no expiration.
+      if (
+        !(
+          "expiresAt" in patch &&
+          typeof patch.expiresAt === "number" &&
+          !Number.isFinite(patch.expiresAt)
+        )
+      ) {
+        expect(
+          parseChartAlerts(JSON.stringify({ ...saved, alerts: [{ ...saved.alerts[0], ...patch }] }))
+            .alerts,
+        ).toEqual([]);
+      }
+    }
+    for (const expiresAt of [EPOCH - 1, EPOCH]) {
+      expect(() => session.add({ ...crossing, expiresAt })).toThrow();
+      expect(session.update(alert.id, { ...crossing, expiresAt })).toBe(false);
+    }
+    expect(h.storage.setItem).not.toHaveBeenCalled();
+    expect(session.getSnapshot().alerts).toEqual([alert]);
+  });
+
+  it("expires at the boundary without quotes, synchronizes peers and cannot be re-enabled", () => {
+    const h = harness(),
+      session = h.open(),
+      peer = h.open();
+    const alert = session.add({ ...crossing, repeat: true, expiresAt: EPOCH + 1000 });
+    session.observeQuote(h.quote(99));
+    h.advance(999);
+    h.storage.setItem.mockClear();
+    expect(session.checkExpiration()).toBe(true);
+    expect(session.getSnapshot().alerts[0]).toEqual({ ...alert, enabled: false });
+    expect(peer.getSnapshot().alerts[0]!.enabled).toBe(false);
+    expect(session.setEnabled(alert.id, true)).toBe(false);
+    expect(session.checkExpiration()).toBe(false);
+    expect(h.storage.setItem).toHaveBeenCalledTimes(1);
+    session.observeQuote(h.quote(101));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    expect(session.getSnapshot().history).toEqual([]);
+    session.dispose();
+    expect(session.checkExpiration()).toBe(false);
+  });
+
+  it("expires before evaluating fresh quotes or replaying a pending crossing after reload", () => {
+    const h = harness(),
+      session = h.open();
+    session.add({ ...crossing, expiresAt: EPOCH + 100 });
+    session.observeQuote(h.quote(99));
+    session.observeQuote(h.quote(101, 99));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    expect(session.getSnapshot().alerts[0]!.enabled).toBe(false);
+    session.dispose();
+    const reopened = h.open();
+    reopened.observeQuote(h.quote(99));
+    reopened.observeQuote(h.quote(101));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+  });
+
+  it("keeps pending crossings and cooldown state when changing notification or expiration preferences", () => {
+    const h = harness(),
+      session = h.open();
+    const input = { ...crossing, repeat: true, cooldownMs: 1000 };
+    const alert = session.add({ ...input, expiresAt: EPOCH + 10_000 });
+    session.observeQuote(h.quote(99));
+    expect(
+      session.update(alert.id, { ...input, notifications: custom, expiresAt: EPOCH + 20_000 }),
+    ).toBe(true);
+    expect(session.getSnapshot().alerts[0]!.armedAt).toBe(alert.armedAt);
+    session.observeQuote(h.quote(101));
+    const fired = session.getSnapshot().alerts[0]!;
+    const history = structuredClone(session.getSnapshot().history);
+    session.update(alert.id, { ...input, notifications: silent });
+    expect(session.getSnapshot().alerts[0]).toMatchObject({
+      armedAt: fired.armedAt,
+      lastQuoteAt: fired.lastQuoteAt,
+      lastTriggeredAt: fired.lastTriggeredAt,
+      expiresAt: EPOCH + 20_000,
+    });
+    session.observeQuote(h.quote(99));
+    session.observeQuote(h.quote(101));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    expect(session.getSnapshot().history).toEqual(history);
+    session.observeQuote(h.quote(99, 1000));
+    session.observeQuote(h.quote(101));
+    expect(h.onTrigger).toHaveBeenCalledTimes(2);
+    expect(session.getSnapshot().history[0]!.notifications).toEqual(silent);
+    expect(session.getSnapshot().history[1]!.notifications).toEqual(custom);
+  });
+
+  it("preserves omitted settings, skips unchanged writes and clears expiration explicitly", () => {
+    const h = harness(),
+      session = h.open();
+    const alert = session.add({ ...crossing, expiresAt: EPOCH + 1000, notifications: custom });
+    h.storage.setItem.mockClear();
+    session.update(alert.id, crossing);
+    session.update(alert.id, {
+      ...crossing,
+      notifications: { ...custom },
+      expiresAt: EPOCH + 1000,
+    });
+    expect(h.storage.setItem).not.toHaveBeenCalled();
+    session.update(alert.id, { ...crossing, expiresAt: null });
+    expect(session.getSnapshot().alerts[0]).toMatchObject({
+      expiresAt: null,
+      notifications: custom,
+    });
+    h.advance(2000);
+    expect(session.checkExpiration()).toBe(false);
+    expect(session.getSnapshot().alerts[0]!.enabled).toBe(true);
+  });
+
+  it("does not fire when expiration persistence fails and safely retries the disable", () => {
+    const h = harness(),
+      session = h.open();
+    const alert = session.add({ ...crossing, expiresAt: EPOCH + 10 });
+    session.observeQuote(h.quote(99));
+    const quote = h.quote(101, 9);
+    h.storage.setItem.mockImplementationOnce(() => {
+      throw new Error("Offline");
+    });
+    expect(() => session.observeQuote(quote)).toThrow("Offline");
+    expect(session.getSnapshot().alerts[0]).toEqual(alert);
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    session.observeQuote(quote);
+    expect(session.getSnapshot().alerts[0]!.enabled).toBe(false);
+    expect(h.onTrigger).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed notification history without discarding valid alerts", () => {
+    const h = harness(),
+      session = h.open();
+    session.add({ ...crossing, condition: "above" });
+    session.observeQuote(h.quote(101));
+    const saved = JSON.parse(h.values.get(CHART_ALERTS_KEY)!);
+    for (const notifications of [null, {}, { ...defaults, toast: "yes" }]) {
+      const parsed = parseChartAlerts(
+        JSON.stringify({ ...saved, history: [{ ...saved.history[0], notifications }] }),
+      );
+      expect(parsed.alerts).toHaveLength(1);
+      expect(parsed.history).toEqual([]);
+    }
+  });
+
+  it("keeps expired alerts paused when their expiration is extended until explicitly re-enabled", () => {
+    const h = harness(),
+      session = h.open();
+    const alert = session.add({ ...crossing, expiresAt: EPOCH + 10 });
+    session.observeQuote(h.quote(99));
+    h.advance(9);
+    expect(session.update(alert.id, { ...crossing, expiresAt: EPOCH + 1000 })).toBe(true);
+    expect(session.getSnapshot().alerts[0]!.enabled).toBe(false);
+    expect(session.setEnabled(alert.id, true)).toBe(true);
+    session.observeQuote(h.quote(101));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    session.observeQuote(h.quote(99));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+  });
+});
