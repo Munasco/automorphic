@@ -1270,3 +1270,119 @@ describe.each(["stochastic", "stochRsi"] as const)("%s level background", (key) 
     expect(calculate(bars.slice(0, firstReadingLength)).fills).toEqual([]);
   });
 });
+
+describe("OBV optional smoothing", () => {
+  const definition = INDICATOR_CATALOG.find((item) => item.key === "obv")!;
+  const bars = [10, 12, 11, 15, 15].map((close, i) => ({
+    time: i + 1,
+    open: close,
+    high: close + 1,
+    low: close - 1,
+    close,
+    volume: [2, 4, 3, 8, 5][i]!,
+  }));
+  const run = (smoothingType = 0, selectedBars = bars, smoothingPeriod = 2) =>
+    definition.calculate({
+      bars: selectedBars,
+      inputs: { ...getIndicatorInputs("obv"), smoothingType, smoothingPeriod },
+      interval: 5,
+      session: DEFAULT_INITIAL_BALANCE,
+    });
+
+  it("retains the signed-volume baseline with no auxiliary plot by default", () => {
+    expect(getIndicatorInputs("obv")).toEqual({
+      smoothingType: 0,
+      smoothingPeriod: 14,
+      smoothingDeviations: 2,
+    });
+    expect(run().plots).toHaveLength(1);
+    expect(run().plots[0]!.points).toEqual(
+      [0, 4, 1, 9, 9].map((value, i) => ({ time: i + 1, value })),
+    );
+  });
+
+  it.each([
+    [1, [2, 2.5, 5, 9]],
+    [2, [2, 4 / 3, 58 / 9, 220 / 27]],
+    [3, [2, 1.5, 5.25, 7.125]],
+    [4, [8 / 3, 2, 19 / 3, 9]],
+    [6, [8 / 3, 19 / 7, 75 / 11, 9]],
+  ] as const)("calculates mode %s independently from the main OBV", (mode, expected) => {
+    const result = run(mode);
+    expect(result.plots[0]).toEqual(run().plots[0]);
+    const smoothing = result.plots.find((plot) => plot.id === "smoothing")!;
+    expect(smoothing).toMatchObject({
+      primary: false,
+      title: "OBV MA",
+      volumeFormat: true,
+      breakOnGaps: true,
+    });
+    expect(smoothing.points.map((point) => point.time)).toEqual([2, 3, 4, 5]);
+    expected.forEach((value, i) => expect(smoothing.points[i]!.value).toBeCloseTo(value, 10));
+    expect(
+      getIndicatorLabel("obv", { obv: { ...getIndicatorInputs("obv"), smoothingType: mode } }),
+    ).toBe(getIndicatorLabel("obv"));
+  });
+
+  it("adds population-deviation bands and a separate fill around the SMA", () => {
+    const result = run(5);
+    expect(result.plots[0]).toEqual(run().plots[0]);
+    const upper = result.plots.find((plot) => plot.id === "smoothingUpper")!;
+    const lower = result.plots.find((plot) => plot.id === "smoothingLower")!;
+    const middle = result.plots.find((plot) => plot.id === "smoothing")!;
+    expect(middle.points.map((point) => point.value)).toEqual([2, 2.5, 5, 9]);
+    expect(upper.points.map((point) => point.value)).toEqual([6, 5.5, 13, 9]);
+    expect(lower.points.map((point) => point.value)).toEqual([-2, -0.5, -3, 9]);
+    expect(upper.points.every((point, i) => point.value >= lower.points[i]!.value)).toBe(true);
+    expect(result.fills).toEqual([
+      expect.objectContaining({
+        styleKey: "smoothingBackground",
+        upper: upper.points,
+        lower: lower.points,
+      }),
+    ]);
+  });
+
+  it("respects warmup and omits zero-weight VWMA windows without altering OBV", () => {
+    for (const mode of [1, 2, 3, 4, 5, 6]) {
+      expect(
+        run(mode, bars, 6)
+          .plots.slice(1)
+          .every((plot) => plot.points.length === 0),
+      ).toBe(true);
+      expect(run(mode, bars, 6).fills ?? []).toEqual([]);
+    }
+    const zeroVolumes = bars.map((bar, i) => ({ ...bar, volume: i < 2 ? 0 : bar.volume }));
+    const result = run(6, zeroVolumes);
+    expect(result.plots[0]).toEqual(run(0, zeroVolumes).plots[0]);
+    expect(
+      result.plots.find((plot) => plot.id === "smoothing")!.points.map((point) => point.time),
+    ).toEqual([3, 4, 5]);
+    const invalid = bars.map((bar, i) => (i === 2 ? { ...bar, volume: NaN } : bar));
+    expect(run(1, invalid).plots.find((plot) => plot.id === "smoothing")!.points).toEqual([
+      { time: 2, value: 2 },
+      { time: 5, value: 0 },
+    ]);
+  });
+
+  it("repairs invalid legacy fields and rejects out-of-range edits", () => {
+    const defaults = getIndicatorInputs("obv");
+    expect(
+      getIndicatorInputs(
+        "obv",
+        normalizeChartPreferences({ indicators: { obv: true } }).indicatorInputs,
+      ),
+    ).toEqual(defaults);
+    for (const patch of [
+      { smoothingType: 7 },
+      { smoothingType: 1.5 },
+      { smoothingPeriod: 0 },
+      { smoothingPeriod: 501 },
+      { smoothingDeviations: -1 },
+      { smoothingDeviations: 21 },
+    ]) {
+      expect(updateIndicatorInputs("obv", { obv: defaults }, patch)).toBeNull();
+      expect(getIndicatorInputs("obv", { obv: patch })).toEqual(defaults);
+    }
+  });
+});

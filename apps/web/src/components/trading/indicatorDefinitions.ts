@@ -1023,9 +1023,108 @@ export const INDICATOR_DEFINITIONS = [
     detail: "On-balance volume",
     category: "Oscillators",
     placement: "pane",
-    inputs: [],
-    styles: [style("main", "Line", "#2dd4bf", true)],
-    calculate: ({ bars }) => single(calculateOBV(bars), { title: "OBV", volumeFormat: true }),
+    inputs: [
+      {
+        key: "smoothingType",
+        label: "Smoothing",
+        kind: "select",
+        legend: false,
+        defaultValue: 0,
+        min: 0,
+        max: 6,
+        step: 1,
+        options: [
+          { value: 0, label: "None" },
+          { value: 1, label: "SMA" },
+          { value: 2, label: "EMA" },
+          { value: 3, label: "RMA" },
+          { value: 4, label: "WMA" },
+          { value: 5, label: "SMA + Bollinger Bands" },
+          { value: 6, label: "VWMA" },
+        ],
+      },
+      { ...length(14, "smoothingPeriod", "Smoothing length"), legend: false },
+      {
+        key: "smoothingDeviations",
+        label: "BB standard deviations",
+        defaultValue: 2,
+        min: 0,
+        max: 20,
+        step: 0.1,
+        legend: false,
+        shownWhen: { key: "smoothingType", value: 5 },
+      },
+    ],
+    styles: [
+      style("main", "Line", "#2dd4bf", true),
+      style("smoothing", "Moving average", "#facc15", false, 2),
+      {
+        ...style("smoothingUpper", "BB upper", "#4ade80"),
+        shownWhen: { key: "smoothingType", value: 5 },
+      },
+      {
+        ...style("smoothingLower", "BB lower", "#4ade80"),
+        shownWhen: { key: "smoothingType", value: 5 },
+      },
+      {
+        ...style("smoothingBackground", "BB background", "#4ade80"),
+        kind: "fill",
+        opacity: 0.1,
+        shownWhen: { key: "smoothingType", value: 5 },
+      },
+    ],
+    calculate: ({ bars, inputs }) => {
+      const points = calculateOBV(bars);
+      const result = single(points, { title: "OBV", volumeFormat: true });
+      const method =
+        inputs.smoothingType === 6
+          ? "vwma"
+          : (["sma", "ema", "rma", "wma"] as const)[(inputs.smoothingType ?? 0) - 1];
+      if (method)
+        result.plots.push({
+          id: "smoothing",
+          styleKey: "smoothing",
+          title: "OBV MA",
+          volumeFormat: true,
+          primary: false,
+          breakOnGaps: true,
+          points: calculateIndicatorMovingAverage(
+            bars,
+            points,
+            inputs.smoothingPeriod ?? 14,
+            method,
+          ),
+        });
+      if (inputs.smoothingType === 5) {
+        const smoothed = bands(
+          calculateIndicatorBollingerBands(
+            bars,
+            points,
+            inputs.smoothingPeriod ?? 14,
+            inputs.smoothingDeviations ?? 2,
+          ),
+          bars,
+        );
+        const keys = { upper: "smoothingUpper", middle: "smoothing", lower: "smoothingLower" };
+        for (const plot of smoothed.plots) {
+          const id = keys[plot.id as keyof typeof keys];
+          result.plots.push({
+            ...plot,
+            id,
+            styleKey: id,
+            primary: false,
+            title: plot.id === "middle" ? "OBV MA" : "",
+            volumeFormat: true,
+          });
+        }
+        result.fills = (smoothed.fills ?? []).map((fill) => ({
+          ...fill,
+          id: `smoothing-${fill.id}`,
+          styleKey: "smoothingBackground",
+        }));
+      }
+      return result;
+    },
   }),
   defineIndicator({
     key: "cci",

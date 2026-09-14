@@ -3286,3 +3286,53 @@ it.each(["stochastic", "stochRsi"] as const)(
     expect(instances()[1]!.inputs).toEqual(firstBefore.inputs);
   },
 );
+
+it("preserves independent OBV smoothing modes and band appearance through duplicate, reload and reset", async () => {
+  const store = useChartPreferences.getState();
+  const first = store.addIndicator("obv")!;
+  store.setIndicatorInstanceInputs(first, {
+    smoothingType: 5,
+    smoothingPeriod: 3,
+    smoothingDeviations: 1.5,
+  });
+  store.setIndicatorInstanceAppearance(first, {
+    plots: {
+      smoothing: { color: "#abcdef", visible: false },
+      smoothingBackground: { color: "#123456", opacity: 0.3, visible: true },
+    },
+  });
+  const second = store.duplicateIndicatorInstance(first)!;
+  store.setIndicatorInstanceInputs(second, { smoothingType: 6, smoothingPeriod: 2 });
+  store.setIndicatorInstanceAppearance(second, {
+    plots: { smoothingBackground: { visible: false } },
+  });
+  const instances = () =>
+    getChartIndicatorInstances(useChartPreferences.getState()).filter((item) => item.key === "obv");
+  const before = structuredClone(instances());
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  expect(instances()).toEqual(before);
+  expect(instances().map((item) => item.inputs.smoothingType)).toEqual([5, 6]);
+  expect(instances().map((item) => item.appearance.plots?.smoothingBackground?.visible)).toEqual([
+    true,
+    false,
+  ]);
+  vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+  expect(
+    useChartPreferences.getState().setIndicatorInstanceInputs(second, { smoothingType: 7 }),
+  ).toBe(false);
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  useChartPreferences.getState().resetIndicatorInstanceInputs(second);
+  expect(instances()[0]).toEqual(before[0]);
+  expect(instances()[1]!.inputs).toEqual({
+    smoothingType: 0,
+    smoothingPeriod: 14,
+    smoothingDeviations: 2,
+  });
+  expect(instances()[1]!.appearance).toEqual(before[1]!.appearance);
+  useChartPreferences.getState().resetIndicatorInstanceAppearance(second);
+  expect(instances()[1]!.appearance).toEqual({});
+  expect(instances()[0]).toEqual(before[0]);
+});
