@@ -137,12 +137,14 @@ it("persists independent ROC sources, rejects invalid edits and resets one insta
   ).toEqual({ period: 18, source: 0 });
 });
 
-it("persists independent CCI sources, rejects invalid edits and resets one instance", async () => {
+it("persists independent CCI sources and reference levels, rejects invalid edits and resets one instance", async () => {
   const store = useChartPreferences.getState();
+  const defaults = { lowerLevel: -100, middleLevel: 0, upperLevel: 100, showLevels: 1 };
+  const custom = { lowerLevel: -200, middleLevel: 10, upperLevel: 250, showLevels: 0 };
   const base = store.addIndicator("cci")!;
-  store.setIndicatorInstanceInputs(base, { period: 5, source: 1 });
+  store.setIndicatorInstanceInputs(base, { period: 5, source: 1, ...custom });
   const duplicate = store.duplicateIndicatorInstance(base)!;
-  store.setIndicatorInstanceInputs(duplicate, { period: 12, source: 5 });
+  store.setIndicatorInstanceInputs(duplicate, { period: 12, source: 5, ...defaults });
   const serialized = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
   vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(serialized);
   useChartPreferences.setState(useChartPreferences.getInitialState(), true);
@@ -152,23 +154,29 @@ it("persists independent CCI sources, rejects invalid edits and resets one insta
       .filter((i) => i.key === "cci")
       .map((i) => i.inputs);
   expect(inputs()).toEqual([
-    { period: 5, source: 1 },
-    { period: 12, source: 5 },
+    { period: 5, source: 1, ...custom },
+    { period: 12, source: 5, ...defaults },
   ]);
   vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
   useChartPreferences.getState().setIndicatorInstanceInputs(duplicate, { source: 99 });
+  expect(
+    useChartPreferences.getState().setIndicatorInstanceInputs(base, { middleLevel: 300 }),
+  ).toBe(false);
+  expect(useChartPreferences.getState().setIndicatorInstanceInputs(base, { lowerLevel: 10 })).toBe(
+    false,
+  );
   expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
   useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
   expect(inputs()).toEqual([
-    { period: 5, source: 1 },
-    { period: 20, source: 5 },
+    { period: 5, source: 1, ...custom },
+    { period: 20, source: 5, ...defaults },
   ]);
   expect(
     getIndicatorInputs(
       "cci",
       normalizeChartPreferences({ indicatorInputs: { cci: { period: 18 } } }).indicatorInputs,
     ),
-  ).toEqual({ period: 18, source: 5 });
+  ).toEqual({ period: 18, source: 5, ...defaults });
 });
 
 describe("global indicator actions", () => {

@@ -617,3 +617,135 @@ it("keeps Bollinger fills separate across VWMA windows with no volume", () => {
     [6, 7],
   ]);
 });
+
+describe("CCI reference levels", () => {
+  const definition = INDICATOR_CATALOG.find((item) => item.key === "cci")!;
+  const defaults = {
+    period: 20,
+    source: 5,
+    showLevels: 1,
+    lowerLevel: -100,
+    middleLevel: 0,
+    upperLevel: 100,
+  };
+  const bars = Array.from({ length: 30 }, (_, index) => ({
+    time: index + 1,
+    open: 100 + index,
+    high: 110 + index,
+    low: 90 + index,
+    close: 100 + index + (index % 3),
+    volume: 10,
+  }));
+  const calculate = (inputs: typeof defaults) =>
+    definition.calculate({ bars, inputs, interval: 5, session: DEFAULT_INITIAL_BALANCE });
+
+  it("provides decimal unbounded-oscillator levels without including them in the legend", () => {
+    expect(getIndicatorInputs("cci")).toEqual(defaults);
+    for (const key of ["lowerLevel", "middleLevel", "upperLevel"])
+      expect(definition.inputs.find((input) => input.key === key)).toMatchObject({
+        min: -10000,
+        max: 10000,
+        step: 0.1,
+        legend: false,
+      });
+    expect(definition.inputs.find((input) => input.key === "showLevels")).toMatchObject({
+      kind: "boolean",
+      defaultValue: 1,
+      legend: false,
+    });
+    const initial = calculate(defaults);
+    expect(initial.plots[0]!.levels).toEqual([-100, 0, 100]);
+    expect(initial.plots[0]!.bounds).toBeUndefined();
+    expect(initial.plots[0]!.breakOnGaps).toBe(true);
+  });
+
+  it("accepts decimal and range-boundary triples and rejects invalid edits atomically", () => {
+    const current = { cci: { ...defaults, period: 7, source: 1 }, rsi: { period: 9 } };
+    const snapshot = structuredClone(current);
+    expect(
+      updateIndicatorInputs("cci", current, {
+        lowerLevel: -10000,
+        middleLevel: -12.5,
+        upperLevel: 10000,
+      }),
+    ).toEqual({
+      ...current,
+      cci: { ...current.cci, lowerLevel: -10000, middleLevel: -12.5, upperLevel: 10000 },
+    });
+    for (const patch of [
+      { lowerLevel: -10000.1 },
+      { middleLevel: 10000.1 },
+      { upperLevel: 10000.1 },
+      { lowerLevel: NaN },
+      { middleLevel: Infinity },
+      { upperLevel: -Infinity },
+      { lowerLevel: 0 },
+      { upperLevel: 0 },
+      { middleLevel: -100 },
+      { middleLevel: 100 },
+      { lowerLevel: 50, middleLevel: 0, upperLevel: -50 },
+      { showLevels: 2 },
+      { showLevels: 0.5 },
+      { period: 5, lowerLevel: 1 },
+    ])
+      expect(updateIndicatorInputs("cci", current, patch)).toBeNull();
+    expect(current).toEqual(snapshot);
+  });
+
+  it("changes and hides all three lines without changing oscillator points or legend", () => {
+    const custom = { ...defaults, lowerLevel: -175.5, middleLevel: 12.5, upperLevel: 250.5 };
+    const initial = calculate(defaults);
+    expect(initial.plots[0]!.points.length).toBeGreaterThan(0);
+    const changed = calculate(custom);
+    expect(changed.plots[0]!.levels).toEqual([-175.5, 12.5, 250.5]);
+    expect(changed.plots[0]!.points).toEqual(initial.plots[0]!.points);
+    expect(changed).toEqual({
+      ...initial,
+      plots: initial.plots.map((plot) => ({ ...plot, levels: [-175.5, 12.5, 250.5] })),
+    });
+    const hidden = calculate({ ...custom, showLevels: 0 });
+    expect(hidden.plots[0]!.levels).toEqual([]);
+    expect(hidden.plots[0]!.points).toEqual(initial.plots[0]!.points);
+    expect(getIndicatorLabel("cci", { cci: custom })).toBe(getIndicatorLabel("cci"));
+    expect(getIndicatorLabel("cci", { cci: { ...custom, showLevels: 0 } })).toBe(
+      getIndicatorLabel("cci"),
+    );
+  });
+
+  it("defaults legacy levels and repairs unordered saved triples while preserving other inputs", () => {
+    const otherInputs = { period: 7, source: 1, showLevels: 0 };
+    const expected = { ...defaults, ...otherInputs };
+    expect(getIndicatorInputs("cci", { cci: otherInputs })).toEqual(expected);
+    for (const [lowerLevel, middleLevel, upperLevel] of [
+      [0, 0, 100],
+      [-100, 100, 100],
+      [50, 0, -50],
+      [-100, -200, 100],
+      [-100, 200, 100],
+    ]) {
+      const restored = normalizeChartPreferences({
+        indicatorInputs: {
+          cci: { ...otherInputs, lowerLevel, middleLevel, upperLevel },
+          rsi: { period: 9 },
+        },
+      });
+      expect(restored.indicatorInputs.cci).toEqual(expected);
+      expect(restored.indicatorInputs.rsi?.period).toBe(9);
+    }
+    expect(
+      getIndicatorInputs("cci", {
+        cci: { ...otherInputs, lowerLevel: NaN, middleLevel: Infinity, upperLevel: 10001 },
+      }),
+    ).toEqual(expected);
+    expect(
+      getIndicatorInputs("cci", {
+        cci: { ...otherInputs, lowerLevel: -140.5, middleLevel: -0.5, upperLevel: 210.5 },
+      }),
+    ).toEqual({
+      ...otherInputs,
+      lowerLevel: -140.5,
+      middleLevel: -0.5,
+      upperLevel: 210.5,
+    });
+  });
+});

@@ -773,12 +773,27 @@ export const INDICATOR_DEFINITIONS = [
     detail: "Commodity channel index",
     category: "Oscillators",
     placement: "pane",
-    inputs: [length(20), { ...priceSource, defaultValue: 5 }],
+    inputs: [
+      length(20),
+      { ...priceSource, defaultValue: 5 },
+      ...oscillatorLevelInputs(-100, 100).slice(0, 1),
+      ...[
+        { key: "lowerLevel", label: "Lower level", defaultValue: -100 },
+        { key: "middleLevel", label: "Middle level", defaultValue: 0 },
+        { key: "upperLevel", label: "Upper level", defaultValue: 100 },
+      ].map((input) => ({ ...input, legend: false, min: -10000, max: 10000, step: 0.1 })),
+    ],
+    validateInputs: (values) =>
+      values.lowerLevel! < values.middleLevel! && values.middleLevel! < values.upperLevel!,
+    repairInputs: (values) => ({ ...values, lowerLevel: -100, middleLevel: 0, upperLevel: 100 }),
     styles: [style("main", "Line", "#a78bfa", true)],
     calculate: ({ bars, inputs }) =>
       single(calculateCCI(bars, inputs.period, PRICE_SOURCES[inputs.source ?? 5]), {
         title: "CCI",
-        levels: [-100, 0, 100],
+        levels:
+          inputs.showLevels === 0
+            ? []
+            : [inputs.lowerLevel ?? -100, inputs.middleLevel ?? 0, inputs.upperLevel ?? 100],
         breakOnGaps: true,
       }),
   }),

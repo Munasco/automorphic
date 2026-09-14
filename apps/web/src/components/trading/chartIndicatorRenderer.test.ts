@@ -98,6 +98,47 @@ const disabled = Object.fromEntries(
 ) as ChartIndicators;
 
 describe("native indicator renderer", () => {
+  it("updates CCI levels independently without replacing or altering oscillator data", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.25);
+    const bars = inputBars(6);
+    const base = {
+      ...createIndicatorInstance("cci", "base:cci"),
+      inputs: { period: 2, lowerLevel: -200, middleLevel: 0, upperLevel: 200, showLevels: 1 },
+    };
+    const duplicate = {
+      ...createIndicatorInstance("cci", "cci-extra"),
+      inputs: { period: 3, lowerLevel: -150, middleLevel: 20, upperLevel: 250, showLevels: 1 },
+    };
+    const update = () =>
+      renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [
+        base,
+        duplicate,
+      ]);
+    update();
+    const [first, second] = harness.series;
+    const original = first!.data;
+    const oldLines = [...first!.priceLines];
+    expect(oldLines.map((line) => line.options.price)).toEqual([-200, 0, 200]);
+    expect(second!.priceLines.map((line) => line.options.price)).toEqual([-150, 20, 250]);
+    base.inputs.middleLevel = 10;
+    update();
+    expect(first!.priceLines[1]).toBe(oldLines[1]);
+    expect(first!.priceLines[1]!.options.price).toBe(10);
+    expect(first!.data).toEqual(original);
+    base.inputs.showLevels = 0;
+    update();
+    expect(first!.priceLines).toEqual([]);
+    expect(oldLines.every((line) => line.removed)).toBe(true);
+    expect(second!.priceLines.map((line) => line.options.price)).toEqual([-150, 20, 250]);
+    base.inputs.showLevels = 1;
+    update();
+    expect(first!.priceLines.map((line) => line.options.price)).toEqual([-200, 10, 200]);
+    expect(first!.priceLines.every((line) => !oldLines.includes(line))).toBe(true);
+    expect(first!.data).toEqual(original);
+    expect(harness.series).toEqual([first, second]);
+  });
+
   it("updates Williams levels independently without replacing or altering oscillator data", () => {
     const harness = chartHarness();
     const renderer = createIndicatorRenderer(harness.chart, 0.25);
