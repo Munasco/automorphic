@@ -33,7 +33,7 @@ describe("indicator catalog and saved preferences", () => {
     });
     expect(restored).toMatchObject({
       style: "area",
-      showGrid: false,
+      gridMode: "none",
       logScale: true,
       initialBalance: DEFAULT_INITIAL_BALANCE,
     });
@@ -66,7 +66,7 @@ describe("indicator catalog and saved preferences", () => {
     expect(restored.style).toBe("candles");
     expect(restored.indicators.macd).toBe(false);
     expect(restored.indicators.rsi).toBe(true);
-    expect(restored.showGrid).toBe(true);
+    expect(restored.gridMode).toBe("both");
     expect(restored.initialBalance).toEqual(DEFAULT_INITIAL_BALANCE);
   });
   it("keeps visibility separate from membership and restores per-workspace styles", () => {

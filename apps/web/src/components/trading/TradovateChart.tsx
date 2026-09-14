@@ -768,8 +768,8 @@ export function TradovateChart({
                 : CrosshairMode.Normal,
       },
       grid: {
-        vertLines: { visible: settings.showGrid },
-        horzLines: { visible: settings.showGrid },
+        vertLines: { visible: settings.gridMode === "both" || settings.gridMode === "vertical" },
+        horzLines: { visible: settings.gridMode === "both" || settings.gridMode === "horizontal" },
       },
     });
     engine.chart.priceScale("right", 0).applyOptions({
@@ -779,7 +779,7 @@ export function TradovateChart({
   }, [
     engine,
     settings.style,
-    settings.showGrid,
+    settings.gridMode,
     settings.logScale,
     settings.invertScale,
     settings.crosshairMode,
@@ -851,8 +851,8 @@ export function TradovateChart({
         favoriteIndicators={settings.favoriteIndicators}
         onToggleFavoriteIndicator={settings.toggleFavoriteIndicator}
         indicatorLimitReached={indicatorInstances.length >= MAX_CHART_INDICATORS}
-        showGrid={settings.showGrid}
-        onToggleGrid={settings.toggleGrid}
+        gridMode={settings.gridMode}
+        onGridModeChange={settings.setGridMode}
         showPriceLine={settings.showPriceLine}
         onTogglePriceLine={settings.togglePriceLine}
         showPriceLabel={settings.showPriceLabel}

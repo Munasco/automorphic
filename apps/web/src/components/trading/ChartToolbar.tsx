@@ -1,5 +1,5 @@
 import { TradingSelect } from "./TradingSelect";
-import type { ChartCrosshairMode } from "./chartPreferences";
+import type { ChartCrosshairMode, ChartGridMode } from "./chartPreferences";
 
 import {
   CHART_INTERVALS,
@@ -52,8 +52,8 @@ export type ChartToolbarProps = {
   favoriteIndicators: readonly IndicatorKey[];
   onToggleFavoriteIndicator: (key: IndicatorKey) => void;
   indicatorLimitReached?: boolean;
-  showGrid: boolean;
-  onToggleGrid: () => void;
+  gridMode: ChartGridMode;
+  onGridModeChange: (value: ChartGridMode) => void;
   showPriceLine: boolean;
   onTogglePriceLine: () => void;
   showPriceLabel: boolean;
@@ -86,8 +86,8 @@ export function ChartToolbar({
   favoriteIndicators = NO_FAVORITES,
   onToggleFavoriteIndicator,
   indicatorLimitReached = false,
-  showGrid,
-  onToggleGrid,
+  gridMode,
+  onGridModeChange,
   showPriceLine,
   onTogglePriceLine,
   showPriceLabel,
@@ -435,13 +435,24 @@ export function ChartToolbar({
                 className="w-full"
               />
             </div>
-            <label
-              htmlFor={`${id}-grid`}
-              className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"
-            >
-              <Checkbox id={`${id}-grid`} checked={showGrid} onCheckedChange={onToggleGrid} />
-              Grid lines
-            </label>
+            <div className="space-y-2 px-2 py-2.5">
+              <label htmlFor={`${id}-grid`} className="text-xs text-zinc-400">
+                Grid lines
+              </label>
+              <TradingSelect
+                id={`${id}-grid`}
+                label="Grid lines"
+                value={gridMode}
+                options={[
+                  ["both", "Horizontal and vertical"],
+                  ["horizontal", "Horizontal only"],
+                  ["vertical", "Vertical only"],
+                  ["none", "None"],
+                ]}
+                onChange={(value) => onGridModeChange(value as ChartGridMode)}
+                className="w-full"
+              />
+            </div>
             <label
               htmlFor={`${id}-price-line`}
               className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"

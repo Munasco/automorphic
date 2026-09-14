@@ -40,6 +40,9 @@ import { normalizeIndicatorAppearance, type IndicatorAppearance } from "./indica
 export type { IndicatorAppearance } from "./indicatorStyles";
 export type ChartAppearance = Partial<Record<IndicatorKey, IndicatorAppearance>>;
 export type ChartCrosshairMode = "normal" | "magnet" | "ohlc" | "hidden";
+export type ChartGridMode = "both" | "horizontal" | "vertical" | "none";
+const validGridMode = (value: unknown): value is ChartGridMode =>
+  value === "both" || value === "horizontal" || value === "vertical" || value === "none";
 const validCrosshairMode = (value: unknown): value is ChartCrosshairMode =>
   value === "normal" || value === "magnet" || value === "ohlc" || value === "hidden";
 const validColor = (value: unknown): value is string =>
@@ -70,7 +73,7 @@ type SavedChartPreferences = {
   favoriteIndicators: IndicatorKey[];
   volumeColors: typeof DEFAULT_VOLUME_COLORS;
   initialBalance: InitialBalanceSettings;
-  showGrid: boolean;
+  gridMode: ChartGridMode;
   showPriceLine: boolean;
   showPriceLabel: boolean;
   logScale: boolean;
@@ -79,7 +82,10 @@ type SavedChartPreferences = {
 
 /** Old saved charts keep their choices while newly introduced indicators stay disabled. */
 export function normalizeChartPreferences(value: unknown): SavedChartPreferences {
-  const saved = value && typeof value === "object" ? (value as Partial<SavedChartPreferences>) : {};
+  const saved =
+    value && typeof value === "object"
+      ? (value as Partial<SavedChartPreferences> & { showGrid?: unknown })
+      : {};
   const indicators = { ...DEFAULT_INDICATORS };
   const hiddenIndicators = hiddenDefaults();
   const appearance: ChartAppearance = {};
@@ -123,7 +129,11 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     initialBalance: isValidInitialBalanceSettings(saved.initialBalance)
       ? resolveInitialBalanceSettings(saved.initialBalance)
       : { ...DEFAULT_INITIAL_BALANCE },
-    showGrid: typeof saved.showGrid === "boolean" ? saved.showGrid : true,
+    gridMode: validGridMode(saved.gridMode)
+      ? saved.gridMode
+      : saved.showGrid === false
+        ? "none"
+        : "both",
     showPriceLine: typeof saved.showPriceLine === "boolean" ? saved.showPriceLine : true,
     showPriceLabel: typeof saved.showPriceLabel === "boolean" ? saved.showPriceLabel : true,
     logScale: typeof saved.logScale === "boolean" ? saved.logScale : false,
@@ -142,7 +152,7 @@ export const useChartPreferences = create<{
   volumeColors: typeof DEFAULT_VOLUME_COLORS;
   initialBalance: InitialBalanceSettings;
   setInitialBalance: (settings: InitialBalanceSettings) => void;
-  showGrid: boolean;
+  gridMode: ChartGridMode;
   showPriceLine: boolean;
   showPriceLabel: boolean;
   logScale: boolean;
@@ -169,7 +179,7 @@ export const useChartPreferences = create<{
   resetIndicatorInstanceAppearance: (id: string) => void;
   setIndicatorInstanceInitialBalance: (id: string, settings: InitialBalanceSettings) => void;
   setIndicatorInstanceVolumeColors: (id: string, colors: typeof DEFAULT_VOLUME_COLORS) => void;
-  toggleGrid: () => void;
+  setGridMode: (mode: ChartGridMode) => void;
   togglePriceLine: () => void;
   togglePriceLabel: () => void;
   toggleLogScale: () => void;
@@ -191,7 +201,7 @@ export const useChartPreferences = create<{
         if (isValidInitialBalanceSettings(settings))
           set({ initialBalance: resolveInitialBalanceSettings(settings) });
       },
-      showGrid: true,
+      gridMode: "both",
       showPriceLine: true,
       showPriceLabel: true,
       logScale: false,
@@ -412,7 +422,9 @@ export const useChartPreferences = create<{
             ),
           });
       },
-      toggleGrid: () => set((state) => ({ showGrid: !state.showGrid })),
+      setGridMode: (gridMode) => {
+        if (validGridMode(gridMode) && gridMode !== get().gridMode) set({ gridMode });
+      },
       togglePriceLine: () => set((state) => ({ showPriceLine: !state.showPriceLine })),
       togglePriceLabel: () => set((state) => ({ showPriceLabel: !state.showPriceLabel })),
       toggleLogScale: () => set((state) => ({ logScale: !state.logScale })),

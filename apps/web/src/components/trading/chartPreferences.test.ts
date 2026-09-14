@@ -13,6 +13,7 @@ import {
   useChartPreferences,
   normalizeChartPreferences,
   type ChartCrosshairMode,
+  type ChartGridMode,
 } from "./chartPreferences";
 import { DEFAULT_INITIAL_BALANCE } from "./initialBalanceSettings";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
@@ -1059,7 +1060,7 @@ describe("chart crosshair preferences", () => {
       });
       expect(restored.crosshairMode).toBe("normal");
       expect(restored.style).toBe("heikin-ashi");
-      expect(restored.showGrid).toBe(false);
+      expect(restored.gridMode).toBe("none");
       expect(restored.logScale).toBe(true);
       expect(restored.indicatorInputs.sma?.period).toBe(42);
     }
@@ -1071,7 +1072,7 @@ describe("chart crosshair preferences", () => {
     async (mode) => {
       const configured = configure();
       configured.setStyle("heikin-ashi");
-      configured.toggleGrid();
+      configured.setGridMode("none");
       configured.toggleLogScale();
       // Ensure normal also exercises a real transition/save.
       configured.setCrosshairMode(mode === "normal" ? "hidden" : "normal");
@@ -1135,7 +1136,7 @@ describe("current price display preferences", () => {
       const configured = configure();
       configured.setStyle("heikin-ashi");
       configured.setCrosshairMode("ohlc");
-      configured.toggleGrid();
+      configured.setGridMode("none");
       configured.toggleLogScale();
       const before = normalizeChartPreferences(useChartPreferences.getState());
       const { togglePriceLine, togglePriceLabel } = useChartPreferences.getState();
@@ -1279,4 +1280,105 @@ it("persists independent Bollinger %B inputs, levels and appearance", async () =
     getChartIndicatorInstances(useChartPreferences.getState()).find((i) => i.id === duplicate)!
       .inputs,
   ).toEqual({ period: 20, source: 0, deviations: 2, showLevels: 1, lowerLevel: 0, upperLevel: 1 });
+});
+
+describe("chart grid orientation preferences", () => {
+  it("migrates legacy visibility and removes the legacy key from current preferences", () => {
+    expect(useChartPreferences.getInitialState().gridMode).toBe("both");
+    expect(useChartPreferences.getInitialState()).not.toHaveProperty("showGrid");
+    expect(useChartPreferences.getInitialState()).not.toHaveProperty("toggleGrid");
+    expect(normalizeChartPreferences({ showGrid: false }).gridMode).toBe("none");
+    for (const legacy of [undefined, null, true, "false", 0, 1, {}, []])
+      expect(normalizeChartPreferences({ showGrid: legacy }).gridMode).toBe("both");
+    const restored = normalizeChartPreferences({
+      showGrid: false,
+      style: "heikin-ashi",
+      logScale: true,
+    });
+    expect(restored).not.toHaveProperty("showGrid");
+    expect(restored).toMatchObject({ gridMode: "none", style: "heikin-ashi", logScale: true });
+  });
+
+  it("prefers valid explicit modes over legacy visibility, but falls back safely for invalid modes", () => {
+    for (const mode of ["both", "horizontal", "vertical", "none"] as const)
+      for (const showGrid of [true, false])
+        expect(normalizeChartPreferences({ gridMode: mode, showGrid }).gridMode).toBe(mode);
+    for (const invalid of [undefined, null, "Horizontal", "all", "", 0, 1, true, {}, ["none"]]) {
+      expect(normalizeChartPreferences({ gridMode: invalid }).gridMode).toBe("both");
+      expect(normalizeChartPreferences({ gridMode: invalid, showGrid: false }).gridMode).toBe(
+        "none",
+      );
+    }
+  });
+
+  it.each(["both", "horizontal", "vertical", "none"] as const)(
+    "persists %s orientation and leaves other settings unchanged",
+    async (mode) => {
+      const configured = configure();
+      configured.setStyle("heikin-ashi");
+      configured.setCrosshairMode("ohlc");
+      configured.toggleInvertScale();
+      configured.toggleLogScale();
+      configured.togglePriceLine();
+      configured.togglePriceLabel();
+      configured.setGridMode(mode === "both" ? "none" : "both");
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      configured.setGridMode(mode);
+      const expected = { ...before, gridMode: mode };
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+      const serialized = JSON.parse(saved[1]).state;
+      expect(serialized.gridMode).toBe(mode);
+      expect(serialized).not.toHaveProperty("showGrid");
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      expect(typeof useChartPreferences.getState().setGridMode).toBe("function");
+    },
+  );
+
+  it("ignores invalid and unchanged runtime selections without a write or notification", () => {
+    configure().setGridMode("vertical");
+    const before = useChartPreferences.getState();
+    const listener = vi.fn();
+    const unsubscribe = useChartPreferences.subscribe(listener);
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    try {
+      for (const invalid of [undefined, null, "Vertical", "all", false, 0, {}, ["horizontal"]])
+        before.setGridMode(invalid as ChartGridMode);
+      before.setGridMode("vertical");
+      expect(useChartPreferences.getState()).toBe(before);
+      expect(listener).not.toHaveBeenCalled();
+      expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+      before.setGridMode("horizontal");
+      expect(useChartPreferences.getState().gridMode).toBe("horizontal");
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("rehydrates legacy hidden grids and saves only the new orientation schema", async () => {
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+      JSON.stringify({
+        version: 0,
+        state: { showGrid: false, logScale: true, invertScale: true },
+      }),
+    );
+    await useChartPreferences.persist.rehydrate();
+    expect(useChartPreferences.getState()).toMatchObject({
+      gridMode: "none",
+      logScale: true,
+      invertScale: true,
+    });
+    expect(useChartPreferences.getState()).not.toHaveProperty("showGrid");
+    useChartPreferences.getState().setGridMode("horizontal");
+    const saved = JSON.parse(
+      vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1],
+    ).state;
+    expect(saved).toMatchObject({ gridMode: "horizontal", logScale: true, invertScale: true });
+    expect(saved).not.toHaveProperty("showGrid");
+  });
 });
