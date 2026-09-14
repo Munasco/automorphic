@@ -44,6 +44,9 @@ export type ChartCrosshairLineStyle = "solid" | "dotted" | "dashed" | "largeDash
 export type ChartReplaySpeed = 0.5 | 1 | 2 | 5 | 10;
 const validReplaySpeed = (value: unknown): value is ChartReplaySpeed =>
   value === 0.5 || value === 1 || value === 2 || value === 5 || value === 10;
+export type ChartLineWidth = 1 | 2 | 3 | 4;
+const validLineChartWidth = (value: unknown): value is ChartLineWidth =>
+  value === 1 || value === 2 || value === 3 || value === 4;
 export type ChartCrosshairLineWidth = 1 | 2 | 3;
 const validCrosshairLineStyle = (value: unknown): value is ChartCrosshairLineStyle =>
   value === "solid" || value === "dotted" || value === "dashed" || value === "largeDashed";
@@ -98,6 +101,8 @@ type SavedChartPreferences = {
   gridMode: ChartGridMode;
   gridLineStyle: ChartGridLineStyle;
   gridColor: string;
+  lineChartColor: string;
+  lineChartWidth: ChartLineWidth;
   thinBars: boolean;
   showBarOpen: boolean;
   showCandleWicks: boolean;
@@ -172,6 +177,8 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
         : "both",
     gridLineStyle: validGridLineStyle(saved.gridLineStyle) ? saved.gridLineStyle : "solid",
     gridColor: validColor(saved.gridColor) ? saved.gridColor : "#171a23",
+    lineChartColor: validColor(saved.lineChartColor) ? saved.lineChartColor : "#6097ee",
+    lineChartWidth: validLineChartWidth(saved.lineChartWidth) ? saved.lineChartWidth : 2,
     thinBars: typeof saved.thinBars === "boolean" ? saved.thinBars : true,
     showBarOpen: typeof saved.showBarOpen === "boolean" ? saved.showBarOpen : true,
     showCandleWicks: typeof saved.showCandleWicks === "boolean" ? saved.showCandleWicks : true,
@@ -206,6 +213,8 @@ export const useChartPreferences = create<{
   gridMode: ChartGridMode;
   gridLineStyle: ChartGridLineStyle;
   gridColor: string;
+  lineChartColor: string;
+  lineChartWidth: ChartLineWidth;
   thinBars: boolean;
   showBarOpen: boolean;
   showCandleWicks: boolean;
@@ -243,6 +252,8 @@ export const useChartPreferences = create<{
   setGridMode: (mode: ChartGridMode) => void;
   setGridLineStyle: (style: ChartGridLineStyle) => void;
   setGridColor: (color: string) => void;
+  setLineChartColor: (color: string) => void;
+  setLineChartWidth: (width: ChartLineWidth) => void;
   toggleThinBars: () => void;
   toggleBarOpen: () => void;
   toggleCandleWicks: () => void;
@@ -275,6 +286,8 @@ export const useChartPreferences = create<{
       gridMode: "both",
       gridLineStyle: "solid",
       gridColor: "#171a23",
+      lineChartColor: "#6097ee",
+      lineChartWidth: 2,
       thinBars: true,
       showBarOpen: true,
       showCandleWicks: true,
@@ -527,6 +540,14 @@ export const useChartPreferences = create<{
       setGridLineStyle: (gridLineStyle) => {
         if (validGridLineStyle(gridLineStyle) && gridLineStyle !== get().gridLineStyle)
           set({ gridLineStyle });
+      },
+      setLineChartColor: (lineChartColor) => {
+        if (validColor(lineChartColor) && lineChartColor !== get().lineChartColor)
+          set({ lineChartColor });
+      },
+      setLineChartWidth: (lineChartWidth) => {
+        if (validLineChartWidth(lineChartWidth) && lineChartWidth !== get().lineChartWidth)
+          set({ lineChartWidth });
       },
       setGridColor: (gridColor) => {
         if (validColor(gridColor) && gridColor !== get().gridColor) set({ gridColor });

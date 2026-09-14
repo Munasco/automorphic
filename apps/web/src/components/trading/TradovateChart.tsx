@@ -766,6 +766,16 @@ export function TradovateChart({
         wickVisible: settings.showCandleWicks,
         borderVisible: settings.showCandleBorders,
       });
+    engine.prices.line.applyOptions({
+      color: settings.lineChartColor,
+      lineWidth: settings.lineChartWidth,
+    });
+    engine.prices.area.applyOptions({
+      lineColor: settings.lineChartColor,
+      topColor: `${settings.lineChartColor}55`,
+      bottomColor: `${settings.lineChartColor}00`,
+      lineWidth: settings.lineChartWidth,
+    });
     engine.prices.bars.applyOptions({
       thinBars: settings.thinBars,
       openVisible: settings.showBarOpen,
@@ -839,6 +849,8 @@ export function TradovateChart({
     settings.showBarOpen,
     settings.showCandleWicks,
     settings.showCandleBorders,
+    settings.lineChartColor,
+    settings.lineChartWidth,
     settings.showPriceLine,
     settings.showPriceLabel,
   ]);
@@ -919,6 +931,10 @@ export function TradovateChart({
         onToggleBarOpen={settings.toggleBarOpen}
         showCandleWicks={settings.showCandleWicks}
         showCandleBorders={settings.showCandleBorders}
+        lineChartColor={settings.lineChartColor}
+        lineChartWidth={settings.lineChartWidth}
+        onLineChartColorChange={settings.setLineChartColor}
+        onLineChartWidthChange={settings.setLineChartWidth}
         onToggleCandleWicks={settings.toggleCandleWicks}
         onToggleCandleBorders={settings.toggleCandleBorders}
         showPriceLine={settings.showPriceLine}

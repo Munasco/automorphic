@@ -6,6 +6,7 @@ import type {
   ChartGridMode,
   ChartGridLineStyle,
   ChartPriceScaleMode,
+  ChartLineWidth,
 } from "./chartPreferences";
 
 import {
@@ -71,6 +72,10 @@ export type ChartToolbarProps = {
   onToggleBarOpen: () => void;
   showCandleWicks: boolean;
   showCandleBorders: boolean;
+  lineChartColor: string;
+  lineChartWidth: ChartLineWidth;
+  onLineChartColorChange: (color: string) => void;
+  onLineChartWidthChange: (width: ChartLineWidth) => void;
   onToggleCandleWicks: () => void;
   onToggleCandleBorders: () => void;
   showPriceLine: boolean;
@@ -129,6 +134,10 @@ export function ChartToolbar({
   onToggleBarOpen,
   showCandleWicks,
   showCandleBorders,
+  lineChartColor,
+  lineChartWidth,
+  onLineChartColorChange,
+  onLineChartWidthChange,
   onToggleCandleWicks,
   onToggleCandleBorders,
   showPriceLine,
@@ -517,6 +526,35 @@ export function ChartToolbar({
                   Candle wicks
                 </label>
               </>
+            )}
+            {(style === "line" || style === "area") && (
+              <div className="space-y-2 px-2 py-2.5">
+                <label htmlFor={`${id}-line-width`} className="text-xs text-zinc-400">
+                  Line appearance
+                </label>
+                <div className="flex items-center gap-2">
+                  <TradingSelect
+                    id={`${id}-line-width`}
+                    label="Line width"
+                    value={String(lineChartWidth)}
+                    options={[
+                      ["1", "1 px"],
+                      ["2", "2 px"],
+                      ["3", "3 px"],
+                      ["4", "4 px"],
+                    ]}
+                    onChange={(value) => onLineChartWidthChange(Number(value) as ChartLineWidth)}
+                    className="min-w-0 flex-1"
+                  />
+                  <input
+                    type="color"
+                    aria-label="Line color"
+                    value={lineChartColor}
+                    onChange={(event) => onLineChartColorChange(event.target.value)}
+                    className="h-7 w-8 shrink-0 cursor-pointer rounded border border-white/15 bg-transparent"
+                  />
+                </div>
+              </div>
             )}
             <div className="flex flex-col gap-2 px-2 pb-2">
               <label htmlFor={`${id}-crosshair`} className="text-xs">

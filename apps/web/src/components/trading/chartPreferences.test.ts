@@ -19,6 +19,7 @@ import {
   type ChartGridLineStyle,
   type ChartPriceScaleMode,
   type ChartReplaySpeed,
+  type ChartLineWidth,
 } from "./chartPreferences";
 import { DEFAULT_INITIAL_BALANCE } from "./initialBalanceSettings";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
@@ -2471,6 +2472,137 @@ describe("candle border visibility preferences", () => {
       [hidden, hidden],
       [legacy, { ...legacy, showCandleBorders: true }],
       [hidden, hidden],
+    ] as const) {
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+        JSON.stringify({ version: 0, state: saved }),
+      );
+      await hydrate();
+      expect(useChartPreferences.getState()).toMatchObject(expected);
+    }
+  });
+});
+
+describe("line and area appearance preferences", () => {
+  const defaults = { lineChartColor: "#6097ee", lineChartWidth: 2 };
+  const invalidColors = [
+    undefined,
+    null,
+    "",
+    "red",
+    "#abc",
+    "#abcdef00",
+    "abcdef",
+    "#gggggg",
+    " #abcdef",
+    123456,
+    {},
+    ["#abcdef"],
+  ];
+  const invalidWidths = [undefined, null, 0, -1, 5, 1.5, NaN, Infinity, "2", true, {}, [3]];
+
+  it("defaults legacy and malformed fields independently and preserves unrelated display settings", () => {
+    expect(useChartPreferences.getInitialState()).toMatchObject(defaults);
+    expect(normalizeChartPreferences({})).toMatchObject(defaults);
+    for (const lineChartColor of invalidColors)
+      expect(
+        normalizeChartPreferences({
+          lineChartColor,
+          lineChartWidth: 4,
+          gridColor: "#123456",
+          showCandleWicks: false,
+        }),
+      ).toMatchObject({
+        lineChartColor: defaults.lineChartColor,
+        lineChartWidth: 4,
+        gridColor: "#123456",
+        showCandleWicks: false,
+      });
+    for (const lineChartWidth of invalidWidths)
+      expect(
+        normalizeChartPreferences({
+          lineChartWidth,
+          lineChartColor: "#ABCDEF",
+          showCandleBorders: false,
+        }),
+      ).toMatchObject({ lineChartWidth: 2, lineChartColor: "#ABCDEF", showCandleBorders: false });
+  });
+
+  it("ignores invalid and identical appearance edits without writes or notifications", () => {
+    const store = configure();
+    store.setLineChartColor("#123456");
+    store.setLineChartWidth(4);
+    const before = useChartPreferences.getState();
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    const listener = vi.fn();
+    const unsubscribe = useChartPreferences.subscribe(listener);
+    try {
+      for (const value of invalidColors) store.setLineChartColor(value as string);
+      for (const value of invalidWidths) store.setLineChartWidth(value as ChartLineWidth);
+      store.setLineChartColor("#123456");
+      store.setLineChartWidth(4);
+      expect(useChartPreferences.getState()).toBe(before);
+      expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+      expect(listener).not.toHaveBeenCalled();
+      store.setLineChartColor("#ABCDEF");
+      store.setLineChartWidth(1);
+      expect(listener).toHaveBeenCalledTimes(2);
+      expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(2);
+      expect(useChartPreferences.getState()).toMatchObject({
+        lineChartColor: "#ABCDEF",
+        lineChartWidth: 1,
+      });
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it.each([1, 2, 3, 4] as const)(
+    "shares width%s and color across Line/Area styles and saves them independently",
+    async (lineChartWidth) => {
+      const store = configure();
+      store.setGridColor("#654321");
+      store.setGridLineStyle("dotted");
+      store.toggleCandleBorders();
+      store.toggleCandleWicks();
+      store.toggleThinBars();
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      store.setLineChartColor("#ABCDEF");
+      store.setLineChartWidth(lineChartWidth);
+      const expected = { ...before, lineChartColor: "#ABCDEF", lineChartWidth };
+      for (const style of ["line", "area", "candles", "line", "area"] as const) {
+        store.setStyle(style);
+        expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+          ...expected,
+          style,
+        });
+      }
+      const serialized = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      expect(JSON.parse(serialized).state).toMatchObject({
+        lineChartColor: "#ABCDEF",
+        lineChartWidth,
+      });
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(serialized);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+        ...expected,
+        style: "area",
+      });
+      expect(typeof useChartPreferences.getState().setLineChartColor).toBe("function");
+      expect(typeof useChartPreferences.getState().setLineChartWidth).toBe("function");
+    },
+  );
+
+  it("restores per-workspace line appearance and resets missing fields for older workspaces", async () => {
+    const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+    const first = { lineChartColor: "#123456", lineChartWidth: 4, showCandleWicks: false };
+    const second = { lineChartColor: "#abcdef", lineChartWidth: 1 };
+    for (const [saved, expected] of [
+      [first, first],
+      [second, { ...second, showCandleWicks: true }],
+      [{ lineChartWidth: 3 }, { ...defaults, lineChartWidth: 3 }],
+      [{}, defaults],
+      [first, first],
     ] as const) {
       vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
         JSON.stringify({ version: 0, state: saved }),
