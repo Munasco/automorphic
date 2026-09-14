@@ -1,6 +1,8 @@
 import { TradingSelect } from "./TradingSelect";
 import type {
   ChartCrosshairMode,
+  ChartCrosshairLineStyle,
+  ChartCrosshairLineWidth,
   ChartGridMode,
   ChartGridLineStyle,
   ChartPriceScaleMode,
@@ -69,6 +71,12 @@ export type ChartToolbarProps = {
   onTogglePriceLabel: () => void;
   crosshairMode: ChartCrosshairMode;
   onCrosshairModeChange: (value: ChartCrosshairMode) => void;
+  crosshairColor: string;
+  onCrosshairColorChange: (value: string) => void;
+  crosshairLineStyle: ChartCrosshairLineStyle;
+  onCrosshairLineStyleChange: (value: ChartCrosshairLineStyle) => void;
+  crosshairLineWidth: ChartCrosshairLineWidth;
+  onCrosshairLineWidthChange: (value: ChartCrosshairLineWidth) => void;
   priceScaleMode: ChartPriceScaleMode;
   onPriceScaleModeChange: (value: ChartPriceScaleMode) => void;
   invertScale: boolean;
@@ -113,6 +121,12 @@ export function ChartToolbar({
   onTogglePriceLabel,
   crosshairMode,
   onCrosshairModeChange,
+  crosshairColor,
+  onCrosshairColorChange,
+  crosshairLineStyle,
+  onCrosshairLineStyleChange,
+  crosshairLineWidth,
+  onCrosshairLineWidthChange,
   priceScaleMode,
   onPriceScaleModeChange,
   invertScale,
@@ -454,6 +468,54 @@ export function ChartToolbar({
                 className="w-full"
               />
             </div>
+            {crosshairMode !== "hidden" && (
+              <div className="space-y-2 px-2 pb-2.5">
+                <label htmlFor={`${id}-crosshair-style`} className="text-xs text-zinc-400">
+                  Crosshair style
+                </label>
+                <div className="flex items-center gap-2">
+                  <TradingSelect
+                    id={`${id}-crosshair-style`}
+                    label="Crosshair style"
+                    value={crosshairLineStyle}
+                    options={[
+                      ["solid", "Solid"],
+                      ["dotted", "Dotted"],
+                      ["dashed", "Dashed"],
+                      ["largeDashed", "Large dashed"],
+                    ]}
+                    onChange={(value) =>
+                      onCrosshairLineStyleChange(value as ChartCrosshairLineStyle)
+                    }
+                    className="min-w-0 flex-1"
+                  />
+                  <input
+                    type="color"
+                    aria-label="Crosshair color"
+                    value={crosshairColor}
+                    onChange={(event) => onCrosshairColorChange(event.target.value)}
+                    className="h-7 w-8 shrink-0 cursor-pointer rounded border border-white/15 bg-transparent"
+                  />
+                </div>
+                <label htmlFor={`${id}-crosshair-width`} className="text-xs text-zinc-400">
+                  Crosshair width
+                </label>
+                <TradingSelect
+                  id={`${id}-crosshair-width`}
+                  label="Crosshair width"
+                  value={String(crosshairLineWidth)}
+                  options={[
+                    ["1", "1 px"],
+                    ["2", "2 px"],
+                    ["3", "3 px"],
+                  ]}
+                  onChange={(value) =>
+                    onCrosshairLineWidthChange(Number(value) as ChartCrosshairLineWidth)
+                  }
+                  className="w-full"
+                />
+              </div>
+            )}
             <div className="space-y-2 px-2 py-2.5">
               <label htmlFor={`${id}-grid`} className="text-xs text-zinc-400">
                 Grid lines

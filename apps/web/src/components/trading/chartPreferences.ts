@@ -40,6 +40,12 @@ import { normalizeIndicatorAppearance, type IndicatorAppearance } from "./indica
 export type { IndicatorAppearance } from "./indicatorStyles";
 export type ChartAppearance = Partial<Record<IndicatorKey, IndicatorAppearance>>;
 export type ChartCrosshairMode = "normal" | "magnet" | "ohlc" | "hidden";
+export type ChartCrosshairLineStyle = "solid" | "dotted" | "dashed" | "largeDashed";
+export type ChartCrosshairLineWidth = 1 | 2 | 3;
+const validCrosshairLineStyle = (value: unknown): value is ChartCrosshairLineStyle =>
+  value === "solid" || value === "dotted" || value === "dashed" || value === "largeDashed";
+const validCrosshairLineWidth = (value: unknown): value is ChartCrosshairLineWidth =>
+  value === 1 || value === 2 || value === 3;
 export type ChartGridMode = "both" | "horizontal" | "vertical" | "none";
 export type ChartPriceScaleMode = "normal" | "logarithmic" | "percentage" | "indexedTo100";
 const validPriceScaleMode = (value: unknown): value is ChartPriceScaleMode =>
@@ -74,6 +80,9 @@ function mergeAppearance(
 type SavedChartPreferences = {
   style: ChartStyle;
   crosshairMode: ChartCrosshairMode;
+  crosshairColor: string;
+  crosshairLineStyle: ChartCrosshairLineStyle;
+  crosshairLineWidth: ChartCrosshairLineWidth;
   indicators: ChartIndicators;
   hiddenIndicators: ChartIndicators;
   appearance: ChartAppearance;
@@ -140,6 +149,13 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     initialBalance: isValidInitialBalanceSettings(saved.initialBalance)
       ? resolveInitialBalanceSettings(saved.initialBalance)
       : { ...DEFAULT_INITIAL_BALANCE },
+    crosshairColor: validColor(saved.crosshairColor) ? saved.crosshairColor : "#9598A1",
+    crosshairLineStyle: validCrosshairLineStyle(saved.crosshairLineStyle)
+      ? saved.crosshairLineStyle
+      : "largeDashed",
+    crosshairLineWidth: validCrosshairLineWidth(saved.crosshairLineWidth)
+      ? saved.crosshairLineWidth
+      : 1,
     gridMode: validGridMode(saved.gridMode)
       ? saved.gridMode
       : saved.showGrid === false
@@ -160,6 +176,9 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
 export const useChartPreferences = create<{
   style: ChartStyle;
   crosshairMode: ChartCrosshairMode;
+  crosshairColor: string;
+  crosshairLineStyle: ChartCrosshairLineStyle;
+  crosshairLineWidth: ChartCrosshairLineWidth;
   indicators: ChartIndicators;
   hiddenIndicators: ChartIndicators;
   appearance: ChartAppearance;
@@ -178,6 +197,9 @@ export const useChartPreferences = create<{
   invertScale: boolean;
   setStyle: (style: ChartStyle) => void;
   setCrosshairMode: (mode: ChartCrosshairMode) => void;
+  setCrosshairColor: (color: string) => void;
+  setCrosshairLineStyle: (style: ChartCrosshairLineStyle) => void;
+  setCrosshairLineWidth: (width: ChartCrosshairLineWidth) => void;
   toggleIndicator: (key: IndicatorKey) => void;
   toggleFavoriteIndicator: (key: IndicatorKey) => void;
   toggleIndicatorVisibility: (key: IndicatorKey) => void;
@@ -210,6 +232,9 @@ export const useChartPreferences = create<{
     (set, get) => ({
       style: "candles",
       crosshairMode: "normal",
+      crosshairColor: "#9598A1",
+      crosshairLineStyle: "largeDashed",
+      crosshairLineWidth: 1,
       indicators: { ...DEFAULT_INDICATORS },
       hiddenIndicators: hiddenDefaults(),
       appearance: {},
@@ -233,6 +258,24 @@ export const useChartPreferences = create<{
       setCrosshairMode: (crosshairMode) => {
         if (validCrosshairMode(crosshairMode) && crosshairMode !== get().crosshairMode)
           set({ crosshairMode });
+      },
+      setCrosshairColor: (crosshairColor) => {
+        if (validColor(crosshairColor) && crosshairColor !== get().crosshairColor)
+          set({ crosshairColor });
+      },
+      setCrosshairLineStyle: (crosshairLineStyle) => {
+        if (
+          validCrosshairLineStyle(crosshairLineStyle) &&
+          crosshairLineStyle !== get().crosshairLineStyle
+        )
+          set({ crosshairLineStyle });
+      },
+      setCrosshairLineWidth: (crosshairLineWidth) => {
+        if (
+          validCrosshairLineWidth(crosshairLineWidth) &&
+          crosshairLineWidth !== get().crosshairLineWidth
+        )
+          set({ crosshairLineWidth });
       },
       toggleFavoriteIndicator: (key) => {
         if (!isIndicatorKey(key)) return;

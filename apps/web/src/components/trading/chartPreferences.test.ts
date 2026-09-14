@@ -13,6 +13,8 @@ import {
   useChartPreferences,
   normalizeChartPreferences,
   type ChartCrosshairMode,
+  type ChartCrosshairLineStyle,
+  type ChartCrosshairLineWidth,
   type ChartGridMode,
   type ChartGridLineStyle,
   type ChartPriceScaleMode,
@@ -1706,5 +1708,175 @@ describe("chart price scale modes", () => {
     ).state;
     expect(saved.priceScaleMode).toBe("indexedTo100");
     expect(saved).not.toHaveProperty("logScale");
+  });
+});
+
+describe("crosshair appearance preferences", () => {
+  const defaults = {
+    crosshairColor: "#9598A1",
+    crosshairLineStyle: "largeDashed",
+    crosshairLineWidth: 1,
+  };
+  const invalidColors = [
+    undefined,
+    null,
+    "",
+    "red",
+    "#fff",
+    "#12345678",
+    "123456",
+    "#gggggg",
+    " #123456",
+    123456,
+    {},
+    ["#abcdef"],
+  ];
+  const invalidStyles = [
+    undefined,
+    null,
+    "",
+    "Dashed",
+    "large-dashed",
+    "sparseDotted",
+    0,
+    1,
+    true,
+    {},
+    ["solid"],
+  ];
+  const invalidWidths = [undefined, null, 0, -1, 4, 1.5, NaN, Infinity, "2", true, {}, [1]];
+
+  it("defaults missing or malformed fields independently without losing older chart choices", () => {
+    expect(useChartPreferences.getInitialState()).toMatchObject(defaults);
+    for (const payload of [undefined, null, {}, false, []])
+      expect(normalizeChartPreferences(payload)).toMatchObject(defaults);
+    for (const crosshairColor of invalidColors)
+      expect(
+        normalizeChartPreferences({
+          crosshairColor,
+          crosshairLineWidth: 3,
+          crosshairLineStyle: "dotted",
+          crosshairMode: "hidden",
+          logScale: true,
+        }),
+      ).toMatchObject({
+        crosshairColor: defaults.crosshairColor,
+        crosshairLineWidth: 3,
+        crosshairLineStyle: "dotted",
+        crosshairMode: "hidden",
+        priceScaleMode: "logarithmic",
+      });
+    for (const crosshairLineStyle of invalidStyles)
+      expect(
+        normalizeChartPreferences({
+          crosshairLineStyle,
+          crosshairColor: "#ABCDEF",
+          crosshairLineWidth: 2,
+        }),
+      ).toMatchObject({
+        crosshairLineStyle: defaults.crosshairLineStyle,
+        crosshairColor: "#ABCDEF",
+        crosshairLineWidth: 2,
+      });
+    for (const crosshairLineWidth of invalidWidths)
+      expect(
+        normalizeChartPreferences({
+          crosshairLineWidth,
+          crosshairColor: "#123456",
+          crosshairLineStyle: "solid",
+        }),
+      ).toMatchObject({
+        crosshairLineWidth: defaults.crosshairLineWidth,
+        crosshairColor: "#123456",
+        crosshairLineStyle: "solid",
+      });
+  });
+
+  it("ignores invalid and unchanged updates without notifications or storage writes", () => {
+    const state = configure();
+    const listener = vi.fn();
+    const unsubscribe = useChartPreferences.subscribe(listener);
+    try {
+      for (const value of invalidColors) state.setCrosshairColor(value as string);
+      for (const value of invalidStyles)
+        state.setCrosshairLineStyle(value as ChartCrosshairLineStyle);
+      for (const value of invalidWidths)
+        state.setCrosshairLineWidth(value as ChartCrosshairLineWidth);
+      state.setCrosshairColor(state.crosshairColor);
+      state.setCrosshairLineStyle(state.crosshairLineStyle);
+      state.setCrosshairLineWidth(state.crosshairLineWidth);
+      expect(useChartPreferences.getState()).toBe(state);
+      expect(listener).not.toHaveBeenCalled();
+      expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+      state.setCrosshairColor("#ABCDEF");
+      state.setCrosshairLineStyle("solid");
+      state.setCrosshairLineWidth(3);
+      expect(listener).toHaveBeenCalledTimes(3);
+      expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(3);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it.each([
+    { style: "solid", width: 1, mode: "magnet" },
+    { style: "dotted", width: 2, mode: "ohlc" },
+    { style: "dashed", width: 3, mode: "hidden" },
+    { style: "largeDashed", width: 2, mode: "normal" },
+  ] as const)(
+    "persists $style width $width independently of mode $mode and other chart choices",
+    async ({ style, width, mode }) => {
+      const state = configure();
+      state.setGridColor("#123456");
+      state.setGridLineStyle("dotted");
+      state.setGridMode("vertical");
+      state.setPriceScaleMode("percentage");
+      state.toggleInvertScale();
+      state.setCrosshairMode(mode);
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      state.setCrosshairColor("#ABCDEF");
+      state.setCrosshairLineStyle(style);
+      state.setCrosshairLineWidth(width);
+      const expected = {
+        ...before,
+        crosshairColor: "#ABCDEF",
+        crosshairLineStyle: style,
+        crosshairLineWidth: width,
+      };
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      const serialized = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      expect(JSON.parse(serialized).state).toMatchObject(expected);
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(serialized);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      expect(typeof useChartPreferences.getState().setCrosshairColor).toBe("function");
+      expect(typeof useChartPreferences.getState().setCrosshairLineStyle).toBe("function");
+      expect(typeof useChartPreferences.getState().setCrosshairLineWidth).toBe("function");
+    },
+  );
+
+  it("resets crosshair appearance when switching to an older workspace", async () => {
+    const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+    const appearance = {
+      crosshairColor: "#123456",
+      crosshairLineStyle: "solid",
+      crosshairLineWidth: 3,
+      crosshairMode: "hidden",
+    };
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+      JSON.stringify({ version: 0, state: appearance }),
+    );
+    await hydrate();
+    expect(useChartPreferences.getState()).toMatchObject(appearance);
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+      JSON.stringify({ version: 0, state: { crosshairMode: "magnet", gridMode: "none" } }),
+    );
+    await hydrate();
+    expect(useChartPreferences.getState()).toMatchObject({
+      ...defaults,
+      crosshairMode: "magnet",
+      gridMode: "none",
+    });
   });
 });

@@ -765,8 +765,20 @@ export function TradovateChart({
         : settings.gridLineStyle === "dashed"
           ? LineStyle.Dashed
           : LineStyle.Solid;
+    const crosshairLine = {
+      color: settings.crosshairColor,
+      width: settings.crosshairLineWidth,
+      style: {
+        solid: LineStyle.Solid,
+        dotted: LineStyle.Dotted,
+        dashed: LineStyle.Dashed,
+        largeDashed: LineStyle.LargeDashed,
+      }[settings.crosshairLineStyle],
+    };
     engine.chart.applyOptions({
       crosshair: {
+        vertLine: crosshairLine,
+        horzLine: crosshairLine,
         mode:
           settings.crosshairMode === "magnet"
             ? CrosshairMode.Magnet
@@ -807,6 +819,9 @@ export function TradovateChart({
     settings.priceScaleMode,
     settings.invertScale,
     settings.crosshairMode,
+    settings.crosshairColor,
+    settings.crosshairLineStyle,
+    settings.crosshairLineWidth,
     settings.showPriceLine,
     settings.showPriceLabel,
   ]);
@@ -887,6 +902,12 @@ export function TradovateChart({
         onTogglePriceLabel={settings.togglePriceLabel}
         crosshairMode={settings.crosshairMode}
         onCrosshairModeChange={settings.setCrosshairMode}
+        crosshairColor={settings.crosshairColor}
+        onCrosshairColorChange={settings.setCrosshairColor}
+        crosshairLineStyle={settings.crosshairLineStyle}
+        onCrosshairLineStyleChange={settings.setCrosshairLineStyle}
+        crosshairLineWidth={settings.crosshairLineWidth}
+        onCrosshairLineWidthChange={settings.setCrosshairLineWidth}
         priceScaleMode={settings.priceScaleMode}
         onPriceScaleModeChange={settings.setPriceScaleMode}
         invertScale={settings.invertScale}
