@@ -46,6 +46,10 @@ it("rejects unrelated keys, malformed JSON and oversized settings", () => {
     { key: "automorphic:drawing-defaults:v1", value: '{"trend":{"color":"#2962ff","width":2}}' },
   );
   assert.deepEqual(
+    parseWorkspaceValue({ key: "automorphic:chart-alert-sort:v1", value: '{"sort":"message"}' }),
+    { key: "automorphic:chart-alert-sort:v1", value: '{"sort":"message"}' },
+  );
+  assert.deepEqual(
     parseWorkspaceValue({ key: "automorphic:chart-drawings:v1:MGCV6", value: "[]" }),
     { key: "automorphic:chart-drawings:v1:MGCV6", value: "[]" },
   );

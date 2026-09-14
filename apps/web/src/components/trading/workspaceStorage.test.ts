@@ -5,6 +5,8 @@ import { createTradingWorkspaceStorage, createTradingWorkspaceRouter } from "./w
 import { createDrawingAlertSession, DRAWING_ALERTS_KEY } from "./drawingAlerts";
 import type { ChartDrawing } from "./drawingGeometry";
 
+import { CHART_ALERT_SORT_KEY, readChartAlertSort, writeChartAlertSort } from "./chartAlertSort";
+
 const chartKey = "automorphic:chart:v1";
 const settingsKey = "automorphic:trading-settings:v1";
 const payload = (values: Record<string, string> = {}) => ({
@@ -224,6 +226,36 @@ describe("trading workspace persistence", () => {
 });
 
 describe("project-scoped trading storage", () => {
+  it("persists alert sorting through the router and restores each workspace after reload", async () => {
+    const values: Record<string, Record<string, string>> = { first: {}, second: {} };
+    const request = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+      const projectId = new URL(String(input), "http://localhost").searchParams.get("projectId")!;
+      if (init?.method === "PUT") {
+        const body = JSON.parse(init.body as string) as { key: string; value: string };
+        values[projectId]![body.key] = body.value;
+        return json({});
+      }
+      return json({ ...payload(values[projectId]), projectId });
+    });
+    const router = createTradingWorkspaceRouter(request);
+    await router.selectProject("first");
+    expect(readChartAlertSort(router)).toBe("newest");
+    writeChartAlertSort(router, "name");
+    await router.capture().flush();
+    expect(values.first).toEqual({ [CHART_ALERT_SORT_KEY]: '{"sort":"name"}' });
+    await router.selectProject("second");
+    expect(readChartAlertSort(router)).toBe("newest");
+    writeChartAlertSort(router, "message");
+    await router.capture().flush();
+    const reloaded = createTradingWorkspaceRouter(request);
+    await reloaded.selectProject("first");
+    expect(readChartAlertSort(reloaded)).toBe("name");
+    await reloaded.selectProject("second");
+    expect(readChartAlertSort(reloaded)).toBe("message");
+    const writes = request.mock.calls.filter((call) => call[1]?.method === "PUT");
+    expect(writes).toHaveLength(2);
+  });
+
   it("restores drawing alerts and trigger history after a reload without leaking a captured session into another workspace", async () => {
     const values: Record<string, Record<string, string>> = { first: {}, second: {} };
     const request = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {

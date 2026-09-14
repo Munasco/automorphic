@@ -1,5 +1,13 @@
 import { TradingSelect } from "./TradingSelect";
-import { useEffect, useId, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useReducer,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { Tabs } from "@base-ui/react/tabs";
 import { Dialog, DialogPopup, DialogTitle, DialogDescription } from "../ui/dialog";
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from "../ui/menu";
@@ -10,6 +18,12 @@ import { AlertIcon } from "./AlertIcon";
 import { toastManager } from "../ui/toast";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
 import {
+  CHART_ALERT_SORT_OPTIONS,
+  compareChartAlerts,
+  readChartAlertSort,
+  writeChartAlertSort,
+} from "./chartAlertSort";
+import {
   ALERT_CONDITIONS,
   createChartAlertSession,
   type AlertCondition,
@@ -19,6 +33,8 @@ import {
 import type { DrawingAlertsController } from "./useDrawingAlerts";
 import type { DrawingAlertCondition, DrawingAlertTrigger } from "./drawingAlerts";
 import { drawingAlertTargetLabel } from "./drawingAlertPresentation";
+
+const getAlertSortSnapshot = () => readChartAlertSort(tradingWorkspaceStorage);
 
 const EMPTY: ChartAlertState = { alerts: [], history: [] };
 type PriceAlertSession = ReturnType<typeof createChartAlertSession>;
@@ -170,7 +186,13 @@ export function ChartAlerts({
   const [editingDrawingId, setEditingDrawingId] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<"newest" | "oldest" | "symbol">("newest");
+  const sort = useSyncExternalStore(tradingWorkspaceStorage.subscribe, getAlertSortSnapshot);
+  // An in-flight workspace save may delay its subscription update. Render the local choice now.
+  const [, refreshSort] = useReducer((revision: number) => revision + 1, 0);
+  const workspace = useSyncExternalStore(
+    tradingWorkspaceStorage.subscribe,
+    tradingWorkspaceStorage.getSnapshot,
+  );
   const [name, setName] = useState("");
   const [message, setMessage] = useState("");
   const [target, setTarget] = useState("");
@@ -217,6 +239,9 @@ export function ChartAlerts({
     ...controller.alerts.map((alert) => ({
       key: `price:${alert.id}`,
       symbol: alert.symbol,
+      name: alert.name ?? "",
+      message: alert.message ?? "",
+      time: alert.armedAt,
       title: alert.name || alert.symbol,
       description: `${conditionLabel[alert.condition]} ${priceLabel(alert.price)}`,
       searchText: `${alert.name ?? ""} ${alert.message ?? ""} ${alert.symbol} price ${conditionLabel[alert.condition]} ${alert.price}`,
@@ -245,6 +270,9 @@ export function ChartAlerts({
     ...(drawings?.alerts ?? []).map((alert) => ({
       key: `drawing:${alert.id}`,
       symbol: alert.symbol,
+      name: alert.name ?? "",
+      message: alert.message ?? "",
+      time: alert.armedAt,
       title: alert.name || alert.symbol,
       description: alert.message || `${drawingConditionLabel[alert.condition]} drawing`,
       searchText: `${alert.symbol} drawing ${alert.name ?? ""} ${alert.message ?? ""} ${drawingConditionLabel[alert.condition]} ${alert.disabledReason ?? ""}`,
@@ -277,16 +305,11 @@ export function ChartAlerts({
   ];
   const alerts = allAlerts
     .filter((alert) => alert.searchText.toLowerCase().includes(query))
-    .toSorted((a, b) =>
-      sort === "symbol"
-        ? a.symbol.localeCompare(b.symbol)
-        : sort === "oldest"
-          ? a.armedAt - b.armedAt
-          : b.armedAt - a.armedAt,
-    );
+    .toSorted((a, b) => compareChartAlerts(a, b, sort));
   const allHistory = [
     ...controller.history.map((event) => ({
       ...event,
+      time: event.triggeredAt,
       key: `price:${event.id}`,
       title: `${event.name ? `${event.name} · ` : ""}${event.symbol} · ${conditionLabel[event.condition]} ${priceLabel(event.target)}`,
       description: `${event.message ? `${event.message}\n` : ""}Last ${priceLabel(event.price)}`,
@@ -294,6 +317,7 @@ export function ChartAlerts({
     })),
     ...(drawings?.history ?? []).map((event) => ({
       ...event,
+      time: event.triggeredAt,
       key: `drawing:${event.id}`,
       title: `${event.symbol} · ${event.name || `${drawingConditionLabel[event.condition]} drawing`}`,
       description: `${event.message ? `${event.message} · ` : ""}Last ${priceLabel(event.price)} · ${drawingAlertTargetLabel(event)}`,
@@ -302,13 +326,7 @@ export function ChartAlerts({
   ];
   const history = allHistory
     .filter((event) => event.searchText.toLowerCase().includes(query))
-    .toSorted((a, b) =>
-      sort === "symbol"
-        ? a.symbol.localeCompare(b.symbol)
-        : sort === "oldest"
-          ? a.triggeredAt - b.triggeredAt
-          : b.triggeredAt - a.triggeredAt,
-    );
+    .toSorted((a, b) => compareChartAlerts(a, b, sort));
   const openCreate = () => {
     setEditingPrice(null);
     setName("");
@@ -374,20 +392,23 @@ export function ChartAlerts({
                   render={<MenuTrigger />}
                   className={iconButtonClass}
                   aria-label="Sort alerts"
+                  disabled={!workspace.ready}
                 >
                   <AlertIcon name="sort" size={23} />
                 </TooltipTrigger>
                 <TooltipPopup>Sort alerts</TooltipPopup>
               </Tooltip>
               <MenuPopup align="end">
-                {(
-                  [
-                    ["newest", "Newest first"],
-                    ["oldest", "Oldest first"],
-                    ["symbol", "Symbol"],
-                  ] as const
-                ).map(([value, label]) => (
-                  <MenuItem key={value} onClick={() => setSort(value)}>
+                {CHART_ALERT_SORT_OPTIONS.map(([value, label]) => (
+                  <MenuItem
+                    key={value}
+                    onClick={() =>
+                      act(() => {
+                        writeChartAlertSort(tradingWorkspaceStorage, value);
+                        refreshSort();
+                      }, "Could not save alert sorting. Try again.")
+                    }
+                  >
                     <span className="w-4">{sort === value ? "✓" : ""}</span>
                     {label}
                   </MenuItem>
