@@ -39,6 +39,7 @@ import { calculateMoneyFlowIndex } from "./moneyFlowIndex";
 import { calculateHullMovingAverage } from "./hullMovingAverage";
 import { calculateWeightedMovingAverage } from "./weightedMovingAverage";
 import { calculateBollingerPercentB } from "./bollingerPercentB";
+import { calculateVolumeMovingAverage } from "./volumeMovingAverage";
 import { calculateAwesomeOscillator } from "./awesomeOscillator";
 const length = (
   defaultValue: number,
@@ -794,10 +795,23 @@ export const INDICATOR_DEFINITIONS = [
     detail: "Traded volume per bar",
     category: "Oscillators",
     placement: "volume",
-    inputs: [],
-    styles: [],
+    inputs: [{ ...length(20, "period", "MA length"), legend: false }],
+    styles: [{ ...style("average", "Moving average", "#3b82f6", false, 2), visible: false }],
     enabledByDefault: true,
-    calculate: ({ bars }) => ({ plots: [], reading: bars.at(-1)?.volume }),
+    calculate: ({ bars, inputs }) => ({
+      plots: [
+        {
+          id: "average",
+          styleKey: "average",
+          points: calculateVolumeMovingAverage(bars, inputs.period),
+          title: "Volume MA",
+          primary: false,
+          volumeFormat: true,
+          breakOnGaps: true,
+        },
+      ],
+      reading: bars.at(-1)?.volume,
+    }),
   }),
   defineIndicator({
     key: "vwap",

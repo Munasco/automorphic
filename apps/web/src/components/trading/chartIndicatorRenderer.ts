@@ -132,7 +132,6 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
       points: readonly IndicatorPoint[],
       options: Partial<IndicatorPlot> = {},
     ) => {
-      desired.add(id);
       const indicator = instance.key;
       const readingKey = indicatorReadingKey(instance);
       const style = resolveIndicatorStyle(
@@ -140,6 +139,9 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
         options.styleKey ?? "main",
         instance.appearance,
       );
+      // A disabled volume average must not change the volume scale or leave a pane behind.
+      if (indicator === "volume" && options.styleKey === "average" && !style.visible) return;
+      desired.add(id);
       const pane = panes.get(instance.id) ?? 0;
       let plot = plots.get(id);
       if (!plot) {
@@ -147,10 +149,14 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
           ? { type: "volume" as const }
           : { type: "price" as const, precision: 2, minMove: pane ? 0.01 : minMove };
         const common = {
-          title: options.title ?? "",
+          title:
+            indicator === "volume" && instance.id === "base:volume" ? "" : (options.title ?? ""),
           priceLineVisible: false,
           lastValueVisible: pane > 0,
           priceFormat,
+          ...(indicator === "volume" && instance.id === "base:volume"
+            ? { priceScaleId: "volume" }
+            : {}),
         };
         const series = options.histogram
           ? chart.addSeries(HistogramSeries, common, pane)
@@ -313,6 +319,13 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
             .map((bar) => ({ time: bar.time, value: bar.volume! })),
           { histogram: true, volumeFormat: true },
         );
+      }
+      if (
+        instance.key === "volume" &&
+        !resolveIndicatorStyle("volume", "average", instance.appearance).visible
+      ) {
+        const latestVolume = bars.at(-1)?.volume;
+        if (latestVolume !== undefined) readings[readingKey] = latestVolume;
         continue;
       }
       const auxiliary = definition.key === "ib" ? sessionHistory : undefined;

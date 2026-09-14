@@ -98,6 +98,53 @@ const disabled = Object.fromEntries(
 ) as ChartIndicators;
 
 describe("native indicator renderer", () => {
+  it("shares the volume scale with optional averages while duplicate panes stay independent", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.25);
+    const bars = inputBars(5).map((bar, i) => ({ ...bar, volume: [10, 20, 30, 40, 50][i]! }));
+    const base = { ...createIndicatorInstance("volume", "base:volume"), inputs: { period: 2 } };
+    const duplicate = {
+      ...createIndicatorInstance("volume", "volume-extra"),
+      inputs: { period: 3 },
+      appearance: { plots: { average: { visible: true, color: "#abcdef", lineWidth: 3 } } },
+    };
+    const update = () =>
+      renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [
+        base,
+        duplicate,
+      ]);
+    expect(update().readings).toEqual({ volume: 50, "volume-extra": 50 });
+    expect(harness.series.filter((s) => s.options.title === "Volume MA")).toHaveLength(1);
+    const extra = harness.series.find((s) => s.options.title === "Volume MA")!;
+    expect(extra.pane).toBe(1);
+    expect(extra.data.filter((p) => Number.isFinite(p.value)).map((p) => p.value)).toEqual([
+      20, 30, 40,
+    ]);
+    expect(extra.options.color).toBe("#abcdef");
+    base.appearance = { plots: { average: { visible: true } } };
+    update();
+    const main = harness.series.find((s) => s.options.priceScaleId === "volume" && s.pane === 0)!;
+    expect(main.options.priceScaleId).toBe("volume");
+    expect(main.data.filter((p) => Number.isFinite(p.value)).map((p) => p.value)).toEqual([
+      15, 25, 35, 45,
+    ]);
+    expect(harness.series.filter((s) => s.pane === 1)).toHaveLength(2);
+    const readings = renderer.readCrosshair({
+      seriesData: new Map([
+        [main, { value: 15 }],
+        [extra, { value: 20 }],
+      ]),
+    } as unknown as MouseEventParams);
+    expect(readings).toEqual({});
+    base.appearance = { plots: { average: { visible: false } } };
+    update();
+    expect(harness.series).not.toContain(main);
+    expect(harness.series).toContain(extra);
+    renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, []);
+    expect(harness.series).toHaveLength(0);
+    expect(harness.paneCount()).toBe(1);
+  });
+
   it("keeps Bollinger %B unbounded and breaks its line across zero-width windows", () => {
     const harness = chartHarness();
     const renderer = createIndicatorRenderer(harness.chart, 0.25);

@@ -114,78 +114,75 @@ export function IndicatorSettingsContent({
             Reset inputs
           </button>
         ) : null}
-        {key === "volume"
-          ? (["up", "down"] as const).map((direction) => (
-              <label key={direction} className="flex items-center justify-between">
-                {direction === "up" ? "Up volume" : "Down volume"}
-                <input
-                  type="color"
-                  aria-label={accessible(`${direction} volume color`)}
-                  value={volumeColors[direction]}
-                  onChange={(event) =>
-                    settings.setIndicatorInstanceVolumeColors(id, {
-                      ...volumeColors,
-                      [direction]: event.target.value,
-                    })
-                  }
-                  className="h-7 w-9 cursor-pointer rounded border border-white/15 bg-transparent"
-                />
-              </label>
-            ))
-          : styles
-              .filter(
-                (plotStyle) =>
-                  !plotStyle.shownWhen ||
-                  inputs[plotStyle.shownWhen.key] === plotStyle.shownWhen.value,
-              )
-              .map((plotStyle) => {
-                const style = resolveIndicatorStyle(key, plotStyle.key, appearance);
-                const update = (patch: IndicatorStyle) =>
-                  settings.setIndicatorInstanceAppearance(id, {
-                    plots: {
-                      [plotStyle.key]: {
-                        ...appearance?.plots?.[plotStyle.key],
-                        ...patch,
-                      },
-                    },
-                  });
-                return (
-                  <div key={plotStyle.key} className="space-y-2 border-t border-white/10 pt-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          aria-label={accessible(`Show ${label} ${plotStyle.label}`)}
-                          checked={style.visible}
-                          onChange={(event) => update({ visible: event.target.checked })}
-                        />
-                        {plotStyle.label}
-                      </label>
-                      <ColorPicker
-                        label={accessible(`${label} ${plotStyle.label} color`)}
-                        value={style.color}
-                        onChange={(color) => update({ color })}
-                        opacity={style.opacity}
-                        onOpacityChange={(opacity) => update({ opacity })}
-                      />
-                    </div>
-                    {plotStyle.kind !== "fill" && (
-                      <label className="flex items-center justify-between">
-                        {plotStyle.kind === "markers" ? "Thickness" : "Line width"}
-                        <DrawingSelect
-                          label={accessible(`${label} ${plotStyle.label} width`)}
-                          value={String(style.lineWidth)}
-                          onChange={(value) => update({ lineWidth: Number(value) })}
-                          options={[1, 2, 3, 4].map(
-                            (width) => [String(width), `${width} px`] as const,
-                          )}
-                          className="w-20"
-                        />
-                      </label>
-                    )}
-                  </div>
-                );
-              })}
+        {key === "volume" &&
+          (["up", "down"] as const).map((direction) => (
+            <label key={direction} className="flex items-center justify-between">
+              {direction === "up" ? "Up volume" : "Down volume"}
+              <input
+                type="color"
+                aria-label={accessible(`${direction} volume color`)}
+                value={volumeColors[direction]}
+                onChange={(event) =>
+                  settings.setIndicatorInstanceVolumeColors(id, {
+                    ...volumeColors,
+                    [direction]: event.target.value,
+                  })
+                }
+                className="h-7 w-9 cursor-pointer rounded border border-white/15 bg-transparent"
+              />
+            </label>
+          ))}
+        {styles
+          .filter(
+            (plotStyle) =>
+              !plotStyle.shownWhen || inputs[plotStyle.shownWhen.key] === plotStyle.shownWhen.value,
+          )
+          .map((plotStyle) => {
+            const style = resolveIndicatorStyle(key, plotStyle.key, appearance);
+            const update = (patch: IndicatorStyle) =>
+              settings.setIndicatorInstanceAppearance(id, {
+                plots: {
+                  [plotStyle.key]: {
+                    ...appearance?.plots?.[plotStyle.key],
+                    ...patch,
+                  },
+                },
+              });
+            return (
+              <div key={plotStyle.key} className="space-y-2 border-t border-white/10 pt-3">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      aria-label={accessible(`Show ${label} ${plotStyle.label}`)}
+                      checked={style.visible}
+                      onChange={(event) => update({ visible: event.target.checked })}
+                    />
+                    {plotStyle.label}
+                  </label>
+                  <ColorPicker
+                    label={accessible(`${label} ${plotStyle.label} color`)}
+                    value={style.color}
+                    onChange={(color) => update({ color })}
+                    opacity={style.opacity}
+                    onOpacityChange={(opacity) => update({ opacity })}
+                  />
+                </div>
+                {plotStyle.kind !== "fill" && (
+                  <label className="flex items-center justify-between">
+                    {plotStyle.kind === "markers" ? "Thickness" : "Line width"}
+                    <DrawingSelect
+                      label={accessible(`${label} ${plotStyle.label} width`)}
+                      value={String(style.lineWidth)}
+                      onChange={(value) => update({ lineWidth: Number(value) })}
+                      options={[1, 2, 3, 4].map((width) => [String(width), `${width} px`] as const)}
+                      className="w-20"
+                    />
+                  </label>
+                )}
+              </div>
+            );
+          })}
         {key === "ib" && (
           <>
             <label className="flex items-center justify-between">

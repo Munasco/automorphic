@@ -1382,3 +1382,39 @@ describe("chart grid orientation preferences", () => {
     expect(saved).not.toHaveProperty("showGrid");
   });
 });
+
+it("saves independent volume average lengths and styles alongside histogram colors", async () => {
+  const store = useChartPreferences.getState();
+  store.setIndicatorInstanceInputs("base:volume", { period: 5 });
+  store.setIndicatorInstanceAppearance("base:volume", {
+    plots: { average: { visible: true, color: "#abcdef", lineWidth: 3 } },
+  });
+  store.setIndicatorInstanceVolumeColors("base:volume", { up: "#123456", down: "#654321" });
+  const duplicate = store.duplicateIndicatorInstance("base:volume")!;
+  store.setIndicatorInstanceInputs(duplicate, { period: 10 });
+  store.setIndicatorInstanceAppearance(duplicate, { plots: { average: { visible: false } } });
+  expect(store.setIndicatorInstanceInputs(duplicate, { period: 0 })).toBe(false);
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  const volumes = getChartIndicatorInstances(useChartPreferences.getState()).filter(
+    (i) => i.key === "volume",
+  );
+  expect(volumes.map((i) => i.inputs.period)).toEqual([5, 10]);
+  expect(volumes.map((i) => i.appearance.plots?.average?.visible)).toEqual([true, false]);
+  expect(volumes[0]!.appearance.plots?.average).toEqual({
+    visible: true,
+    color: "#abcdef",
+    lineWidth: 3,
+  });
+  expect(volumes.map((i) => i.volumeColors)).toEqual([
+    { up: "#123456", down: "#654321" },
+    { up: "#123456", down: "#654321" },
+  ]);
+  useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
+  expect(
+    getChartIndicatorInstances(useChartPreferences.getState()).find((i) => i.id === duplicate)!
+      .inputs.period,
+  ).toBe(20);
+});
