@@ -78,7 +78,20 @@ export function useChartAlerts(symbol: string) {
         toastManager.add({
           type: "info",
           title: event.name || `${event.symbol} price alert`,
-          description: `${event.name ? `${event.symbol} · ` : ""}${conditionLabel[event.condition]} ${priceLabel(event.target)} · Last ${priceLabel(event.price)}`,
+          description: (
+            <span className="block">
+              {event.message ? (
+                <span className="line-clamp-4 whitespace-pre-wrap break-words">
+                  {event.message}
+                </span>
+              ) : null}
+              <span className="block">
+                {event.name || event.message ? `${event.symbol} · ` : ""}
+                {conditionLabel[event.condition]} {priceLabel(event.target)} · Last{" "}
+                {priceLabel(event.price)}
+              </span>
+            </span>
+          ),
         }),
     });
     // Register evaluators only for committed mounts, including Strict Mode effect remounts.
@@ -159,6 +172,7 @@ export function ChartAlerts({
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<"newest" | "oldest" | "symbol">("newest");
   const [name, setName] = useState("");
+  const [message, setMessage] = useState("");
   const [target, setTarget] = useState("");
   const [condition, setCondition] = useState<AlertCondition>("crossing");
   const [repeat, setRepeat] = useState(false);
@@ -191,6 +205,7 @@ export function ChartAlerts({
   const openPriceEdit = (alert: ChartPriceAlert) => {
     setEditingPrice({ id: alert.id, symbol: alert.symbol, update: controller.update });
     setName(alert.name ?? "");
+    setMessage(alert.message ?? "");
     setTarget(String(alert.price));
     setCondition(alert.condition);
     setRepeat(alert.repeat);
@@ -204,7 +219,7 @@ export function ChartAlerts({
       symbol: alert.symbol,
       title: alert.name || alert.symbol,
       description: `${conditionLabel[alert.condition]} ${priceLabel(alert.price)}`,
-      searchText: `${alert.name ?? ""} ${alert.symbol} price ${conditionLabel[alert.condition]} ${alert.price}`,
+      searchText: `${alert.name ?? ""} ${alert.message ?? ""} ${alert.symbol} price ${conditionLabel[alert.condition]} ${alert.price}`,
       enabled: alert.enabled,
       armedAt: alert.armedAt,
       status: alert.enabled
@@ -274,8 +289,8 @@ export function ChartAlerts({
       ...event,
       key: `price:${event.id}`,
       title: `${event.name ? `${event.name} · ` : ""}${event.symbol} · ${conditionLabel[event.condition]} ${priceLabel(event.target)}`,
-      description: `Last ${priceLabel(event.price)}`,
-      searchText: `${event.name ?? ""} ${event.symbol} price ${conditionLabel[event.condition]} ${event.target}`,
+      description: `${event.message ? `${event.message}\n` : ""}Last ${priceLabel(event.price)}`,
+      searchText: `${event.name ?? ""} ${event.message ?? ""} ${event.symbol} price ${conditionLabel[event.condition]} ${event.target}`,
     })),
     ...(drawings?.history ?? []).map((event) => ({
       ...event,
@@ -297,6 +312,7 @@ export function ChartAlerts({
   const openCreate = () => {
     setEditingPrice(null);
     setName("");
+    setMessage("");
     setCondition("crossing");
     setRepeat(false);
     setCooldownMs(60_000);
@@ -575,7 +591,9 @@ export function ChartAlerts({
             {history.map((event) => (
               <li key={event.key} className="px-4 py-3 text-[13px]">
                 <p className="break-words font-medium text-zinc-200">{event.title}</p>
-                <p className="mt-1 break-words text-zinc-400">{event.description}</p>
+                <p className="mt-1 whitespace-pre-wrap break-words text-zinc-400">
+                  {event.description}
+                </p>
                 <time
                   className="mt-1 block text-xs text-zinc-500"
                   dateTime={new Date(event.triggeredAt).toISOString()}
@@ -599,7 +617,7 @@ export function ChartAlerts({
         />
       ) : null}
       <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
-        <DialogPopup className="w-[min(420px,calc(100vw-32px))] bg-[#161616] p-6">
+        <DialogPopup className="w-[min(420px,calc(100vw-32px))] overflow-y-auto bg-[#161616] p-6">
           <DialogTitle className="text-lg font-semibold">
             {editingPrice ? "Edit alert" : "Create alert"}
           </DialogTitle>
@@ -612,7 +630,14 @@ export function ChartAlerts({
               event.preventDefault();
               try {
                 if (!target.trim()) throw Error("Enter a target price.");
-                const input = { name, price: Number(target), condition, repeat, cooldownMs };
+                const input = {
+                  name,
+                  message,
+                  price: Number(target),
+                  condition,
+                  repeat,
+                  cooldownMs,
+                };
                 if (editingPrice) {
                   if (!priceEditorAvailable || !controller.update(editingPrice.id, input))
                     throw Error("Could not save this alert. Check its settings and try again.");
@@ -703,6 +728,18 @@ export function ChartAlerts({
                 />
               </label>
             ) : null}
+            <label htmlFor={`${formId}-message`} className="block text-sm text-zinc-400">
+              Message
+              <textarea
+                id={`${formId}-message`}
+                className="mt-2 min-h-24 w-full resize-y rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-400"
+                rows={3}
+                maxLength={2000}
+                placeholder="Optional reminder when this alert triggers"
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+              />
+            </label>
             {!priceEditorAvailable || error ? (
               <p role="alert" className="text-sm text-red-400">
                 {!priceEditorAvailable

@@ -13,6 +13,7 @@ export type AlertCondition = (typeof ALERT_CONDITIONS)[number];
 export type ChartPriceAlert = {
   id: string;
   name?: string;
+  message?: string;
   symbol: string;
   price: number;
   condition: AlertCondition;
@@ -26,6 +27,7 @@ export type ChartPriceAlert = {
 export type ChartAlertEvent = {
   id: string;
   name?: string;
+  message?: string;
   alertId: string;
   symbol: string;
   condition: AlertCondition;
@@ -37,7 +39,7 @@ export type ChartAlertEvent = {
 export type ChartAlertState = { alerts: ChartPriceAlert[]; history: ChartAlertEvent[] };
 export type NewChartAlert = Pick<
   ChartPriceAlert,
-  "price" | "condition" | "repeat" | "cooldownMs" | "name"
+  "price" | "condition" | "repeat" | "cooldownMs" | "name" | "message"
 >;
 type AlertStorage = Pick<Storage, "getItem" | "setItem"> & {
   subscribe?: (listener: () => void) => () => void;
@@ -77,11 +79,20 @@ const cooldown = (value: unknown): value is number =>
 
 const validName = (value: unknown): value is string | undefined =>
   value === undefined || (typeof value === "string" && value.trim().length <= 80);
-const named = <T extends { name?: string }>(item: T, name: string | undefined): T => {
+const validMessage = (value: unknown): value is string | undefined =>
+  value === undefined || (typeof value === "string" && value.trim().length <= 2000);
+const withText = <T extends { name?: string; message?: string }>(
+  item: T,
+  name: string | undefined,
+  message: string | undefined,
+): T => {
   const result = { ...item };
   delete result.name;
-  const normalized = name?.trim();
-  if (normalized) result.name = normalized;
+  delete result.message;
+  const normalizedName = name?.trim();
+  const normalizedMessage = message?.trim();
+  if (normalizedName) result.name = normalizedName;
+  if (normalizedMessage) result.message = normalizedMessage;
   return result;
 };
 
@@ -97,6 +108,7 @@ export function parseChartAlerts(raw: string | null): ChartAlertState {
         !record(item) ||
         !identifier(item.id) ||
         !validName(item.name) ||
+        !validMessage(item.message) ||
         ids.has(item.id) ||
         !contract(item.symbol) ||
         !finite(item.price) ||
@@ -110,7 +122,7 @@ export function parseChartAlerts(raw: string | null): ChartAlertState {
       )
         continue;
       ids.add(item.id);
-      alerts.push(named(item as ChartPriceAlert, item.name));
+      alerts.push(withText(item as ChartPriceAlert, item.name, item.message));
     }
     const eventIds = new Set<string>();
     const history: ChartAlertEvent[] = [];
@@ -119,6 +131,7 @@ export function parseChartAlerts(raw: string | null): ChartAlertState {
         !record(item) ||
         !identifier(item.id) ||
         !validName(item.name) ||
+        !validMessage(item.message) ||
         eventIds.has(item.id) ||
         !identifier(item.alertId) ||
         !contract(item.symbol) ||
@@ -130,7 +143,7 @@ export function parseChartAlerts(raw: string | null): ChartAlertState {
       )
         continue;
       eventIds.add(item.id);
-      history.push(named(item as ChartAlertEvent, item.name));
+      history.push(withText(item as ChartAlertEvent, item.name, item.message));
     }
     return { alerts, history };
   } catch {
@@ -210,6 +223,7 @@ export function createChartAlertSession(
       if (
         !condition(input.condition) ||
         !validName(input.name) ||
+        !validMessage(input.message) ||
         typeof input.repeat !== "boolean" ||
         !cooldown(input.cooldownMs)
       )
@@ -217,7 +231,7 @@ export function createChartAlertSession(
       if (state.alerts.length >= MAX_ALERTS)
         throw Error("Delete an alert before adding another (100 per workspace).");
       const alert: ChartPriceAlert = {
-        ...named(input, input.name),
+        ...withText(input, input.name, input.message),
         id: newId(),
         symbol,
         enabled: true,
@@ -237,21 +251,24 @@ export function createChartAlertSession(
         !finite(input.price) ||
         !condition(input.condition) ||
         !validName(input.name) ||
+        !validMessage(input.message) ||
         typeof input.repeat !== "boolean" ||
         !cooldown(input.cooldownMs)
       )
         return false;
       const name = input.name === undefined ? alert.name : input.name.trim() || undefined;
+      const message =
+        input.message === undefined ? alert.message : input.message.trim() || undefined;
       const ruleChanged =
         alert.price !== input.price ||
         alert.condition !== input.condition ||
         alert.repeat !== input.repeat ||
         alert.cooldownMs !== input.cooldownMs;
-      if (!ruleChanged && alert.name === name) return true;
-      // Rule edits rearm evaluation; renaming preserves a pending crossing. Neither
+      if (!ruleChanged && alert.name === name && alert.message === message) return true;
+      // Rule edits rearm evaluation; text edits preserve a pending crossing. Neither
       // changes pause state, notification timestamps, or a running repeat cooldown.
       const updated: ChartPriceAlert = {
-        ...named(alert, name),
+        ...withText(alert, name, message),
         price: input.price,
         condition: input.condition,
         repeat: input.repeat,
@@ -357,6 +374,7 @@ export function createChartAlertSession(
           id: newId(),
           alertId: alert.id,
           ...(alert.name ? { name: alert.name } : {}),
+          ...(alert.message ? { message: alert.message } : {}),
           symbol,
           condition: alert.condition,
           target: alert.price,

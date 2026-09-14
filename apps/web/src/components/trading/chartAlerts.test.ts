@@ -846,3 +846,139 @@ describe("price alert names", () => {
     expect(b.getSnapshot()).toEqual(a.getSnapshot());
   });
 });
+
+describe("price alert messages", () => {
+  it("normalizes stored and new messages up to 2000 characters while accepting legacy rows", () => {
+    const h = harness(),
+      session = h.open();
+    const alert = session.add({
+      ...crossing,
+      name: "Breakout",
+      message: "  Wait for confirmation.\nCheck risk.  ",
+    });
+    expect(alert.message).toBe("Wait for confirmation.\nCheck risk.");
+    expect(
+      session.add({ ...crossing, price: 200, message: ` ${"x".repeat(2000)} ` }).message,
+    ).toHaveLength(2000);
+    expect(session.add({ ...crossing, price: 300, message: " \n " })).not.toHaveProperty("message");
+    session.observeQuote(h.quote(99));
+    session.observeQuote(h.quote(100));
+    const payload = JSON.parse(h.values.get(CHART_ALERTS_KEY)!);
+    payload.alerts[0].message = "  Stored message  ";
+    payload.history[0].message = "  Trigger message  ";
+    payload.history.push({ ...payload.history[0], id: "old-event", message: undefined });
+    const parsed = parseChartAlerts(JSON.stringify(payload));
+    expect(parsed.alerts[0]!.message).toBe("Stored message");
+    expect(parsed.history[0]!.message).toBe("Trigger message");
+    expect(parsed.alerts[2]).not.toHaveProperty("message");
+    expect(parsed.history[1]).not.toHaveProperty("message");
+  });
+
+  it("rejects invalid messages atomically and excludes malformed stored alert/event rows", () => {
+    const h = harness(),
+      session = h.open();
+    const alert = session.add({ ...crossing, message: "Valid" });
+    session.observeQuote(h.quote(99));
+    session.observeQuote(h.quote(100));
+    const before = session.getSnapshot();
+    h.storage.setItem.mockClear();
+    for (const message of [null, 10, true, {}, [], "x".repeat(2001)]) {
+      expect(() => session.add({ ...crossing, message } as NewChartAlert)).toThrow();
+      expect(session.update(alert.id, { ...crossing, message } as NewChartAlert)).toBe(false);
+      expect(
+        parseChartAlerts(
+          JSON.stringify({
+            version: 1,
+            alerts: [before.alerts[0], { ...before.alerts[0], id: "bad", message }],
+            history: [before.history[0], { ...before.history[0], id: "bad-event", message }],
+          }),
+        ),
+      ).toEqual(before);
+    }
+    expect(session.getSnapshot()).toBe(before);
+    expect(h.storage.setItem).not.toHaveBeenCalled();
+  });
+
+  it("preserves peer crossing continuity, pause/timestamps, and event snapshots through message-only edits", () => {
+    const h = harness(),
+      a = h.open(),
+      b = h.open();
+    const alert = a.add({ ...crossing, name: "Level", message: "Original" });
+    a.observeQuote(h.quote(99));
+    h.advance(100);
+    expect(b.update(alert.id, { ...crossing, message: "  Check confirmation  " })).toBe(true);
+    expect(a.getSnapshot().alerts[0]).toEqual({ ...alert, message: "Check confirmation" });
+    const quote = h.quote(100);
+    a.observeQuote(quote);
+    b.observeQuote(quote);
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    const fired = a.getSnapshot().alerts[0]!;
+    const event = a.getSnapshot().history[0]!;
+    expect(event).toMatchObject({ name: "Level", message: "Check confirmation" });
+    h.advance(100);
+    a.update(alert.id, { ...crossing, message: "Journal this trade" });
+    expect(a.getSnapshot().alerts[0]).toEqual({ ...fired, message: "Journal this trade" });
+    expect(a.getSnapshot().history[0]).toBe(event);
+    expect(b.getSnapshot().history[0]!.message).toBe("Check confirmation");
+    a.dispose();
+    b.dispose();
+    const restored = h.open().getSnapshot();
+    expect(restored.alerts[0]!.message).toBe("Journal this trade");
+    expect(restored.history[0]!.message).toBe("Check confirmation");
+  });
+
+  it("retains cooldown on message edits and preserves omitted text on actual rule changes", () => {
+    const h = harness(),
+      session = h.open();
+    const rule = { ...crossing, condition: "above" as const, repeat: true, cooldownMs: 1000 };
+    const alert = session.add({ ...rule, name: "Repeated", message: "Original" });
+    session.observeQuote(h.quote(101));
+    const fired = session.getSnapshot().alerts[0]!;
+    h.advance(500);
+    session.update(alert.id, { ...rule, message: "Updated" });
+    expect(session.getSnapshot().alerts[0]).toEqual({ ...fired, message: "Updated" });
+    session.observeQuote(h.quote(102));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    session.observeQuote(h.quote(103, 499));
+    expect(session.getSnapshot().history.map((event) => event.message)).toEqual([
+      "Updated",
+      "Original",
+    ]);
+    h.advance(10);
+    session.update(alert.id, { ...rule, price: 200 });
+    expect(session.getSnapshot().alerts[0]).toMatchObject({
+      name: "Repeated",
+      message: "Updated",
+      price: 200,
+    });
+    expect(session.getSnapshot().alerts[0]!.armedAt).toBeGreaterThan(alert.armedAt);
+  });
+
+  it("no-ops omitted or identically normalized text, and explicitly clears a blank message", () => {
+    const h = harness(),
+      session = h.open();
+    const alert = session.add({ ...crossing, name: "Name", message: "Message" });
+    const listener = vi.fn(),
+      unsubscribe = session.subscribe(listener);
+    h.storage.setItem.mockClear();
+    try {
+      session.update(alert.id, crossing);
+      session.update(alert.id, { ...crossing, message: "  Message  " });
+      expect(h.storage.setItem).not.toHaveBeenCalled();
+      expect(listener).not.toHaveBeenCalled();
+      session.update(alert.id, { ...crossing, name: "Renamed" });
+      expect(session.getSnapshot().alerts[0]!.message).toBe("Message");
+      session.update(alert.id, { ...crossing, message: " \n " });
+      expect(session.getSnapshot().alerts[0]).not.toHaveProperty("message");
+      expect(session.getSnapshot().alerts[0]).toMatchObject({
+        name: "Renamed",
+        armedAt: alert.armedAt,
+      });
+      expect(h.storage.setItem).toHaveBeenCalledTimes(2);
+      session.update(alert.id, { ...crossing, message: "" });
+      expect(h.storage.setItem).toHaveBeenCalledTimes(2);
+    } finally {
+      unsubscribe();
+    }
+  });
+});
