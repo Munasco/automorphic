@@ -32,6 +32,7 @@ import {
   CrosshairMode,
   PriceScaleMode,
   LineStyle,
+  LineType,
   type UTCTimestamp,
   type IChartApi,
   type ISeriesApi,
@@ -793,12 +794,14 @@ export function TradovateChart({
     engine.prices.line.applyOptions({
       color: settings.lineChartColor,
       lineWidth: settings.lineChartWidth,
+      lineType: settings.lineChartShape === "stepped" ? LineType.WithSteps : LineType.Simple,
     });
     engine.prices.area.applyOptions({
       lineColor: settings.lineChartColor,
       topColor: `${settings.lineChartColor}55`,
       bottomColor: `${settings.lineChartColor}00`,
       lineWidth: settings.lineChartWidth,
+      lineType: settings.lineChartShape === "stepped" ? LineType.WithSteps : LineType.Simple,
     });
     engine.prices.bars.applyOptions({
       thinBars: settings.thinBars,
@@ -875,6 +878,7 @@ export function TradovateChart({
     settings.showCandleBorders,
     settings.lineChartColor,
     settings.lineChartWidth,
+    settings.lineChartShape,
     settings.showPriceLine,
     settings.showPriceLabel,
   ]);
@@ -955,6 +959,8 @@ export function TradovateChart({
         onToggleBarOpen={settings.toggleBarOpen}
         showCandleWicks={settings.showCandleWicks}
         showCandleBorders={settings.showCandleBorders}
+        lineChartShape={settings.lineChartShape}
+        onLineChartShapeChange={settings.setLineChartShape}
         lineChartSource={settings.lineChartSource}
         onLineChartSourceChange={settings.setLineChartSource}
         lineChartColor={settings.lineChartColor}

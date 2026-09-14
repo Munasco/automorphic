@@ -46,6 +46,9 @@ export type ChartReplaySpeed = 0.5 | 1 | 2 | 5 | 10;
 const validReplaySpeed = (value: unknown): value is ChartReplaySpeed =>
   value === 0.5 || value === 1 || value === 2 || value === 5 || value === 10;
 export type ChartLineWidth = 1 | 2 | 3 | 4;
+export type ChartLineShape = "straight" | "stepped";
+const validLineChartShape = (value: unknown): value is ChartLineShape =>
+  value === "straight" || value === "stepped";
 const validLineChartSource = (value: unknown): value is PriceSource =>
   typeof value === "string" && PRICE_SOURCES.some((source) => source === value);
 const validLineChartWidth = (value: unknown): value is ChartLineWidth =>
@@ -107,6 +110,7 @@ type SavedChartPreferences = {
   lineChartSource: PriceSource;
   lineChartColor: string;
   lineChartWidth: ChartLineWidth;
+  lineChartShape: ChartLineShape;
   thinBars: boolean;
   showBarOpen: boolean;
   showCandleWicks: boolean;
@@ -184,6 +188,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     lineChartSource: validLineChartSource(saved.lineChartSource) ? saved.lineChartSource : "close",
     lineChartColor: validColor(saved.lineChartColor) ? saved.lineChartColor : "#6097ee",
     lineChartWidth: validLineChartWidth(saved.lineChartWidth) ? saved.lineChartWidth : 2,
+    lineChartShape: validLineChartShape(saved.lineChartShape) ? saved.lineChartShape : "straight",
     thinBars: typeof saved.thinBars === "boolean" ? saved.thinBars : true,
     showBarOpen: typeof saved.showBarOpen === "boolean" ? saved.showBarOpen : true,
     showCandleWicks: typeof saved.showCandleWicks === "boolean" ? saved.showCandleWicks : true,
@@ -221,6 +226,7 @@ export const useChartPreferences = create<{
   lineChartSource: PriceSource;
   lineChartColor: string;
   lineChartWidth: ChartLineWidth;
+  lineChartShape: ChartLineShape;
   thinBars: boolean;
   showBarOpen: boolean;
   showCandleWicks: boolean;
@@ -261,6 +267,7 @@ export const useChartPreferences = create<{
   setLineChartSource: (source: PriceSource) => void;
   setLineChartColor: (color: string) => void;
   setLineChartWidth: (width: ChartLineWidth) => void;
+  setLineChartShape: (shape: ChartLineShape) => void;
   toggleThinBars: () => void;
   toggleBarOpen: () => void;
   toggleCandleWicks: () => void;
@@ -296,6 +303,7 @@ export const useChartPreferences = create<{
       lineChartSource: "close",
       lineChartColor: "#6097ee",
       lineChartWidth: 2,
+      lineChartShape: "straight",
       thinBars: true,
       showBarOpen: true,
       showCandleWicks: true,
@@ -560,6 +568,10 @@ export const useChartPreferences = create<{
       setLineChartWidth: (lineChartWidth) => {
         if (validLineChartWidth(lineChartWidth) && lineChartWidth !== get().lineChartWidth)
           set({ lineChartWidth });
+      },
+      setLineChartShape: (lineChartShape) => {
+        if (validLineChartShape(lineChartShape) && lineChartShape !== get().lineChartShape)
+          set({ lineChartShape });
       },
       setGridColor: (gridColor) => {
         if (validColor(gridColor) && gridColor !== get().gridColor) set({ gridColor });

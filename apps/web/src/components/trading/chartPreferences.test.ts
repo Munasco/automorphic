@@ -20,6 +20,7 @@ import {
   type ChartPriceScaleMode,
   type ChartReplaySpeed,
   type ChartLineWidth,
+  type ChartLineShape,
 } from "./chartPreferences";
 import { PRICE_SOURCES, type PriceSource } from "./chartIndicators";
 import { DEFAULT_INITIAL_BALANCE } from "./initialBalanceSettings";
@@ -2720,6 +2721,113 @@ describe("line and area price source preferences", () => {
       );
       await hydrate();
       expect(useChartPreferences.getState()).toMatchObject(expected);
+    }
+  });
+});
+
+describe("line and area chart shape", () => {
+  const invalidShapes: unknown[] = [
+    undefined,
+    null,
+    "",
+    "Straight",
+    "step",
+    "curved",
+    0,
+    1,
+    true,
+    {},
+    ["stepped"],
+  ];
+
+  it("defaults missing or malformed shapes without changing saved appearance", () => {
+    expect(useChartPreferences.getInitialState().lineChartShape).toBe("straight");
+    for (const lineChartShape of invalidShapes)
+      expect(
+        normalizeChartPreferences({
+          lineChartShape,
+          lineChartSource: "hl2",
+          lineChartColor: "#123456",
+          lineChartWidth: 4,
+        }),
+      ).toMatchObject({
+        lineChartShape: "straight",
+        lineChartSource: "hl2",
+        lineChartColor: "#123456",
+        lineChartWidth: 4,
+      });
+  });
+
+  it("rejects invalid and unchanged shapes without writes or notifications", () => {
+    const store = configure();
+    store.setLineChartShape("stepped");
+    const before = useChartPreferences.getState();
+    const listener = vi.fn();
+    const unsubscribe = useChartPreferences.subscribe(listener);
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    try {
+      for (const shape of invalidShapes) store.setLineChartShape(shape as ChartLineShape);
+      store.setLineChartShape("stepped");
+      expect(useChartPreferences.getState()).toBe(before);
+      expect(listener).not.toHaveBeenCalled();
+      expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+      store.setLineChartShape("straight");
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+        ...normalizeChartPreferences(before),
+        lineChartShape: "straight",
+      });
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it.each(["straight", "stepped"] as const)(
+    "persists %s across chart styles and reload",
+    async (lineChartShape) => {
+      const store = configure();
+      store.setLineChartSource("ohlc4");
+      store.setLineChartColor("#abcdef");
+      store.setLineChartWidth(3);
+      store.setLineChartShape(lineChartShape === "straight" ? "stepped" : "straight");
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      store.setLineChartShape(lineChartShape);
+      for (const style of ["line", "area", "candles", "area"] as const) {
+        store.setStyle(style);
+        expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+          ...before,
+          style,
+          lineChartShape,
+        });
+      }
+      const serialized = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      expect(JSON.parse(serialized).state.lineChartShape).toBe(lineChartShape);
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(serialized);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+        ...before,
+        style: "area",
+        lineChartShape,
+      });
+      expect(typeof useChartPreferences.getState().setLineChartShape).toBe("function");
+    },
+  );
+
+  it("does not leak stepped shape into legacy or malformed workspaces", async () => {
+    const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+    for (const [saved, expected] of [
+      [{ lineChartShape: "stepped", lineChartSource: "high" }, "stepped"],
+      [{ lineChartColor: "#abcdef" }, "straight"],
+      [{ lineChartShape: "stepped" }, "stepped"],
+      [{ lineChartShape: "curve" }, "straight"],
+    ] as const) {
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+        JSON.stringify({ version: 0, state: saved }),
+      );
+      await hydrate();
+      expect(useChartPreferences.getState().lineChartShape).toBe(expected);
     }
   });
 });

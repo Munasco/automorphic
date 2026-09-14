@@ -8,6 +8,7 @@ import type {
   ChartGridLineStyle,
   ChartPriceScaleMode,
   ChartLineWidth,
+  ChartLineShape,
 } from "./chartPreferences";
 
 import {
@@ -73,6 +74,8 @@ export type ChartToolbarProps = {
   onToggleBarOpen: () => void;
   showCandleWicks: boolean;
   showCandleBorders: boolean;
+  lineChartShape: ChartLineShape;
+  onLineChartShapeChange: (shape: ChartLineShape) => void;
   lineChartSource: PriceSource;
   onLineChartSourceChange: (source: PriceSource) => void;
   lineChartColor: string;
@@ -137,6 +140,8 @@ export function ChartToolbar({
   onToggleBarOpen,
   showCandleWicks,
   showCandleBorders,
+  lineChartShape,
+  onLineChartShapeChange,
   lineChartSource,
   onLineChartSourceChange,
   lineChartColor,
@@ -548,6 +553,20 @@ export function ChartToolbar({
                       : source[0]!.toUpperCase() + source.slice(1),
                   ])}
                   onChange={(value) => onLineChartSourceChange(value as PriceSource)}
+                  className="w-full"
+                />
+                <label htmlFor={`${id}-line-shape`} className="text-xs text-zinc-400">
+                  Line shape
+                </label>
+                <TradingSelect
+                  id={`${id}-line-shape`}
+                  label="Line shape"
+                  value={lineChartShape}
+                  options={[
+                    ["straight", "Straight"],
+                    ["stepped", "Stepped"],
+                  ]}
+                  onChange={(value) => onLineChartShapeChange(value as ChartLineShape)}
                   className="w-full"
                 />
                 <label htmlFor={`${id}-line-width`} className="text-xs text-zinc-400">
