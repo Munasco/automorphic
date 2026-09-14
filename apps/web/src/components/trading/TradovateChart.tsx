@@ -1081,7 +1081,11 @@ export function TradovateChart({
         }
         navigationControl={navigationControl}
       />
-      <ChartReplayControls replay={replay} />
+      <ChartReplayControls
+        key={`${symbol}:${chartIntervalKey(interval)}:${intraday ? settings.timeZone : "UTC"}`}
+        replay={replay}
+        timeZone={intraday ? settings.timeZone : "UTC"}
+      />
       <div className="relative flex min-h-0 min-w-0 flex-1">
         <DrawingSelectionOverlay
           drawings={drawings}

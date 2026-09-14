@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Pause, Play, RotateCcw, SkipBack, SkipForward, X } from "lucide-react";
 import type { Candle } from "./chartIndicators";
 import { createReplayHistory, replayIndex, replayIndexAt, replayPrefix } from "./replayHistory";
+import { formatReplayDateTime, parseReplayDateTime } from "./replayDateTime";
 import { TradingSelect } from "./TradingSelect";
 import { useChartPreferences, type ChartReplaySpeed } from "./chartPreferences";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -64,12 +65,13 @@ export function useChartReplay(context: string) {
 }
 
 const timestamp = (bar: Candle) => bar.actualTime ?? bar.time;
-const localDate = (seconds: number) => {
-  const date = new Date(seconds * 1000);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
-};
-
-export function ChartReplayControls({ replay }: { replay: ReturnType<typeof useChartReplay> }) {
+export function ChartReplayControls({
+  replay,
+  timeZone = "UTC",
+}: {
+  replay: ReturnType<typeof useChartReplay>;
+  timeZone?: string;
+}) {
   const session = replay.session;
   const [date, setDate] = useState("");
   const [error, setError] = useState("");
@@ -143,6 +145,7 @@ export function ChartReplayControls({ replay }: { replay: ReturnType<typeof useC
       <span aria-hidden="true" className="mx-1 h-4 w-px bg-white/10" />
       <time dateTime={new Date(timestamp(current) * 1000).toISOString()} className="tabular-nums">
         {new Date(timestamp(current) * 1000).toLocaleString([], {
+          timeZone,
           month: "short",
           day: "numeric",
           year: "numeric",
@@ -169,7 +172,12 @@ export function ChartReplayControls({ replay }: { replay: ReturnType<typeof useC
         className="flex items-center gap-1"
         onSubmit={(event) => {
           event.preventDefault();
-          const next = replayIndexAt(bars, new Date(date).getTime() / 1000);
+          const timestamp = parseReplayDateTime(date, timeZone);
+          if (timestamp === null) {
+            setError(`Choose a valid, unambiguous time in ${timeZone}.`);
+            return;
+          }
+          const next = replayIndexAt(bars, timestamp);
           if (next === null) {
             setError("Choose a time within the loaded replay history.");
             return;
@@ -180,10 +188,11 @@ export function ChartReplayControls({ replay }: { replay: ReturnType<typeof useC
       >
         <input
           aria-label="Replay start date and time"
+          aria-description={`Time zone: ${timeZone}`}
           type="datetime-local"
           step="1"
-          min={localDate(timestamp(bars[0]!))}
-          max={localDate(timestamp(bars.at(-1)!))}
+          min={formatReplayDateTime(timestamp(bars[0]!), timeZone)}
+          max={formatReplayDateTime(timestamp(bars.at(-1)!), timeZone)}
           value={date}
           onChange={(event) => setDate(event.target.value)}
           className="h-8 w-44 border border-white/10 bg-transparent px-2 text-[11px] [color-scheme:dark]"
