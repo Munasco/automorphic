@@ -1,3 +1,4 @@
+import { calculateIndicatorMovingAverage } from "./indicatorMovingAverage";
 import {
   calculateEMA,
   PRICE_SOURCES,
@@ -483,16 +484,59 @@ export const INDICATOR_DEFINITIONS = [
     detail: "Relative strength index",
     category: "Oscillators",
     placement: "pane",
-    inputs: [length(14), priceSource, ...oscillatorLevelInputs(30, 70)],
+    inputs: [
+      length(14),
+      priceSource,
+      {
+        key: "smoothingType",
+        label: "Smoothing",
+        kind: "select",
+        legend: false,
+        defaultValue: 0,
+        min: 0,
+        max: 4,
+        step: 1,
+        options: [
+          { value: 0, label: "None" },
+          { value: 1, label: "SMA" },
+          { value: 2, label: "EMA" },
+          { value: 3, label: "RMA" },
+          { value: 4, label: "WMA" },
+        ],
+      },
+      { ...length(14, "smoothingPeriod", "Smoothing length"), legend: false },
+      ...oscillatorLevelInputs(30, 70),
+    ],
     validateInputs: validOscillatorLevels,
     repairInputs: (values) => ({ ...values, lowerLevel: 30, upperLevel: 70 }),
-    styles: [style("main", "Line", "#c084fc", true)],
-    calculate: ({ bars, inputs }) =>
-      single(calculateRSI(bars, inputs.period ?? 14, PRICE_SOURCES[inputs.source ?? 0]), {
+    styles: [
+      style("main", "Line", "#c084fc", true),
+      style("smoothing", "Moving average", "#facc15", false, 2),
+    ],
+    calculate: ({ bars, inputs }) => {
+      const points = calculateRSI(bars, inputs.period ?? 14, PRICE_SOURCES[inputs.source ?? 0]);
+      const result = single(points, {
         title: "RSI",
         bounds: [0, 100],
         levels: oscillatorLevels(inputs, 30, 70),
-      }),
+      });
+      const method = (["sma", "ema", "rma", "wma"] as const)[(inputs.smoothingType ?? 0) - 1];
+      if (method)
+        result.plots.push({
+          id: "smoothing",
+          styleKey: "smoothing",
+          title: "RSI MA",
+          primary: false,
+          breakOnGaps: true,
+          points: calculateIndicatorMovingAverage(
+            bars,
+            points,
+            inputs.smoothingPeriod ?? 14,
+            method,
+          ),
+        });
+      return result;
+    },
   }),
   defineIndicator({
     key: "macd",

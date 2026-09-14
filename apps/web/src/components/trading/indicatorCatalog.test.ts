@@ -894,3 +894,56 @@ it("selects Keltner range calculations without changing its basis and rejects in
     expect(getIndicatorInputs("keltner", { keltner: { rangeType } }).rangeType).toBe(0);
   }
 });
+
+it("adds RSI moving averages without replacing its original values or levels", () => {
+  const definition = INDICATOR_CATALOG.find((i) => i.key === "rsi")!;
+  const bars = [10, 12, 11, 15, 12, 16, 11, 14, 10, 17].map((close, i) => ({
+    time: i + 1,
+    open: close,
+    high: close + 1,
+    low: close - 1,
+    close,
+    volume: 10,
+  }));
+  const inputs = { ...getIndicatorInputs("rsi"), period: 2, smoothingPeriod: 3 };
+  const run = (smoothingType: number) =>
+    definition.calculate({
+      bars,
+      inputs: { ...inputs, smoothingType },
+      interval: 5,
+      session: DEFAULT_INITIAL_BALANCE,
+    });
+  const original = run(0);
+  expect(original.plots).toHaveLength(1);
+  const values = original.plots[0]!.points;
+  for (const smoothingType of [1, 2, 3, 4]) {
+    const result = run(smoothingType);
+    expect(result.plots[0]).toEqual(original.plots[0]);
+    const smoothed = result.plots[1]!;
+    expect(smoothed.primary).toBe(false);
+    expect(smoothed.breakOnGaps).toBe(true);
+    expect(smoothed.points).toHaveLength(values.length - 2);
+    const seed = values.slice(0, 3).reduce((sum, p) => sum + p.value, 0) / 3;
+    if (smoothingType !== 4) expect(smoothed.points[0]!.value).toBeCloseTo(seed, 10);
+    if (smoothingType === 1)
+      smoothed.points.forEach((p, i) =>
+        expect(p.value).toBeCloseTo(
+          values.slice(i, i + 3).reduce((sum, v) => sum + v.value, 0) / 3,
+          10,
+        ),
+      );
+    if (smoothingType === 4)
+      smoothed.points.forEach((p, i) =>
+        expect(p.value).toBeCloseTo(
+          values.slice(i, i + 3).reduce((sum, v, j) => sum + v.value * (j + 1), 0) / 6,
+          10,
+        ),
+      );
+    expect(getIndicatorLabel("rsi", { rsi: { ...inputs, smoothingType } })).toBe(
+      getIndicatorLabel("rsi", { rsi: inputs }),
+    );
+  }
+  expect(
+    getIndicatorInputs("rsi", { rsi: { smoothingType: 99, smoothingPeriod: 0 } }),
+  ).toMatchObject({ smoothingType: 0, smoothingPeriod: 14 });
+});

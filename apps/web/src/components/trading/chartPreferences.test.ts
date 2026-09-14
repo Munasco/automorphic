@@ -81,12 +81,22 @@ it("preserves Bollinger sources through independent edits, duplication, and work
   ]);
 });
 
-it("persists independent RSI sources and resets only the selected instance", async () => {
+it("persists independent RSI sources and smoothing and resets only the selected instance", async () => {
   const store = useChartPreferences.getState();
   const base = store.addIndicator("rsi")!;
   const duplicate = store.addIndicator("rsi")!;
-  store.setIndicatorInstanceInputs(base, { period: 7, source: 1 });
-  store.setIndicatorInstanceInputs(duplicate, { period: 21, source: 5 });
+  store.setIndicatorInstanceInputs(base, {
+    period: 7,
+    source: 1,
+    smoothingType: 2,
+    smoothingPeriod: 5,
+  });
+  store.setIndicatorInstanceInputs(duplicate, {
+    period: 21,
+    source: 5,
+    smoothingType: 4,
+    smoothingPeriod: 3,
+  });
   const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
   vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
   useChartPreferences.setState(useChartPreferences.getInitialState(), true);
@@ -94,16 +104,54 @@ it("persists independent RSI sources and resets only the selected instance", asy
   const instances = () =>
     getChartIndicatorInstances(useChartPreferences.getState()).filter((i) => i.key === "rsi");
   expect(instances().map((i) => i.inputs)).toEqual([
-    { period: 7, source: 1, lowerLevel: 30, upperLevel: 70, showLevels: 1 },
-    { period: 21, source: 5, lowerLevel: 30, upperLevel: 70, showLevels: 1 },
+    {
+      period: 7,
+      source: 1,
+      smoothingType: 2,
+      smoothingPeriod: 5,
+      lowerLevel: 30,
+      upperLevel: 70,
+      showLevels: 1,
+    },
+    {
+      period: 21,
+      source: 5,
+      smoothingType: 4,
+      smoothingPeriod: 3,
+      lowerLevel: 30,
+      upperLevel: 70,
+      showLevels: 1,
+    },
   ]);
   vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
   useChartPreferences.getState().setIndicatorInstanceInputs(duplicate, { source: 99 });
+  expect(
+    useChartPreferences.getState().setIndicatorInstanceInputs(base, { smoothingType: 5 }),
+  ).toBe(false);
+  expect(
+    useChartPreferences.getState().setIndicatorInstanceInputs(base, { smoothingPeriod: 0 }),
+  ).toBe(false);
   expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
   useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
   expect(instances().map((i) => i.inputs)).toEqual([
-    { period: 7, source: 1, lowerLevel: 30, upperLevel: 70, showLevels: 1 },
-    { period: 14, source: 0, lowerLevel: 30, upperLevel: 70, showLevels: 1 },
+    {
+      period: 7,
+      source: 1,
+      smoothingType: 2,
+      smoothingPeriod: 5,
+      lowerLevel: 30,
+      upperLevel: 70,
+      showLevels: 1,
+    },
+    {
+      period: 14,
+      source: 0,
+      smoothingType: 0,
+      smoothingPeriod: 14,
+      lowerLevel: 30,
+      upperLevel: 70,
+      showLevels: 1,
+    },
   ]);
 });
 
