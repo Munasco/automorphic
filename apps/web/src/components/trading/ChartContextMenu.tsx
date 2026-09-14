@@ -1,3 +1,4 @@
+import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ContextMenu } from "@base-ui/react/context-menu";
 import type { IChartApi, ISeriesApi, SeriesType } from "lightweight-charts";
@@ -12,17 +13,38 @@ import {
 import { ChartIcon } from "./ChartIcon";
 import type { ChartDrawingsController } from "./useChartDrawings";
 
-type MenuPoint = { chart: IChartApi; x: number; y: number; price: string | null };
+type MenuPoint = {
+  chart: IChartApi;
+  x: number;
+  y: number;
+  price: number | null;
+  priceLabel: string | null;
+};
 
-/** Drawing hits own their context menu; this handles unoccupied price-pane space. */
+/** Drawing hits own their context menu; this handles the rest of the chart and axes. */
 export function ChartContextMenu({
   chart,
   series,
+  priceStep,
   drawings,
+  indicators,
+  onAddAlert,
+  onOpenSettings,
+  onOpenObjectTree,
 }: {
   chart: IChartApi | null;
   series: ISeriesApi<SeriesType> | null;
+  priceStep: number;
   drawings: ChartDrawingsController;
+  indicators: {
+    count: number;
+    hidden: boolean;
+    setHidden: (hidden: boolean) => void;
+    remove: () => void;
+  };
+  onAddAlert?: ((price: number) => void) | undefined;
+  onOpenSettings: () => void;
+  onOpenObjectTree: () => void;
 }) {
   const [point, setPoint] = useState<MenuPoint | null>(null);
   const { setTool } = drawings;
@@ -34,26 +56,31 @@ export function ChartContextMenu({
       const pane = series.getPane();
       const rect = pane.getHTMLElement()?.getBoundingClientRect();
       if (!rect) return;
-      const x = event.clientX - rect.left - chart.priceScale("left", pane.paneIndex()).width();
       const y = event.clientY - rect.top;
-      if (x < 0 || x > chart.timeScale().width() || y < 0 || y > pane.getHeight()) return;
       event.preventDefault();
       event.stopPropagation();
       setTool("cursor");
       element.focus({ preventScroll: true });
-      const price = series.coordinateToPrice(y);
+      // Only the price pane (including its axis) maps to an instrument price.
+      const rawPrice = y >= 0 && y < pane.getHeight() ? series.coordinateToPrice(y) : null;
+      const tick = priceStep;
+      const price =
+        rawPrice !== null && Number.isFinite(rawPrice)
+          ? Number((Math.round(rawPrice / tick) * tick).toFixed(8))
+          : null;
       setPoint({
         chart,
         x: event.clientX,
         y: event.clientY,
-        price:
+        price: price !== null && Number.isFinite(price) ? price : null,
+        priceLabel:
           price !== null && Number.isFinite(price) ? series.priceFormatter().format(price) : null,
       });
     };
     // useChartDrawings stops a drawing hit in capture before this listener runs.
     element.addEventListener("contextmenu", open);
     return () => element.removeEventListener("contextmenu", open);
-  }, [chart, series, setTool]);
+  }, [chart, series, priceStep, setTool]);
   if (!chart || !series || point?.chart !== chart) return null;
   const close = () => setPoint(null);
   const paste = async () => {
@@ -83,10 +110,14 @@ export function ChartContextMenu({
     close();
     if (point.price === null) return;
     try {
-      await navigator.clipboard.writeText(point.price);
+      await navigator.clipboard.writeText(point.priceLabel!);
     } catch {
       toastManager.add({ type: "error", title: "Couldn't copy price" });
     }
+  };
+  const run = (action: () => void) => {
+    close();
+    action();
   };
   const mac = typeof navigator !== "undefined" && isMacPlatform(navigator.platform);
   return (
@@ -132,17 +163,73 @@ export function ChartContextMenu({
           <ChartIcon name="maximize" className="size-4.5" />
           Reset chart view
         </MenuItem>
+        <MenuItem
+          className={itemClass}
+          onClick={() => run(() => chart.timeScale().scrollToRealTime())}
+        >
+          <ChartIcon name="arrow-bar-to-right" />
+          Go to latest bar
+        </MenuItem>
         <MenuSeparator />
+        {point.price !== null && onAddAlert ? (
+          <MenuItem className={itemClass} onClick={() => run(() => onAddAlert(point.price!))}>
+            <ChartIcon name="bell" />
+            Add alert at {point.priceLabel}
+          </MenuItem>
+        ) : null}
         {point.price !== null ? (
           <MenuItem className={itemClass} onClick={() => void copyPrice()}>
             <span aria-hidden="true" className="size-4.5 shrink-0" />
-            Copy price {point.price}
+            Copy price {point.priceLabel}
           </MenuItem>
         ) : null}
         <MenuItem className={itemClass} onClick={() => void paste()}>
           <span aria-hidden="true" className="size-4.5 shrink-0" />
           Paste
           <MenuShortcut className="tracking-normal">{mac ? "⌘" : "Ctrl"} V</MenuShortcut>
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem className={itemClass} onClick={() => run(onOpenObjectTree)}>
+          <ChartIcon name="stack" />
+          Object tree
+        </MenuItem>
+        <MenuItem
+          className={itemClass}
+          disabled={!drawings.count}
+          onClick={() => run(drawings.toggleHidden)}
+        >
+          {drawings.hidden ? <EyeIcon /> : <EyeOffIcon />}
+          {drawings.hidden ? "Show drawings" : "Hide drawings"}
+        </MenuItem>
+        <MenuItem
+          className={itemClass}
+          disabled={!indicators.count}
+          onClick={() => run(() => indicators.setHidden(!indicators.hidden))}
+        >
+          {indicators.hidden ? <EyeIcon /> : <EyeOffIcon />}
+          {indicators.hidden ? "Show indicators" : "Hide indicators"}
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem
+          className={itemClass}
+          disabled={!drawings.count}
+          onClick={() => run(() => drawings.removeDrawings())}
+        >
+          <ChartIcon name="trash" />
+          Remove drawings
+        </MenuItem>
+        <MenuItem
+          className={itemClass}
+          disabled={!indicators.count}
+          onClick={() => run(indicators.remove)}
+        >
+          <ChartIcon name="trash" />
+          Remove indicators
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem className={itemClass} onClick={() => run(onOpenSettings)}>
+          <ChartIcon name="adjustments-horizontal" />
+          Chart settings
         </MenuItem>
       </MenuPopup>
     </ContextMenu.Root>

@@ -74,6 +74,11 @@ function ReadyTradingPanel({
     },
     [observeQuote],
   );
+  const [alertDraft, setAlertDraft] = useState<{
+    id: number;
+    symbol: string;
+    price: number;
+  } | null>(null);
   const [sideView, setSideView] = useState<"watchlist" | "alerts" | null>(null);
   const error = selectedQuery.error?.message;
   const settingsControl = (
@@ -118,6 +123,7 @@ function ReadyTradingPanel({
                     aria-pressed={sideView === item.view}
                     onClick={() => {
                       setView("chart");
+                      setAlertDraft(null);
                       setSideView(sideView === item.view ? null : item.view);
                     }}
                     className={cn(
@@ -250,6 +256,10 @@ function ReadyTradingPanel({
               interval={settings.interval}
               onQuote={handleQuote}
               onDrawingAlertsChange={handleDrawingAlerts}
+              onAddPriceAlert={(price) => {
+                setAlertDraft((draft) => ({ id: (draft?.id ?? 0) + 1, symbol, price }));
+                setSideView("alerts");
+              }}
               root={settings.root}
               onSelectSymbol={() => setPickerOpen(true)}
               onIntervalChange={settings.setInterval}
@@ -270,7 +280,8 @@ function ReadyTradingPanel({
           >
             {sideView === "alerts" ? (
               <ChartAlerts
-                key={symbol}
+                key={`${symbol}:${alertDraft?.id ?? "sidebar"}`}
+                initialCreatePrice={alertDraft?.symbol === symbol ? alertDraft.price : undefined}
                 controller={alerts}
                 drawingController={currentDrawingAlerts}
                 symbol={symbol}

@@ -208,6 +208,7 @@ export function TradovateChart({
   onTechnicalIntervalChange,
   onBackFromTechnicals,
   onDrawingAlertsChange,
+  onAddPriceAlert,
 }: {
   symbol: string;
   interval: ChartInterval;
@@ -222,6 +223,7 @@ export function TradovateChart({
   technicalInterval: ChartInterval;
   onTechnicalIntervalChange: (interval: ChartInterval) => void;
   onBackFromTechnicals: () => void;
+  onAddPriceAlert?: ((price: number) => void) | undefined;
   onDrawingAlertsChange?: ((controller: DrawingAlertsController | null) => void) | undefined;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -323,6 +325,7 @@ export function TradovateChart({
   const [last, setLast] = useState<Candle | null>(null);
   const [hovered, setHovered] = useState<Candle | null>(null);
   const [notice, setNotice] = useState("");
+  const [displaySettingsOpen, setDisplaySettingsOpen] = useState(false);
   const [objectTreeOpen, setObjectTreeOpen] = useState(false);
   const [alertDrawing, setAlertDrawing] = useState<ChartDrawing | null>(null);
   const [readings, setReadings] = useState<IndicatorReadings>({});
@@ -964,6 +967,8 @@ export function TradovateChart({
       onPaste={drawings.onPaste}
     >
       <ChartToolbar
+        displaySettingsOpen={displaySettingsOpen}
+        onDisplaySettingsOpenChange={setDisplaySettingsOpen}
         symbol={symbol}
         onSelectSymbol={onSelectSymbol}
         interval={interval}
@@ -1150,6 +1155,16 @@ export function TradovateChart({
                 drawings={drawings}
               />
               <ChartContextMenu
+                priceStep={activeEngine?.prices.candles.options().priceFormat.minMove ?? 0.01}
+                onAddAlert={onAddPriceAlert}
+                onOpenSettings={() => setDisplaySettingsOpen(true)}
+                onOpenObjectTree={() => setObjectTreeOpen(true)}
+                indicators={{
+                  count: indicatorInstances.length,
+                  hidden: indicatorInstances.every((instance) => instance.hidden),
+                  setHidden: settings.setIndicatorsHidden,
+                  remove: settings.removeAllIndicators,
+                }}
                 chart={activeEngine?.chart ?? null}
                 series={activeEngine?.prices[settings.style] ?? null}
                 drawings={drawings}

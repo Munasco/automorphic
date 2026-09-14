@@ -52,6 +52,8 @@ export type {
   InitialBalanceSettings,
 } from "./indicatorCatalog";
 export type ChartToolbarProps = {
+  displaySettingsOpen?: boolean;
+  onDisplaySettingsOpenChange?: (open: boolean) => void;
   symbol: string;
   onSelectSymbol: () => void;
   interval: ChartInterval;
@@ -122,6 +124,8 @@ const control =
   "inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded px-2.5 text-[13px] text-zinc-400 outline-none hover:bg-white/5 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-blue-400/70 data-popup-open:bg-white/5 data-popup-open:text-zinc-100 [&>svg]:size-[18px]";
 
 export function ChartToolbar({
+  displaySettingsOpen,
+  onDisplaySettingsOpenChange,
   symbol,
   onSelectSymbol,
   interval,
@@ -478,7 +482,7 @@ export function ChartToolbar({
         {historyControls ? (
           <span className="mx-1 h-4 w-px shrink-0 bg-white/10" aria-hidden="true" />
         ) : null}
-        <Popover>
+        <Popover open={displaySettingsOpen} onOpenChange={onDisplaySettingsOpenChange}>
           <Tooltip>
             <TooltipTrigger
               render={

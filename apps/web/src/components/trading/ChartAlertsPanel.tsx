@@ -163,12 +163,14 @@ function AlertAction({
 }
 
 export function ChartAlerts({
+  initialCreatePrice,
   controller,
   drawingController,
   symbol,
   lastPrice,
   onClose,
 }: {
+  initialCreatePrice?: number | undefined;
   controller: ChartAlertsController;
   drawingController?: DrawingAlertsController | null;
   symbol: string;
@@ -177,7 +179,7 @@ export function ChartAlerts({
 }) {
   const formId = useId();
   const [tab, setTab] = useState("alerts");
-  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(initialCreatePrice !== undefined);
   const [editingPrice, setEditingPrice] = useState<{
     id: string;
     symbol: string;
@@ -195,7 +197,9 @@ export function ChartAlerts({
   );
   const [name, setName] = useState("");
   const [message, setMessage] = useState("");
-  const [target, setTarget] = useState("");
+  const [target, setTarget] = useState(
+    initialCreatePrice === undefined ? "" : String(initialCreatePrice),
+  );
   const [condition, setCondition] = useState<AlertCondition>("crossing");
   const [repeat, setRepeat] = useState(false);
   const [cooldownMs, setCooldownMs] = useState(60_000);
