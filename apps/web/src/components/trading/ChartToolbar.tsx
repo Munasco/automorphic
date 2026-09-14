@@ -1,5 +1,10 @@
 import { TradingSelect } from "./TradingSelect";
-import type { ChartCrosshairMode, ChartGridMode, ChartGridLineStyle } from "./chartPreferences";
+import type {
+  ChartCrosshairMode,
+  ChartGridMode,
+  ChartGridLineStyle,
+  ChartPriceScaleMode,
+} from "./chartPreferences";
 
 import {
   CHART_INTERVALS,
@@ -64,8 +69,8 @@ export type ChartToolbarProps = {
   onTogglePriceLabel: () => void;
   crosshairMode: ChartCrosshairMode;
   onCrosshairModeChange: (value: ChartCrosshairMode) => void;
-  logScale: boolean;
-  onToggleLogScale: () => void;
+  priceScaleMode: ChartPriceScaleMode;
+  onPriceScaleModeChange: (value: ChartPriceScaleMode) => void;
   invertScale: boolean;
   onToggleInvertScale: () => void;
   onScreenshot: () => void;
@@ -74,6 +79,12 @@ export type ChartToolbarProps = {
   replayControl?: ReactNode;
   historyControls?: ReactNode;
 };
+export const PRICE_SCALE_OPTIONS = [
+  ["normal", "Normal"],
+  ["logarithmic", "Logarithmic"],
+  ["percentage", "Percentage"],
+  ["indexedTo100", "Indexed to 100"],
+] as const;
 const NO_FAVORITES: readonly IndicatorKey[] = [];
 const control =
   "inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded px-2.5 text-[13px] text-zinc-400 outline-none hover:bg-white/5 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-blue-400/70 data-popup-open:bg-white/5 data-popup-open:text-zinc-100 [&>svg]:size-[18px]";
@@ -102,8 +113,8 @@ export function ChartToolbar({
   onTogglePriceLabel,
   crosshairMode,
   onCrosshairModeChange,
-  logScale,
-  onToggleLogScale,
+  priceScaleMode,
+  onPriceScaleModeChange,
   invertScale,
   onToggleInvertScale,
   onScreenshot,
@@ -511,13 +522,19 @@ export function ChartToolbar({
               />
               Last price label
             </label>
-            <label
-              htmlFor={`${id}-log`}
-              className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"
-            >
-              <Checkbox id={`${id}-log`} checked={logScale} onCheckedChange={onToggleLogScale} />
-              Logarithmic price scale
-            </label>
+            <div className="space-y-2 px-2 py-2.5">
+              <label htmlFor={`${id}-price-scale`} className="text-xs text-zinc-400">
+                Price scale
+              </label>
+              <TradingSelect
+                id={`${id}-price-scale`}
+                label="Price scale mode"
+                value={priceScaleMode}
+                options={PRICE_SCALE_OPTIONS}
+                onChange={(value) => onPriceScaleModeChange(value as ChartPriceScaleMode)}
+                className="w-full"
+              />
+            </div>
             <label
               htmlFor={`${id}-invert`}
               className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"

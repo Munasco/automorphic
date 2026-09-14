@@ -40,10 +40,12 @@ import {
 } from "lightweight-charts";
 import type { MarketQuote } from "./InstrumentHeader";
 import { INSTRUMENTS } from "./InstrumentHeader";
-import { ChartToolbar } from "./ChartToolbar";
+import { TradingSelect } from "./TradingSelect";
+import { ChartToolbar, PRICE_SCALE_OPTIONS } from "./ChartToolbar";
 import {
   useChartPreferences,
   type ChartStyle,
+  type ChartPriceScaleMode,
   type IndicatorKey,
   type ChartIndicators,
 } from "./chartPreferences";
@@ -339,7 +341,7 @@ export function TradovateChart({
     symbol,
     interval,
     drawings,
-    logScale: settings.logScale,
+    logScale: settings.priceScaleMode === "logarithmic",
   });
   const drawingAlertsRef = useRef(drawingAlerts);
   useEffect(() => {
@@ -788,7 +790,12 @@ export function TradovateChart({
       },
     });
     engine.chart.priceScale("right", 0).applyOptions({
-      mode: settings.logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+      mode: {
+        normal: PriceScaleMode.Normal,
+        logarithmic: PriceScaleMode.Logarithmic,
+        percentage: PriceScaleMode.Percentage,
+        indexedTo100: PriceScaleMode.IndexedTo100,
+      }[settings.priceScaleMode],
       invertScale: settings.invertScale,
     });
   }, [
@@ -797,7 +804,7 @@ export function TradovateChart({
     settings.gridMode,
     settings.gridLineStyle,
     settings.gridColor,
-    settings.logScale,
+    settings.priceScaleMode,
     settings.invertScale,
     settings.crosshairMode,
     settings.showPriceLine,
@@ -880,8 +887,8 @@ export function TradovateChart({
         onTogglePriceLabel={settings.togglePriceLabel}
         crosshairMode={settings.crosshairMode}
         onCrosshairModeChange={settings.setCrosshairMode}
-        logScale={settings.logScale}
-        onToggleLogScale={settings.toggleLogScale}
+        priceScaleMode={settings.priceScaleMode}
+        onPriceScaleModeChange={settings.setPriceScaleMode}
         invertScale={settings.invertScale}
         onToggleInvertScale={settings.toggleInvertScale}
         onScreenshot={screenshot}
@@ -1179,18 +1186,14 @@ export function TradovateChart({
               : status}
           </TooltipPopup>
         </Tooltip>
-        <button
-          type="button"
-          aria-label="Toggle logarithmic scale"
-          aria-pressed={settings.logScale}
-          onClick={settings.toggleLogScale}
-          className={cn(
-            "rounded px-1.5 py-1 hover:bg-white/5",
-            settings.logScale && "text-blue-400",
-          )}
-        >
-          log
-        </button>
+        <TradingSelect
+          label="Price scale"
+          value={settings.priceScaleMode}
+          options={PRICE_SCALE_OPTIONS}
+          onChange={(value) => settings.setPriceScaleMode(value as ChartPriceScaleMode)}
+          variant="ghost"
+          className="h-7 w-36 text-[11px]"
+        />
         <button
           type="button"
           aria-label="Auto fit price scale"

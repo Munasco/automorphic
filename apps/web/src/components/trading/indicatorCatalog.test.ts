@@ -34,7 +34,7 @@ describe("indicator catalog and saved preferences", () => {
     expect(restored).toMatchObject({
       style: "area",
       gridMode: "none",
-      logScale: true,
+      priceScaleMode: "logarithmic",
       initialBalance: DEFAULT_INITIAL_BALANCE,
     });
     expect(restored.indicators).toEqual({

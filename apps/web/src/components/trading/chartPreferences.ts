@@ -41,6 +41,12 @@ export type { IndicatorAppearance } from "./indicatorStyles";
 export type ChartAppearance = Partial<Record<IndicatorKey, IndicatorAppearance>>;
 export type ChartCrosshairMode = "normal" | "magnet" | "ohlc" | "hidden";
 export type ChartGridMode = "both" | "horizontal" | "vertical" | "none";
+export type ChartPriceScaleMode = "normal" | "logarithmic" | "percentage" | "indexedTo100";
+const validPriceScaleMode = (value: unknown): value is ChartPriceScaleMode =>
+  value === "normal" ||
+  value === "logarithmic" ||
+  value === "percentage" ||
+  value === "indexedTo100";
 export type ChartGridLineStyle = "solid" | "dotted" | "dashed";
 const validGridLineStyle = (value: unknown): value is ChartGridLineStyle =>
   value === "solid" || value === "dotted" || value === "dashed";
@@ -81,7 +87,7 @@ type SavedChartPreferences = {
   gridColor: string;
   showPriceLine: boolean;
   showPriceLabel: boolean;
-  logScale: boolean;
+  priceScaleMode: ChartPriceScaleMode;
   invertScale: boolean;
 };
 
@@ -89,7 +95,7 @@ type SavedChartPreferences = {
 export function normalizeChartPreferences(value: unknown): SavedChartPreferences {
   const saved =
     value && typeof value === "object"
-      ? (value as Partial<SavedChartPreferences> & { showGrid?: unknown })
+      ? (value as Partial<SavedChartPreferences> & { showGrid?: unknown; logScale?: unknown })
       : {};
   const indicators = { ...DEFAULT_INDICATORS };
   const hiddenIndicators = hiddenDefaults();
@@ -143,7 +149,11 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     gridColor: validColor(saved.gridColor) ? saved.gridColor : "#171a23",
     showPriceLine: typeof saved.showPriceLine === "boolean" ? saved.showPriceLine : true,
     showPriceLabel: typeof saved.showPriceLabel === "boolean" ? saved.showPriceLabel : true,
-    logScale: typeof saved.logScale === "boolean" ? saved.logScale : false,
+    priceScaleMode: validPriceScaleMode(saved.priceScaleMode)
+      ? saved.priceScaleMode
+      : saved.logScale === true
+        ? "logarithmic"
+        : "normal",
     invertScale: typeof saved.invertScale === "boolean" ? saved.invertScale : false,
   };
 }
@@ -164,7 +174,7 @@ export const useChartPreferences = create<{
   gridColor: string;
   showPriceLine: boolean;
   showPriceLabel: boolean;
-  logScale: boolean;
+  priceScaleMode: ChartPriceScaleMode;
   invertScale: boolean;
   setStyle: (style: ChartStyle) => void;
   setCrosshairMode: (mode: ChartCrosshairMode) => void;
@@ -193,7 +203,7 @@ export const useChartPreferences = create<{
   setGridColor: (color: string) => void;
   togglePriceLine: () => void;
   togglePriceLabel: () => void;
-  toggleLogScale: () => void;
+  setPriceScaleMode: (mode: ChartPriceScaleMode) => void;
   toggleInvertScale: () => void;
 }>()(
   persist(
@@ -217,7 +227,7 @@ export const useChartPreferences = create<{
       gridColor: "#171a23",
       showPriceLine: true,
       showPriceLabel: true,
-      logScale: false,
+      priceScaleMode: "normal",
       invertScale: false,
       setStyle: (style) => set({ style }),
       setCrosshairMode: (crosshairMode) => {
@@ -447,7 +457,10 @@ export const useChartPreferences = create<{
       },
       togglePriceLine: () => set((state) => ({ showPriceLine: !state.showPriceLine })),
       togglePriceLabel: () => set((state) => ({ showPriceLabel: !state.showPriceLabel })),
-      toggleLogScale: () => set((state) => ({ logScale: !state.logScale })),
+      setPriceScaleMode: (priceScaleMode) => {
+        if (validPriceScaleMode(priceScaleMode) && priceScaleMode !== get().priceScaleMode)
+          set({ priceScaleMode });
+      },
       toggleInvertScale: () => set((state) => ({ invertScale: !state.invertScale })),
     }),
     {

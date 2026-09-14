@@ -15,6 +15,7 @@ import {
   type ChartCrosshairMode,
   type ChartGridMode,
   type ChartGridLineStyle,
+  type ChartPriceScaleMode,
 } from "./chartPreferences";
 import { DEFAULT_INITIAL_BALANCE } from "./initialBalanceSettings";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
@@ -1062,7 +1063,7 @@ describe("chart crosshair preferences", () => {
       expect(restored.crosshairMode).toBe("normal");
       expect(restored.style).toBe("heikin-ashi");
       expect(restored.gridMode).toBe("none");
-      expect(restored.logScale).toBe(true);
+      expect(restored.priceScaleMode).toBe("logarithmic");
       expect(restored.indicatorInputs.sma?.period).toBe(42);
     }
     expect(normalizeChartPreferences({}).crosshairMode).toBe("normal");
@@ -1074,7 +1075,7 @@ describe("chart crosshair preferences", () => {
       const configured = configure();
       configured.setStyle("heikin-ashi");
       configured.setGridMode("none");
-      configured.toggleLogScale();
+      configured.setPriceScaleMode("logarithmic");
       // Ensure normal also exercises a real transition/save.
       configured.setCrosshairMode(mode === "normal" ? "hidden" : "normal");
       const before = normalizeChartPreferences(useChartPreferences.getState());
@@ -1138,7 +1139,7 @@ describe("current price display preferences", () => {
       configured.setStyle("heikin-ashi");
       configured.setCrosshairMode("ohlc");
       configured.setGridMode("none");
-      configured.toggleLogScale();
+      configured.setPriceScaleMode("logarithmic");
       const before = normalizeChartPreferences(useChartPreferences.getState());
       const { togglePriceLine, togglePriceLabel } = useChartPreferences.getState();
       if (!line) togglePriceLine();
@@ -1178,15 +1179,15 @@ describe("inverted price scale preferences", () => {
     expect(useChartPreferences.getInitialState().invertScale).toBe(false);
     expect(normalizeChartPreferences({ logScale: true })).toMatchObject({
       invertScale: false,
-      logScale: true,
+      priceScaleMode: "logarithmic",
     });
     for (const invalid of [undefined, null, 0, 1, "true", "false", [], {}, [true]])
       expect(
         normalizeChartPreferences({ invertScale: invalid, logScale: true, showPriceLine: false }),
-      ).toMatchObject({ invertScale: false, logScale: true, showPriceLine: false });
+      ).toMatchObject({ invertScale: false, priceScaleMode: "logarithmic", showPriceLine: false });
     expect(normalizeChartPreferences({ invertScale: true })).toMatchObject({
       invertScale: true,
-      logScale: false,
+      priceScaleMode: "normal",
     });
     expect(normalizeChartPreferences({ invertScale: false })).toMatchObject({ invertScale: false });
   });
@@ -1204,20 +1205,20 @@ describe("inverted price scale preferences", () => {
       configured.setCrosshairMode("magnet");
       configured.togglePriceLine();
       configured.togglePriceLabel();
-      if (logarithmic) configured.toggleLogScale();
+      if (logarithmic) configured.setPriceScaleMode("logarithmic");
       const before = normalizeChartPreferences(useChartPreferences.getState());
-      const { toggleInvertScale, toggleLogScale } = useChartPreferences.getState();
+      const { toggleInvertScale, setPriceScaleMode } = useChartPreferences.getState();
       if (inverted) toggleInvertScale();
-      toggleLogScale();
+      setPriceScaleMode(logarithmic ? "normal" : "logarithmic");
       expect(useChartPreferences.getState()).toMatchObject({
         invertScale: inverted,
-        logScale: !logarithmic,
+        priceScaleMode: logarithmic ? "normal" : "logarithmic",
       });
-      toggleLogScale();
+      setPriceScaleMode(logarithmic ? "logarithmic" : "normal");
       toggleInvertScale();
       expect(useChartPreferences.getState()).toMatchObject({
         invertScale: !inverted,
-        logScale: logarithmic,
+        priceScaleMode: logarithmic ? "logarithmic" : "normal",
       });
       toggleInvertScale();
       const expected = { ...before, invertScale: inverted };
@@ -1225,7 +1226,7 @@ describe("inverted price scale preferences", () => {
       const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
       expect(JSON.parse(saved[1]).state).toMatchObject({
         invertScale: inverted,
-        logScale: logarithmic,
+        priceScaleMode: logarithmic ? "logarithmic" : "normal",
       });
       vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
       useChartPreferences.setState(useChartPreferences.getInitialState(), true);
@@ -1297,7 +1298,11 @@ describe("chart grid orientation preferences", () => {
       logScale: true,
     });
     expect(restored).not.toHaveProperty("showGrid");
-    expect(restored).toMatchObject({ gridMode: "none", style: "heikin-ashi", logScale: true });
+    expect(restored).toMatchObject({
+      gridMode: "none",
+      style: "heikin-ashi",
+      priceScaleMode: "logarithmic",
+    });
   });
 
   it("prefers valid explicit modes over legacy visibility, but falls back safely for invalid modes", () => {
@@ -1319,7 +1324,7 @@ describe("chart grid orientation preferences", () => {
       configured.setStyle("heikin-ashi");
       configured.setCrosshairMode("ohlc");
       configured.toggleInvertScale();
-      configured.toggleLogScale();
+      configured.setPriceScaleMode("logarithmic");
       configured.togglePriceLine();
       configured.togglePriceLabel();
       configured.setGridMode(mode === "both" ? "none" : "both");
@@ -1371,7 +1376,7 @@ describe("chart grid orientation preferences", () => {
     await useChartPreferences.persist.rehydrate();
     expect(useChartPreferences.getState()).toMatchObject({
       gridMode: "none",
-      logScale: true,
+      priceScaleMode: "logarithmic",
       invertScale: true,
     });
     expect(useChartPreferences.getState()).not.toHaveProperty("showGrid");
@@ -1379,7 +1384,11 @@ describe("chart grid orientation preferences", () => {
     const saved = JSON.parse(
       vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1],
     ).state;
-    expect(saved).toMatchObject({ gridMode: "horizontal", logScale: true, invertScale: true });
+    expect(saved).toMatchObject({
+      gridMode: "horizontal",
+      priceScaleMode: "logarithmic",
+      invertScale: true,
+    });
     expect(saved).not.toHaveProperty("showGrid");
   });
 });
@@ -1524,7 +1533,7 @@ describe("chart grid line appearance preferences", () => {
       const store = configure();
       store.setGridMode("vertical");
       store.setStyle("heikin-ashi");
-      store.toggleLogScale();
+      store.setPriceScaleMode("logarithmic");
       store.toggleInvertScale();
       store.setCrosshairMode("ohlc");
       const before = normalizeChartPreferences(useChartPreferences.getState());
@@ -1576,7 +1585,7 @@ describe("chart grid line appearance preferences", () => {
       gridLineStyle: "dashed",
       gridColor: "#123456",
       invertScale: true,
-      logScale: false,
+      priceScaleMode: "normal",
     });
     vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(workspaceB);
     await hydrate();
@@ -1585,7 +1594,7 @@ describe("chart grid line appearance preferences", () => {
       gridLineStyle: "dotted",
       gridColor: "#abcdef",
       invertScale: false,
-      logScale: true,
+      priceScaleMode: "logarithmic",
     });
     vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(workspaceA);
     await hydrate();
@@ -1602,5 +1611,100 @@ describe("chart grid line appearance preferences", () => {
       gridLineStyle: "solid",
       gridColor: "#171a23",
     });
+  });
+});
+
+describe("chart price scale modes", () => {
+  const modes = ["normal", "logarithmic", "percentage", "indexedTo100"] as const;
+  const invalidModes = [undefined, null, "", "log", "Percentage", 0, 1, 2, 3, true, {}, ["normal"]];
+
+  it("migrates legacy scales strictly and prefers valid explicit modes", () => {
+    expect(useChartPreferences.getInitialState().priceScaleMode).toBe("normal");
+    expect(useChartPreferences.getInitialState()).not.toHaveProperty("logScale");
+    expect(useChartPreferences.getInitialState()).not.toHaveProperty("toggleLogScale");
+    expect(normalizeChartPreferences({ logScale: true }).priceScaleMode).toBe("logarithmic");
+    for (const legacy of [undefined, null, false, "true", "false", 1, 0, {}, [true]])
+      expect(normalizeChartPreferences({ logScale: legacy }).priceScaleMode).toBe("normal");
+    for (const mode of modes) {
+      for (const legacy of [true, false]) {
+        const restored = normalizeChartPreferences({ priceScaleMode: mode, logScale: legacy });
+        expect(restored.priceScaleMode).toBe(mode);
+        expect(restored).not.toHaveProperty("logScale");
+      }
+    }
+    for (const invalid of invalidModes) {
+      expect(normalizeChartPreferences({ priceScaleMode: invalid }).priceScaleMode).toBe("normal");
+      expect(
+        normalizeChartPreferences({ priceScaleMode: invalid, logScale: true }).priceScaleMode,
+      ).toBe("logarithmic");
+    }
+  });
+
+  it.each(modes)(
+    "persists %s independently from grid, inversion and indicator preferences",
+    async (mode) => {
+      const configured = configure();
+      configured.setGridMode("horizontal");
+      configured.setGridLineStyle("dashed");
+      configured.setGridColor("#abcdef");
+      configured.toggleInvertScale();
+      configured.setCrosshairMode("ohlc");
+      configured.setPriceScaleMode(mode === "normal" ? "percentage" : "normal");
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      configured.setPriceScaleMode(mode);
+      const expected = { ...before, priceScaleMode: mode };
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      const serialized = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      expect(JSON.parse(serialized).state.priceScaleMode).toBe(mode);
+      expect(JSON.parse(serialized).state).not.toHaveProperty("logScale");
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(serialized);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      expect(typeof useChartPreferences.getState().setPriceScaleMode).toBe("function");
+    },
+  );
+
+  it("ignores invalid and unchanged runtime modes without writes or notifications", () => {
+    configure().setPriceScaleMode("indexedTo100");
+    const before = useChartPreferences.getState();
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    const listener = vi.fn();
+    const unsubscribe = useChartPreferences.subscribe(listener);
+    try {
+      for (const invalid of invalidModes) before.setPriceScaleMode(invalid as ChartPriceScaleMode);
+      before.setPriceScaleMode("indexedTo100");
+      expect(useChartPreferences.getState()).toBe(before);
+      expect(listener).not.toHaveBeenCalled();
+      expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+      before.setPriceScaleMode("percentage");
+      expect(useChartPreferences.getState().priceScaleMode).toBe("percentage");
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("rehydrates old logarithmic workspaces and writes only the current scale schema", async () => {
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+      JSON.stringify({
+        version: 0,
+        state: { logScale: true, invertScale: true, gridColor: "#123456" },
+      }),
+    );
+    await useChartPreferences.persist.rehydrate();
+    expect(useChartPreferences.getState()).toMatchObject({
+      priceScaleMode: "logarithmic",
+      invertScale: true,
+      gridColor: "#123456",
+    });
+    expect(useChartPreferences.getState()).not.toHaveProperty("logScale");
+    useChartPreferences.getState().setPriceScaleMode("indexedTo100");
+    const saved = JSON.parse(
+      vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1],
+    ).state;
+    expect(saved.priceScaleMode).toBe("indexedTo100");
+    expect(saved).not.toHaveProperty("logScale");
   });
 });
