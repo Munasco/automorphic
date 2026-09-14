@@ -98,6 +98,31 @@ const disabled = Object.fromEntries(
 ) as ChartIndicators;
 
 describe("native indicator renderer", () => {
+  it("breaks ROC at a zero source baseline and restores the line on revision", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.25);
+    const values = [10, 20, 0, 40, 50, 60];
+    const bars = inputBars(values.length).map((bar, i) => ({ ...bar, open: values[i]! }));
+    const instance = {
+      ...createIndicatorInstance("roc", "base:roc"),
+      inputs: { period: 1, source: 1 },
+    };
+    renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [instance]);
+    const series = harness.series[0]!;
+    expect(series.pane).toBe(1);
+    expect(series.data[1]!.value).toBe(100);
+    expect(series.data[2]!.value).toBe(-100);
+    expect(series.data[2]!.color).toBe("transparent");
+    expect(series.data[3]).toEqual({ time: bars[3]!.time });
+    expect(series.data[4]!.value).toBe(25);
+    expect(series.priceLines.map((line) => line.options.price)).toEqual([0]);
+    const revised = bars.map((bar, i) => (i === 2 ? { ...bar, open: 25 } : bar));
+    renderer.update(revised, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [instance]);
+    expect(harness.series[0]).toBe(series);
+    expect(series.data[3]!.value).toBe(60);
+    expect(series.data[2]!.color).not.toBe("transparent");
+  });
+
   it("shares the volume scale with optional averages while duplicate panes stay independent", () => {
     const harness = chartHarness();
     const renderer = createIndicatorRenderer(harness.chart, 0.25);

@@ -510,17 +510,26 @@ export function calculateCMF(bars: readonly Candle[], period = 20): IndicatorPoi
   return result;
 }
 
-/** Percent change from the close exactly N bars ago; zero denominators are omitted.
- * https://www.tradingview.com/support/solutions/43000502343-rate-of-change-roc/
- */
-export function calculateROC(bars: readonly Candle[], period = 9): IndicatorPoint[] {
+/** Percent change from the selected price exactly N bars ago; zero baselines are omitted. */
+export function calculateROC(
+  bars: readonly Candle[],
+  period = 9,
+  source: PriceSource = "close",
+): IndicatorPoint[] {
   if (!validPeriod(period)) return [];
   const result: IndicatorPoint[] = [];
-  for (const segment of segments(bars, validClose)) {
+  for (const segment of segments(
+    bars,
+    (bar) => Number.isFinite(bar.time) && Number.isFinite(sourcePrice(bar, source)),
+  )) {
     for (let i = period; i < segment.length; i += 1) {
-      const previous = segment[i - period]!.close;
-      if (previous !== 0)
-        add(result, segment[i]!.time, 100 * ((segment[i]!.close - previous) / previous));
+      const previous = sourcePrice(segment[i - period]!, source);
+      if (previous === 0) continue;
+      const current = sourcePrice(segment[i]!, source);
+      const difference = current - previous;
+      // Opposite-sign finite prices can overflow subtraction despite a finite ratio.
+      const change = Number.isFinite(difference) ? difference / previous : current / previous - 1;
+      add(result, segment[i]!.time, 100 * change);
     }
   }
   return result;

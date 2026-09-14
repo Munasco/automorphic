@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { Candle, IndicatorPoint } from "./chartIndicators";
+import {
+  PRICE_SOURCES,
+  type PriceSource,
+  type Candle,
+  type IndicatorPoint,
+} from "./chartIndicators";
 import {
   calculateADX,
   calculateATR,
@@ -783,5 +788,125 @@ describe("Bollinger Bands basis moving average", () => {
     const sma = calculateBollingerBands(source, 3, 2);
     expect(result).toEqual(sma);
     expect(result.middle[0]!.value).toBe(1e12 + 2);
+  });
+});
+
+describe("ROC price sources", () => {
+  const input = () =>
+    bars([20, 10, 30, 40]).map((bar, index) => ({
+      ...bar,
+      open: [10, 20, 25, 10][index]!,
+      high: [30, 40, 50, 60][index]!,
+      low: [0, 5, 10, 20][index]!,
+    }));
+  const expected: Record<PriceSource, number[]> = {
+    close: [50, 300],
+    open: [150, -50],
+    high: [200 / 3, 50],
+    low: [300],
+    hl2: [100, 700 / 9],
+    hlc3: [80, 1300 / 11],
+    ohlc4: [275 / 3, 220 / 3],
+  };
+  const required: Record<PriceSource, (keyof Pick<Candle, "open" | "high" | "low" | "close">)[]> = {
+    close: ["close"],
+    open: ["open"],
+    high: ["high"],
+    low: ["low"],
+    hl2: ["high", "low"],
+    hlc3: ["high", "low", "close"],
+    ohlc4: ["open", "high", "low", "close"],
+  };
+
+  it.each(PRICE_SOURCES)("calculates hand-computed %s changes exactly two bars apart", (source) => {
+    const result = calculateROC(input(), 2, source);
+    near(result, expected[source]);
+    expect(result.map((point) => point.time)).toEqual(
+      input()
+        .slice(source === "low" ? 3 : 2)
+        .map((bar) => bar.time),
+    );
+  });
+
+  it("preserves default close behavior and the default nine-bar lookback", () => {
+    expect(calculateROC(input(), 2)).toEqual(calculateROC(input(), 2, "close"));
+    const source = bars([10, 9, 8, 7, 6, 5, 4, 3, 2, 15, 18]);
+    near(calculateROC(source), [50, 100]);
+    expect(calculateROC(source)[0]!.time).toBe(source[9]!.time);
+  });
+
+  it.each(PRICE_SOURCES)(
+    "restarts %s warmup on invalid required inputs or time, ignoring unused fields",
+    (source) => {
+      const clean = bars([10, 20, 30, 40, 50, 60, 70]);
+      for (const field of [...required[source], "time"] as const) {
+        for (const invalid of [NaN, Infinity, undefined]) {
+          const broken = clean.map((bar, index) =>
+            index === 3 ? ({ ...bar, [field]: invalid } as Candle) : bar,
+          );
+          expect(calculateROC(broken, 2, source)).toEqual([
+            ...calculateROC(clean.slice(0, 3), 2, source),
+            ...calculateROC(clean.slice(4), 2, source),
+          ]);
+        }
+      }
+      const unused = (["open", "high", "low", "close"] as const).filter(
+        (field) => !required[source].includes(field),
+      );
+      const poisoned = clean.map((bar) => ({
+        ...bar,
+        volume: NaN,
+        ...Object.fromEntries(unused.map((field) => [field, NaN])),
+      }));
+      expect(calculateROC(poisoned, 2, source)).toEqual(calculateROC(clean, 2, source));
+    },
+  );
+
+  it("omits zero baselines without moving the lookback or treating elapsed time as bar count", () => {
+    const source = bars([0, 10, 20, 0, 40, 50]).map((bar, index) => ({
+      ...bar,
+      time: bar.time + index * index * 1000,
+    }));
+    expect(calculateROC(source, 2)).toEqual([
+      { time: source[3]!.time, value: -100 },
+      { time: source[4]!.time, value: 100 },
+    ]);
+    near(calculateROC(bars([0, 10, 20, 0, 40, 50]), 1), [100, -100, 25]);
+  });
+
+  it("retains representable changes when subtraction overflows and omits unrepresentable results", () => {
+    near(
+      calculateROC(bars([Number.MAX_VALUE, -Number.MAX_VALUE, Number.MAX_VALUE]), 1),
+      [-200, -200],
+    );
+    expect(calculateROC(bars([Number.MIN_VALUE, Number.MAX_VALUE]), 1)).toEqual([]);
+  });
+
+  it.each(PRICE_SOURCES)(
+    "recalculates %s current-bar revisions without changing prior results or input",
+    (source) => {
+      const candles = input();
+      const original = structuredClone(candles);
+      const full = calculateROC(candles, 2, source);
+      expect(calculateROC(candles.slice(0, -1), 2, source)).toEqual(full.slice(0, -1));
+      const revised = [
+        ...candles.slice(0, -1),
+        { ...candles.at(-1)!, open: 100, high: 120, low: 80, close: 110 },
+      ];
+      const result = calculateROC(revised, 2, source);
+      expect(result.slice(0, -1)).toEqual(full.slice(0, -1));
+      expect(result.at(-1)!.value).not.toBe(full.at(-1)!.value);
+      expect(candles).toEqual(original);
+      expect(calculateROC(candles, 2, source)).toEqual(full);
+    },
+  );
+
+  it("rejects invalid periods and insufficient history for any source", () => {
+    for (const source of PRICE_SOURCES) {
+      for (const period of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])
+        expect(calculateROC(input(), period, source)).toEqual([]);
+      expect(calculateROC(input(), 4, source)).toEqual([]);
+      expect(calculateROC([], 1, source)).toEqual([]);
+    }
   });
 });

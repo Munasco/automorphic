@@ -704,10 +704,14 @@ export const INDICATOR_DEFINITIONS = [
     detail: "Rate of change",
     category: "Oscillators",
     placement: "pane",
-    inputs: [length(9)],
+    inputs: [length(9), priceSource],
     styles: [style("main", "Line", "#fbbf24", true)],
     calculate: ({ bars, inputs }) =>
-      single(calculateROC(bars, inputs.period), { title: "ROC", levels: [0] }),
+      single(calculateROC(bars, inputs.period, PRICE_SOURCES[inputs.source ?? 0]), {
+        title: "ROC",
+        levels: [0],
+        breakOnGaps: true,
+      }),
   }),
   defineIndicator({
     key: "adx",
