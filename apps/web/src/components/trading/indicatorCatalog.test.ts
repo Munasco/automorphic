@@ -947,3 +947,35 @@ it("adds RSI moving averages without replacing its original values or levels", (
     getIndicatorInputs("rsi", { rsi: { smoothingType: 99, smoothingPeriod: 0 } }),
   ).toMatchObject({ smoothingType: 0, smoothingPeriod: 14 });
 });
+
+it("shades RSI between its configured levels independently of the level lines", () => {
+  const definition = INDICATOR_CATALOG.find((i) => i.key === "rsi")!;
+  const bars = [10, 12, 11, 15, 12, 16, 13].map((close, i) => ({
+    time: i + 1,
+    open: close,
+    high: close + 1,
+    low: close - 1,
+    close,
+    volume: 10,
+  }));
+  const inputs = { ...getIndicatorInputs("rsi"), period: 2, lowerLevel: 25, upperLevel: 65 };
+  const run = (showLevels: number) =>
+    definition.calculate({
+      bars,
+      inputs: { ...inputs, showLevels },
+      interval: 5,
+      session: DEFAULT_INITIAL_BALANCE,
+    });
+  const result = run(1),
+    hidden = run(0);
+  expect(result.fills).toHaveLength(1);
+  expect(result.fills![0]!.upper).toEqual(
+    result.plots[0]!.points.map((p) => ({ time: p.time, value: 65 })),
+  );
+  expect(result.fills![0]!.lower).toEqual(
+    result.plots[0]!.points.map((p) => ({ time: p.time, value: 25 })),
+  );
+  expect(hidden.fills).toEqual(result.fills);
+  expect(hidden.plots[0]!.levels).toEqual([]);
+  expect(hidden.plots[0]!.points).toEqual(result.plots[0]!.points);
+});

@@ -1,3 +1,4 @@
+import { indicatorLevelFills } from "./indicatorLevelFill";
 import { calculateIndicatorMovingAverage } from "./indicatorMovingAverage";
 import {
   calculateEMA,
@@ -512,6 +513,7 @@ export const INDICATOR_DEFINITIONS = [
     styles: [
       style("main", "Line", "#c084fc", true),
       style("smoothing", "Moving average", "#facc15", false, 2),
+      { ...style("background", "Background", "#c084fc"), kind: "fill", opacity: 0.08 },
     ],
     calculate: ({ bars, inputs }) => {
       const points = calculateRSI(bars, inputs.period ?? 14, PRICE_SOURCES[inputs.source ?? 0]);
@@ -520,6 +522,12 @@ export const INDICATOR_DEFINITIONS = [
         bounds: [0, 100],
         levels: oscillatorLevels(inputs, 30, 70),
       });
+      result.fills = indicatorLevelFills(
+        bars,
+        points,
+        inputs.lowerLevel ?? 30,
+        inputs.upperLevel ?? 70,
+      );
       const method = (["sma", "ema", "rma", "wma"] as const)[(inputs.smoothingType ?? 0) - 1];
       if (method)
         result.plots.push({

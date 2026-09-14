@@ -3033,3 +3033,27 @@ describe("line and area point markers", () => {
     }
   });
 });
+
+it("persists independent RSI background appearance without changing indicator inputs", async () => {
+  const store = useChartPreferences.getState();
+  const first = store.addIndicator("rsi")!;
+  store.setIndicatorInstanceAppearance(first, {
+    plots: { background: { color: "#123456", opacity: 0.3, visible: true } },
+  });
+  const second = store.duplicateIndicatorInstance(first)!;
+  store.setIndicatorInstanceAppearance(second, {
+    plots: { background: { color: "#abcdef", opacity: 0.5, visible: false } },
+  });
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  const instances = getChartIndicatorInstances(useChartPreferences.getState()).filter(
+    (i) => i.key === "rsi",
+  );
+  expect(instances.map((i) => i.appearance.plots?.background)).toEqual([
+    { color: "#123456", opacity: 0.3, visible: true },
+    { color: "#abcdef", opacity: 0.5, visible: false },
+  ]);
+  expect(instances[0]!.inputs).toEqual(instances[1]!.inputs);
+});
