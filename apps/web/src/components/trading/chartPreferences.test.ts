@@ -21,6 +21,7 @@ import {
   type ChartReplaySpeed,
   type ChartLineWidth,
   type ChartLineShape,
+  type ChartLineMarkerRadius,
 } from "./chartPreferences";
 import { PRICE_SOURCES, type PriceSource } from "./chartIndicators";
 import { DEFAULT_INITIAL_BALANCE } from "./initialBalanceSettings";
@@ -2828,6 +2829,136 @@ describe("line and area chart shape", () => {
       );
       await hydrate();
       expect(useChartPreferences.getState().lineChartShape).toBe(expected);
+    }
+  });
+});
+
+describe("line and area point markers", () => {
+  const invalidRadii: unknown[] = [
+    undefined,
+    null,
+    "3",
+    "",
+    0,
+    1,
+    7,
+    3.5,
+    NaN,
+    Infinity,
+    true,
+    {},
+    [3],
+  ];
+  it("defaults legacy or malformed marker fields without disturbing line appearance", () => {
+    expect(useChartPreferences.getInitialState()).toMatchObject({
+      showLineMarkers: false,
+      lineMarkerRadius: 3,
+    });
+    for (const value of [undefined, null, "true", 1, {}, [], false])
+      expect(normalizeChartPreferences({ showLineMarkers: value }).showLineMarkers).toBe(false);
+    expect(normalizeChartPreferences({ showLineMarkers: true }).showLineMarkers).toBe(true);
+    for (const lineMarkerRadius of invalidRadii)
+      expect(
+        normalizeChartPreferences({
+          lineMarkerRadius,
+          showLineMarkers: true,
+          lineChartShape: "stepped",
+          lineChartColor: "#abcdef",
+        }),
+      ).toMatchObject({
+        lineMarkerRadius: 3,
+        showLineMarkers: true,
+        lineChartShape: "stepped",
+        lineChartColor: "#abcdef",
+      });
+  });
+  it("rejects invalid and repeated radii without writes or notifications", () => {
+    const store = configure();
+    store.setLineMarkerRadius(5);
+    const before = useChartPreferences.getState();
+    const listener = vi.fn();
+    const unsubscribe = useChartPreferences.subscribe(listener);
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    try {
+      for (const radius of invalidRadii) store.setLineMarkerRadius(radius as ChartLineMarkerRadius);
+      store.setLineMarkerRadius(5);
+      expect(useChartPreferences.getState()).toBe(before);
+      expect(listener).not.toHaveBeenCalled();
+      expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+      store.setLineMarkerRadius(6);
+      expect(useChartPreferences.getState()).toMatchObject({
+        lineMarkerRadius: 6,
+        showLineMarkers: false,
+      });
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+  it.each([2, 3, 4, 5, 6] as const)(
+    "persists radius %s and marker visibility through style switches, toggles and reload",
+    async (lineMarkerRadius) => {
+      const store = configure();
+      store.setLineChartSource("ohlc4");
+      store.setLineChartShape("stepped");
+      store.setLineChartColor("#123456");
+      store.setLineChartWidth(4);
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      store.setLineMarkerRadius(lineMarkerRadius);
+      store.toggleLineMarkers();
+      for (const style of ["line", "area", "candles", "area"] as const) {
+        store.setStyle(style);
+        expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+          ...before,
+          style,
+          lineMarkerRadius,
+          showLineMarkers: true,
+        });
+      }
+      store.toggleLineMarkers();
+      expect(useChartPreferences.getState()).toMatchObject({
+        showLineMarkers: false,
+        lineMarkerRadius,
+      });
+      store.toggleLineMarkers();
+      const serialized = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      expect(JSON.parse(serialized).state).toMatchObject({
+        showLineMarkers: true,
+        lineMarkerRadius,
+      });
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(serialized);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+        ...before,
+        style: "area",
+        lineMarkerRadius,
+        showLineMarkers: true,
+      });
+    },
+  );
+  it("isolates marker preferences between modern, legacy and malformed workspaces", async () => {
+    const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+    const custom = { showLineMarkers: true, lineMarkerRadius: 6 };
+    for (const [saved, expected] of [
+      [custom, custom],
+      [{ lineChartColor: "#abcdef" }, { showLineMarkers: false, lineMarkerRadius: 3 }],
+      [
+        { showLineMarkers: true, lineMarkerRadius: 2 },
+        { showLineMarkers: true, lineMarkerRadius: 2 },
+      ],
+      [
+        { showLineMarkers: "true", lineMarkerRadius: "5" },
+        { showLineMarkers: false, lineMarkerRadius: 3 },
+      ],
+      [custom, custom],
+    ]) {
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+        JSON.stringify({ version: 0, state: saved }),
+      );
+      await hydrate();
+      expect(useChartPreferences.getState()).toMatchObject(expected!);
     }
   });
 });

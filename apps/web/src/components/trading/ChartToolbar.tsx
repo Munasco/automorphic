@@ -9,6 +9,7 @@ import type {
   ChartPriceScaleMode,
   ChartLineWidth,
   ChartLineShape,
+  ChartLineMarkerRadius,
 } from "./chartPreferences";
 
 import {
@@ -74,6 +75,10 @@ export type ChartToolbarProps = {
   onToggleBarOpen: () => void;
   showCandleWicks: boolean;
   showCandleBorders: boolean;
+  showLineMarkers: boolean;
+  onToggleLineMarkers: () => void;
+  lineMarkerRadius: ChartLineMarkerRadius;
+  onLineMarkerRadiusChange: (radius: ChartLineMarkerRadius) => void;
   lineChartShape: ChartLineShape;
   onLineChartShapeChange: (shape: ChartLineShape) => void;
   lineChartSource: PriceSource;
@@ -140,6 +145,10 @@ export function ChartToolbar({
   onToggleBarOpen,
   showCandleWicks,
   showCandleBorders,
+  showLineMarkers,
+  onToggleLineMarkers,
+  lineMarkerRadius,
+  onLineMarkerRadiusChange,
   lineChartShape,
   onLineChartShapeChange,
   lineChartSource,
@@ -594,6 +603,34 @@ export function ChartToolbar({
                     className="h-7 w-8 shrink-0 cursor-pointer rounded border border-white/15 bg-transparent"
                   />
                 </div>
+                <label
+                  htmlFor={`${id}-line-markers`}
+                  className="flex items-center gap-2 py-1 text-xs"
+                >
+                  <Checkbox
+                    id={`${id}-line-markers`}
+                    checked={showLineMarkers}
+                    onCheckedChange={onToggleLineMarkers}
+                  />
+                  Point markers
+                </label>
+                {showLineMarkers && (
+                  <>
+                    <label htmlFor={`${id}-marker-radius`} className="text-xs text-zinc-400">
+                      Marker radius
+                    </label>
+                    <TradingSelect
+                      id={`${id}-marker-radius`}
+                      label="Marker radius"
+                      value={String(lineMarkerRadius)}
+                      options={[2, 3, 4, 5, 6].map((radius) => [String(radius), `${radius} px`])}
+                      onChange={(value) =>
+                        onLineMarkerRadiusChange(Number(value) as ChartLineMarkerRadius)
+                      }
+                      className="w-full"
+                    />
+                  </>
+                )}
               </div>
             )}
             <div className="flex flex-col gap-2 px-2 pb-2">

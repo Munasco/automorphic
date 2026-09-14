@@ -47,6 +47,9 @@ const validReplaySpeed = (value: unknown): value is ChartReplaySpeed =>
   value === 0.5 || value === 1 || value === 2 || value === 5 || value === 10;
 export type ChartLineWidth = 1 | 2 | 3 | 4;
 export type ChartLineShape = "straight" | "stepped";
+export type ChartLineMarkerRadius = 2 | 3 | 4 | 5 | 6;
+const validLineMarkerRadius = (value: unknown): value is ChartLineMarkerRadius =>
+  value === 2 || value === 3 || value === 4 || value === 5 || value === 6;
 const validLineChartShape = (value: unknown): value is ChartLineShape =>
   value === "straight" || value === "stepped";
 const validLineChartSource = (value: unknown): value is PriceSource =>
@@ -111,6 +114,8 @@ type SavedChartPreferences = {
   lineChartColor: string;
   lineChartWidth: ChartLineWidth;
   lineChartShape: ChartLineShape;
+  showLineMarkers: boolean;
+  lineMarkerRadius: ChartLineMarkerRadius;
   thinBars: boolean;
   showBarOpen: boolean;
   showCandleWicks: boolean;
@@ -189,6 +194,8 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     lineChartColor: validColor(saved.lineChartColor) ? saved.lineChartColor : "#6097ee",
     lineChartWidth: validLineChartWidth(saved.lineChartWidth) ? saved.lineChartWidth : 2,
     lineChartShape: validLineChartShape(saved.lineChartShape) ? saved.lineChartShape : "straight",
+    showLineMarkers: saved.showLineMarkers === true,
+    lineMarkerRadius: validLineMarkerRadius(saved.lineMarkerRadius) ? saved.lineMarkerRadius : 3,
     thinBars: typeof saved.thinBars === "boolean" ? saved.thinBars : true,
     showBarOpen: typeof saved.showBarOpen === "boolean" ? saved.showBarOpen : true,
     showCandleWicks: typeof saved.showCandleWicks === "boolean" ? saved.showCandleWicks : true,
@@ -227,6 +234,8 @@ export const useChartPreferences = create<{
   lineChartColor: string;
   lineChartWidth: ChartLineWidth;
   lineChartShape: ChartLineShape;
+  showLineMarkers: boolean;
+  lineMarkerRadius: ChartLineMarkerRadius;
   thinBars: boolean;
   showBarOpen: boolean;
   showCandleWicks: boolean;
@@ -268,6 +277,8 @@ export const useChartPreferences = create<{
   setLineChartColor: (color: string) => void;
   setLineChartWidth: (width: ChartLineWidth) => void;
   setLineChartShape: (shape: ChartLineShape) => void;
+  toggleLineMarkers: () => void;
+  setLineMarkerRadius: (radius: ChartLineMarkerRadius) => void;
   toggleThinBars: () => void;
   toggleBarOpen: () => void;
   toggleCandleWicks: () => void;
@@ -304,6 +315,8 @@ export const useChartPreferences = create<{
       lineChartColor: "#6097ee",
       lineChartWidth: 2,
       lineChartShape: "straight",
+      showLineMarkers: false,
+      lineMarkerRadius: 3,
       thinBars: true,
       showBarOpen: true,
       showCandleWicks: true,
@@ -575,6 +588,11 @@ export const useChartPreferences = create<{
       },
       setGridColor: (gridColor) => {
         if (validColor(gridColor) && gridColor !== get().gridColor) set({ gridColor });
+      },
+      toggleLineMarkers: () => set((state) => ({ showLineMarkers: !state.showLineMarkers })),
+      setLineMarkerRadius: (lineMarkerRadius) => {
+        if (validLineMarkerRadius(lineMarkerRadius) && lineMarkerRadius !== get().lineMarkerRadius)
+          set({ lineMarkerRadius });
       },
       toggleThinBars: () => set((state) => ({ thinBars: !state.thinBars })),
       toggleBarOpen: () => set((state) => ({ showBarOpen: !state.showBarOpen })),

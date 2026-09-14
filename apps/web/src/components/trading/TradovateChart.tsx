@@ -794,6 +794,8 @@ export function TradovateChart({
     engine.prices.line.applyOptions({
       color: settings.lineChartColor,
       lineWidth: settings.lineChartWidth,
+      pointMarkersVisible: settings.showLineMarkers,
+      pointMarkersRadius: settings.lineMarkerRadius,
       lineType: settings.lineChartShape === "stepped" ? LineType.WithSteps : LineType.Simple,
     });
     engine.prices.area.applyOptions({
@@ -801,6 +803,8 @@ export function TradovateChart({
       topColor: `${settings.lineChartColor}55`,
       bottomColor: `${settings.lineChartColor}00`,
       lineWidth: settings.lineChartWidth,
+      pointMarkersVisible: settings.showLineMarkers,
+      pointMarkersRadius: settings.lineMarkerRadius,
       lineType: settings.lineChartShape === "stepped" ? LineType.WithSteps : LineType.Simple,
     });
     engine.prices.bars.applyOptions({
@@ -879,6 +883,8 @@ export function TradovateChart({
     settings.lineChartColor,
     settings.lineChartWidth,
     settings.lineChartShape,
+    settings.showLineMarkers,
+    settings.lineMarkerRadius,
     settings.showPriceLine,
     settings.showPriceLabel,
   ]);
@@ -959,6 +965,10 @@ export function TradovateChart({
         onToggleBarOpen={settings.toggleBarOpen}
         showCandleWicks={settings.showCandleWicks}
         showCandleBorders={settings.showCandleBorders}
+        showLineMarkers={settings.showLineMarkers}
+        onToggleLineMarkers={settings.toggleLineMarkers}
+        lineMarkerRadius={settings.lineMarkerRadius}
+        onLineMarkerRadiusChange={settings.setLineMarkerRadius}
         lineChartShape={settings.lineChartShape}
         onLineChartShapeChange={settings.setLineChartShape}
         lineChartSource={settings.lineChartSource}
