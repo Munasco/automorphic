@@ -3,6 +3,7 @@ import { ArrowRight, Pause, Play, RotateCcw, SkipBack, SkipForward, X } from "lu
 import type { Candle } from "./chartIndicators";
 import { createReplayHistory, replayIndex, replayIndexAt, replayPrefix } from "./replayHistory";
 import { TradingSelect } from "./TradingSelect";
+import { useChartPreferences, type ChartReplaySpeed } from "./chartPreferences";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export function useChartReplay(context: string) {
@@ -13,7 +14,8 @@ export function useChartReplay(context: string) {
     start: number;
     playing: boolean;
   } | null>(null);
-  const [speed, setSpeed] = useState(1);
+  const speed = useChartPreferences((state) => state.replaySpeed);
+  const setSpeed = useChartPreferences((state) => state.setReplaySpeed);
   const active = session?.context === context ? session : null;
   if (session && session.context !== context) setSession(null);
   useEffect(() => {
@@ -134,7 +136,7 @@ export function ChartReplayControls({ replay }: { replay: ReturnType<typeof useC
           ["5", "5×"],
           ["10", "10×"],
         ]}
-        onChange={(value) => replay.setSpeed(Number(value))}
+        onChange={(value) => replay.setSpeed(Number(value) as ChartReplaySpeed)}
         variant="ghost"
         className="h-8 w-16 rounded-none"
       />

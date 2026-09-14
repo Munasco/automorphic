@@ -1,7 +1,17 @@
 import { useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+vi.mock("./workspaceStorage", () => ({
+  tradingWorkspaceStorage: {
+    getItem: vi.fn(() => null),
+    setItem: vi.fn(),
+    removeItem: vi.fn(),
+    registerHydrator: vi.fn(),
+  },
+}));
 import { useChartReplay } from "./ChartReplay";
+import { useChartPreferences, type ChartReplaySpeed } from "./chartPreferences";
+import { tradingWorkspaceStorage } from "./workspaceStorage";
 import type { Candle } from "./chartIndicators";
 let replay: ReturnType<typeof useChartReplay>;
 let renderer: ReactTestRenderer;
@@ -21,6 +31,9 @@ const candles: Candle[] = Array.from({ length: 105 }, (_, i) => ({
   volume: 1,
 }));
 beforeEach(async () => {
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(null);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("window", { setInterval, clearInterval });
@@ -34,6 +47,73 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 describe("bar replay controls", () => {
+  it.each([0.5, 1, 2, 5, 10] as const)("advances one bar per %s× interval", async (speed) => {
+    await act(async () => {
+      replay.setSpeed(speed);
+      replay.start(candles);
+    });
+    await act(async () => replay.toggle());
+    const duration = 1000 / speed;
+    await act(async () => {
+      vi.advanceTimersByTime(duration - 1);
+    });
+    expect(replay.session?.index).toBe(3);
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(replay.session?.index).toBe(4);
+  });
+  it("changes a running timer without leaving the old cadence active", async () => {
+    await act(async () => {
+      replay.start(candles);
+    });
+    await act(async () => replay.toggle());
+    await act(async () => {
+      vi.advanceTimersByTime(750);
+    });
+    await act(async () => replay.setSpeed(5));
+    expect(vi.getTimerCount()).toBe(1);
+    await act(async () => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(replay.session?.index).toBe(5);
+    await act(async () => replay.setSpeed(0 as ChartReplaySpeed));
+    expect(replay.speed).toBe(5);
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(replay.session?.index).toBe(6);
+    await act(async () => replay.toggle());
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("restores the saved speed after remount without resuming a replay or timer", async () => {
+    await act(async () => {
+      replay.setSpeed(10);
+      replay.start(candles);
+    });
+    await act(async () => replay.toggle());
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    await act(async () => renderer.unmount());
+    expect(vi.getTimerCount()).toBe(0);
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    await useChartPreferences.persist.rehydrate();
+    await act(async () => {
+      renderer = create(<Harness context="MGC:5m" />);
+    });
+    expect(replay.speed).toBe(10);
+    expect(replay.session).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => {
+      replay.start(candles);
+    });
+    expect(replay.session?.playing).toBe(false);
+    await act(async () => replay.toggle());
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(replay.session?.index).toBe(4);
+  });
   it("steps, seeks and exits without changing frozen source bars", async () => {
     await act(async () => {
       replay.start(candles);

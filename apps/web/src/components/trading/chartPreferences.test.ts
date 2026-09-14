@@ -18,6 +18,7 @@ import {
   type ChartGridMode,
   type ChartGridLineStyle,
   type ChartPriceScaleMode,
+  type ChartReplaySpeed,
 } from "./chartPreferences";
 import { DEFAULT_INITIAL_BALANCE } from "./initialBalanceSettings";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
@@ -1878,5 +1879,105 @@ describe("crosshair appearance preferences", () => {
       crosshairMode: "magnet",
       gridMode: "none",
     });
+  });
+});
+
+describe("bar replay speed preferences", () => {
+  const invalidSpeeds = [
+    undefined,
+    null,
+    0,
+    -1,
+    0.25,
+    1.5,
+    3,
+    20,
+    NaN,
+    Infinity,
+    "2",
+    true,
+    {},
+    [5],
+  ];
+
+  it("defaults older and malformed saved speeds to normal playback", () => {
+    expect(useChartPreferences.getInitialState().replaySpeed).toBe(1);
+    expect(normalizeChartPreferences({}).replaySpeed).toBe(1);
+    for (const replaySpeed of invalidSpeeds)
+      expect(
+        normalizeChartPreferences({
+          replaySpeed,
+          crosshairMode: "hidden",
+          logScale: true,
+          gridColor: "#123456",
+        }),
+      ).toMatchObject({
+        replaySpeed: 1,
+        crosshairMode: "hidden",
+        priceScaleMode: "logarithmic",
+        gridColor: "#123456",
+      });
+  });
+
+  it.each([0.5, 1, 2, 5, 10] as const)(
+    "persists %sx playback without changing other preferences",
+    async (replaySpeed) => {
+      const store = configure();
+      store.setGridLineStyle("dashed");
+      store.setGridColor("#abcdef");
+      store.setCrosshairMode("ohlc");
+      store.setCrosshairLineWidth(3);
+      store.setPriceScaleMode("indexedTo100");
+      store.toggleInvertScale();
+      store.setReplaySpeed(replaySpeed === 1 ? 5 : 1);
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      store.setReplaySpeed(replaySpeed);
+      const expected = { ...before, replaySpeed };
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      const serialized = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      expect(JSON.parse(serialized).state.replaySpeed).toBe(replaySpeed);
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(serialized);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      expect(typeof useChartPreferences.getState().setReplaySpeed).toBe("function");
+    },
+  );
+
+  it("rejects invalid and repeated speed changes without writes or notifications", () => {
+    configure().setReplaySpeed(5);
+    const before = useChartPreferences.getState();
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    const listener = vi.fn();
+    const unsubscribe = useChartPreferences.subscribe(listener);
+    try {
+      for (const value of invalidSpeeds) before.setReplaySpeed(value as ChartReplaySpeed);
+      before.setReplaySpeed(5);
+      expect(useChartPreferences.getState()).toBe(before);
+      expect(listener).not.toHaveBeenCalled();
+      expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+      before.setReplaySpeed(0.5);
+      expect(useChartPreferences.getState().replaySpeed).toBe(0.5);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("keeps workspace speeds independent and resets older workspaces to normal playback", async () => {
+    const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+    for (const [saved, expected] of [
+      [{ replaySpeed: 10 }, 10],
+      [{ replaySpeed: 0.5 }, 0.5],
+      [{}, 1],
+      [{ replaySpeed: 10 }, 10],
+    ] as const) {
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+        JSON.stringify({ version: 0, state: saved }),
+      );
+      await hydrate();
+      expect(useChartPreferences.getState().replaySpeed).toBe(expected);
+    }
   });
 });

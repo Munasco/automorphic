@@ -41,6 +41,9 @@ export type { IndicatorAppearance } from "./indicatorStyles";
 export type ChartAppearance = Partial<Record<IndicatorKey, IndicatorAppearance>>;
 export type ChartCrosshairMode = "normal" | "magnet" | "ohlc" | "hidden";
 export type ChartCrosshairLineStyle = "solid" | "dotted" | "dashed" | "largeDashed";
+export type ChartReplaySpeed = 0.5 | 1 | 2 | 5 | 10;
+const validReplaySpeed = (value: unknown): value is ChartReplaySpeed =>
+  value === 0.5 || value === 1 || value === 2 || value === 5 || value === 10;
 export type ChartCrosshairLineWidth = 1 | 2 | 3;
 const validCrosshairLineStyle = (value: unknown): value is ChartCrosshairLineStyle =>
   value === "solid" || value === "dotted" || value === "dashed" || value === "largeDashed";
@@ -83,6 +86,7 @@ type SavedChartPreferences = {
   crosshairColor: string;
   crosshairLineStyle: ChartCrosshairLineStyle;
   crosshairLineWidth: ChartCrosshairLineWidth;
+  replaySpeed: ChartReplaySpeed;
   indicators: ChartIndicators;
   hiddenIndicators: ChartIndicators;
   appearance: ChartAppearance;
@@ -149,6 +153,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     initialBalance: isValidInitialBalanceSettings(saved.initialBalance)
       ? resolveInitialBalanceSettings(saved.initialBalance)
       : { ...DEFAULT_INITIAL_BALANCE },
+    replaySpeed: validReplaySpeed(saved.replaySpeed) ? saved.replaySpeed : 1,
     crosshairColor: validColor(saved.crosshairColor) ? saved.crosshairColor : "#9598A1",
     crosshairLineStyle: validCrosshairLineStyle(saved.crosshairLineStyle)
       ? saved.crosshairLineStyle
@@ -179,6 +184,7 @@ export const useChartPreferences = create<{
   crosshairColor: string;
   crosshairLineStyle: ChartCrosshairLineStyle;
   crosshairLineWidth: ChartCrosshairLineWidth;
+  replaySpeed: ChartReplaySpeed;
   indicators: ChartIndicators;
   hiddenIndicators: ChartIndicators;
   appearance: ChartAppearance;
@@ -197,6 +203,7 @@ export const useChartPreferences = create<{
   invertScale: boolean;
   setStyle: (style: ChartStyle) => void;
   setCrosshairMode: (mode: ChartCrosshairMode) => void;
+  setReplaySpeed: (speed: ChartReplaySpeed) => void;
   setCrosshairColor: (color: string) => void;
   setCrosshairLineStyle: (style: ChartCrosshairLineStyle) => void;
   setCrosshairLineWidth: (width: ChartCrosshairLineWidth) => void;
@@ -235,6 +242,7 @@ export const useChartPreferences = create<{
       crosshairColor: "#9598A1",
       crosshairLineStyle: "largeDashed",
       crosshairLineWidth: 1,
+      replaySpeed: 1,
       indicators: { ...DEFAULT_INDICATORS },
       hiddenIndicators: hiddenDefaults(),
       appearance: {},
@@ -258,6 +266,10 @@ export const useChartPreferences = create<{
       setCrosshairMode: (crosshairMode) => {
         if (validCrosshairMode(crosshairMode) && crosshairMode !== get().crosshairMode)
           set({ crosshairMode });
+      },
+      setReplaySpeed: (replaySpeed) => {
+        if (validReplaySpeed(replaySpeed) && replaySpeed !== get().replaySpeed)
+          set({ replaySpeed });
       },
       setCrosshairColor: (crosshairColor) => {
         if (validColor(crosshairColor) && crosshairColor !== get().crosshairColor)
