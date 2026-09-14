@@ -496,7 +496,7 @@ export const INDICATOR_DEFINITIONS = [
         legend: false,
         defaultValue: 0,
         min: 0,
-        max: 5,
+        max: 6,
         step: 1,
         options: [
           { value: 0, label: "None" },
@@ -505,6 +505,7 @@ export const INDICATOR_DEFINITIONS = [
           { value: 3, label: "RMA" },
           { value: 4, label: "WMA" },
           { value: 5, label: "SMA + Bollinger Bands" },
+          { value: 6, label: "VWMA" },
         ],
       },
       { ...length(14, "smoothingPeriod", "Smoothing length"), legend: false },
@@ -554,7 +555,10 @@ export const INDICATOR_DEFINITIONS = [
         inputs.lowerLevel ?? 30,
         inputs.upperLevel ?? 70,
       );
-      const method = (["sma", "ema", "rma", "wma"] as const)[(inputs.smoothingType ?? 0) - 1];
+      const method =
+        inputs.smoothingType === 6
+          ? "vwma"
+          : (["sma", "ema", "rma", "wma"] as const)[(inputs.smoothingType ?? 0) - 1];
       if (method)
         result.plots.push({
           id: "smoothing",

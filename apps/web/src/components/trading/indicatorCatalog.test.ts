@@ -1031,3 +1031,50 @@ it("adds RSI Bollinger smoothing around its SMA without changing RSI or level sh
     expect(getIndicatorInputs("rsi", { rsi: { smoothingDeviations } }).smoothingDeviations).toBe(2);
   }
 });
+
+it("weights RSI smoothing by matching candle volumes while retaining original RSI values", () => {
+  const definition = INDICATOR_CATALOG.find((i) => i.key === "rsi")!;
+  const bars = [10, 12, 11, 15, 12, 16, 11, 14, 10, 17].map((close, i) => ({
+    time: i + 1,
+    open: close,
+    high: close + 1,
+    low: close - 1,
+    close,
+    volume: i % 2 ? 100 : 10,
+  }));
+  const inputs = { ...getIndicatorInputs("rsi"), period: 2, smoothingPeriod: 3 };
+  const run = (smoothingType: number, candles = bars) =>
+    definition.calculate({
+      bars: candles,
+      inputs: { ...inputs, smoothingType },
+      interval: 5,
+      session: DEFAULT_INITIAL_BALANCE,
+    });
+  const original = run(0),
+    result = run(6);
+  expect(result.plots).toHaveLength(2);
+  expect(result.plots[0]).toEqual(original.plots[0]);
+  expect(result.fills).toEqual(original.fills);
+  const ma = result.plots[1]!;
+  expect(ma).toMatchObject({ id: "smoothing", primary: false, breakOnGaps: true });
+  const readings = original.plots[0]!.points;
+  expect(ma.points).toHaveLength(readings.length - 2);
+  ma.points.forEach((p, i) => {
+    const window = readings.slice(i, i + 3);
+    const sumVolume = window.reduce((s, v) => s + bars.find((b) => b.time === v.time)!.volume, 0);
+    expect(p.value).toBeCloseTo(
+      window.reduce((s, v) => s + v.value * bars.find((b) => b.time === v.time)!.volume, 0) /
+        sumVolume,
+      10,
+    );
+  });
+  const withoutVolume = run(
+    6,
+    bars.map((b) => ({ ...b, volume: 0 })),
+  );
+  expect(withoutVolume.plots[0]).toEqual(original.plots[0]);
+  expect(withoutVolume.plots[1]!.points).toEqual([]);
+  expect(getIndicatorLabel("rsi", { rsi: { ...inputs, smoothingType: 6 } })).toBe(
+    getIndicatorLabel("rsi", { rsi: inputs }),
+  );
+});

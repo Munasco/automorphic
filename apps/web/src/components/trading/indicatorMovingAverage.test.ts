@@ -7,7 +7,7 @@ import {
 const types = ["sma", "ema", "rma", "wma"] as const;
 const chart = (count: number) => Array.from({ length: count }, (_, index) => ({ time: index + 1 }));
 const readings = (values: number[]) => values.map((value, index) => ({ time: index + 1, value }));
-const expected: Record<IndicatorMovingAverageType, number[]> = {
+const expected: Record<(typeof types)[number], number[]> = {
   sma: [20, 100 / 3, 100 / 3],
   ema: [20, 35, 32.5],
   rma: [20, 30, 30],
@@ -124,7 +124,7 @@ describe("indicator moving average", () => {
       expect(calculateIndicatorMovingAverage([], [], 1, type)).toEqual([]);
       expect(calculateIndicatorMovingAverage(chart(3), [], 1, type)).toEqual([]);
     }
-    for (const invalid of [undefined, null, "EMA", "", "vwma", 0, {}, ["sma"]])
+    for (const invalid of [undefined, null, "EMA", "", "VWMA", 0, {}, ["sma"]])
       expect(
         calculateIndicatorMovingAverage(
           chart(3),
@@ -163,4 +163,128 @@ describe("indicator moving average", () => {
       expect(calculateIndicatorMovingAverage(bars, points, 3, type)).toEqual(original);
     },
   );
+});
+
+describe("volume-weighted indicator smoothing", () => {
+  const bars = (volumes: (number | undefined)[]) =>
+    volumes.map((volume, i) => ({ time: i + 1, ...(volume === undefined ? {} : { volume }) }));
+  it("uses matching candle volumes and keeps zero readings", () => {
+    const result = calculateIndicatorMovingAverage(
+      bars([1, 2, 3, 4]),
+      readings([0, 30, 20, 50]),
+      3,
+      "vwma",
+    );
+    expect(result.map((p) => p.time)).toEqual([3, 4]);
+    expect(result[0]!.value).toBeCloseTo(20, 12);
+    expect(result[1]!.value).toBeCloseTo(320 / 9, 12);
+    const constant = calculateIndicatorMovingAverage(
+      bars([10, 10, 10, 10]),
+      readings([0, 30, 20, 50]),
+      3,
+      "vwma",
+    );
+    expect(constant[0]!.value).toBeCloseTo(50 / 3, 12);
+    expect(constant[1]!.value).toBeCloseTo(100 / 3, 12);
+  });
+  it("does not invent readings for all-zero volume windows and recovers without resetting", () => {
+    expect(
+      calculateIndicatorMovingAverage(bars([0, 0, 10, 0, 0]), readings([1, 2, 3, 4, 5]), 2, "vwma"),
+    ).toEqual([
+      { time: 3, value: 3 },
+      { time: 4, value: 3 },
+    ]);
+    expect(
+      calculateIndicatorMovingAverage(bars([2, 0, 1]), readings([0, 50, 100]), 1, "vwma"),
+    ).toEqual([
+      { time: 1, value: 0 },
+      { time: 3, value: 100 },
+    ]);
+  });
+  it("restarts warmup for missing, negative or nonfinite volumes and missing readings", () => {
+    for (const invalid of [undefined, -1, NaN, Infinity]) {
+      const result = calculateIndicatorMovingAverage(
+        bars([1, 1, invalid, 1, 1]),
+        readings([10, 20, 30, 40, 50]),
+        2,
+        "vwma",
+      );
+      expect(result).toEqual([
+        { time: 2, value: 15 },
+        { time: 5, value: 45 },
+      ]);
+    }
+    expect(
+      calculateIndicatorMovingAverage(
+        bars([1, 1, 1, 1, 1]),
+        readings([10, 20, 30, 40, 50]).filter((p) => p.time !== 3),
+        2,
+        "vwma",
+      ),
+    ).toEqual([
+      { time: 2, value: 15 },
+      { time: 5, value: 45 },
+    ]);
+  });
+  it("handles large volumes and readings without overflowing totals or products", () => {
+    expect(
+      calculateIndicatorMovingAverage(
+        bars([Number.MAX_VALUE, Number.MAX_VALUE]),
+        readings([10, 30]),
+        2,
+        "vwma",
+      )[0]!.value,
+    ).toBeCloseTo(20, 12);
+    expect(
+      calculateIndicatorMovingAverage(
+        bars([Number.MAX_VALUE, Number.MAX_VALUE]),
+        readings([Number.MAX_VALUE, Number.MAX_VALUE]),
+        2,
+        "vwma",
+      )[0]!.value,
+    ).toBe(Number.MAX_VALUE);
+    expect(
+      calculateIndicatorMovingAverage(
+        bars([1, 1]),
+        readings([-Number.MAX_VALUE, Number.MAX_VALUE]),
+        2,
+        "vwma",
+      )[0]!.value,
+    ).toBe(0);
+  });
+  it("recalculates volume revisions without mutating inputs or affecting other methods", () => {
+    const input = bars([1, 1, 1]),
+      points = readings([10, 20, 90]);
+    const before = structuredClone(input),
+      original = calculateIndicatorMovingAverage(input, points, 3, "vwma");
+    const revised = input.map((bar, i) => (i === 2 ? { ...bar, volume: 10 } : bar));
+    expect(calculateIndicatorMovingAverage(revised, points, 3, "vwma")[0]!.value).toBeCloseTo(
+      930 / 12,
+      12,
+    );
+    expect(calculateIndicatorMovingAverage(input, points, 3, "vwma")).toEqual(original);
+    expect(input).toEqual(before);
+    for (const type of types)
+      expect(calculateIndicatorMovingAverage(revised, points, 3, type)).toEqual(
+        calculateIndicatorMovingAverage(chart(3), points, 3, type),
+      );
+  });
+});
+
+it("ignores zero-weight extreme values without losing tiny weighted readings", () => {
+  const bars = [
+    { time: 1, volume: 1 },
+    { time: 2, volume: 0 },
+  ];
+  expect(
+    calculateIndicatorMovingAverage(
+      bars,
+      [
+        { time: 1, value: Number.MIN_VALUE },
+        { time: 2, value: Number.MAX_VALUE },
+      ],
+      2,
+      "vwma",
+    ),
+  ).toEqual([{ time: 2, value: Number.MIN_VALUE }]);
 });

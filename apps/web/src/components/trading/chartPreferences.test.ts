@@ -129,7 +129,7 @@ it("persists independent RSI sources and smoothing and resets only the selected 
   vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
   useChartPreferences.getState().setIndicatorInstanceInputs(duplicate, { source: 99 });
   expect(
-    useChartPreferences.getState().setIndicatorInstanceInputs(base, { smoothingType: 6 }),
+    useChartPreferences.getState().setIndicatorInstanceInputs(base, { smoothingType: 7 }),
   ).toBe(false);
   expect(
     useChartPreferences.getState().setIndicatorInstanceInputs(base, { smoothingPeriod: 0 }),
@@ -3208,5 +3208,30 @@ it("persists independent RSI Bollinger smoothing inputs and band styles", async 
   ).toEqual([
     [5, 9, 1.5],
     [0, 14, 2],
+  ]);
+});
+
+it("persists RSI volume-weighted smoothing independently and resets it to None", async () => {
+  const store = useChartPreferences.getState();
+  const base = store.addIndicator("rsi")!;
+  store.setIndicatorInstanceInputs(base, { smoothingType: 6, smoothingPeriod: 8, source: 5 });
+  const duplicate = store.duplicateIndicatorInstance(base)!;
+  store.setIndicatorInstanceInputs(duplicate, { smoothingType: 2, smoothingPeriod: 3 });
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  const values = () =>
+    getChartIndicatorInstances(useChartPreferences.getState())
+      .filter((i) => i.key === "rsi")
+      .map((i) => [i.inputs.smoothingType, i.inputs.smoothingPeriod, i.inputs.source]);
+  expect(values()).toEqual([
+    [6, 8, 5],
+    [2, 3, 5],
+  ]);
+  useChartPreferences.getState().resetIndicatorInstanceInputs(base);
+  expect(values()).toEqual([
+    [0, 14, 0],
+    [2, 3, 5],
   ]);
 });
