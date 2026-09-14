@@ -38,6 +38,7 @@ import { calculateSupertrend } from "./supertrend";
 import { calculateMoneyFlowIndex } from "./moneyFlowIndex";
 import { calculateHullMovingAverage } from "./hullMovingAverage";
 import { calculateWeightedMovingAverage } from "./weightedMovingAverage";
+import { calculateBollingerBandwidth } from "./bollingerBandwidth";
 import { calculateBollingerPercentB } from "./bollingerPercentB";
 import { calculateVolumeMovingAverage } from "./volumeMovingAverage";
 import { calculateAwesomeOscillator } from "./awesomeOscillator";
@@ -659,6 +660,36 @@ export const INDICATOR_DEFINITIONS = [
         levels: oscillatorLevels(inputs, 20, 80),
         breakOnGaps: true,
       }),
+  }),
+  defineIndicator({
+    key: "bbWidth",
+    label: "Bollinger BandWidth",
+    detail: "BBW · Bollinger band width as a percentage of its basis",
+    category: "Oscillators",
+    placement: "pane",
+    inputs: [
+      length(20),
+      priceSource,
+      {
+        key: "deviations",
+        label: "Standard deviations",
+        defaultValue: 2,
+        min: 0,
+        max: 10,
+        step: 0.1,
+      },
+    ],
+    styles: [style("main", "Line", "#22d3ee", true, 2)],
+    calculate: ({ bars, inputs }) =>
+      single(
+        calculateBollingerBandwidth(
+          bars,
+          inputs.period,
+          inputs.deviations,
+          PRICE_SOURCES[inputs.source ?? 0],
+        ),
+        { title: "BBW", breakOnGaps: true },
+      ),
   }),
   defineIndicator({
     key: "bbPercentB",

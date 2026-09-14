@@ -1399,6 +1399,50 @@ describe("inverted price scale preferences", () => {
   );
 });
 
+it("persists independent Bollinger BandWidth inputs and appearance", async () => {
+  const store = useChartPreferences.getState();
+  const base = store.addIndicator("bbWidth")!;
+  expect(
+    store.setIndicatorInstanceInputs(base, {
+      period: 10,
+      source: 5,
+      deviations: 1.5,
+    }),
+  ).toBe(true);
+  store.setIndicatorInstanceAppearance(base, {
+    plots: { main: { color: "#ff00aa", lineWidth: 3 } },
+  });
+  const duplicate = store.duplicateIndicatorInstance(base)!;
+  expect(
+    store.setIndicatorInstanceInputs(duplicate, {
+      period: 21,
+      source: 1,
+      deviations: 3,
+    }),
+  ).toBe(true);
+  store.toggleIndicatorInstanceVisibility(duplicate);
+  for (const invalid of [{ period: 0 }, { deviations: -1 }, { source: 7 }])
+    expect(store.setIndicatorInstanceInputs(base, invalid)).toBe(false);
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  const instances = getChartIndicatorInstances(useChartPreferences.getState()).filter(
+    (i) => i.key === "bbWidth",
+  );
+  expect(instances.map((i) => i.inputs)).toEqual([
+    { period: 10, source: 5, deviations: 1.5 },
+    { period: 21, source: 1, deviations: 3 },
+  ]);
+  expect(instances.map((i) => i.hidden)).toEqual([false, true]);
+  expect(instances[0]!.appearance.plots?.main).toEqual({ color: "#ff00aa", lineWidth: 3 });
+  useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
+  expect(
+    getChartIndicatorInstances(useChartPreferences.getState()).find((i) => i.id === duplicate)!
+      .inputs,
+  ).toEqual({ period: 20, source: 0, deviations: 2 });
+});
+
 it("persists independent Bollinger %B inputs, levels and appearance", async () => {
   const store = useChartPreferences.getState();
   const base = store.addIndicator("bbPercentB")!;

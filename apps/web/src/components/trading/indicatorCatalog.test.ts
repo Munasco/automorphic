@@ -115,6 +115,7 @@ describe("indicator catalog and saved preferences", () => {
     expect(findIndicators("chaikin").map((entry) => entry.key)).toEqual(["cmf"]);
     expect(findIndicators("money flow index").map((entry) => entry.key)).toEqual(["mfi"]);
     expect(findIndicators("bollinger %b").map((entry) => entry.key)).toEqual(["bbPercentB"]);
+    expect(findIndicators("bandwidth").map((entry) => entry.key)).toEqual(["bbWidth"]);
     expect(findIndicators("awesome").map((entry) => entry.key)).toEqual(["ao"]);
     expect(findIndicators("rate of change").map((entry) => entry.key)).toEqual(["roc"]);
     expect(findIndicators("stochastic rsi").map((entry) => entry.key)).toEqual(["stochRsi"]);
