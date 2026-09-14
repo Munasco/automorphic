@@ -1063,6 +1063,55 @@ describe("native indicator renderer", () => {
     );
   });
 
+  it("colors MACD histogram phases independently while preserving readings and series", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.1);
+    const candles = inputBars(160).map((bar, i) => ({ ...bar, close: 100 + Math.sin(i / 4) * 20 }));
+    const enabled = { ...disabled, macd: true };
+    const appearance = {
+      macd: {
+        plots: {
+          positive: { color: "#112233", opacity: 1 },
+          negative: { color: "#445566", opacity: 1 },
+          positiveFalling: { color: "#778899", opacity: 1 },
+          negativeRising: { color: "#aabbcc", opacity: 1 },
+        },
+      },
+    };
+    renderer.update(candles, enabled, DEFAULT_INITIAL_BALANCE, 1, appearance);
+    const original = harness.series.slice();
+    const histogram = harness.series.find((s) => s.options.title === "Histogram")!;
+    const prices = histogram.data.map(({ time, value }) => ({ time, value }));
+    const update = () =>
+      renderer.update(candles, enabled, DEFAULT_INITIAL_BALANCE, 1, appearance, {
+        macd: { histogramColors: 1 },
+      });
+    update();
+    expect(harness.series).toEqual(original);
+    expect(histogram.data.map(({ time, value }) => ({ time, value }))).toEqual(prices);
+    const colors = new Set<string>();
+    histogram.data.forEach((point, i) => {
+      const rising = i > 0 && point.value > histogram.data[i - 1]!.value;
+      const expected =
+        point.value >= 0
+          ? i === 0 || rising
+            ? "#112233"
+            : "#778899"
+          : rising
+            ? "#aabbcc"
+            : "#445566";
+      expect(point.color).toBe(expected);
+      colors.add(expected);
+    });
+    expect(colors.size).toBe(4);
+    appearance.macd.plots.positiveFalling = { color: "#010203", opacity: 1 };
+    update();
+    expect(histogram.data.some((p) => p.color === "#010203")).toBe(true);
+    renderer.update(candles, enabled, DEFAULT_INITIAL_BALANCE, 1, appearance);
+    for (const point of histogram.data)
+      expect(point.color).toBe(point.value >= 0 ? "#112233" : "#445566");
+  });
+
   it("keeps the locked IB reading after session close, bounds projections, and hides old history", () => {
     const harness = chartHarness();
     const renderer = createIndicatorRenderer(harness.chart, 0.01);

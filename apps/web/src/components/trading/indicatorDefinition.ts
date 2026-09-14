@@ -49,10 +49,12 @@ export type IndicatorPlot = {
   title?: string;
   primary?: boolean;
   histogram?: boolean;
-  histogramColorMode?: "change";
+  histogramColorMode?: "change" | "signAndChange";
   markers?: "cross";
   positiveStyleKey?: string;
   negativeStyleKey?: string;
+  positiveFallingStyleKey?: string;
+  negativeRisingStyleKey?: string;
   bounds?: [number, number];
   levels?: number[];
   steps?: boolean;

@@ -1,3 +1,4 @@
+import { histogramPhase } from "./histogramPhase";
 import { initialBalanceChartPoints, type InitialBalanceHistory } from "./useInitialBalanceHistory";
 import { calculateATR } from "./advancedIndicators";
 import { resolveIndicatorStyle, indicatorStyleColor } from "./indicatorStyles";
@@ -239,10 +240,33 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
             : {}),
         });
       }
-      const previousTime =
-        options.histogramColorMode === "change"
-          ? new Map(bars.map((bar, index) => [bar.time, bars[index - 1]?.time]))
-          : undefined;
+      const previousTime = options.histogramColorMode
+        ? new Map(bars.map((bar, index) => [bar.time, bars[index - 1]?.time]))
+        : undefined;
+      const histogramStyleKey = (point: IndicatorPoint, index: number) => {
+        const previous =
+          index > 0 && points[index - 1]?.time === previousTime?.get(point.time)
+            ? points[index - 1]?.value
+            : undefined;
+        if (options.histogramColorMode === "signAndChange") {
+          const keys = {
+            positive: options.positiveStyleKey,
+            positiveFalling: options.positiveFallingStyleKey ?? options.positiveStyleKey,
+            negative: options.negativeStyleKey,
+            negativeRising: options.negativeRisingStyleKey ?? options.negativeStyleKey,
+          };
+          return keys[histogramPhase(point.value, previous)] ?? options.styleKey ?? "main";
+        }
+        const positive =
+          options.histogramColorMode === "change"
+            ? previous !== undefined && point.value > previous
+            : point.value >= 0;
+        return (
+          (positive ? options.positiveStyleKey : options.negativeStyleKey) ??
+          options.styleKey ??
+          "main"
+        );
+      };
       const data = points.map((point, index) => ({
         ...point,
         time: point.time as UTCTimestamp,
@@ -256,17 +280,7 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
                   : indicatorStyleColor(
                       resolveIndicatorStyle(
                         indicator,
-                        ((
-                          options.histogramColorMode === "change"
-                            ? points[index - 1]?.time === previousTime?.get(point.time) &&
-                              index > 0 &&
-                              point.value > points[index - 1]!.value
-                            : point.value >= 0
-                        )
-                          ? options.positiveStyleKey
-                          : options.negativeStyleKey) ??
-                          options.styleKey ??
-                          "main",
+                        histogramStyleKey(point, index),
                         instance.appearance,
                       ),
                     ),

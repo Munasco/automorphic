@@ -731,10 +731,18 @@ it("keeps duplicate MACD source and MA selectors independent through validation,
     source: 1,
     oscillatorMA: 1,
     signalMA: 0,
+    histogramColors: 1,
   };
   expect(store.setIndicatorInstanceInputs(base, baseInputs)).toBe(true);
   const duplicate = store.duplicateIndicatorInstance(base)!;
-  const duplicateInputs = { ...baseInputs, fast: 6, source: 5, oscillatorMA: 0, signalMA: 1 };
+  const duplicateInputs = {
+    ...baseInputs,
+    fast: 6,
+    source: 5,
+    oscillatorMA: 0,
+    signalMA: 1,
+    histogramColors: 0,
+  };
   expect(store.setIndicatorInstanceInputs(duplicate, duplicateInputs)).toBe(true);
   const inputs = () =>
     getChartIndicatorInstances(useChartPreferences.getState())
@@ -755,6 +763,8 @@ it("keeps duplicate MACD source and MA selectors independent through validation,
     { source: 0.5 },
     { oscillatorMA: 2 },
     { oscillatorMA: -1 },
+    { histogramColors: 2 },
+    { histogramColors: 0.5 },
     { signalMA: 2 },
     { signalMA: 0.5 },
   ])
@@ -764,7 +774,15 @@ it("keeps duplicate MACD source and MA selectors independent through validation,
   expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
   expect(inputs()).toEqual([baseInputs, duplicateInputs]);
   useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
-  const defaults = { fast: 12, slow: 26, signalPeriod: 9, source: 0, oscillatorMA: 0, signalMA: 0 };
+  const defaults = {
+    fast: 12,
+    slow: 26,
+    signalPeriod: 9,
+    source: 0,
+    oscillatorMA: 0,
+    signalMA: 0,
+    histogramColors: 0,
+  };
   expect(inputs()).toEqual([baseInputs, defaults]);
   await reload();
   expect(inputs()).toEqual([baseInputs, defaults]);

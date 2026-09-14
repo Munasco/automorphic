@@ -507,12 +507,36 @@ export const INDICATOR_DEFINITIONS = [
       priceSource,
       movingAverageType("oscillatorMA", "Oscillator MA type"),
       movingAverageType("signalMA", "Signal MA type"),
+      {
+        key: "histogramColors",
+        label: "Histogram colors",
+        kind: "select",
+        legend: false,
+        defaultValue: 0,
+        min: 0,
+        max: 1,
+        step: 1,
+        options: [
+          { value: 0, label: "Two colors" },
+          { value: 1, label: "Four colors" },
+        ],
+      },
     ],
     styles: [
       style("main", "Primary line", "#60a5fa", true),
       style("signal", "Signal line", "#fb923c"),
       { ...style("positive", "Positive histogram", "#26a69a"), kind: "fill", opacity: 144 / 255 },
       { ...style("negative", "Negative histogram", "#ef5350"), kind: "fill", opacity: 144 / 255 },
+      {
+        ...style("positiveFalling", "Positive falling", "#b2dfdb"),
+        kind: "fill",
+        opacity: 144 / 255,
+      },
+      {
+        ...style("negativeRising", "Negative rising", "#ffcdd2"),
+        kind: "fill",
+        opacity: 144 / 255,
+      },
     ],
     validateInputs: (values) => values.fast! < values.slow!,
     repairInputs: (values) => ({ ...values, fast: 12, slow: 26 }),
@@ -531,6 +555,11 @@ export const INDICATOR_DEFINITIONS = [
             histogram: true,
             positiveStyleKey: "positive",
             negativeStyleKey: "negative",
+            ...(inputs.histogramColors === 1
+              ? { histogramColorMode: "signAndChange" as const }
+              : {}),
+            positiveFallingStyleKey: "positiveFalling",
+            negativeRisingStyleKey: "negativeRising",
             primary: false,
           },
           { id: "macd", styleKey: "main", points: result.macd, title: "MACD", levels: [0] },

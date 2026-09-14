@@ -215,7 +215,15 @@ describe("indicator inputs", () => {
         upperLevel: 80,
         showLevels: 1,
       },
-      macd: { fast: 12, slow: 26, signalPeriod: 5, source: 0, oscillatorMA: 0, signalMA: 0 },
+      macd: {
+        fast: 12,
+        slow: 26,
+        signalPeriod: 5,
+        source: 0,
+        oscillatorMA: 0,
+        signalMA: 0,
+        histogramColors: 0,
+      },
     });
     expect(normalizeChartPreferences({ indicators: { sma: true } }).indicatorInputs).toEqual({});
     expect(getIndicatorInputs("sma")).toEqual({ period: 20, source: 0 });
@@ -260,6 +268,7 @@ describe("indicator inputs", () => {
         source: 0,
         oscillatorMA: 0,
         signalMA: 0,
+        histogramColors: 0,
       });
     } finally {
       useChartPreferences.setState(original, true);
@@ -356,9 +365,21 @@ describe("moving-average price source inputs", () => {
 
 describe("MACD source and moving-average inputs", () => {
   it.each([
-    { oscillatorMA: 0, signalMA: 0, macd: 91 / 1944, signal: 221 / 972, histogram: -13 / 72 },
+    {
+      oscillatorMA: 0,
+      signalMA: 0,
+      macd: 91 / 1944,
+      signal: 221 / 972,
+      histogram: -13 / 72,
+    },
     { oscillatorMA: 0, signalMA: 1, macd: 91 / 1944, signal: 1741 / 3888, histogram: -1559 / 3888 },
-    { oscillatorMA: 1, signalMA: 0, macd: 4 / 3, signal: 293 / 324, histogram: 139 / 324 },
+    {
+      oscillatorMA: 1,
+      signalMA: 0,
+      macd: 4 / 3,
+      signal: 293 / 324,
+      histogram: 139 / 324,
+    },
     { oscillatorMA: 1, signalMA: 1, macd: 4 / 3, signal: 1 / 2, histogram: 5 / 6 },
   ])(
     "routes source and oscillator=$oscillatorMA/signal=$signalMA selectors to plotted values",
@@ -397,6 +418,7 @@ describe("MACD source and moving-average inputs", () => {
         source: 0,
         oscillatorMA: 0,
         signalMA: 0,
+        histogramColors: 0,
       });
       const legacy = definition.calculate({
         bars,
@@ -414,7 +436,15 @@ describe("MACD source and moving-average inputs", () => {
       getIndicatorInputs("macd", {
         macd: { fast: 7, slow: 21, signalPeriod: 4, source: 99, oscillatorMA: 0.5, signalMA: -1 },
       }),
-    ).toEqual({ fast: 7, slow: 21, signalPeriod: 4, source: 0, oscillatorMA: 0, signalMA: 0 });
+    ).toEqual({
+      fast: 7,
+      slow: 21,
+      signalPeriod: 4,
+      source: 0,
+      oscillatorMA: 0,
+      signalMA: 0,
+      histogramColors: 0,
+    });
   });
 });
 
