@@ -3238,3 +3238,51 @@ it("persists RSI volume-weighted smoothing independently and resets it to None",
     [2, 3, 5],
   ]);
 });
+
+it.each(["stochastic", "stochRsi"] as const)(
+  "keeps %s background edits independent across duplicated and reloaded instances",
+  async (key) => {
+    const store = useChartPreferences.getState();
+    const first = store.addIndicator(key)!;
+    store.setIndicatorInstanceInputs(first, { lowerLevel: 15, upperLevel: 85, showLevels: 0 });
+    store.setIndicatorInstanceAppearance(first, {
+      plots: {
+        main: { visible: false },
+        signal: { visible: false },
+        background: { color: "#123456", opacity: 0.3, visible: true },
+      },
+    });
+    const second = store.duplicateIndicatorInstance(first)!;
+    store.setIndicatorInstanceAppearance(second, {
+      plots: { background: { color: "#abcdef", opacity: 0, visible: false } },
+    });
+    const instances = () =>
+      getChartIndicatorInstances(useChartPreferences.getState()).filter((item) => item.key === key);
+    expect(instances()[0]!.appearance.plots?.background).toEqual({
+      color: "#123456",
+      opacity: 0.3,
+      visible: true,
+    });
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    await useChartPreferences.persist.rehydrate();
+    expect(instances().map((item) => item.appearance.plots?.background)).toEqual([
+      { color: "#123456", opacity: 0.3, visible: true },
+      { color: "#abcdef", opacity: 0, visible: false },
+    ]);
+    expect(instances().every((item) => item.inputs.showLevels === 0)).toBe(true);
+    expect(
+      instances().every(
+        (item) =>
+          item.appearance.plots?.main?.visible === false &&
+          item.appearance.plots?.signal?.visible === false,
+      ),
+    ).toBe(true);
+    const firstBefore = structuredClone(instances()[0]!);
+    useChartPreferences.getState().resetIndicatorInstanceAppearance(second);
+    expect(instances()[0]).toEqual(firstBefore);
+    expect(instances()[1]!.appearance).toEqual({});
+    expect(instances()[1]!.inputs).toEqual(firstBefore.inputs);
+  },
+);

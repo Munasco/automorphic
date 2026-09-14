@@ -177,7 +177,9 @@ const bands = (
 const stochasticPlots = (
   result: ReturnType<typeof calculateStochastic>,
   inputs: IndicatorInputValues,
+  bars: readonly { time: number }[],
 ): IndicatorResult => ({
+  fills: indicatorLevelFills(bars, result.k, inputs.lowerLevel ?? 20, inputs.upperLevel ?? 80),
   plots: [
     {
       id: "k",
@@ -761,11 +763,13 @@ export const INDICATOR_DEFINITIONS = [
     styles: [
       style("main", "Primary line", "#38bdf8", true),
       style("signal", "Signal line", "#fb923c"),
+      { ...style("background", "Background", "#38bdf8"), kind: "fill", opacity: 0.08 },
     ],
     calculate: ({ bars, inputs }) =>
       stochasticPlots(
         calculateStochastic(bars, inputs.period, inputs.smoothK, inputs.periodD),
         inputs,
+        bars,
       ),
   }),
   defineIndicator({
@@ -787,6 +791,7 @@ export const INDICATOR_DEFINITIONS = [
     styles: [
       style("main", "Primary line", "#a78bfa", true),
       style("signal", "Signal line", "#fb923c"),
+      { ...style("background", "Background", "#a78bfa"), kind: "fill", opacity: 0.08 },
     ],
     calculate: ({ bars, inputs }) =>
       stochasticPlots(
@@ -799,6 +804,7 @@ export const INDICATOR_DEFINITIONS = [
           PRICE_SOURCES[inputs.source ?? 0] ?? "close",
         ),
         inputs,
+        bars,
       ),
   }),
   defineIndicator({

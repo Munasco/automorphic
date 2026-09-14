@@ -1186,3 +1186,87 @@ describe("standalone VWMA overlay", () => {
     });
   });
 });
+
+describe.each(["stochastic", "stochRsi"] as const)("%s level background", (key) => {
+  const definition = INDICATOR_CATALOG.find((item) => item.key === key)!;
+  const bars = [10, 12, 11, 14, 12, 15, 14, 18].map((close, i) => ({
+    time: 100 + i * 5,
+    open: close,
+    high: 20,
+    low: 0,
+    close,
+    volume: 1,
+  }));
+  const inputs = getIndicatorInputs(key, {
+    [key]:
+      key === "stochastic"
+        ? { period: 2, smoothK: 1, periodD: 2 }
+        : { rsiPeriod: 1, stochasticPeriod: 2, smoothK: 1, periodD: 2 },
+  });
+  const calculate = (selectedBars = bars, selectedInputs = inputs) =>
+    definition.calculate({
+      bars: selectedBars,
+      inputs: selectedInputs,
+      interval: 5,
+      session: DEFAULT_INITIAL_BALANCE,
+    });
+
+  it("keeps K and D formulas while shading only chart bars with valid K readings", () => {
+    const result = calculate();
+    const expectedK =
+      key === "stochastic" ? [60, 55, 70, 60, 75, 70, 90] : [0, 100, 0, 100, 0, 100];
+    const expectedD =
+      key === "stochastic" ? [57.5, 62.5, 65, 67.5, 72.5, 80] : [50, 50, 50, 50, 50];
+    const start = key === "stochastic" ? 1 : 2;
+    expect(result.plots[0]!.points).toHaveLength(expectedK.length);
+    expect(result.plots[1]!.points).toHaveLength(expectedD.length);
+    expectedK.forEach((value, index) =>
+      expect(result.plots[0]!.points[index]!.value).toBeCloseTo(value, 10),
+    );
+    expectedD.forEach((value, index) =>
+      expect(result.plots[1]!.points[index]!.value).toBeCloseTo(value, 10),
+    );
+    expect(result.fills).toEqual([
+      {
+        id: `background-${bars[start]!.time}`,
+        styleKey: "background",
+        lower: bars.slice(start).map(({ time }) => ({ time, value: 20 })),
+        upper: bars.slice(start).map(({ time }) => ({ time, value: 80 })),
+      },
+    ]);
+    expect(definition.styles.find((style) => style.key === "background")).toMatchObject({
+      kind: "fill",
+      color: key === "stochastic" ? "#38bdf8" : "#a78bfa",
+      opacity: 0.08,
+    });
+  });
+
+  it("moves background bounds independently from reference line visibility without changing readings", () => {
+    const baseline = calculate();
+    const custom = calculate(bars, {
+      ...inputs,
+      lowerLevel: 12.5,
+      upperLevel: 87.5,
+      showLevels: 0,
+    });
+    expect(custom.plots[0]!.levels).toEqual([]);
+    expect(custom.plots.map((plot) => plot.points)).toEqual(
+      baseline.plots.map((plot) => plot.points),
+    );
+    expect(custom.fills?.[0]?.lower).toEqual(
+      baseline.fills![0]!.lower.map((point) => ({ ...point, value: 12.5 })),
+    );
+    expect(custom.fills?.[0]?.upper).toEqual(
+      baseline.fills![0]!.upper.map((point) => ({ ...point, value: 87.5 })),
+    );
+  });
+
+  it("does not fabricate background during warmup or for a single reading", () => {
+    const firstReadingLength = key === "stochastic" ? 2 : 3;
+    expect(calculate([]).fills).toEqual([]);
+    expect(calculate(bars.slice(0, firstReadingLength - 1)).plots[0]!.points).toEqual([]);
+    expect(calculate(bars.slice(0, firstReadingLength - 1)).fills).toEqual([]);
+    expect(calculate(bars.slice(0, firstReadingLength)).plots[0]!.points).toHaveLength(1);
+    expect(calculate(bars.slice(0, firstReadingLength)).fills).toEqual([]);
+  });
+});
