@@ -98,6 +98,8 @@ type SavedChartPreferences = {
   gridMode: ChartGridMode;
   gridLineStyle: ChartGridLineStyle;
   gridColor: string;
+  thinBars: boolean;
+  showBarOpen: boolean;
   showCandleWicks: boolean;
   showPriceLine: boolean;
   showPriceLabel: boolean;
@@ -169,6 +171,8 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
         : "both",
     gridLineStyle: validGridLineStyle(saved.gridLineStyle) ? saved.gridLineStyle : "solid",
     gridColor: validColor(saved.gridColor) ? saved.gridColor : "#171a23",
+    thinBars: typeof saved.thinBars === "boolean" ? saved.thinBars : true,
+    showBarOpen: typeof saved.showBarOpen === "boolean" ? saved.showBarOpen : true,
     showCandleWicks: typeof saved.showCandleWicks === "boolean" ? saved.showCandleWicks : true,
     showPriceLine: typeof saved.showPriceLine === "boolean" ? saved.showPriceLine : true,
     showPriceLabel: typeof saved.showPriceLabel === "boolean" ? saved.showPriceLabel : true,
@@ -199,6 +203,8 @@ export const useChartPreferences = create<{
   gridMode: ChartGridMode;
   gridLineStyle: ChartGridLineStyle;
   gridColor: string;
+  thinBars: boolean;
+  showBarOpen: boolean;
   showCandleWicks: boolean;
   showPriceLine: boolean;
   showPriceLabel: boolean;
@@ -233,6 +239,8 @@ export const useChartPreferences = create<{
   setGridMode: (mode: ChartGridMode) => void;
   setGridLineStyle: (style: ChartGridLineStyle) => void;
   setGridColor: (color: string) => void;
+  toggleThinBars: () => void;
+  toggleBarOpen: () => void;
   toggleCandleWicks: () => void;
   togglePriceLine: () => void;
   togglePriceLabel: () => void;
@@ -262,6 +270,8 @@ export const useChartPreferences = create<{
       gridMode: "both",
       gridLineStyle: "solid",
       gridColor: "#171a23",
+      thinBars: true,
+      showBarOpen: true,
       showCandleWicks: true,
       showPriceLine: true,
       showPriceLabel: true,
@@ -515,6 +525,8 @@ export const useChartPreferences = create<{
       setGridColor: (gridColor) => {
         if (validColor(gridColor) && gridColor !== get().gridColor) set({ gridColor });
       },
+      toggleThinBars: () => set((state) => ({ thinBars: !state.thinBars })),
+      toggleBarOpen: () => set((state) => ({ showBarOpen: !state.showBarOpen })),
       toggleCandleWicks: () => set((state) => ({ showCandleWicks: !state.showCandleWicks })),
       togglePriceLine: () => set((state) => ({ showPriceLine: !state.showPriceLine })),
       togglePriceLabel: () => set((state) => ({ showPriceLabel: !state.showPriceLabel })),

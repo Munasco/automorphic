@@ -759,6 +759,10 @@ export function TradovateChart({
       });
     for (const style of ["candles", "hollow", "heikin-ashi"] as const)
       engine.prices[style].applyOptions({ wickVisible: settings.showCandleWicks });
+    engine.prices.bars.applyOptions({
+      thinBars: settings.thinBars,
+      openVisible: settings.showBarOpen,
+    });
     // The shared scale takes its formatter from the first series, including hidden ones.
     engine.prices[settings.style].setSeriesOrder(0);
     const gridStyle =
@@ -824,6 +828,8 @@ export function TradovateChart({
     settings.crosshairColor,
     settings.crosshairLineStyle,
     settings.crosshairLineWidth,
+    settings.thinBars,
+    settings.showBarOpen,
     settings.showCandleWicks,
     settings.showPriceLine,
     settings.showPriceLabel,
@@ -899,6 +905,10 @@ export function TradovateChart({
         gridColor={settings.gridColor}
         onGridColorChange={settings.setGridColor}
         onGridModeChange={settings.setGridMode}
+        thinBars={settings.thinBars}
+        onToggleThinBars={settings.toggleThinBars}
+        showBarOpen={settings.showBarOpen}
+        onToggleBarOpen={settings.toggleBarOpen}
         showCandleWicks={settings.showCandleWicks}
         onToggleCandleWicks={settings.toggleCandleWicks}
         showPriceLine={settings.showPriceLine}

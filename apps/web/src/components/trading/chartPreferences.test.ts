@@ -2176,3 +2176,111 @@ describe("candle wick visibility preferences", () => {
     }
   });
 });
+
+describe("bar chart appearance preferences", () => {
+  it("defaults legacy and malformed appearance settings to native defaults independently", () => {
+    expect(useChartPreferences.getInitialState()).toMatchObject({
+      thinBars: true,
+      showBarOpen: true,
+    });
+    expect(normalizeChartPreferences({})).toMatchObject({ thinBars: true, showBarOpen: true });
+    for (const invalid of [undefined, null, "false", "true", 0, 1, [], {}, [false]]) {
+      expect(
+        normalizeChartPreferences({
+          thinBars: invalid,
+          showBarOpen: false,
+          showCandleWicks: false,
+        }),
+      ).toMatchObject({ thinBars: true, showBarOpen: false, showCandleWicks: false });
+      expect(
+        normalizeChartPreferences({ showBarOpen: invalid, thinBars: false, showPriceLine: false }),
+      ).toMatchObject({ thinBars: false, showBarOpen: true, showPriceLine: false });
+    }
+  });
+
+  it.each([
+    { thinBars: false, showBarOpen: false },
+    { thinBars: false, showBarOpen: true },
+    { thinBars: true, showBarOpen: false },
+    { thinBars: true, showBarOpen: true },
+  ])(
+    "persists thin=$thinBars/open=$showBarOpen without changing other choices",
+    async ({ thinBars, showBarOpen }) => {
+      const store = configure();
+      store.setStyle("bars");
+      store.toggleCandleWicks();
+      store.setGridMode("vertical");
+      store.setPriceScaleMode("percentage");
+      store.setReplaySpeed(5);
+      if (thinBars) store.toggleThinBars();
+      if (showBarOpen) store.toggleBarOpen();
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+      const listener = vi.fn();
+      const unsubscribe = useChartPreferences.subscribe(listener);
+      try {
+        store.toggleThinBars();
+        expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+          ...before,
+          thinBars,
+        });
+        store.toggleBarOpen();
+        expect(listener).toHaveBeenCalledTimes(2);
+        expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(2);
+      } finally {
+        unsubscribe();
+      }
+      const expected = { ...before, thinBars, showBarOpen };
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      const serialized = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      expect(JSON.parse(serialized).state).toMatchObject({ thinBars, showBarOpen });
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(serialized);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+      expect(typeof useChartPreferences.getState().toggleThinBars).toBe("function");
+      expect(typeof useChartPreferences.getState().toggleBarOpen).toBe("function");
+    },
+  );
+
+  it("keeps bar appearance when switching to other styles and back", () => {
+    const store = configure();
+    store.toggleThinBars();
+    store.toggleBarOpen();
+    const before = normalizeChartPreferences(useChartPreferences.getState());
+    for (const style of ["bars", "candles", "hollow", "heikin-ashi", "line", "bars"] as const) {
+      store.setStyle(style);
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+        ...before,
+        style,
+      });
+    }
+    store.toggleBarOpen();
+    expect(useChartPreferences.getState()).toMatchObject({ thinBars: false, showBarOpen: true });
+    store.toggleThinBars();
+    expect(useChartPreferences.getState()).toMatchObject({ thinBars: true, showBarOpen: true });
+  });
+
+  it("restores each workspace's bar appearance and resets omitted settings independently", async () => {
+    const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+    for (const [saved, expected] of [
+      [
+        { thinBars: false, showBarOpen: false },
+        { thinBars: false, showBarOpen: false },
+      ],
+      [{ showBarOpen: false }, { thinBars: true, showBarOpen: false }],
+      [{ thinBars: false }, { thinBars: false, showBarOpen: true }],
+      [{}, { thinBars: true, showBarOpen: true }],
+      [
+        { thinBars: false, showBarOpen: false },
+        { thinBars: false, showBarOpen: false },
+      ],
+    ] as const) {
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+        JSON.stringify({ version: 0, state: saved }),
+      );
+      await hydrate();
+      expect(useChartPreferences.getState()).toMatchObject(expected);
+    }
+  });
+});

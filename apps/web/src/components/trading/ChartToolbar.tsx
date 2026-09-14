@@ -65,6 +65,10 @@ export type ChartToolbarProps = {
   gridColor: string;
   onGridColorChange: (value: string) => void;
   onGridModeChange: (value: ChartGridMode) => void;
+  thinBars: boolean;
+  onToggleThinBars: () => void;
+  showBarOpen: boolean;
+  onToggleBarOpen: () => void;
   showCandleWicks: boolean;
   onToggleCandleWicks: () => void;
   showPriceLine: boolean;
@@ -117,6 +121,10 @@ export function ChartToolbar({
   gridColor,
   onGridColorChange,
   onGridModeChange,
+  thinBars,
+  onToggleThinBars,
+  showBarOpen,
+  onToggleBarOpen,
   showCandleWicks,
   onToggleCandleWicks,
   showPriceLine,
@@ -454,6 +462,32 @@ export function ChartToolbar({
           </Tooltip>
           <PopoverPopup align="end" className="w-56" viewportClassName="px-3 py-3">
             <PopoverTitle className="px-1 pb-2 text-xs">Chart display</PopoverTitle>
+            {style === "bars" && (
+              <>
+                <label
+                  htmlFor={`${id}-thin-bars`}
+                  className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"
+                >
+                  <Checkbox
+                    id={`${id}-thin-bars`}
+                    checked={thinBars}
+                    onCheckedChange={onToggleThinBars}
+                  />
+                  Thin bars
+                </label>
+                <label
+                  htmlFor={`${id}-bar-open`}
+                  className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"
+                >
+                  <Checkbox
+                    id={`${id}-bar-open`}
+                    checked={showBarOpen}
+                    onCheckedChange={onToggleBarOpen}
+                  />
+                  Open marks
+                </label>
+              </>
+            )}
             {(style === "candles" || style === "hollow" || style === "heikin-ashi") && (
               <label
                 htmlFor={`${id}-candle-wicks`}
