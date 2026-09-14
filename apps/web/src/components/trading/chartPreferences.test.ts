@@ -1010,6 +1010,40 @@ it("persists independent MFI lengths, levels, appearance and visibility", async 
   ).toEqual({ period: 14, lowerLevel: 20, upperLevel: 80, showLevels: 1 });
 });
 
+it("persists independent Williams %R lengths, levels, appearance and visibility", async () => {
+  const store = useChartPreferences.getState();
+  const base = store.addIndicator("williams")!;
+  expect(
+    store.setIndicatorInstanceInputs(base, { period: 7, lowerLevel: -90, upperLevel: -10 }),
+  ).toBe(true);
+  store.setIndicatorInstanceAppearance(base, {
+    plots: { main: { color: "#facc15", lineWidth: 3 } },
+  });
+  const duplicate = store.duplicateIndicatorInstance(base)!;
+  expect(store.setIndicatorInstanceInputs(duplicate, { period: 21, showLevels: 0 })).toBe(true);
+  store.toggleIndicatorInstanceVisibility(duplicate);
+  expect(store.setIndicatorInstanceInputs(base, { lowerLevel: -5 })).toBe(false);
+  expect(store.setIndicatorInstanceInputs(base, { period: 0 })).toBe(false);
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  const instances = getChartIndicatorInstances(useChartPreferences.getState()).filter(
+    (i) => i.key === "williams",
+  );
+  expect(instances.map((i) => i.inputs)).toEqual([
+    { period: 7, lowerLevel: -90, upperLevel: -10, showLevels: 1 },
+    { period: 21, lowerLevel: -90, upperLevel: -10, showLevels: 0 },
+  ]);
+  expect(instances.map((i) => i.hidden)).toEqual([false, true]);
+  expect(instances[0]!.appearance.plots?.main).toEqual({ color: "#facc15", lineWidth: 3 });
+  useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
+  expect(
+    getChartIndicatorInstances(useChartPreferences.getState()).find((i) => i.id === duplicate)!
+      .inputs,
+  ).toEqual({ period: 14, lowerLevel: -80, upperLevel: -20, showLevels: 1 });
+});
+
 it("persists independent Bollinger basis types and restores old charts to SMA", async () => {
   const store = useChartPreferences.getState();
   const base = store.addIndicator("bollinger")!;

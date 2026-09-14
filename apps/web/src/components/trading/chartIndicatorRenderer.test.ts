@@ -98,6 +98,76 @@ const disabled = Object.fromEntries(
 ) as ChartIndicators;
 
 describe("native indicator renderer", () => {
+  it("updates Williams levels independently without replacing or altering oscillator data", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.25);
+    const bars = inputBars(6);
+    const base = {
+      ...createIndicatorInstance("williams", "base:williams"),
+      inputs: { period: 2, lowerLevel: -90, upperLevel: -10, showLevels: 1 },
+    };
+    const duplicate = {
+      ...createIndicatorInstance("williams", "williams-extra"),
+      inputs: { period: 3, lowerLevel: -75, upperLevel: -25, showLevels: 1 },
+    };
+    const update = () =>
+      renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [
+        base,
+        duplicate,
+      ]);
+    update();
+    const [first, second] = harness.series;
+    const original = first!.data;
+    const oldLines = [...first!.priceLines];
+    expect(oldLines.map((line) => line.options.price)).toEqual([-90, -10]);
+    expect(second!.priceLines.map((line) => line.options.price)).toEqual([-75, -25]);
+    base.inputs.lowerLevel = -85;
+    update();
+    expect(first!.priceLines[0]).toBe(oldLines[0]);
+    expect(first!.priceLines[0]!.options.price).toBe(-85);
+    expect(first!.data).toEqual(original);
+    base.inputs.showLevels = 0;
+    update();
+    expect(first!.priceLines).toEqual([]);
+    expect(oldLines.every((line) => line.removed)).toBe(true);
+    expect(second!.priceLines.map((line) => line.options.price)).toEqual([-75, -25]);
+    base.inputs.showLevels = 1;
+    update();
+    expect(first!.priceLines.map((line) => line.options.price)).toEqual([-85, -10]);
+    expect(first!.priceLines.every((line) => !oldLines.includes(line))).toBe(true);
+    expect(first!.data).toEqual(original);
+    expect(harness.series).toEqual([first, second]);
+  });
+
+  it("leaves a Williams gap for a flat range and restores it after a bar revision", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.25);
+    const bars = inputBars(5).map((bar, i) =>
+      i === 1 || i === 2 ? { ...bar, open: 10, high: 10, low: 10, close: 10 } : bar,
+    );
+    const instance = {
+      ...createIndicatorInstance("williams", "base:williams"),
+      inputs: { period: 2 },
+    };
+    renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [instance]);
+    const series = harness.series[0]!;
+    expect(series.data[2]).toEqual({ time: bars[2]!.time });
+    expect(series.data[1]!.color).toBe("transparent");
+    renderer.update(
+      bars.map((b, i) => (i === 2 ? { ...b, high: 11 } : b)),
+      disabled,
+      DEFAULT_INITIAL_BALANCE,
+      1,
+      {},
+      {},
+      undefined,
+      [instance],
+    );
+    expect(harness.series[0]).toBe(series);
+    expect(series.data[2]!.value).toBe(-100);
+    expect(series.data[1]!.color).not.toBe("transparent");
+  });
+
   it("leaves a CCI gap through invalid selected prices and reconnects a corrected window", () => {
     const harness = chartHarness();
     const renderer = createIndicatorRenderer(harness.chart, 0.25);

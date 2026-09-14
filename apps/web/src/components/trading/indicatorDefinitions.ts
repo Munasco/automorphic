@@ -788,13 +788,21 @@ export const INDICATOR_DEFINITIONS = [
     detail: "Price within its recent range",
     category: "Oscillators",
     placement: "pane",
-    inputs: [length(14)],
+    inputs: [
+      length(14),
+      ...oscillatorLevelInputs(-80, -20).map((input) =>
+        input.key === "showLevels" ? input : { ...input, min: -100, max: 0 },
+      ),
+    ],
+    validateInputs: validOscillatorLevels,
+    repairInputs: (values) => ({ ...values, lowerLevel: -80, upperLevel: -20 }),
     styles: [style("main", "Line", "#fb923c", true)],
     calculate: ({ bars, inputs }) =>
       single(calculateWilliamsR(bars, inputs.period), {
         title: "%R",
         bounds: [-100, 0],
-        levels: [-80, -20],
+        levels: oscillatorLevels(inputs, -80, -20),
+        breakOnGaps: true,
       }),
   }),
   defineIndicator({
