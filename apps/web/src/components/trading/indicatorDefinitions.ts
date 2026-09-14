@@ -428,11 +428,12 @@ export const INDICATOR_DEFINITIONS = [
   defineIndicator({
     key: "keltner",
     label: "Keltner Channels",
-    detail: "20-period EMA · 10-period ATR × 2",
+    detail: "Moving average with ATR bands",
     category: "Overlays",
     placement: "overlay",
     inputs: [
-      length(20, "period", "EMA length"),
+      length(20, "period", "MA length"),
+      movingAverageType("basisType", "Basis MA type"),
       priceSource,
       length(10, "atrPeriod", "ATR length"),
       { key: "multiplier", label: "ATR multiplier", defaultValue: 2, min: 0, max: 20, step: 0.1 },
@@ -451,6 +452,7 @@ export const INDICATOR_DEFINITIONS = [
           inputs.atrPeriod,
           inputs.multiplier,
           PRICE_SOURCES[inputs.source ?? 0],
+          inputs.basisType === 1 ? "sma" : "ema",
         ),
         bars,
       ),

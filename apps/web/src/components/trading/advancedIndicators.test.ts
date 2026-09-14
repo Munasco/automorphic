@@ -1155,3 +1155,131 @@ describe("Keltner channel price sources", () => {
     },
   );
 });
+
+describe("Keltner moving-average basis", () => {
+  const input = () =>
+    bars([11, 22, 15, 27, 18]).map((bar, index) => ({
+      ...bar,
+      open: [10, 20, 16, 25, 19][index]!,
+      high: [12, 24, 20, 28, 23][index]!,
+      low: [8, 18, 14, 21, 17][index]!,
+    }));
+  const means: Record<PriceSource, number[]> = {
+    close: [16, 64 / 3, 20],
+    open: [46 / 3, 61 / 3, 20],
+    high: [56 / 3, 24, 71 / 3],
+    low: [40 / 3, 53 / 3, 52 / 3],
+    hl2: [16, 125 / 6, 20.5],
+    hlc3: [16, 21, 61 / 3],
+    ohlc4: [95 / 6, 125 / 6, 81 / 4],
+  };
+  // Wilder ATR2 from actual true ranges [4,13,8,13,10], aligned with three-bar means.
+  const atr = [33 / 4, 85 / 8, 165 / 16];
+
+  it.each(PRICE_SOURCES)("uses independent rolling %s SMA means without changing ATR", (source) => {
+    const result = calculateKeltnerChannels(input(), 3, 2, 2, source, "sma");
+    near(result.middle, means[source]);
+    near(
+      result.upper,
+      means[source].map((value, index) => value + 2 * atr[index]!),
+    );
+    near(
+      result.lower,
+      means[source].map((value, index) => value - 2 * atr[index]!),
+    );
+    const exponential = calculateKeltnerChannels(input(), 3, 2, 2, source, "ema");
+    expect(result.middle[0]!.value).toBeCloseTo(exponential.middle[0]!.value, 10);
+    expect(result.middle.at(-1)!.value).not.toBeCloseTo(exponential.middle.at(-1)!.value, 10);
+    expect(result.middle.map((point) => point.time)).toEqual(
+      input()
+        .slice(2)
+        .map((bar) => bar.time),
+    );
+  });
+
+  it("retains EMA defaults and rejects unknown runtime basis types instead of using SMA", () => {
+    const candles = input();
+    expect(calculateKeltnerChannels(candles, 3, 2, 2, "open")).toEqual(
+      calculateKeltnerChannels(candles, 3, 2, 2, "open", "ema"),
+    );
+    expect(calculateKeltnerChannels(candles)).toEqual(
+      calculateKeltnerChannels(candles, 20, 10, 2, "close", "ema"),
+    );
+    for (const invalid of [null, "", "EMA", "wma", false, 0, {}, ["sma"]])
+      expect(calculateKeltnerChannels(candles, 3, 2, 2, "close", invalid as "ema")).toEqual({
+        upper: [],
+        middle: [],
+        lower: [],
+      });
+  });
+
+  it.each(["open", "ohlc4"] as const)(
+    "rewarms %s SMA after an open gap without resetting valid ATR",
+    (source) => {
+      const candles = input();
+      const broken = candles.map((bar, index) => (index === 1 ? { ...bar, open: NaN } : bar));
+      const result = calculateKeltnerChannels(broken, 2, 2, 1, source, "sma");
+      expect(result.middle.map((point) => point.time)).toEqual(
+        candles.slice(3).map((bar) => bar.time),
+      );
+      near(result.middle, source === "open" ? [20.5, 22] : [20.75, 22.25]);
+      result.upper.forEach((point, index) =>
+        expect(point.value - result.middle[index]!.value).toBeCloseTo(
+          [85 / 8, 165 / 16][index]!,
+          10,
+        ),
+      );
+      const afterGapOnly = calculateKeltnerChannels(candles.slice(2), 2, 2, 1, source, "sma");
+      expect(result.middle).toEqual(afterGapOnly.middle);
+      expect(result.upper).not.toEqual(afterGapOnly.upper);
+    },
+  );
+
+  it("aligns SMA and ATR warmups and supports zero multiplier and period one", () => {
+    const candles = input();
+    const laterATR = calculateKeltnerChannels(candles, 2, 4, 1, "open", "sma");
+    expect(laterATR.middle.map((point) => point.time)).toEqual(
+      candles.slice(3).map((bar) => bar.time),
+    );
+    near(laterATR.middle, [20.5, 22]);
+    near(laterATR.upper, [30, 31.625]);
+    const zero = calculateKeltnerChannels(candles, 3, 2, 0, "close", "sma");
+    near(zero.middle, means.close);
+    expect(zero.upper).toEqual(zero.middle);
+    expect(zero.lower).toEqual(zero.middle);
+    const one = calculateKeltnerChannels(candles, 1, 1, 1, "close", "sma");
+    near(one.middle, [11, 22, 15, 27, 18]);
+    near(one.upper, [15, 35, 23, 40, 28]);
+  });
+
+  it("recomputes revised SMA windows without mutating input and resets invalid price-range history", () => {
+    const candles = input();
+    const snapshot = structuredClone(candles);
+    const original = calculateKeltnerChannels(candles, 3, 2, 2, "close", "sma");
+    const changed = calculateKeltnerChannels(
+      [...candles.slice(0, -1), { ...candles.at(-1)!, high: 35, low: 28, close: 32 }],
+      3,
+      2,
+      2,
+      "close",
+      "sma",
+    );
+    near(changed.middle, [16, 64 / 3, 74 / 3]);
+    for (const key of ["upper", "middle", "lower"] as const)
+      expect(changed[key].slice(0, -1)).toEqual(original[key].slice(0, -1));
+    expect(candles).toEqual(snapshot);
+    expect(calculateKeltnerChannels(candles, 3, 2, 2, "close", "sma")).toEqual(original);
+    const gap = candles.map((bar, index) => (index === 1 ? { ...bar, high: NaN } : bar));
+    expect(calculateKeltnerChannels(gap, 2, 2, 1, "open", "sma")).toEqual(
+      calculateKeltnerChannels(candles.slice(2), 2, 2, 1, "open", "sma"),
+    );
+    for (const period of [0, -1, 1.5, Infinity, NaN]) {
+      expect(flatten(calculateKeltnerChannels(candles, period, 2, 1, "close", "sma"))).toEqual([]);
+      expect(flatten(calculateKeltnerChannels(candles, 2, period, 1, "close", "sma"))).toEqual([]);
+    }
+    for (const multiplier of [-1, Infinity, NaN])
+      expect(flatten(calculateKeltnerChannels(candles, 2, 2, multiplier, "close", "sma"))).toEqual(
+        [],
+      );
+  });
+});

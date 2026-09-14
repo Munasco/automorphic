@@ -98,39 +98,42 @@ const disabled = Object.fromEntries(
 ) as ChartIndicators;
 
 describe("native indicator renderer", () => {
-  it("gaps Keltner plots through missing selected prices and reconnects a corrected bar", () => {
-    const harness = chartHarness();
-    const renderer = createIndicatorRenderer(harness.chart, 0.25);
-    const bars = inputBars(8).map((bar, i) => (i === 3 ? { ...bar, open: NaN } : bar));
-    const instance = {
-      ...createIndicatorInstance("keltner", "base:keltner"),
-      inputs: { period: 2, atrPeriod: 2, multiplier: 2, source: 1 },
-    };
-    renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [instance]);
-    const original = [...harness.series];
-    expect(original).toHaveLength(3);
-    for (const series of original) {
-      expect(series.data[3]).toEqual({ time: bars[3]!.time });
-      expect(series.data[4]).toEqual({ time: bars[4]!.time });
-      expect(series.data[2]!.color).toBe("transparent");
-    }
-    renderer.update(
-      bars.map((bar, i) => (i === 3 ? { ...bar, open: bar.close } : bar)),
-      disabled,
-      DEFAULT_INITIAL_BALANCE,
-      1,
-      {},
-      {},
-      undefined,
-      [instance],
-    );
-    expect(harness.series).toEqual(original);
-    for (const series of original) {
-      expect(Number.isFinite(series.data[3]!.value)).toBe(true);
-      expect(Number.isFinite(series.data[4]!.value)).toBe(true);
-      expect(series.data[2]!.color).not.toBe("transparent");
-    }
-  });
+  it.each([0, 1])(
+    "gaps Keltner basis %s through missing selected prices and reconnects a corrected bar",
+    (basisType) => {
+      const harness = chartHarness();
+      const renderer = createIndicatorRenderer(harness.chart, 0.25);
+      const bars = inputBars(8).map((bar, i) => (i === 3 ? { ...bar, open: NaN } : bar));
+      const instance = {
+        ...createIndicatorInstance("keltner", "base:keltner"),
+        inputs: { period: 2, atrPeriod: 2, multiplier: 2, source: 1, basisType },
+      };
+      renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [instance]);
+      const original = [...harness.series];
+      expect(original).toHaveLength(3);
+      for (const series of original) {
+        expect(series.data[3]).toEqual({ time: bars[3]!.time });
+        expect(series.data[4]).toEqual({ time: bars[4]!.time });
+        expect(series.data[2]!.color).toBe("transparent");
+      }
+      renderer.update(
+        bars.map((bar, i) => (i === 3 ? { ...bar, open: bar.close } : bar)),
+        disabled,
+        DEFAULT_INITIAL_BALANCE,
+        1,
+        {},
+        {},
+        undefined,
+        [instance],
+      );
+      expect(harness.series).toEqual(original);
+      for (const series of original) {
+        expect(Number.isFinite(series.data[3]!.value)).toBe(true);
+        expect(Number.isFinite(series.data[4]!.value)).toBe(true);
+        expect(series.data[2]!.color).not.toBe("transparent");
+      }
+    },
+  );
 
   it("updates CCI levels independently without replacing or altering oscillator data", () => {
     const harness = chartHarness();

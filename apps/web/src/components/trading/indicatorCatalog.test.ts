@@ -110,6 +110,7 @@ describe("indicator catalog and saved preferences", () => {
       "ema",
       "wma",
       "hma",
+      "keltner",
     ]);
     expect(findIndicators("chaikin").map((entry) => entry.key)).toEqual(["cmf"]);
     expect(findIndicators("money flow index").map((entry) => entry.key)).toEqual(["mfi"]);
@@ -202,7 +203,7 @@ describe("indicator inputs", () => {
     expect(restored.indicatorInputs).toEqual({
       sma: { period: 50, source: 0 },
       bollinger: { period: 20, deviations: 1.5, source: 0, basisType: 0 },
-      keltner: { period: 20, atrPeriod: 8, multiplier: 2, source: 0 },
+      keltner: { period: 20, atrPeriod: 8, multiplier: 2, source: 0, basisType: 0 },
       stochRsi: {
         rsiPeriod: 10,
         stochasticPeriod: 14,
@@ -779,4 +780,42 @@ it("keeps Keltner lines and fills separate when its selected source is missing",
     getIndicatorLabel("keltner", { keltner: { ...inputs, source: 0 } }),
   );
   expect(updateIndicatorInputs("keltner", { keltner: inputs }, { source: 7 })).toBeNull();
+});
+
+it("changes Keltner basis without changing its ATR spread or legend and rejects invalid types", () => {
+  const definition = INDICATOR_CATALOG.find((i) => i.key === "keltner")!;
+  const bars = [10, 14, 13, 18, 11].map((close, i) => ({
+    time: i + 1,
+    open: close,
+    close,
+    high: close + 2,
+    low: close - 2,
+    volume: 10,
+  }));
+  const inputs = { ...getIndicatorInputs("keltner"), period: 3, atrPeriod: 2, source: 0 };
+  const calculate = (basisType: number) =>
+    definition.calculate({
+      bars,
+      inputs: { ...inputs, basisType },
+      interval: 5,
+      session: DEFAULT_INITIAL_BALANCE,
+    });
+  const ema = calculate(0),
+    sma = calculate(1);
+  expect(sma.plots[1]!.points.map((p) => p.value)).toEqual([37 / 3, 15, 14]);
+  expect(ema.plots[1]!.points.at(-1)!.value).not.toBe(14);
+  sma.plots[0]!.points.forEach((p, i) =>
+    expect(p.value - sma.plots[1]!.points[i]!.value).toBeCloseTo(
+      ema.plots[0]!.points[i]!.value - ema.plots[1]!.points[i]!.value,
+      10,
+    ),
+  );
+  expect(getIndicatorLabel("keltner", { keltner: { ...inputs, basisType: 0 } })).toBe(
+    getIndicatorLabel("keltner", { keltner: { ...inputs, basisType: 1 } }),
+  );
+  for (const basisType of [-1, 2, 0.5, NaN, Infinity])
+    expect(updateIndicatorInputs("keltner", { keltner: inputs }, { basisType })).toBeNull();
+  expect(getIndicatorInputs("keltner", { keltner: { period: 3, basisType: 99 } }).basisType).toBe(
+    0,
+  );
 });
