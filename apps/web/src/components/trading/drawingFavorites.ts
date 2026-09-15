@@ -34,6 +34,7 @@ export const useDrawingFavorites = create<{
   setPosition: (position: DrawingFavoritesPosition) => void;
   resetPosition: () => void;
   toggle: (kind: DrawingKind) => void;
+  move: (source: DrawingKind, target: DrawingKind, position: "before" | "after") => void;
   toggleVisible: () => void;
 }>()(
   persist(
@@ -48,6 +49,21 @@ export const useDrawingFavorites = create<{
           set({ position: { x: position.x, y: position.y } });
       },
       resetPosition: () => get().setPosition(DEFAULT_POSITION),
+      move: (source, target, position) => {
+        const kinds = get().kinds;
+        if (
+          source === target ||
+          !kinds.includes(source) ||
+          !kinds.includes(target) ||
+          (position !== "before" && position !== "after")
+        )
+          return;
+        const reordered = kinds.filter((kind) => kind !== source);
+        const targetIndex = reordered.indexOf(target);
+        reordered.splice(targetIndex + (position === "after" ? 1 : 0), 0, source);
+        if (reordered.every((kind, index) => kind === kinds[index])) return;
+        set({ kinds: reordered });
+      },
       toggle: (kind) =>
         set((state) => ({
           kinds: state.kinds.includes(kind)

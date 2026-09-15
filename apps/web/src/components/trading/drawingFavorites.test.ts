@@ -127,3 +127,86 @@ it("restores workspace positions and defaults malformed or legacy saves without 
     position: { x: 16, y: 180 },
   });
 });
+
+it.each([
+  ["trend", "horizontal", "after", ["fib", "horizontal", "trend", "ray"]],
+  ["trend", "horizontal", "before", ["fib", "trend", "horizontal", "ray"]],
+  ["ray", "fib", "before", ["trend", "ray", "fib", "horizontal"]],
+  ["ray", "fib", "after", ["trend", "fib", "ray", "horizontal"]],
+] as const)(
+  "moves %s %s %s while retaining the other favorites and toolbar state",
+  (source, target, position, expected) => {
+    useDrawingFavorites.setState({
+      kinds: ["trend", "fib", "horizontal", "ray"],
+      visible: false,
+      position: { x: 55.5, y: 99 },
+    });
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    const previous = useDrawingFavorites.getState().kinds;
+    const listener = vi.fn();
+    const unsubscribe = useDrawingFavorites.subscribe(listener);
+    try {
+      useDrawingFavorites.getState().move(source, target, position);
+      expect(useDrawingFavorites.getState()).toMatchObject({
+        kinds: expected,
+        visible: false,
+        position: { x: 55.5, y: 99 },
+      });
+      expect(previous).toEqual(["trend", "fib", "horizontal", "ray"]);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+    }
+  },
+);
+
+it("ignores missing, self, invalid and unchanged favorite moves without writes or notifications", () => {
+  useDrawingFavorites.setState({ kinds: ["trend", "fib", "horizontal"] });
+  vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+  const before = useDrawingFavorites.getState();
+  const listener = vi.fn();
+  const unsubscribe = useDrawingFavorites.subscribe(listener);
+  try {
+    const { move } = before;
+    move("ray", "fib", "before");
+    move("trend", "ray", "after");
+    move("trend", "trend", "after");
+    move("trend", "fib", "before");
+    move("fib", "trend", "after");
+    move("horizontal", "fib", "after");
+    move("trend", "fib", "invalid" as "before");
+    expect(useDrawingFavorites.getState()).toBe(before);
+    expect(listener).not.toHaveBeenCalled();
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  } finally {
+    unsubscribe();
+  }
+});
+
+it("moves normalized hydrated favorites and restores the saved order without duplicates", async () => {
+  const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+    JSON.stringify({
+      version: 0,
+      state: {
+        kinds: ["trend", "__proto__", "fib", "trend", "horizontal", null, "cursor"],
+        visible: false,
+        position: { x: 27, y: 43 },
+      },
+    }),
+  );
+  await hydrate();
+  expect(useDrawingFavorites.getState().kinds).toEqual(["trend", "fib", "horizontal"]);
+  useDrawingFavorites.getState().move("horizontal", "trend", "before");
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+  await hydrate();
+  expect(useDrawingFavorites.getState()).toMatchObject({
+    kinds: ["horizontal", "trend", "fib"],
+    visible: false,
+    position: { x: 27, y: 43 },
+  });
+  useDrawingFavorites.getState().move("horizontal", "fib", "after");
+  expect(useDrawingFavorites.getState().kinds).toEqual(["trend", "fib", "horizontal"]);
+});

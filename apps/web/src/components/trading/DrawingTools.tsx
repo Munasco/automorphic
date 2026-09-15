@@ -7,6 +7,7 @@ import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popov
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ChartDrawingsController, ChartDrawingTool } from "./useChartDrawings";
 import { useDrawingFavorites } from "./drawingFavorites";
+import type { DrawingKind } from "./drawingGeometry";
 import { clampFavoriteToolbarPosition } from "./drawingToolbarBounds";
 import { useChartOverlayLayout } from "./chartOverlayLayout";
 import { cn } from "../../lib/utils";
@@ -18,9 +19,11 @@ function Action({
   children,
   onClick,
   compact = false,
+  description,
 }: {
   label: string;
   compact?: boolean;
+  description?: string;
   active?: boolean;
   disabled?: boolean;
   children: ReactNode;
@@ -33,6 +36,7 @@ function Action({
           <button
             type="button"
             aria-label={label}
+            aria-description={description}
             aria-pressed={active}
             disabled={disabled}
             onClick={onClick}
@@ -46,7 +50,12 @@ function Action({
       >
         {children}
       </TooltipTrigger>
-      <TooltipPopup side="right">{label}</TooltipPopup>
+      <TooltipPopup side="right">
+        {label}
+        {description ? (
+          <span className="block max-w-52 whitespace-normal">{description}</span>
+        ) : null}
+      </TooltipPopup>
     </Tooltip>
   );
 }
@@ -548,6 +557,12 @@ export function FavoriteDrawingToolbar({ drawings }: { drawings: ChartDrawingsCo
   const position = useDrawingFavorites((state) => state.position);
   const savePosition = useDrawingFavorites((state) => state.setPosition);
   const resetPosition = useDrawingFavorites((state) => state.resetPosition);
+  const moveFavorite = useDrawingFavorites((state) => state.move);
+  const reorderSource = useRef<DrawingKind | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    kind: DrawingKind;
+    position: "before" | "after";
+  } | null>(null);
   const { scale } = useChartOverlayLayout();
   const toolbarRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({
@@ -694,14 +709,79 @@ export function FavoriteDrawingToolbar({ drawings }: { drawings: ChartDrawingsCo
       </Tooltip>
       <div className="flex min-w-0 overflow-x-auto">
         {favorites.map((kind) => (
-          <Action
+          <div
             key={kind}
-            label={`Favorite: ${tools.find((tool) => tool.kind === kind)?.label ?? kind}`}
-            active={drawings.tool === kind}
-            onClick={() => drawings.setTool(kind)}
+            draggable
+            className={cn(
+              "relative shrink-0 rounded",
+              dropTarget?.kind === kind &&
+                (dropTarget.position === "before"
+                  ? "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:z-10 before:w-0.5 before:bg-blue-400"
+                  : "before:pointer-events-none before:absolute before:inset-y-0 before:right-0 before:z-10 before:w-0.5 before:bg-blue-400"),
+            )}
+            onPointerDown={(event) => event.stopPropagation()}
+            onDragStart={(event) => {
+              reorderSource.current = kind;
+              event.dataTransfer.setData("application/x-automorphic-favorite", kind);
+              event.dataTransfer.effectAllowed = "move";
+              event.stopPropagation();
+            }}
+            onDragOver={(event) => {
+              if (!reorderSource.current || reorderSource.current === kind) return;
+              event.preventDefault();
+              event.stopPropagation();
+              event.dataTransfer.dropEffect = "move";
+              const rect = event.currentTarget.getBoundingClientRect();
+              const position = event.clientX < rect.left + rect.width / 2 ? "before" : "after";
+              setDropTarget((current) =>
+                current?.kind === kind && current.position === position
+                  ? current
+                  : { kind, position },
+              );
+            }}
+            onDragLeave={() => setDropTarget(null)}
+            onDrop={(event) => {
+              const source = reorderSource.current;
+              if (!source) return;
+              event.preventDefault();
+              event.stopPropagation();
+              const rect = event.currentTarget.getBoundingClientRect();
+              moveFavorite(
+                source,
+                kind,
+                event.clientX < rect.left + rect.width / 2 ? "before" : "after",
+              );
+              reorderSource.current = null;
+              setDropTarget(null);
+            }}
+            onDragEnd={() => {
+              reorderSource.current = null;
+              setDropTarget(null);
+            }}
+            onKeyDown={(event) => {
+              if (
+                !event.altKey ||
+                event.ctrlKey ||
+                event.metaKey ||
+                !["ArrowLeft", "ArrowRight"].includes(event.key)
+              )
+                return;
+              event.preventDefault();
+              event.stopPropagation();
+              const direction = event.key === "ArrowLeft" ? -1 : 1;
+              const target = favorites[favorites.indexOf(kind) + direction];
+              if (target) moveFavorite(kind, target, direction < 0 ? "before" : "after");
+            }}
           >
-            <ChartDrawingGlyph tool={kind} />
-          </Action>
+            <Action
+              label={`Favorite: ${tools.find((tool) => tool.kind === kind)?.label ?? kind}`}
+              description="Drag to reorder. Alt + Left/Right moves this favorite."
+              active={drawings.tool === kind}
+              onClick={() => drawings.setTool(kind)}
+            >
+              <ChartDrawingGlyph tool={kind} />
+            </Action>
+          </div>
         ))}
       </div>
     </div>
