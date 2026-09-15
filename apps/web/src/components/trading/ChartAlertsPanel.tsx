@@ -1,3 +1,4 @@
+import { chartAlertLogCsv } from "./chartAlertLogCsv";
 import {
   useEffect,
   useMemo,
@@ -355,6 +356,7 @@ export function ChartAlerts({
       ...event,
       time: event.triggeredAt,
       key: `price:${event.id}`,
+      kind: "price" as const,
       title: `${event.name ? `${event.name} · ` : ""}${event.symbol} · ${conditionLabel[event.condition]} ${priceLabel(event.target)}`,
       description: `${event.message ? `${event.message}\n` : ""}Last ${priceLabel(event.price)}`,
       searchText: `${event.name ?? ""} ${event.message ?? ""} ${event.symbol} price ${conditionLabel[event.condition]} ${event.target}`,
@@ -363,6 +365,7 @@ export function ChartAlerts({
       ...event,
       time: event.triggeredAt,
       key: `drawing:${event.id}`,
+      kind: "drawing" as const,
       title: `${event.symbol} · ${event.name || `${drawingConditionLabel[event.condition]} drawing`}`,
       description: `${event.message ? `${event.message} · ` : ""}Last ${priceLabel(event.price)} · ${drawingAlertTargetLabel(event)}`,
       searchText: `${event.symbol} drawing ${event.name ?? ""} ${event.message ?? ""} ${drawingConditionLabel[event.condition]} ${drawingAlertTargetLabel(event)}`,
@@ -507,29 +510,53 @@ export function ChartAlerts({
                     </MenuItem>
                   </>
                 ) : (
-                  <MenuItem
-                    disabled={!allHistory.length}
-                    onClick={() =>
-                      act(() => {
-                        let failed = false;
-                        try {
-                          controller.clearHistory();
-                        } catch {
-                          failed = true;
-                        }
-                        if (drawings?.history.length) {
+                  <>
+                    <MenuItem
+                      disabled={!workspace.ready || !history.length}
+                      onClick={() =>
+                        act(() => {
+                          const url = URL.createObjectURL(
+                            new Blob([chartAlertLogCsv(history)], {
+                              type: "text/csv;charset=utf-8",
+                            }),
+                          );
+                          const link = document.createElement("a");
+                          link.href = url;
+                          link.download = `automorphic-alert-log-${new Date().toISOString().slice(0, 10)}.csv`;
                           try {
-                            if (!drawings.clearHistory()) failed = true;
+                            link.click();
+                          } finally {
+                            window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+                          }
+                        }, "Could not export the alert log. Try again.")
+                      }
+                    >
+                      Export log CSV
+                    </MenuItem>
+                    <MenuItem
+                      disabled={!allHistory.length}
+                      onClick={() =>
+                        act(() => {
+                          let failed = false;
+                          try {
+                            controller.clearHistory();
                           } catch {
                             failed = true;
                           }
-                        }
-                        return !failed;
-                      }, "Some alert history could not be cleared. Try again.")
-                    }
-                  >
-                    Clear log
-                  </MenuItem>
+                          if (drawings?.history.length) {
+                            try {
+                              if (!drawings.clearHistory()) failed = true;
+                            } catch {
+                              failed = true;
+                            }
+                          }
+                          return !failed;
+                        }, "Some alert history could not be cleared. Try again.")
+                      }
+                    >
+                      Clear log
+                    </MenuItem>
+                  </>
                 )}
                 {onClose ? <MenuItem onClick={onClose}>Close alerts</MenuItem> : null}
               </MenuPopup>
