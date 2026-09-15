@@ -41,6 +41,29 @@ function legacyStorage(values: Record<string, string>) {
 }
 
 describe("trading workspace persistence", () => {
+  it("loads and transports chart templates through workspace storage", async () => {
+    const key = "automorphic:chart-templates:v1";
+    const value = JSON.stringify({
+      state: {
+        templates: [
+          { id: "chart-one", name: "Morning", settings: { style: "candles", extraIndicators: [] } },
+        ],
+      },
+      version: 0,
+    });
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(json(payload({ [key]: value })))
+      .mockResolvedValue(json({}));
+    const store = createTradingWorkspaceStorage(request, () => undefined);
+    await store.initialize();
+    expect(store.getItem(key)).toBe(value);
+    const updated = JSON.stringify({ state: { templates: [] }, version: 0 });
+    store.setItem(key, updated);
+    await store.flush();
+    expect(JSON.parse(request.mock.calls[1]![1]!.body as string)).toEqual({ key, value: updated });
+  });
+
   it("transports table ordering as JSON and restores it after reopening workspace storage", async () => {
     const values: Record<string, string> = {};
     const request = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {

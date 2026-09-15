@@ -86,6 +86,7 @@ import { ChartPriceAlertsOverlay } from "./ChartPriceAlertsOverlay";
 import type { ChartAlertsController } from "./ChartAlertsPanel";
 import type { ChartPriceAlert } from "./chartAlerts";
 import { ChartDataTableDialog, type ChartTableSource } from "./ChartDataTableDialog";
+import { ChartTemplatesControl, ChartTemplatesDialog } from "./ChartTemplatesMenu";
 import { ChartContextMenu } from "./ChartContextMenu";
 import { DrawingObjectTree } from "./DrawingObjectTree";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
@@ -347,6 +348,7 @@ export function TradovateChart({
   const objectTreeOpen = objectTreeState?.open ?? localObjectTreeOpen;
   const setObjectTreeOpen = objectTreeState?.onOpenChange ?? setLocalObjectTreeOpen;
   const [tableOpen, setTableOpen] = useState(false);
+  const [templateDialog, setTemplateDialog] = useState<"save" | "manage" | null>(null);
   const [alertDrawing, setAlertDrawing] = useState<ChartDrawing | null>(null);
   const [readings, setReadings] = useState<IndicatorReadings>({});
   const [hoverReadings, setHoverReadings] = useState<IndicatorReadings | null>(null);
@@ -1042,7 +1044,19 @@ export function TradovateChart({
           onClose={() => setTableOpen(false)}
         />
       ) : null}
+      {templateDialog ? (
+        <ChartTemplatesDialog
+          initialMode={templateDialog}
+          onClose={() => setTemplateDialog(null)}
+        />
+      ) : null}
       <ChartToolbar
+        templateControl={
+          <ChartTemplatesControl
+            onSave={() => setTemplateDialog("save")}
+            onManage={() => setTemplateDialog("manage")}
+          />
+        }
         displaySettingsOpen={displaySettingsOpen}
         onDisplaySettingsOpenChange={setDisplaySettingsOpen}
         symbol={symbol}
@@ -1243,6 +1257,8 @@ export function TradovateChart({
                 onOpenSettings={() => setDisplaySettingsOpen(true)}
                 onOpenObjectTree={() => setObjectTreeOpen(true)}
                 onOpenTable={() => setTableOpen(true)}
+                onSaveTemplate={() => setTemplateDialog("save")}
+                onManageTemplates={() => setTemplateDialog("manage")}
                 indicators={{
                   count: indicatorInstances.length,
                   hidden: indicatorInstances.every((instance) => instance.hidden),

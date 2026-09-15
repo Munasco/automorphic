@@ -10,6 +10,7 @@ import {
   drawingContextMenuPopupClass,
   drawingContextMenuItemClass as itemClass,
 } from "./drawingContextMenuStyles";
+import { ChartTemplateSubmenu } from "./ChartTemplatesMenu";
 import { ChartIcon } from "./ChartIcon";
 import type { ChartDrawingsController } from "./useChartDrawings";
 
@@ -33,6 +34,8 @@ export function ChartContextMenu({
   onOpenSettings,
   onOpenObjectTree,
   onOpenTable,
+  onSaveTemplate,
+  onManageTemplates,
 }: {
   symbol?: string;
   chart: IChartApi | null;
@@ -49,6 +52,8 @@ export function ChartContextMenu({
   onOpenSettings: () => void;
   onOpenObjectTree: () => void;
   onOpenTable?: (() => void) | undefined;
+  onSaveTemplate?: (() => void) | undefined;
+  onManageTemplates?: (() => void) | undefined;
 }) {
   const [point, setPoint] = useState<MenuPoint | null>(null);
   const { setTool } = drawings;
@@ -204,6 +209,13 @@ export function ChartContextMenu({
           <ChartIcon name="stack" />
           Object tree
         </MenuItem>
+        {onSaveTemplate && onManageTemplates ? (
+          <ChartTemplateSubmenu
+            onSave={onSaveTemplate}
+            onManage={onManageTemplates}
+            onAction={run}
+          />
+        ) : null}
         <MenuItem
           className={itemClass}
           disabled={!drawings.count}
