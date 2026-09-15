@@ -1,3 +1,4 @@
+import { normalizeChartPaneSizes, type ChartPaneSizes } from "./chartPaneSizes";
 import { histogramPhase } from "./histogramPhase";
 import { initialBalanceChartPoints, type InitialBalanceHistory } from "./useInitialBalanceHistory";
 import { calculateATR } from "./advancedIndicators";
@@ -66,12 +67,49 @@ type Plot = {
 };
 
 /** Owns only indicator series; price, volume, drawings, and the chart lifetime remain with the caller. */
-export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
+export function createIndicatorRenderer(
+  chart: IChartApi,
+  minMove: number,
+  initialPaneSizes: ChartPaneSizes = {},
+) {
   const plots = new Map<string, Plot>();
   let paneSignature = "";
   let previousPaneIds: string[] = [];
-  let mainPaneFactor = 3;
-  const paneFactors = new Map<string, number>();
+  const savedSizes = normalizeChartPaneSizes(initialPaneSizes);
+  let mainPaneFactor = savedSizes.$price ?? 3;
+  const paneFactors = new Map(Object.entries(savedSizes).filter(([id]) => id !== "$price"));
+  const capturePaneSizes = (): ChartPaneSizes => {
+    const panes = chart.panes();
+    if (previousPaneIds.length) {
+      mainPaneFactor = panes[0]!.getStretchFactor();
+      previousPaneIds.forEach((id, index) => {
+        const pane = panes[index + 1];
+        if (pane) paneFactors.set(id, pane.getStretchFactor());
+      });
+    }
+    // Current instances precede hidden history so the bound never discards visible panes.
+    return normalizeChartPaneSizes(
+      Object.fromEntries([
+        ["$price", mainPaneFactor],
+        ...previousPaneIds.map((id) => [id, paneFactors.get(id) ?? 1]),
+        ...[...paneFactors].filter(([id]) => !previousPaneIds.includes(id)),
+      ]),
+    );
+  };
+  const applyPaneSizes = (value: ChartPaneSizes) => {
+    const sizes = normalizeChartPaneSizes(value);
+    mainPaneFactor = sizes.$price ?? 3;
+    paneFactors.clear();
+    for (const [id, factor] of Object.entries(sizes))
+      if (id !== "$price") paneFactors.set(id, factor);
+    chart.panes()[0]?.setStretchFactor(mainPaneFactor);
+    chart
+      .panes()
+      .slice(1)
+      .forEach((pane, index) => {
+        pane.setStretchFactor(paneFactors.get(previousPaneIds[index]!) ?? 1);
+      });
+  };
   const removePlot = (plot: Plot) => {
     for (const { line } of plot.levels) plot.series.removePriceLine(line);
     plot.levels.length = 0;
@@ -492,5 +530,5 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
     }
     return { readings, initialBalanceStatus, initialBalanceStats, initialBalanceStatuses };
   };
-  return { update, readCrosshair };
+  return { update, readCrosshair, capturePaneSizes, applyPaneSizes };
 }

@@ -1,3 +1,8 @@
+import {
+  normalizeChartPaneSizes,
+  equalChartPaneSizes,
+  type ChartPaneSizes,
+} from "./chartPaneSizes";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
@@ -160,6 +165,7 @@ type SavedChartPreferences = {
   showBarCountdown: boolean;
   priceScaleMode: ChartPriceScaleMode;
   priceScaleMargins: ChartPriceScaleMargins | null;
+  paneStretchFactors: ChartPaneSizes;
   invertScale: boolean;
   showPriceScaleTicks: boolean;
 };
@@ -265,6 +271,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     showPriceLine: typeof saved.showPriceLine === "boolean" ? saved.showPriceLine : true,
     showPriceLabel: typeof saved.showPriceLabel === "boolean" ? saved.showPriceLabel : true,
     showBarCountdown: saved.showBarCountdown === true,
+    paneStretchFactors: normalizeChartPaneSizes(saved.paneStretchFactors),
     priceScaleMargins: validPriceScaleMargins(saved.priceScaleMargins)
       ? { top: saved.priceScaleMargins.top, bottom: saved.priceScaleMargins.bottom }
       : null,
@@ -326,6 +333,7 @@ export const useChartPreferences = create<{
   showBarCountdown: boolean;
   priceScaleMode: ChartPriceScaleMode;
   priceScaleMargins: ChartPriceScaleMargins | null;
+  paneStretchFactors: ChartPaneSizes;
   invertScale: boolean;
   showPriceScaleTicks: boolean;
   setShowChartTitle: (show: boolean) => void;
@@ -374,6 +382,7 @@ export const useChartPreferences = create<{
   setLineChartShape: (shape: ChartLineShape) => void;
   toggleLineMarkers: () => void;
   setShowSymbolWatermark: (show: boolean) => void;
+  setPaneStretchFactors: (sizes: ChartPaneSizes) => void;
   setLockVisibleTimeRangeOnResize: (lock: boolean) => void;
   setLineMarkerRadius: (radius: ChartLineMarkerRadius) => void;
   toggleThinBars: () => void;
@@ -443,6 +452,7 @@ export const useChartPreferences = create<{
       showBarCountdown: false,
       priceScaleMode: "normal",
       priceScaleMargins: null,
+      paneStretchFactors: {},
       invertScale: false,
       showPriceScaleTicks: false,
       setShowChartTitle: (showChartTitle) => {
@@ -794,6 +804,10 @@ export const useChartPreferences = create<{
       },
       setGridColor: (gridColor) => {
         if (validColor(gridColor) && gridColor !== get().gridColor) set({ gridColor });
+      },
+      setPaneStretchFactors: (sizes) => {
+        const next = normalizeChartPaneSizes(sizes);
+        if (!equalChartPaneSizes(get().paneStretchFactors, next)) set({ paneStretchFactors: next });
       },
       setLockVisibleTimeRangeOnResize: (lockVisibleTimeRangeOnResize) => {
         if (

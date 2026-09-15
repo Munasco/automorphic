@@ -1546,3 +1546,45 @@ it("keeps manually resized panes attached to instances through reorder, hide/sho
   update([rsi, obv]);
   expect(factors()).toEqual([4, 2, 5]);
 });
+
+it("restores saved pane sizes by instance ID before first render and retains hidden history", () => {
+  const harness = chartHarness();
+  const renderer = createIndicatorRenderer(harness.chart, 0.25, {
+    $price: 4,
+    "base:rsi": 2,
+    "base:obv": 7,
+  });
+  const rsi = createIndicatorInstance("rsi", "base:rsi");
+  const obv = createIndicatorInstance("obv", "base:obv");
+  const update = (instances: (typeof rsi)[]) =>
+    renderer.update(
+      inputBars(80),
+      disabled,
+      DEFAULT_INITIAL_BALANCE,
+      1,
+      {},
+      {},
+      undefined,
+      instances,
+    );
+  const factors = () => harness.chart.panes().map((pane) => pane.getStretchFactor());
+  update([]);
+  expect(renderer.capturePaneSizes()).toEqual({ $price: 4, "base:rsi": 2, "base:obv": 7 });
+  update([obv, rsi]);
+  expect(factors()).toEqual([4, 7, 2]);
+  update([rsi]);
+  harness.chart.panes()[0]!.setStretchFactor(3);
+  harness.chart.panes()[1]!.setStretchFactor(3);
+  update([rsi]);
+  expect(factors()).toEqual([3, 3]);
+  const saved = renderer.capturePaneSizes();
+  expect(saved).toEqual({ $price: 3, "base:rsi": 3, "base:obv": 7 });
+  const reloaded = chartHarness();
+  const next = createIndicatorRenderer(reloaded.chart, 0.25, saved);
+  next.update(inputBars(80), disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [obv, rsi]);
+  expect(reloaded.chart.panes().map((pane) => pane.getStretchFactor())).toEqual([3, 7, 3]);
+  next.applyPaneSizes({ $price: 8, "base:rsi": 2 });
+  expect(reloaded.chart.panes().map((pane) => pane.getStretchFactor())).toEqual([8, 1, 2]);
+  next.applyPaneSizes({});
+  expect(reloaded.chart.panes().map((pane) => pane.getStretchFactor())).toEqual([3, 1, 1]);
+});

@@ -1,3 +1,4 @@
+import { trackChartPaneResize } from "./chartPaneResize";
 import { CalendarDaysIcon } from "lucide-react";
 import { ChartMeasureOverlay } from "./ChartMeasureOverlay";
 import { ChartGoToDateDialog } from "./ChartGoToDateDialog";
@@ -104,6 +105,7 @@ import { replayViewport } from "./replayViewport";
 import { replayMinuteHistory } from "./replayHistory";
 
 type ChartEngine = ChartTableSource & {
+  workspaceProjectId: string | null;
   symbol: string;
   interval: ChartInterval;
   chart: IChartApi;
@@ -481,6 +483,30 @@ export function TradovateChart({
   }, [engine, settings.lockVisibleTimeRangeOnResize]);
 
   useEffect(() => {
+    if (
+      !activeEngine ||
+      activeEngine.workspaceProjectId !== workspace.projectId ||
+      !workspace.ready
+    )
+      return;
+    activeEngine.indicators.applyPaneSizes(settings.paneStretchFactors);
+  }, [activeEngine, settings.paneStretchFactors, workspace.projectId, workspace.ready]);
+
+  useEffect(() => {
+    if (!activeEngine) return;
+    const projectId = activeEngine.workspaceProjectId;
+    return trackChartPaneResize(
+      activeEngine.chart,
+      activeEngine.indicators.capturePaneSizes,
+      (sizes) => useChartPreferences.getState().setPaneStretchFactors(sizes),
+      () => {
+        const current = tradingWorkspaceStorage.getSnapshot();
+        return !activeEngine.disposed && current.ready && current.projectId === projectId;
+      },
+    );
+  }, [activeEngine]);
+
+  useEffect(() => {
     priceScaleMargins.current = settings.priceScaleMargins;
     if (!engine || engine.disposed) return;
     engine.chart.priceScale("right", 0).applyOptions({
@@ -691,7 +717,11 @@ export function TradovateChart({
       priceLineVisible: false,
     });
     volume.priceScale().applyOptions({ scaleMargins: { top: 0.86, bottom: 0 } });
-    const indicators = createIndicatorRenderer(chart, priceFormat.minMove);
+    const indicators = createIndicatorRenderer(
+      chart,
+      priceFormat.minMove,
+      useChartPreferences.getState().paneStretchFactors,
+    );
     let appliedVolumeColors = "";
     let replaying = false;
     let replayHistory: readonly Candle[] | null = null;
@@ -701,6 +731,7 @@ export function TradovateChart({
     let barRevision = 0;
     const barListeners = new Set<() => void>();
     const state: ChartEngine = {
+      workspaceProjectId: workspace.projectId,
       symbol,
       interval,
       chart,
@@ -1092,7 +1123,7 @@ export function TradovateChart({
       if (render !== undefined) cancelAnimationFrame(render);
       chart.remove();
     };
-  }, [symbol, interval, intraday, onQuote, root, queryClient, marketOptions]);
+  }, [symbol, interval, intraday, onQuote, root, queryClient, marketOptions, workspace.projectId]);
 
   useEffect(() => {
     if (!engine || engine.disposed) return;

@@ -4240,3 +4240,27 @@ it("acknowledges valid IB duration commits and persists each instance independen
   store.removeIndicatorInstance(base);
   expect(store.setIndicatorInstanceInitialBalance(base, settings)).toBe(false);
 });
+
+it("persists pane proportions, skips equal saves and clears them on a legacy workspace", async () => {
+  const sizes = { $price: 4, "base:rsi": 2, hidden: 0.5 };
+  useChartPreferences.getState().setPaneStretchFactors(sizes);
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  const writes = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.length;
+  useChartPreferences.getState().setPaneStretchFactors({ hidden: 0.5, "base:rsi": 2, $price: 4 });
+  expect(vi.mocked(tradingWorkspaceStorage.setItem)).toHaveBeenCalledTimes(writes);
+  sizes.$price = 9;
+  expect(useChartPreferences.getState().paneStretchFactors.$price).toBe(4);
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  expect(useChartPreferences.getState().paneStretchFactors).toEqual({
+    $price: 4,
+    "base:rsi": 2,
+    hidden: 0.5,
+  });
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+    JSON.stringify({ version: 0, state: {} }),
+  );
+  await useChartPreferences.persist.rehydrate();
+  expect(useChartPreferences.getState().paneStretchFactors).toEqual({});
+});
