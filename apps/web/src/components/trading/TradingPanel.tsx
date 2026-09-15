@@ -231,16 +231,16 @@ function ReadyTradingPanel({
         aria-label="Trading panel"
         className="trading-surface @container flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background"
       >
+        {!expanded && !settings.useTradingView ? (
+          <InstrumentHeader
+            root={settings.root}
+            symbol={symbol}
+            quote={quote}
+            onSelect={() => setPickerOpen(true)}
+          />
+        ) : null}
         <div className="flex min-h-0 min-w-0 flex-1">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            {!expanded && !settings.useTradingView ? (
-              <InstrumentHeader
-                root={settings.root}
-                symbol={symbol}
-                quote={quote}
-                onSelect={() => setPickerOpen(true)}
-              />
-            ) : null}
             <SymbolPicker
               open={pickerOpen}
               onOpenChange={setPickerOpen}

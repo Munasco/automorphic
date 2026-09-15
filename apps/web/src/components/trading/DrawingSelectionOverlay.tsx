@@ -1,3 +1,4 @@
+import { clampDrawingToolbarOffset } from "./drawingToolbarBounds";
 import { DrawingRenameDialog } from "./DrawingRenameDialog";
 import { mergeDrawingChanges } from "./drawingChanges";
 import { drawingKindLabel } from "./drawingNames";
@@ -848,6 +849,7 @@ export function DrawingSelectionOverlay({
   onOpenObjectTree?: (() => void) | undefined;
   onCreateAlert?: ((drawing: ChartDrawing) => void) | undefined;
 }) {
+  const { scale: toolbarScale } = useChartOverlayLayout();
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [compactToolbar, setCompactToolbar] = useState(false);
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -855,15 +857,20 @@ export function DrawingSelectionOverlay({
   const moreTriggerRef = useRef<HTMLButtonElement | null>(null);
   const optionsPopupRef = useRef<HTMLDivElement | null>(null);
   const contextPopupRef = useRef<HTMLDivElement | null>(null);
-  const revealToolbarControl = useCallback((control: Element | null) => {
-    const scroller = toolbarControlsRef.current;
-    // Portal popovers bubble React focus events but must not move the toolbar.
-    if (!scroller || !control || !scroller.contains(control)) return;
-    const viewport = scroller.getBoundingClientRect();
-    const bounds = control.getBoundingClientRect();
-    if (bounds.left < viewport.left) scroller.scrollLeft += bounds.left - viewport.left;
-    else if (bounds.right > viewport.right) scroller.scrollLeft += bounds.right - viewport.right;
-  }, []);
+  const revealToolbarControl = useCallback(
+    (control: Element | null) => {
+      const scroller = toolbarControlsRef.current;
+      // Portal popovers bubble React focus events but must not move the toolbar.
+      if (!scroller || !control || !scroller.contains(control)) return;
+      const viewport = scroller.getBoundingClientRect();
+      const bounds = control.getBoundingClientRect();
+      if (bounds.left < viewport.left)
+        scroller.scrollLeft += (bounds.left - viewport.left) / toolbarScale;
+      else if (bounds.right > viewport.right)
+        scroller.scrollLeft += (bounds.right - viewport.right) / toolbarScale;
+    },
+    [toolbarScale],
+  );
   const [settingsTab, setSettingsTab] = useState("Style");
   const [templateDrawing, setTemplateDrawing] = useState<ChartDrawing | null>(null);
   const [renameTarget, setRenameTarget] = useState<{
@@ -884,12 +891,14 @@ export function DrawingSelectionOverlay({
     if (!toolbar || !chart) return;
     const resize = () => {
       setCompactToolbar(chart.clientWidth < 440);
-      const limit = Math.max(0, (chart.clientWidth - toolbar.offsetWidth) / 2 - 8);
-      const bottom = Math.max(0, chart.clientHeight - toolbar.offsetHeight - 12);
       setOffset((previous) => {
-        const x = Math.max(-limit, Math.min(limit, previous.x));
-        const y = Math.max(0, Math.min(bottom, previous.y));
-        return x === previous.x && y === previous.y ? previous : { x, y };
+        const next = clampDrawingToolbarOffset(
+          previous,
+          { width: chart.clientWidth, height: chart.clientHeight },
+          { width: toolbar.offsetWidth, height: toolbar.offsetHeight },
+          toolbarScale,
+        );
+        return next.x === previous.x && next.y === previous.y ? previous : next;
       });
       revealToolbarControl(document.activeElement);
     };
@@ -900,7 +909,7 @@ export function DrawingSelectionOverlay({
     return () => observer.disconnect();
     // Selection/tool changes mount or replace the toolbar node observed above.
     // eslint-disable-next-line react/exhaustive-effect-dependencies
-  }, [selected?.id, drawings.tool, group, revealToolbarControl]);
+  }, [selected?.id, drawings.tool, group, revealToolbarControl, toolbarScale]);
   if (!selected || drawings.tool !== "cursor") return null;
   const regression =
     selected.kind === "regression-trend"
@@ -972,6 +981,9 @@ export function DrawingSelectionOverlay({
         style={{
           marginLeft: offset.x,
           marginTop: offset.y,
+          scale: toolbarScale,
+          transformOrigin: "top center",
+          maxWidth: `calc((100% - 16px) / ${toolbarScale})`,
           fontFamily: '-apple-system, system-ui, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
         }}
       >
@@ -995,17 +1007,17 @@ export function DrawingSelectionOverlay({
             if (!drag.current) return;
             const parent = event.currentTarget.parentElement!;
             const chart = parent.parentElement!.getBoundingClientRect();
-            const limit = Math.max(0, (chart.width - parent.offsetWidth) / 2 - 8);
-            setOffset({
-              x: Math.max(
-                -limit,
-                Math.min(limit, drag.current.originX + event.clientX - drag.current.x),
+            setOffset(
+              clampDrawingToolbarOffset(
+                {
+                  x: drag.current.originX + event.clientX - drag.current.x,
+                  y: drag.current.originY + event.clientY - drag.current.y,
+                },
+                chart,
+                { width: parent.offsetWidth, height: parent.offsetHeight },
+                toolbarScale,
               ),
-              y: Math.max(
-                0,
-                Math.min(chart.height - 60, drag.current.originY + event.clientY - drag.current.y),
-              ),
-            });
+            );
           }}
           onPointerUp={(event) => {
             drag.current = null;
