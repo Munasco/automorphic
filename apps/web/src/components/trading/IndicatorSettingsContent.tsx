@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ColorPicker, DrawingSelect } from "./DrawingStyleControls";
 import { resolveIndicatorStyle } from "./indicatorStyles";
+import { IndicatorTimeField } from "./IndicatorTimeField";
 import { IndicatorNumberField } from "./IndicatorNumberField";
 import {
   INDICATOR_INPUTS,
@@ -242,30 +243,30 @@ export function IndicatorSettingsContent({
           <>
             <label className="flex items-center justify-between">
               Session start
-              <input
-                type="time"
+              <IndicatorTimeField
+                resetKey={inputResetVersion}
                 className={inputClass}
-                aria-label={accessible("Initial balance session start")}
+                label={accessible("Initial balance session start")}
                 value={initialBalance.startTime}
-                onChange={(event) =>
+                onCommit={(startTime) =>
                   settings.setIndicatorInstanceInitialBalance(id, {
                     ...initialBalance,
-                    startTime: event.target.value,
+                    startTime,
                   })
                 }
               />
             </label>
             <label className="flex items-center justify-between">
               Session end
-              <input
-                type="time"
-                aria-label={accessible("Initial balance session end")}
+              <IndicatorTimeField
+                resetKey={inputResetVersion}
+                label={accessible("Initial balance session end")}
                 className={inputClass}
                 value={initialBalance.sessionEndTime ?? "16:00"}
-                onChange={(event) =>
+                onCommit={(sessionEndTime) =>
                   settings.setIndicatorInstanceInitialBalance(id, {
                     ...initialBalance,
-                    sessionEndTime: event.target.value,
+                    sessionEndTime,
                   })
                 }
               />

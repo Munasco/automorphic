@@ -4282,3 +4282,49 @@ it("persists a pane size reset without changing indicator settings or other char
     paneStretchFactors: {},
   });
 });
+
+it("commits independent IB session times and rejects incomplete or overlapping boundaries without saving", async () => {
+  const store = useChartPreferences.getState();
+  store.addIndicator("ib");
+  const copy = store.duplicateIndicatorInstance("base:ib")!;
+  const original = { ...useChartPreferences.getState().initialBalance };
+  const writes = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.length;
+  for (const patch of [
+    { startTime: "" },
+    { startTime: "09:" },
+    { startTime: "15:30" },
+    { sessionEndTime: "" },
+    { sessionEndTime: "10:00" },
+    { sessionEndTime: "24:00" },
+  ]) {
+    expect(store.setIndicatorInstanceInitialBalance("base:ib", { ...original, ...patch })).toBe(
+      false,
+    );
+  }
+  expect(vi.mocked(tradingWorkspaceStorage.setItem)).toHaveBeenCalledTimes(writes);
+  expect(
+    store.setIndicatorInstanceInitialBalance("base:ib", {
+      ...original,
+      startTime: "08:45",
+      sessionEndTime: "15:45",
+    }),
+  ).toBe(true);
+  expect(
+    store.setIndicatorInstanceInitialBalance(copy, {
+      ...original,
+      startTime: "10:00",
+      sessionEndTime: "17:00",
+    }),
+  ).toBe(true);
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  expect(useChartPreferences.getState().initialBalance).toMatchObject({
+    startTime: "08:45",
+    sessionEndTime: "15:45",
+  });
+  expect(
+    useChartPreferences.getState().extraIndicators.find((item) => item.id === copy)?.initialBalance,
+  ).toMatchObject({ startTime: "10:00", sessionEndTime: "17:00" });
+});
