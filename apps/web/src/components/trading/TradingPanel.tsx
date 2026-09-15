@@ -1,6 +1,7 @@
 import { chartIntervalKey, type ChartInterval } from "./tradingIntervals";
 import { ChartViewMenu, type ChartView } from "./ChartViewMenu";
 import { INSTRUMENTS, INSTRUMENT_ROOTS } from "./tradingInstruments";
+import { ObjectTreeIcon } from "./ObjectTreeIcon";
 import { AlertIcon } from "./AlertIcon";
 import { WatchlistPanel } from "./WatchlistPanel";
 import { useQueryClient } from "@tanstack/react-query";
@@ -84,6 +85,11 @@ function ReadyTradingPanel({
     alert?: ChartPriceAlert;
   } | null>(null);
   const [sideView, setSideView] = useState<"watchlist" | "alerts" | null>(null);
+  const [objectTreeOpen, setObjectTreeOpen] = useState(false);
+  const handleObjectTreeOpen = (open: boolean) => {
+    setObjectTreeOpen(open);
+    if (open) setSideView(null);
+  };
   const error = selectedQuery.error?.message;
   const settingsControl = (
     <Tooltip>
@@ -112,7 +118,10 @@ function ReadyTradingPanel({
     />
   );
   const panelActions = (
-    <div className="ml-auto flex shrink-0 items-center gap-1">
+    <nav
+      aria-label="Chart sidebar"
+      className="flex h-full w-10 shrink-0 flex-col items-center gap-1 overflow-y-auto border-l border-border bg-background py-2"
+    >
       {!settings.useTradingView
         ? [
             { name: "list-details" as const, label: "Watchlist", view: "watchlist" as const },
@@ -127,6 +136,7 @@ function ReadyTradingPanel({
                     aria-pressed={sideView === item.view}
                     onClick={() => {
                       setView("chart");
+                      setObjectTreeOpen(false);
                       setAlertDraft(null);
                       setSideView(sideView === item.view ? null : item.view);
                     }}
@@ -148,10 +158,32 @@ function ReadyTradingPanel({
                   <span className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-blue-400" />
                 ) : null}
               </TooltipTrigger>
-              <TooltipPopup>{item.label}</TooltipPopup>
+              <TooltipPopup side="left">{item.label}</TooltipPopup>
             </Tooltip>
           ))
         : null}
+      {!settings.useTradingView ? (
+        <Tooltip>
+          <TooltipTrigger
+            type="button"
+            aria-label="Object tree"
+            aria-pressed={objectTreeOpen && activeView === "chart"}
+            onClick={() => {
+              setView("chart");
+              handleObjectTreeOpen(!objectTreeOpen || activeView !== "chart");
+            }}
+            className={cn(
+              "flex size-8 items-center justify-center rounded hover:bg-accent",
+              objectTreeOpen && activeView === "chart"
+                ? "bg-accent text-blue-400"
+                : "text-muted-foreground",
+            )}
+          >
+            <ObjectTreeIcon className="size-5" />
+          </TooltipTrigger>
+          <TooltipPopup side="left">Object tree</TooltipPopup>
+        </Tooltip>
+      ) : null}
       {expanded && onToggleAi ? (
         <Tooltip>
           <TooltipTrigger
@@ -170,9 +202,10 @@ function ReadyTradingPanel({
           >
             <ChartIcon name="message-chatbot" className="size-5" />
           </TooltipTrigger>
-          <TooltipPopup>AI chat</TooltipPopup>
+          <TooltipPopup side="left">AI chat</TooltipPopup>
         </Tooltip>
       ) : null}
+      <div className="flex-1" />
       {onToggleExpand && !expanded ? (
         <Tooltip>
           <TooltipTrigger
@@ -187,10 +220,10 @@ function ReadyTradingPanel({
           >
             <ChartIcon name="maximize" className="size-5" />
           </TooltipTrigger>
-          <TooltipPopup>Expand chart</TooltipPopup>
+          <TooltipPopup side="left">Expand chart</TooltipPopup>
         </Tooltip>
       ) : null}
-    </div>
+    </nav>
   );
   return (
     <ChartOverlayLayoutProvider containerRef={chartContainerRef}>
@@ -198,137 +231,145 @@ function ReadyTradingPanel({
         aria-label="Trading panel"
         className="trading-surface @container flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background"
       >
-        {!expanded && !settings.useTradingView ? (
-          <InstrumentHeader
-            root={settings.root}
-            symbol={symbol}
-            quote={quote}
-            onSelect={() => setPickerOpen(true)}
-          />
-        ) : null}
-        <SymbolPicker
-          open={pickerOpen}
-          onOpenChange={setPickerOpen}
-          contracts={contracts}
-          selected={symbol}
-          loading={loading}
-          onSelect={(contract) => {
-            settings.setRoot(contract.root);
-            settings.setSelectedSymbol(contract.name);
-          }}
-        />
-        {activeView === "news" ? (
-          <div className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1">
-            {navigationControl}
-            <span className="text-xs text-muted-foreground">News</span>
-            <div className="ml-auto flex items-center">
-              {settingsControl}
-              {panelActions}
-            </div>
-          </div>
-        ) : null}
-        {error && !settings.useTradingView ? (
-          <div
-            role="alert"
-            className="flex items-center gap-3 border-b border-border p-3 text-xs text-amber-400"
-          >
-            <p className="flex-1">{error}</p>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={selectedQuery.isFetching}
-              onClick={() => void selectedQuery.refetch()}
-            >
-              {selectedQuery.isFetching ? "Retrying…" : "Retry"}
-            </Button>
-          </div>
-        ) : null}
-        <div
-          className={cn(
-            "relative min-h-0 min-w-0 flex-1",
-            activeView !== "news" ? "flex" : "hidden",
-          )}
-        >
-          <div ref={chartContainerRef} className="min-h-0 min-w-0 flex-1 overflow-hidden">
-            {settings.useTradingView ? (
-              <TradingViewEmbedPanel
-                expanded={expanded}
-                settingsControl={settingsControl}
-                navigationControl={navigationControl}
-                panelActions={panelActions}
-              />
-            ) : (
-              <TradovateChart
-                key={`${symbol}:${chartIntervalKey(settings.interval)}`}
-                symbol={symbol}
-                interval={settings.interval}
-                onQuote={handleQuote}
-                onDrawingAlertsChange={handleDrawingAlerts}
-                priceAlerts={alerts}
-                onEditPriceAlert={(alert) => {
-                  setAlertDraft((draft) => ({ id: (draft?.id ?? 0) + 1, symbol, alert }));
-                  setSideView("alerts");
-                }}
-                onAddPriceAlert={(price) => {
-                  setAlertDraft((draft) => ({ id: (draft?.id ?? 0) + 1, symbol, price }));
-                  setSideView("alerts");
-                }}
+        <div className="flex min-h-0 min-w-0 flex-1">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {!expanded && !settings.useTradingView ? (
+              <InstrumentHeader
                 root={settings.root}
-                onSelectSymbol={() => setPickerOpen(true)}
-                onIntervalChange={settings.setInterval}
-                panelActions={panelActions}
-                navigationControl={navigationControl}
-                technicals={activeView === "technicals"}
-                technicalInterval={technicalInterval}
-                onTechnicalIntervalChange={setTechnicalInterval}
-                onBackFromTechnicals={() => setView("chart")}
-                settingsControl={settingsControl}
+                symbol={symbol}
+                quote={quote}
+                onSelect={() => setPickerOpen(true)}
               />
-            )}
-          </div>
-          {sideView && !settings.useTradingView ? (
-            <aside
-              aria-label={
-                sideView === "alerts" ? "Chart alerts sidebar" : "Chart watchlist sidebar"
-              }
-              className="absolute inset-y-0 right-0 z-20 flex w-[min(300px,100%)] flex-col overflow-hidden border-l border-border bg-background shadow-xl @min-[800px]:static @min-[800px]:h-full @min-[800px]:shrink-0 @min-[800px]:shadow-none"
-            >
-              {sideView === "alerts" ? (
-                <ChartAlerts
-                  key={`${symbol}:${alertDraft?.id ?? "sidebar"}`}
-                  initialEditAlert={alertDraft?.symbol === symbol ? alertDraft.alert : undefined}
-                  initialCreatePrice={alertDraft?.symbol === symbol ? alertDraft.price : undefined}
-                  controller={alerts}
-                  drawingController={currentDrawingAlerts}
-                  symbol={symbol}
-                  lastPrice={quote?.last}
-                  onClose={() => setSideView(null)}
-                />
-              ) : (
-                <WatchlistPanel
-                  contracts={contracts}
-                  selected={symbol}
-                  onClose={() => setSideView(null)}
-                  onSelect={(contract) => {
-                    queryClient.setQueryData(contractQueryOptions(scope, contract.root).queryKey, [
-                      contract,
-                    ]);
-                    settings.setRoot(contract.root);
-                    settings.setSelectedSymbol(contract.name);
-                  }}
-                />
-              )}
-            </aside>
-          ) : null}
-        </div>
-        {activeView === "news" ? (
-          <div className="min-h-0 flex-1 overflow-hidden">
-            <LiveWires
-              root={INSTRUMENTS[settings.root].family === "gold" ? "MGC" : "NQ"}
-              projectId={projectId}
+            ) : null}
+            <SymbolPicker
+              open={pickerOpen}
+              onOpenChange={setPickerOpen}
+              contracts={contracts}
+              selected={symbol}
+              loading={loading}
+              onSelect={(contract) => {
+                settings.setRoot(contract.root);
+                settings.setSelectedSymbol(contract.name);
+              }}
             />
+            {activeView === "news" ? (
+              <div className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1">
+                {navigationControl}
+                <span className="text-xs text-muted-foreground">News</span>
+                <div className="ml-auto flex items-center">{settingsControl}</div>
+              </div>
+            ) : null}
+            {error && !settings.useTradingView ? (
+              <div
+                role="alert"
+                className="flex items-center gap-3 border-b border-border p-3 text-xs text-amber-400"
+              >
+                <p className="flex-1">{error}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={selectedQuery.isFetching}
+                  onClick={() => void selectedQuery.refetch()}
+                >
+                  {selectedQuery.isFetching ? "Retrying…" : "Retry"}
+                </Button>
+              </div>
+            ) : null}
+            <div
+              className={cn(
+                "relative min-h-0 min-w-0 flex-1",
+                activeView !== "news" ? "flex" : "hidden",
+              )}
+            >
+              <div ref={chartContainerRef} className="min-h-0 min-w-0 flex-1 overflow-hidden">
+                {settings.useTradingView ? (
+                  <TradingViewEmbedPanel
+                    expanded={expanded}
+                    settingsControl={settingsControl}
+                    navigationControl={navigationControl}
+                  />
+                ) : (
+                  <TradovateChart
+                    key={`${symbol}:${chartIntervalKey(settings.interval)}`}
+                    symbol={symbol}
+                    interval={settings.interval}
+                    objectTreeState={{ open: objectTreeOpen, onOpenChange: handleObjectTreeOpen }}
+                    onQuote={handleQuote}
+                    onDrawingAlertsChange={handleDrawingAlerts}
+                    priceAlerts={alerts}
+                    onEditPriceAlert={(alert) => {
+                      setAlertDraft((draft) => ({ id: (draft?.id ?? 0) + 1, symbol, alert }));
+                      setObjectTreeOpen(false);
+                      setSideView("alerts");
+                    }}
+                    onAddPriceAlert={(price) => {
+                      setAlertDraft((draft) => ({ id: (draft?.id ?? 0) + 1, symbol, price }));
+                      setObjectTreeOpen(false);
+                      setSideView("alerts");
+                    }}
+                    root={settings.root}
+                    onSelectSymbol={() => setPickerOpen(true)}
+                    onIntervalChange={settings.setInterval}
+                    navigationControl={navigationControl}
+                    technicals={activeView === "technicals"}
+                    technicalInterval={technicalInterval}
+                    onTechnicalIntervalChange={setTechnicalInterval}
+                    onBackFromTechnicals={() => setView("chart")}
+                    settingsControl={settingsControl}
+                  />
+                )}
+              </div>
+              {sideView && !settings.useTradingView ? (
+                <aside
+                  aria-label={
+                    sideView === "alerts" ? "Chart alerts sidebar" : "Chart watchlist sidebar"
+                  }
+                  className="absolute inset-y-0 right-0 z-20 flex w-[min(300px,100%)] flex-col overflow-hidden border-l border-border bg-background shadow-xl @min-[800px]:static @min-[800px]:h-full @min-[800px]:shrink-0 @min-[800px]:shadow-none"
+                >
+                  {sideView === "alerts" ? (
+                    <ChartAlerts
+                      key={`${symbol}:${alertDraft?.id ?? "sidebar"}`}
+                      initialEditAlert={
+                        alertDraft?.symbol === symbol ? alertDraft.alert : undefined
+                      }
+                      initialCreatePrice={
+                        alertDraft?.symbol === symbol ? alertDraft.price : undefined
+                      }
+                      controller={alerts}
+                      drawingController={currentDrawingAlerts}
+                      symbol={symbol}
+                      lastPrice={quote?.last}
+                      onClose={() => setSideView(null)}
+                    />
+                  ) : (
+                    <WatchlistPanel
+                      contracts={contracts}
+                      selected={symbol}
+                      onClose={() => setSideView(null)}
+                      onSelect={(contract) => {
+                        queryClient.setQueryData(
+                          contractQueryOptions(scope, contract.root).queryKey,
+                          [contract],
+                        );
+                        settings.setRoot(contract.root);
+                        settings.setSelectedSymbol(contract.name);
+                      }}
+                    />
+                  )}
+                </aside>
+              ) : null}
+            </div>
+            {activeView === "news" ? (
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <LiveWires
+                  root={INSTRUMENTS[settings.root].family === "gold" ? "MGC" : "NQ"}
+                  projectId={projectId}
+                />
+              </div>
+            ) : null}
           </div>
-        ) : null}
+          {panelActions}
+        </div>
       </section>
     </ChartOverlayLayoutProvider>
   );

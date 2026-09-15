@@ -90,7 +90,6 @@ import { ChartContextMenu } from "./ChartContextMenu";
 import { DrawingObjectTree } from "./DrawingObjectTree";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
-import { ObjectTreeIcon } from "./ObjectTreeIcon";
 import { ChartReplayControls, useChartReplay } from "./ChartReplay";
 import { replayMinuteHistory } from "./replayHistory";
 
@@ -214,7 +213,7 @@ export function TradovateChart({
   onQuote,
   onSelectSymbol,
   onIntervalChange,
-  panelActions,
+  objectTreeState,
   settingsControl,
   navigationControl,
   technicals = false,
@@ -232,7 +231,7 @@ export function TradovateChart({
   onQuote?: ((quote: MarketQuote | null) => void) | undefined;
   onSelectSymbol: () => void;
   onIntervalChange: (interval: ChartInterval) => void;
-  panelActions?: ReactNode;
+  objectTreeState?: { open: boolean; onOpenChange: (open: boolean) => void };
   settingsControl?: ReactNode;
   navigationControl?: ReactNode;
   technicals?: boolean;
@@ -344,7 +343,9 @@ export function TradovateChart({
   const [hovered, setHovered] = useState<Candle | null>(null);
   const [notice, setNotice] = useState("");
   const [displaySettingsOpen, setDisplaySettingsOpen] = useState(false);
-  const [objectTreeOpen, setObjectTreeOpen] = useState(false);
+  const [localObjectTreeOpen, setLocalObjectTreeOpen] = useState(false);
+  const objectTreeOpen = objectTreeState?.open ?? localObjectTreeOpen;
+  const setObjectTreeOpen = objectTreeState?.onOpenChange ?? setLocalObjectTreeOpen;
   const [tableOpen, setTableOpen] = useState(false);
   const [alertDrawing, setAlertDrawing] = useState<ChartDrawing | null>(null);
   const [readings, setReadings] = useState<IndicatorReadings>({});
@@ -1155,18 +1156,6 @@ export function TradovateChart({
             </TooltipTrigger>
             <TooltipPopup>Replay loaded historical candles</TooltipPopup>
           </Tooltip>
-        }
-        panelActions={
-          <>
-            <ChartAction
-              label="Object tree"
-              active={objectTreeOpen}
-              onClick={() => setObjectTreeOpen((open) => !open)}
-            >
-              <ObjectTreeIcon className="size-[18px]" />
-            </ChartAction>
-            {panelActions}
-          </>
         }
         navigationControl={navigationControl}
       />
