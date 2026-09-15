@@ -116,6 +116,7 @@ function assertReady() {
 export const useReplayBookmarks = create<{
   bookmarks: ReplayBookmark[];
   add: (scope: string, name: string, time: number, anchor?: ReplayBookmarkAnchor) => string;
+  rename: (id: string, name: string) => boolean;
   remove: (id: string) => boolean;
 }>()(
   persist(
@@ -143,6 +144,21 @@ export const useReplayBookmarks = create<{
           throw Error("Remove a bookmark before adding another (100 per workspace).");
         set({ bookmarks: [...current, bookmark] });
         return bookmark.id;
+      },
+      rename: (id, name) => {
+        assertReady();
+        if (!text(name, 80)) throw Error("Enter a bookmark name between 1 and 80 characters.");
+        const current = get().bookmarks;
+        const bookmark = current.find((saved) => saved.id === id);
+        if (!bookmark) return false;
+        const normalizedName = name.trim();
+        if (bookmark.name === normalizedName) return true;
+        set({
+          bookmarks: current.map((saved) =>
+            saved.id === id ? { ...saved, name: normalizedName } : saved,
+          ),
+        });
+        return true;
       },
       remove: (id) => {
         assertReady();

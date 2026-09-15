@@ -233,3 +233,49 @@ describe("exact replay bookmark anchors", () => {
     expect(saved.anchor!.ohlcv[0]).toBe(10);
   });
 });
+
+describe("bookmark renaming", () => {
+  it("preserves exact anchors, scope, order and other bookmarks across rename and reload", async () => {
+    const store = useReplayBookmarks.getState();
+    const bar = {
+      time: 1000.000001,
+      actualTime: 1000,
+      barId: "tick:two",
+      open: 10,
+      high: 12,
+      low: 9,
+      close: 11,
+      volume: 2,
+    };
+    const id = store.add("NQ:tick:100", "Old", 1000, replayBookmarkAnchor(bar));
+    store.add("NQ:minute:5", "Same name", 1000);
+    const original = useReplayBookmarks.getState().bookmarks;
+    expect(store.rename(id, " Same name ")).toBe(true);
+    const expected = [{ ...original[0]!, name: "Same name" }, original[1]!];
+    expect(useReplayBookmarks.getState().bookmarks).toEqual(expected);
+    expect(useReplayBookmarks.getState().bookmarks[1]).toBe(original[1]);
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    useReplayBookmarks.setState(useReplayBookmarks.getInitialState(), true);
+    await useReplayBookmarks.persist.rehydrate();
+    expect(useReplayBookmarks.getState().bookmarks).toEqual(expected);
+    expect(resolveReplayBookmark([bar], useReplayBookmarks.getState().bookmarks[0]!)).toBe(0);
+  });
+  it("allows renaming at capacity while rejecting invalid names and skipping missing or unchanged records", () => {
+    const store = useReplayBookmarks.getState();
+    let id = "";
+    for (let i = 0; i < MAX_REPLAY_BOOKMARKS; i++) id = store.add("NQ:5m", `Bar ${i}`, i);
+    expect(store.rename(id, "Last setup")).toBe(true);
+    expect(useReplayBookmarks.getState().bookmarks).toHaveLength(MAX_REPLAY_BOOKMARKS);
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    expect(store.rename(id, " Last setup ")).toBe(true);
+    expect(store.rename("missing", "Name")).toBe(false);
+    for (const value of ["", "  ", "a".repeat(81)])
+      expect(() => store.rename(id, value)).toThrow("name");
+    vi.mocked(tradingWorkspaceStorage.getSnapshot).mockReturnValue({ ready: false } as ReturnType<
+      typeof tradingWorkspaceStorage.getSnapshot
+    >);
+    expect(() => store.rename(id, "Changed")).toThrow("loading");
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  });
+});
