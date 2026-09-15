@@ -173,7 +173,7 @@ export function ChartReplayControls({
         />
         <ReplayBookmarks
           scope={bookmarkScope}
-          time={timestamp(current)}
+          bar={current}
           timeZone={timeZone}
           bars={bars}
           onPause={replay.pause}

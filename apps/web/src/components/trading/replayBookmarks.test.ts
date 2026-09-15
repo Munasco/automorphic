@@ -13,6 +13,8 @@ import {
   MAX_REPLAY_BOOKMARKS,
   normalizeReplayBookmarks,
   useReplayBookmarks,
+  replayBookmarkAnchor,
+  resolveReplayBookmark,
 } from "./replayBookmarks";
 
 beforeEach(() => {
@@ -118,5 +120,116 @@ describe("replay bookmarks", () => {
     const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls.at(-1)![0];
     await hydrate();
     expect(useReplayBookmarks.getState().bookmarks).toEqual([]);
+  });
+});
+
+describe("exact replay bookmark anchors", () => {
+  const bars = [
+    {
+      time: 1000,
+      actualTime: 1000,
+      barId: "tick:a",
+      open: 10,
+      high: 12,
+      low: 9,
+      close: 11,
+      volume: 2,
+    },
+    {
+      time: 1000.000001,
+      actualTime: 1000,
+      barId: "tick:b",
+      open: 11,
+      high: 13,
+      low: 10,
+      close: 12,
+      volume: 3,
+    },
+    {
+      time: 1060,
+      actualTime: 1060,
+      barId: "tick:c",
+      open: 12,
+      high: 14,
+      low: 11,
+      close: 13,
+      volume: 4,
+    },
+  ];
+  it("saves and restores separate same-timestamp tick bars and resolves each exact bar", async () => {
+    const store = useReplayBookmarks.getState();
+    store.add("NQ:tick:100", "First", 1000, replayBookmarkAnchor(bars[0]!));
+    store.add("NQ:tick:100", "Second", 1000, replayBookmarkAnchor(bars[1]!));
+    expect(() => store.add("NQ:tick:100", "Again", 1000, replayBookmarkAnchor(bars[0]!))).toThrow(
+      "already",
+    );
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    useReplayBookmarks.setState(useReplayBookmarks.getInitialState(), true);
+    await useReplayBookmarks.persist.rehydrate();
+    const bookmarks = useReplayBookmarks.getState().bookmarks;
+    expect(bookmarks).toHaveLength(2);
+    expect(bookmarks.map((bookmark) => resolveReplayBookmark(bars, bookmark))).toEqual([0, 1]);
+    expect(resolveReplayBookmark([{ ...bars[0]!, time: 999 }, bars[1]!], bookmarks[0]!)).toBe(0);
+  });
+  it("does not fall back to another tick when the exact bar is missing or corrected", () => {
+    const bookmark = {
+      id: "saved",
+      scope: "NQ:tick:100",
+      name: "First",
+      time: 1000,
+      anchor: replayBookmarkAnchor(bars[0]!),
+    };
+    expect(resolveReplayBookmark(bars.slice(1), bookmark)).toBeNull();
+    expect(resolveReplayBookmark([{ ...bars[0]!, volume: 999 }, bars[1]!], bookmark)).toBeNull();
+    expect(
+      resolveReplayBookmark([{ ...bars[0]!, actualTime: 999 }, bars[1]!], bookmark),
+    ).toBeNull();
+    const { barId: _barId, ...noId } = bars[0]!;
+    const withoutId = { ...bookmark, anchor: replayBookmarkAnchor(noId) };
+    expect(resolveReplayBookmark([noId, bars[1]!], withoutId)).toBe(0);
+    expect(resolveReplayBookmark([bars[1]!], withoutId)).toBeNull();
+  });
+  it("preserves legacy timestamp behavior while allowing an exact replacement to coexist", () => {
+    const store = useReplayBookmarks.getState();
+    store.add("NQ:tick:100", "Legacy", 1000);
+    store.add("NQ:tick:100", "Exact", 1000, replayBookmarkAnchor(bars[0]!));
+    const bookmarks = normalizeReplayBookmarks(useReplayBookmarks.getState().bookmarks);
+    expect(bookmarks).toHaveLength(2);
+    expect(bookmarks.map((bookmark) => resolveReplayBookmark(bars, bookmark))).toEqual([1, 0]);
+  });
+  it("rejects malformed anchors without degrading into timestamp-only bookmarks", () => {
+    const anchor = replayBookmarkAnchor(bars[0]!);
+    const bookmark = { id: "saved", scope: "NQ:tick:100", name: "First", time: 1000, anchor };
+    for (const invalid of [
+      null,
+      {},
+      { ...anchor, id: "" },
+      { ...anchor, id: "a".repeat(257) },
+      { ...anchor, time: NaN },
+      { ...anchor, ohlcv: [10, 12, 9, 11] },
+      { ...anchor, ohlcv: [10, 12, 9, 11, Infinity] },
+      { ...anchor, ohlcv: [10, 12, 9, 11, -1] },
+      { ...anchor, ohlcv: [10, 8, 9, 11, 2] },
+    ]) {
+      expect(normalizeReplayBookmarks([{ ...bookmark, anchor: invalid }])).toEqual([]);
+      expect(() =>
+        useReplayBookmarks.getState().add("NQ:tick:100", "Bad", 1000, invalid as typeof anchor),
+      ).toThrow("invalid");
+    }
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  });
+  it("copies exact anchors and strips unrelated metadata before saving", () => {
+    const anchor = replayBookmarkAnchor(bars[0]!);
+    useReplayBookmarks.getState().add("NQ:tick:100", "First", 1000, anchor);
+    anchor.ohlcv[0] = 0;
+    const saved = useReplayBookmarks.getState().bookmarks[0]!;
+    expect(saved.anchor!.ohlcv[0]).toBe(10);
+    const normalized = normalizeReplayBookmarks([
+      { ...saved, anchor: { ...saved.anchor, credentials: "ignored" } },
+    ]);
+    expect(normalized[0]!.anchor).not.toHaveProperty("credentials");
+    normalized[0]!.anchor!.ohlcv[0] = 1;
+    expect(saved.anchor!.ohlcv[0]).toBe(10);
   });
 });

@@ -3,26 +3,26 @@ import { BookmarkIcon, Trash2Icon } from "lucide-react";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
-import { useReplayBookmarks } from "./replayBookmarks";
-import { replayIndexAt } from "./replayHistory";
+import { useReplayBookmarks, replayBookmarkAnchor, resolveReplayBookmark } from "./replayBookmarks";
 import type { Candle } from "./chartIndicators";
 
 export function ReplayBookmarks({
   scope,
-  time,
+  bar,
   timeZone,
   bars,
   onPause,
   onSeek,
 }: {
   scope: string;
-  time: number;
+  bar: Candle;
   timeZone: string;
   bars: readonly Candle[];
   onPause: () => void;
   onSeek: (index: number) => void;
 }) {
   const store = useReplayBookmarks();
+  const time = bar.actualTime ?? bar.time;
   const workspace = useSyncExternalStore(
     tradingWorkspaceStorage.subscribe,
     tradingWorkspaceStorage.getSnapshot,
@@ -78,7 +78,7 @@ export function ReplayBookmarks({
           onSubmit={(event) => {
             event.preventDefault();
             run(() => {
-              store.add(scope, name, time);
+              store.add(scope, name, time, replayBookmarkAnchor(bar));
               setName("");
             });
           }}
@@ -118,9 +118,11 @@ export function ReplayBookmarks({
                   disabled={!workspace.ready}
                   onClick={() =>
                     run(() => {
-                      const index = replayIndexAt(bars, bookmark.time);
+                      const index = resolveReplayBookmark(bars, bookmark);
                       if (index === null)
-                        throw Error("This bookmark is outside the loaded replay history.");
+                        throw Error(
+                          "The bookmarked bar is unavailable or has changed in the loaded history.",
+                        );
                       onSeek(index);
                       setOpen(false);
                     })
