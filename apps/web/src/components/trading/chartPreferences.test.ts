@@ -3424,3 +3424,115 @@ describe("saved indicator instance order", () => {
     );
   });
 });
+
+describe("candle and bar color preferences", () => {
+  const defaults = { candleUpColor: "#26a69a", candleDownColor: "#ef5350" };
+  const invalid = [
+    undefined,
+    null,
+    "",
+    "red",
+    "#abc",
+    "#abcdef00",
+    "abcdef",
+    "#gggggg",
+    " #abcdef",
+    123456,
+    {},
+    ["#abcdef"],
+  ];
+
+  it("defaults old saves and repairs each color independently", () => {
+    expect(useChartPreferences.getInitialState()).toMatchObject(defaults);
+    expect(normalizeChartPreferences({})).toMatchObject(defaults);
+    for (const color of invalid) {
+      expect(
+        normalizeChartPreferences({
+          candleUpColor: color,
+          candleDownColor: "#ABCDEF",
+          showCandleWicks: false,
+        }),
+      ).toMatchObject({
+        candleUpColor: defaults.candleUpColor,
+        candleDownColor: "#ABCDEF",
+        showCandleWicks: false,
+      });
+      expect(
+        normalizeChartPreferences({
+          candleUpColor: "#123456",
+          candleDownColor: color,
+          gridColor: "#abcdef",
+        }),
+      ).toMatchObject({
+        candleUpColor: "#123456",
+        candleDownColor: defaults.candleDownColor,
+        gridColor: "#abcdef",
+      });
+    }
+  });
+
+  it("rejects invalid and unchanged colors without writes or notifications", () => {
+    const store = useChartPreferences.getState();
+    const before = useChartPreferences.getState();
+    const listener = vi.fn();
+    const unsubscribe = useChartPreferences.subscribe(listener);
+    try {
+      for (const value of invalid) {
+        store.setCandleUpColor(value as string);
+        store.setCandleDownColor(value as string);
+      }
+      store.setCandleUpColor(defaults.candleUpColor);
+      store.setCandleDownColor(defaults.candleDownColor);
+      expect(useChartPreferences.getState()).toBe(before);
+      expect(listener).not.toHaveBeenCalled();
+      expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+      store.setCandleUpColor("#ABCDEF");
+      expect(useChartPreferences.getState()).toMatchObject({
+        candleUpColor: "#ABCDEF",
+        candleDownColor: defaults.candleDownColor,
+      });
+      store.setCandleDownColor("#123456");
+      expect(listener).toHaveBeenCalledTimes(2);
+      expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(2);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("preserves both choices across chart styles and restores them with unrelated settings", async () => {
+    const store = configure();
+    store.toggleCandleWicks();
+    store.setGridColor("#112233");
+    const before = normalizeChartPreferences(useChartPreferences.getState());
+    store.setCandleUpColor("#ABCDEF");
+    store.setCandleDownColor("#123456");
+    const expected = { ...before, candleUpColor: "#ABCDEF", candleDownColor: "#123456" };
+    for (const style of ["hollow", "heikin-ashi", "bars", "line", "candles"] as const) {
+      store.setStyle(style);
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+        ...expected,
+        style,
+      });
+    }
+    const serialized = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(serialized);
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    await useChartPreferences.persist.rehydrate();
+    expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+      ...expected,
+      style: "candles",
+    });
+    const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+      JSON.stringify({ version: 0, state: { candleDownColor: "#654321" } }),
+    );
+    await hydrate();
+    expect(useChartPreferences.getState()).toMatchObject({
+      ...defaults,
+      candleDownColor: "#654321",
+    });
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(null);
+    await hydrate();
+    expect(useChartPreferences.getState()).toMatchObject(defaults);
+  });
+});

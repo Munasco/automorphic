@@ -10,11 +10,15 @@ export interface HollowCandleColors {
  * Equal closes use the up color. With no usable previous close, compare to the current open.
  * Doji bodies remain colored so their horizontal stroke is visible.
  */
-export function hollowCandleColors(bar: Candle, previous?: Candle): HollowCandleColors {
+export function hollowCandleColors(
+  bar: Candle,
+  previous?: Candle,
+  palette = { up: "#26a69a", down: "#ef5350" },
+): HollowCandleColors {
   if (!Number.isFinite(bar.open) || !Number.isFinite(bar.close))
     return { color: "transparent", borderColor: "transparent", wickColor: "transparent" };
   const previousClose = previous && Number.isFinite(previous.close) ? previous.close : bar.open;
-  const directionColor = bar.close >= previousClose ? "#26a69a" : "#ef5350";
+  const directionColor = bar.close >= previousClose ? palette.up : palette.down;
   return {
     color: bar.close > bar.open ? "transparent" : directionColor,
     borderColor: directionColor,

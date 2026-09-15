@@ -126,6 +126,8 @@ type SavedChartPreferences = {
   showBarOpen: boolean;
   showCandleWicks: boolean;
   showCandleBorders: boolean;
+  candleUpColor: string;
+  candleDownColor: string;
   showPriceLine: boolean;
   showPriceLabel: boolean;
   priceScaleMode: ChartPriceScaleMode;
@@ -213,6 +215,8 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     showCandleWicks: typeof saved.showCandleWicks === "boolean" ? saved.showCandleWicks : true,
     showCandleBorders:
       typeof saved.showCandleBorders === "boolean" ? saved.showCandleBorders : true,
+    candleUpColor: validColor(saved.candleUpColor) ? saved.candleUpColor : "#26a69a",
+    candleDownColor: validColor(saved.candleDownColor) ? saved.candleDownColor : "#ef5350",
     showPriceLine: typeof saved.showPriceLine === "boolean" ? saved.showPriceLine : true,
     showPriceLabel: typeof saved.showPriceLabel === "boolean" ? saved.showPriceLabel : true,
     priceScaleMode: validPriceScaleMode(saved.priceScaleMode)
@@ -254,6 +258,8 @@ export const useChartPreferences = create<{
   showBarOpen: boolean;
   showCandleWicks: boolean;
   showCandleBorders: boolean;
+  candleUpColor: string;
+  candleDownColor: string;
   showPriceLine: boolean;
   showPriceLabel: boolean;
   priceScaleMode: ChartPriceScaleMode;
@@ -292,6 +298,8 @@ export const useChartPreferences = create<{
   setGridColor: (color: string) => void;
   setLineChartSource: (source: PriceSource) => void;
   setLineChartColor: (color: string) => void;
+  setCandleUpColor: (color: string) => void;
+  setCandleDownColor: (color: string) => void;
   setLineChartWidth: (width: ChartLineWidth) => void;
   setLineChartShape: (shape: ChartLineShape) => void;
   toggleLineMarkers: () => void;
@@ -342,6 +350,8 @@ export const useChartPreferences = create<{
       showBarOpen: true,
       showCandleWicks: true,
       showCandleBorders: true,
+      candleUpColor: "#26a69a",
+      candleDownColor: "#ef5350",
       showPriceLine: true,
       showPriceLabel: true,
       priceScaleMode: "normal",
@@ -635,6 +645,14 @@ export const useChartPreferences = create<{
       setLineChartSource: (lineChartSource) => {
         if (validLineChartSource(lineChartSource) && lineChartSource !== get().lineChartSource)
           set({ lineChartSource });
+      },
+      setCandleUpColor: (candleUpColor) => {
+        if (validColor(candleUpColor) && candleUpColor !== get().candleUpColor)
+          set({ candleUpColor });
+      },
+      setCandleDownColor: (candleDownColor) => {
+        if (validColor(candleDownColor) && candleDownColor !== get().candleDownColor)
+          set({ candleDownColor });
       },
       setLineChartColor: (lineChartColor) => {
         if (validColor(lineChartColor) && lineChartColor !== get().lineChartColor)

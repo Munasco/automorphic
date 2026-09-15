@@ -15,6 +15,26 @@ const green = "#26a69a",
 
 describe("hollowCandleColors", () => {
   it.each([
+    [10, 12, 11, "transparent", "#3366ff"],
+    [14, 12, 11, "#3366ff", "#3366ff"],
+    [10, 12, 13, "transparent", "#ff9900"],
+    [14, 12, 13, "#ff9900", "#ff9900"],
+    [12, 12, 12, "#3366ff", "#3366ff"],
+  ])(
+    "uses the chosen palette without changing fill or direction (%s, %s, %s)",
+    (open, close, prior, color, direction) => {
+      const bar = candle(Number(open), Number(close));
+      const previous = candle(Number(prior), Number(prior), 1);
+      const original = structuredClone([bar, previous]);
+      expect(hollowCandleColors(bar, previous, { up: "#3366ff", down: "#ff9900" })).toEqual({
+        color,
+        borderColor: direction,
+        wickColor: direction,
+      });
+      expect([bar, previous]).toEqual(original);
+    },
+  );
+  it.each([
     [10, 12, 11, "transparent", green],
     [14, 12, 11, green, green],
     [10, 12, 13, "transparent", red],

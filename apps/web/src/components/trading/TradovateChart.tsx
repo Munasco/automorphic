@@ -332,6 +332,7 @@ export function TradovateChart({
   const appearanceSettings = useRef(settings.appearance);
   const inputSettings = useRef(settings.indicatorInputs);
   const volumeColors = useRef(settings.volumeColors);
+  const candleColors = useRef({ up: settings.candleUpColor, down: settings.candleDownColor });
   const lineChartSource = useRef(settings.lineChartSource);
   const chartTimeZone = useRef(settings.timeZone);
   const initialBalanceSettings = useRef(settings.initialBalance);
@@ -452,6 +453,26 @@ export function TradovateChart({
   }, [engine, settings.lineChartSource]);
 
   useEffect(() => {
+    candleColors.current = { up: settings.candleUpColor, down: settings.candleDownColor };
+    if (!engine || engine.disposed) return;
+    // Hollow candles carry per-bar colors; changing series defaults alone leaves history stale.
+    const bars = [...engine.bars.values()].sort((a, b) => a.time - b.time);
+    engine.prices.hollow.setData(
+      bars.map((bar, index) => ({
+        ...bar,
+        time: bar.time as UTCTimestamp,
+        ...hollowCandleColors(bar, bars[index - 1], candleColors.current),
+      })),
+    );
+    const latest = bars.at(-1);
+    engine.prices.hollow.applyOptions({
+      priceLineColor: latest
+        ? hollowCandleColors(latest, bars.at(-2), candleColors.current).borderColor
+        : "",
+    });
+  }, [engine, settings.candleUpColor, settings.candleDownColor]);
+
+  useEffect(() => {
     auxiliaryHistoryRef.current = auxiliaryHistory;
     indicatorSettings.current = visibleIndicators;
     instanceSettings.current = visibleInstances;
@@ -512,40 +533,40 @@ export function TradovateChart({
     };
     const prices = {
       candles: chart.addSeries(CandlestickSeries, {
-        upColor: "#26a69a",
-        downColor: "#ef5350",
-        borderUpColor: "#26a69a",
-        borderDownColor: "#ef5350",
+        upColor: candleColors.current.up,
+        downColor: candleColors.current.down,
+        borderUpColor: candleColors.current.up,
+        borderDownColor: candleColors.current.down,
         borderVisible: true,
-        wickUpColor: "#26a69a",
-        wickDownColor: "#ef5350",
+        wickUpColor: candleColors.current.up,
+        wickDownColor: candleColors.current.down,
         priceFormat,
       }),
       hollow: chart.addSeries(CandlestickSeries, {
         upColor: "transparent",
-        downColor: "#ef5350",
+        downColor: candleColors.current.down,
         borderVisible: true,
-        wickUpColor: "#26a69a",
-        wickDownColor: "#ef5350",
+        wickUpColor: candleColors.current.up,
+        wickDownColor: candleColors.current.down,
         visible: false,
         priceFormat,
       }),
       "heikin-ashi": chart.addSeries(CandlestickSeries, {
         title: "HA",
-        upColor: "#26a69a",
-        downColor: "#ef5350",
-        borderUpColor: "#26a69a",
-        borderDownColor: "#ef5350",
+        upColor: candleColors.current.up,
+        downColor: candleColors.current.down,
+        borderUpColor: candleColors.current.up,
+        borderDownColor: candleColors.current.down,
         borderVisible: true,
-        wickUpColor: "#26a69a",
-        wickDownColor: "#ef5350",
+        wickUpColor: candleColors.current.up,
+        wickDownColor: candleColors.current.down,
         visible: false,
         // Averaged OHLC can fall between exchange ticks; display its actual two-decimal value.
         priceFormat: { ...priceFormat, minMove: 0.01 },
       }),
       bars: chart.addSeries(BarSeries, {
-        upColor: "#26a69a",
-        downColor: "#ef5350",
+        upColor: candleColors.current.up,
+        downColor: candleColors.current.down,
         visible: false,
         priceFormat,
       }),
@@ -709,11 +730,10 @@ export function TradovateChart({
     let hollowLatest: Candle | undefined;
     let heikinPrevious: Candle | undefined;
     let heikinLatest: Candle | undefined;
-    let hollowPriceColor = "";
     const hollowPoint = (bar: Candle, previous?: Candle) => ({
       ...bar,
       time: bar.time as UTCTimestamp,
-      ...hollowCandleColors(bar, previous),
+      ...hollowCandleColors(bar, previous, candleColors.current),
     });
     let replaceHistory = true;
     const pending = new Map<number, Candle>();
@@ -792,12 +812,11 @@ export function TradovateChart({
         }
       }
       const directionColor = hollowLatest
-        ? hollowCandleColors(hollowLatest, hollowPrevious).borderColor
+        ? hollowCandleColors(hollowLatest, hollowPrevious, candleColors.current).borderColor
         : "";
-      if (directionColor !== hollowPriceColor) {
+      if (directionColor !== prices.hollow.options().priceLineColor) {
         // Hollow bodies are transparent; their price label and line still use the direction color.
         prices.hollow.applyOptions({ priceLineColor: directionColor });
-        hollowPriceColor = directionColor;
       }
       state.refreshIndicators();
       if (!fitted && bars.size) {
@@ -886,6 +905,12 @@ export function TradovateChart({
       });
     for (const style of ["candles", "hollow", "heikin-ashi"] as const)
       engine.prices[style].applyOptions({
+        upColor: style === "hollow" ? "transparent" : settings.candleUpColor,
+        downColor: settings.candleDownColor,
+        borderUpColor: settings.candleUpColor,
+        borderDownColor: settings.candleDownColor,
+        wickUpColor: settings.candleUpColor,
+        wickDownColor: settings.candleDownColor,
         wickVisible: settings.showCandleWicks,
         borderVisible: settings.showCandleBorders,
       });
@@ -906,6 +931,8 @@ export function TradovateChart({
       lineType: settings.lineChartShape === "stepped" ? LineType.WithSteps : LineType.Simple,
     });
     engine.prices.bars.applyOptions({
+      upColor: settings.candleUpColor,
+      downColor: settings.candleDownColor,
       thinBars: settings.thinBars,
       openVisible: settings.showBarOpen,
     });
@@ -976,6 +1003,8 @@ export function TradovateChart({
     settings.crosshairLineWidth,
     settings.thinBars,
     settings.showBarOpen,
+    settings.candleUpColor,
+    settings.candleDownColor,
     settings.showCandleWicks,
     settings.showCandleBorders,
     settings.lineChartColor,
@@ -1096,6 +1125,10 @@ export function TradovateChart({
         onToggleThinBars={settings.toggleThinBars}
         showBarOpen={settings.showBarOpen}
         onToggleBarOpen={settings.toggleBarOpen}
+        candleUpColor={settings.candleUpColor}
+        candleDownColor={settings.candleDownColor}
+        onCandleUpColorChange={settings.setCandleUpColor}
+        onCandleDownColorChange={settings.setCandleDownColor}
         showCandleWicks={settings.showCandleWicks}
         showCandleBorders={settings.showCandleBorders}
         showLineMarkers={settings.showLineMarkers}

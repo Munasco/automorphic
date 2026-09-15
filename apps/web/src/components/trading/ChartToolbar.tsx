@@ -75,6 +75,10 @@ export type ChartToolbarProps = {
   onToggleThinBars: () => void;
   showBarOpen: boolean;
   onToggleBarOpen: () => void;
+  candleUpColor: string;
+  candleDownColor: string;
+  onCandleUpColorChange: (color: string) => void;
+  onCandleDownColorChange: (color: string) => void;
   showCandleWicks: boolean;
   showCandleBorders: boolean;
   showLineMarkers: boolean;
@@ -149,6 +153,10 @@ export function ChartToolbar({
   onToggleThinBars,
   showBarOpen,
   onToggleBarOpen,
+  candleUpColor,
+  candleDownColor,
+  onCandleUpColorChange,
+  onCandleDownColorChange,
   showCandleWicks,
   showCandleBorders,
   showLineMarkers,
@@ -504,6 +512,30 @@ export function ChartToolbar({
           </Tooltip>
           <PopoverPopup align="end" className="w-56" viewportClassName="px-3 py-3">
             <PopoverTitle className="px-1 pb-2 text-xs">Chart display</PopoverTitle>
+            {style !== "line" && style !== "area" && (
+              <fieldset className="space-y-2 px-2 py-2.5">
+                <legend className="text-xs text-zinc-400">
+                  {style === "bars" ? "Bar colors" : "Candle colors"}
+                </legend>
+                <div className="flex items-center gap-4">
+                  {[
+                    { label: "Up", value: candleUpColor, onChange: onCandleUpColorChange },
+                    { label: "Down", value: candleDownColor, onChange: onCandleDownColorChange },
+                  ].map(({ label, value, onChange }) => (
+                    <label key={label} className="flex items-center gap-2 text-xs">
+                      <input
+                        type="color"
+                        aria-label={`${label} candle and bar color`}
+                        value={value}
+                        onChange={(event) => onChange(event.target.value)}
+                        className="h-7 w-8 shrink-0 cursor-pointer rounded border border-white/15 bg-transparent"
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
             {style === "bars" && (
               <>
                 <label
