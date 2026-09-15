@@ -34,6 +34,7 @@ export function ChartContextMenu({
   onOpenSettings,
   onOpenObjectTree,
   onOpenTable,
+  onGoToDate,
   onSaveTemplate,
   onManageTemplates,
 }: {
@@ -52,6 +53,7 @@ export function ChartContextMenu({
   onOpenSettings: () => void;
   onOpenObjectTree: () => void;
   onOpenTable?: (() => void) | undefined;
+  onGoToDate?: (() => void) | undefined;
   onSaveTemplate?: (() => void) | undefined;
   onManageTemplates?: (() => void) | undefined;
 }) {
@@ -179,6 +181,13 @@ export function ChartContextMenu({
           <ChartIcon name="arrow-bar-to-right" />
           Go to latest bar
         </MenuItem>
+        {onGoToDate ? (
+          <MenuItem className={itemClass} onClick={() => run(onGoToDate)}>
+            <span aria-hidden="true" className="size-4.5 shrink-0" />
+            Go to date…
+            <MenuShortcut className="tracking-normal">{mac ? "⌥" : "Alt"} G</MenuShortcut>
+          </MenuItem>
+        ) : null}
         <MenuSeparator />
         {point.price !== null && onAddAlert ? (
           <MenuItem className={itemClass} onClick={() => run(() => onAddAlert(point.price!))}>

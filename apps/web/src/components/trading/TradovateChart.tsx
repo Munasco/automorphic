@@ -1,3 +1,5 @@
+import { CalendarDaysIcon } from "lucide-react";
+import { ChartGoToDateDialog } from "./ChartGoToDateDialog";
 import {
   applyChartBarBatch,
   createChartTimeFormatters,
@@ -348,6 +350,7 @@ export function TradovateChart({
   const objectTreeOpen = objectTreeState?.open ?? localObjectTreeOpen;
   const setObjectTreeOpen = objectTreeState?.onOpenChange ?? setLocalObjectTreeOpen;
   const [tableOpen, setTableOpen] = useState(false);
+  const [goToDateOpen, setGoToDateOpen] = useState(false);
   const [templateDialog, setTemplateDialog] = useState<"save" | "manage" | null>(null);
   const [alertDrawing, setAlertDrawing] = useState<ChartDrawing | null>(null);
   const [readings, setReadings] = useState<IndicatorReadings>({});
@@ -405,7 +408,7 @@ export function TradovateChart({
         event.ctrlKey ||
         event.metaKey ||
         event.shiftKey ||
-        event.code !== "KeyA" ||
+        (event.code !== "KeyA" && event.code !== "KeyG") ||
         event.defaultPrevented
       )
         return;
@@ -415,7 +418,8 @@ export function TradovateChart({
       )
         return;
       event.preventDefault();
-      createAlert();
+      if (event.code === "KeyG") setGoToDateOpen(true);
+      else createAlert();
     };
     element.addEventListener("keydown", shortcut);
     return () => element.removeEventListener("keydown", shortcut);
@@ -1033,6 +1037,16 @@ export function TradovateChart({
       onCopy={drawings.onCopy}
       onPaste={drawings.onPaste}
     >
+      {goToDateOpen && activeEngine ? (
+        <ChartGoToDateDialog
+          key={`go-to-date:${symbol}:${chartIntervalKey(interval)}:${intraday ? settings.timeZone : "UTC"}`}
+          chart={activeEngine.chart}
+          source={activeEngine}
+          symbol={symbol}
+          timeZone={intraday ? settings.timeZone : "UTC"}
+          onClose={() => setGoToDateOpen(false)}
+        />
+      ) : null}
       {tableOpen && activeEngine ? (
         <ChartDataTableDialog
           key={`${symbol}:${chartIntervalKey(interval)}`}
@@ -1257,6 +1271,7 @@ export function TradovateChart({
                 onOpenSettings={() => setDisplaySettingsOpen(true)}
                 onOpenObjectTree={() => setObjectTreeOpen(true)}
                 onOpenTable={() => setTableOpen(true)}
+                onGoToDate={() => setGoToDateOpen(true)}
                 onSaveTemplate={() => setTemplateDialog("save")}
                 onManageTemplates={() => setTemplateDialog("manage")}
                 indicators={{
@@ -1400,6 +1415,18 @@ export function TradovateChart({
             <TooltipPopup>Range within loaded history</TooltipPopup>
           </Tooltip>
         ))}
+        <Tooltip>
+          <TooltipTrigger
+            type="button"
+            aria-label="Go to date (Alt+G)"
+            disabled={!last || technicals}
+            onClick={() => setGoToDateOpen(true)}
+            className="flex size-7 items-center justify-center rounded border-l border-white/10 text-zinc-400 hover:bg-white/5 hover:text-white disabled:opacity-30"
+          >
+            <CalendarDaysIcon className="size-4" />
+          </TooltipTrigger>
+          <TooltipPopup>Go to date · Alt+G</TooltipPopup>
+        </Tooltip>
         {historyNotice ? (
           <Tooltip>
             <TooltipTrigger

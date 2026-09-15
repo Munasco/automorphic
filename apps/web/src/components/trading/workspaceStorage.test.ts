@@ -13,6 +13,12 @@ import {
   writeChartDataTableSort,
 } from "./chartDataTable";
 
+import {
+  CHART_DATE_NAVIGATION_KEY,
+  readChartNavigationTime,
+  writeChartNavigationTime,
+} from "./chartDateNavigation";
+
 const chartKey = "automorphic:chart:v1";
 const settingsKey = "automorphic:trading-settings:v1";
 const payload = (values: Record<string, string> = {}) => ({
@@ -41,6 +47,27 @@ function legacyStorage(values: Record<string, string>) {
 }
 
 describe("trading workspace persistence", () => {
+  it("persists per-symbol navigation dates through workspace storage and restores after reload", async () => {
+    const values: Record<string, string> = {};
+    const request = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+      if (init?.method === "PUT") {
+        const body = JSON.parse(init.body as string) as { key: string; value: string };
+        values[body.key] = body.value;
+        return json({});
+      }
+      return json(payload(values));
+    });
+    const first = createTradingWorkspaceStorage(request, () => undefined);
+    await first.initialize();
+    writeChartNavigationTime(first, "NQU6", 1789128000.125);
+    await first.flush();
+    expect(values).toEqual({ [CHART_DATE_NAVIGATION_KEY]: '{"times":{"NQU6":1789128000.125}}' });
+    const reopened = createTradingWorkspaceStorage(request, () => undefined);
+    await reopened.initialize();
+    expect(readChartNavigationTime(reopened, "NQU6")).toBe(1789128000.125);
+    expect(readChartNavigationTime(reopened, "SIU6")).toBeNull();
+  });
+
   it("loads and transports chart templates through workspace storage", async () => {
     const key = "automorphic:chart-templates:v1";
     const value = JSON.stringify({
