@@ -343,7 +343,14 @@ export function TradovateChart({
   const appearanceSettings = useRef(settings.appearance);
   const inputSettings = useRef(settings.indicatorInputs);
   const volumeColors = useRef(settings.volumeColors);
-  const candleColors = useRef({ up: settings.candleUpColor, down: settings.candleDownColor });
+  const candleColors = useRef({
+    up: settings.candleUpColor,
+    down: settings.candleDownColor,
+    wickUp: settings.candleWickUpColor ?? settings.candleUpColor,
+    wickDown: settings.candleWickDownColor ?? settings.candleDownColor,
+    borderUp: settings.candleBorderUpColor ?? settings.candleUpColor,
+    borderDown: settings.candleBorderDownColor ?? settings.candleDownColor,
+  });
   const priceDisplay = useRef({
     style: settings.style,
     line: settings.showPriceLine,
@@ -471,7 +478,14 @@ export function TradovateChart({
   }, [engine, settings.lineChartSource]);
 
   useEffect(() => {
-    candleColors.current = { up: settings.candleUpColor, down: settings.candleDownColor };
+    candleColors.current = {
+      up: settings.candleUpColor,
+      down: settings.candleDownColor,
+      wickUp: settings.candleWickUpColor ?? settings.candleUpColor,
+      wickDown: settings.candleWickDownColor ?? settings.candleDownColor,
+      borderUp: settings.candleBorderUpColor ?? settings.candleUpColor,
+      borderDown: settings.candleBorderDownColor ?? settings.candleDownColor,
+    };
     if (!engine || engine.disposed) return;
     // Hollow candles carry per-bar colors; changing series defaults alone leaves history stale.
     const bars = [...engine.bars.values()].sort((a, b) => a.time - b.time);
@@ -489,7 +503,15 @@ export function TradovateChart({
         : "",
     });
     engine.refreshTradePrice();
-  }, [engine, settings.candleUpColor, settings.candleDownColor]);
+  }, [
+    engine,
+    settings.candleUpColor,
+    settings.candleDownColor,
+    settings.candleWickUpColor,
+    settings.candleWickDownColor,
+    settings.candleBorderUpColor,
+    settings.candleBorderDownColor,
+  ]);
 
   useEffect(() => {
     auxiliaryHistoryRef.current = auxiliaryHistory;
@@ -1050,10 +1072,10 @@ export function TradovateChart({
       engine.prices[style].applyOptions({
         upColor: style === "hollow" ? "transparent" : settings.candleUpColor,
         downColor: settings.candleDownColor,
-        borderUpColor: settings.candleUpColor,
-        borderDownColor: settings.candleDownColor,
-        wickUpColor: settings.candleUpColor,
-        wickDownColor: settings.candleDownColor,
+        borderUpColor: settings.candleBorderUpColor ?? settings.candleUpColor,
+        borderDownColor: settings.candleBorderDownColor ?? settings.candleDownColor,
+        wickUpColor: settings.candleWickUpColor ?? settings.candleUpColor,
+        wickDownColor: settings.candleWickDownColor ?? settings.candleDownColor,
         wickVisible: settings.showCandleWicks,
         borderVisible: settings.showCandleBorders,
       });
@@ -1155,6 +1177,10 @@ export function TradovateChart({
     settings.showBarOpen,
     settings.candleUpColor,
     settings.candleDownColor,
+    settings.candleWickUpColor,
+    settings.candleWickDownColor,
+    settings.candleBorderUpColor,
+    settings.candleBorderDownColor,
     settings.showCandleWicks,
     settings.showCandleBorders,
     settings.lineChartColor,
@@ -1325,6 +1351,13 @@ export function TradovateChart({
         onToggleThinBars={settings.toggleThinBars}
         showBarOpen={settings.showBarOpen}
         onToggleBarOpen={settings.toggleBarOpen}
+        candleDetailColors={{
+          candleWickUpColor: settings.candleWickUpColor,
+          candleWickDownColor: settings.candleWickDownColor,
+          candleBorderUpColor: settings.candleBorderUpColor,
+          candleBorderDownColor: settings.candleBorderDownColor,
+        }}
+        onCandleDetailColorChange={settings.setCandleDetailColor}
         candleUpColor={settings.candleUpColor}
         candleDownColor={settings.candleDownColor}
         onCandleUpColorChange={settings.setCandleUpColor}

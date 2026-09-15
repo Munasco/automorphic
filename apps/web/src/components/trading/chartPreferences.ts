@@ -47,6 +47,11 @@ export type ChartCrosshairLineStyle = "solid" | "dotted" | "dashed" | "largeDash
 export type ChartReplaySpeed = 0.5 | 1 | 2 | 5 | 10;
 const validReplaySpeed = (value: unknown): value is ChartReplaySpeed =>
   value === 0.5 || value === 1 || value === 2 || value === 5 || value === 10;
+export type CandleDetailColorKey =
+  | "candleWickUpColor"
+  | "candleWickDownColor"
+  | "candleBorderUpColor"
+  | "candleBorderDownColor";
 export type ChartLineWidth = 1 | 2 | 3 | 4;
 export type ChartLineShape = "straight" | "stepped";
 export type ChartLineMarkerRadius = 2 | 3 | 4 | 5 | 6;
@@ -130,6 +135,10 @@ type SavedChartPreferences = {
   showCandleWicks: boolean;
   showCandleBorders: boolean;
   candleUpColor: string;
+  candleWickUpColor: string | null;
+  candleWickDownColor: string | null;
+  candleBorderUpColor: string | null;
+  candleBorderDownColor: string | null;
   candleDownColor: string;
   showChartTitle: boolean;
   showCandleValues: boolean;
@@ -228,6 +237,12 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     showCandleBorders:
       typeof saved.showCandleBorders === "boolean" ? saved.showCandleBorders : true,
     candleUpColor: validColor(saved.candleUpColor) ? saved.candleUpColor : "#26a69a",
+    candleWickUpColor: validColor(saved.candleWickUpColor) ? saved.candleWickUpColor : null,
+    candleWickDownColor: validColor(saved.candleWickDownColor) ? saved.candleWickDownColor : null,
+    candleBorderUpColor: validColor(saved.candleBorderUpColor) ? saved.candleBorderUpColor : null,
+    candleBorderDownColor: validColor(saved.candleBorderDownColor)
+      ? saved.candleBorderDownColor
+      : null,
     candleDownColor: validColor(saved.candleDownColor) ? saved.candleDownColor : "#ef5350",
     showChartTitle: typeof saved.showChartTitle === "boolean" ? saved.showChartTitle : true,
     showCandleValues: typeof saved.showCandleValues === "boolean" ? saved.showCandleValues : true,
@@ -278,6 +293,10 @@ export const useChartPreferences = create<{
   showCandleWicks: boolean;
   showCandleBorders: boolean;
   candleUpColor: string;
+  candleWickUpColor: string | null;
+  candleWickDownColor: string | null;
+  candleBorderUpColor: string | null;
+  candleBorderDownColor: string | null;
   candleDownColor: string;
   showChartTitle: boolean;
   showCandleValues: boolean;
@@ -327,6 +346,7 @@ export const useChartPreferences = create<{
   setLineChartSource: (source: PriceSource) => void;
   setLineChartColor: (color: string) => void;
   setCandleUpColor: (color: string) => void;
+  setCandleDetailColor: (key: CandleDetailColorKey, value: string | null) => void;
   setCandleDownColor: (color: string) => void;
   setLineChartWidth: (width: ChartLineWidth) => void;
   setLineChartShape: (shape: ChartLineShape) => void;
@@ -384,6 +404,10 @@ export const useChartPreferences = create<{
       showCandleWicks: true,
       showCandleBorders: true,
       candleUpColor: "#26a69a",
+      candleWickUpColor: null,
+      candleWickDownColor: null,
+      candleBorderUpColor: null,
+      candleBorderDownColor: null,
       candleDownColor: "#ef5350",
       showChartTitle: true,
       showCandleValues: true,
@@ -697,6 +721,18 @@ export const useChartPreferences = create<{
       setLineChartSource: (lineChartSource) => {
         if (validLineChartSource(lineChartSource) && lineChartSource !== get().lineChartSource)
           set({ lineChartSource });
+      },
+      setCandleDetailColor: (key, value) => {
+        if (
+          (key !== "candleWickUpColor" &&
+            key !== "candleWickDownColor" &&
+            key !== "candleBorderUpColor" &&
+            key !== "candleBorderDownColor") ||
+          (value !== null && !validColor(value)) ||
+          get()[key] === value
+        )
+          return;
+        set({ [key]: value });
       },
       setCandleUpColor: (candleUpColor) => {
         if (validColor(candleUpColor) && candleUpColor !== get().candleUpColor)

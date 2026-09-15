@@ -1,6 +1,7 @@
 import { PRICE_SOURCES, type PriceSource } from "./chartIndicators";
 import { TradingSelect } from "./TradingSelect";
 import type {
+  CandleDetailColorKey,
   ChartCrosshairMode,
   ChartCrosshairLineStyle,
   ChartCrosshairLineWidth,
@@ -75,6 +76,8 @@ export type ChartToolbarProps = {
   onToggleThinBars: () => void;
   showBarOpen: boolean;
   onToggleBarOpen: () => void;
+  candleDetailColors: Record<CandleDetailColorKey, string | null>;
+  onCandleDetailColorChange: (key: CandleDetailColorKey, color: string | null) => void;
   candleUpColor: string;
   candleDownColor: string;
   onCandleUpColorChange: (color: string) => void;
@@ -167,6 +170,8 @@ export function ChartToolbar({
   onToggleThinBars,
   showBarOpen,
   onToggleBarOpen,
+  candleDetailColors,
+  onCandleDetailColorChange,
   candleUpColor,
   candleDownColor,
   onCandleUpColorChange,
@@ -591,30 +596,73 @@ export function ChartToolbar({
               </>
             )}
             {(style === "candles" || style === "hollow" || style === "heikin-ashi") && (
-              <>
-                <label
-                  htmlFor={`${id}-candle-borders`}
-                  className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"
-                >
-                  <Checkbox
-                    id={`${id}-candle-borders`}
-                    checked={showCandleBorders}
-                    onCheckedChange={onToggleCandleBorders}
-                  />
-                  Candle borders
-                </label>
-                <label
-                  htmlFor={`${id}-candle-wicks`}
-                  className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"
-                >
-                  <Checkbox
-                    id={`${id}-candle-wicks`}
-                    checked={showCandleWicks}
-                    onCheckedChange={onToggleCandleWicks}
-                  />
-                  Candle wicks
-                </label>
-              </>
+              <div className="space-y-2 px-2 py-2">
+                {(
+                  [
+                    {
+                      part: "border",
+                      label: "Borders",
+                      checked: showCandleBorders,
+                      toggle: onToggleCandleBorders,
+                      up: "candleBorderUpColor",
+                      down: "candleBorderDownColor",
+                    },
+                    {
+                      part: "wick",
+                      label: "Wicks",
+                      checked: showCandleWicks,
+                      toggle: onToggleCandleWicks,
+                      up: "candleWickUpColor",
+                      down: "candleWickDownColor",
+                    },
+                  ] as const
+                ).map(({ part, label, checked, toggle, up, down }) => (
+                  <div key={part}>
+                    <div className="flex items-center gap-2">
+                      <label
+                        htmlFor={`${id}-candle-${part}s`}
+                        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-xs"
+                      >
+                        <Checkbox
+                          id={`${id}-candle-${part}s`}
+                          checked={checked}
+                          onCheckedChange={toggle}
+                        />
+                        {label}
+                      </label>
+                      {(
+                        [
+                          { direction: "Up", key: up, fallback: candleUpColor },
+                          { direction: "Down", key: down, fallback: candleDownColor },
+                        ] as const
+                      ).map(({ direction, key, fallback }) => (
+                        <input
+                          key={key}
+                          type="color"
+                          aria-label={`${direction} candle ${part} color`}
+                          disabled={!checked}
+                          value={candleDetailColors[key] ?? fallback}
+                          onChange={(event) => onCandleDetailColorChange(key, event.target.value)}
+                          className="h-7 w-8 shrink-0 cursor-pointer rounded border border-white/15 bg-transparent disabled:cursor-default disabled:opacity-40"
+                        />
+                      ))}
+                    </div>
+                    {(candleDetailColors[up] !== null || candleDetailColors[down] !== null) && (
+                      <button
+                        type="button"
+                        aria-label={`Use body colors for ${part}s`}
+                        onClick={() => {
+                          onCandleDetailColorChange(up, null);
+                          onCandleDetailColorChange(down, null);
+                        }}
+                        className="mt-1 rounded text-[11px] text-zinc-400 underline-offset-2 hover:text-zinc-100 hover:underline focus-visible:outline focus-visible:outline-blue-400"
+                      >
+                        Use body colors
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
             {(style === "line" || style === "area") && (
               <div className="space-y-2 px-2 py-2.5">

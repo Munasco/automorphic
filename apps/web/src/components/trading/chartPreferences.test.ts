@@ -3897,3 +3897,108 @@ describe("chart canvas palette", () => {
     }
   });
 });
+
+describe("independent candle detail colors", () => {
+  const keys = [
+    "candleWickUpColor",
+    "candleWickDownColor",
+    "candleBorderUpColor",
+    "candleBorderDownColor",
+  ] as const;
+  const invalid = [
+    undefined,
+    "",
+    "red",
+    "#abc",
+    "#12345678",
+    "#gggggg",
+    " #abcdef",
+    123456,
+    false,
+    {},
+    [],
+  ];
+
+  it("defaults every legacy or malformed override to following the body", () => {
+    for (const key of keys) {
+      expect(useChartPreferences.getInitialState()[key]).toBeNull();
+      expect(normalizeChartPreferences({})[key]).toBeNull();
+      for (const value of [...invalid, null])
+        expect(normalizeChartPreferences({ [key]: value })[key]).toBeNull();
+      expect(normalizeChartPreferences({ [key]: "#ABCDEF" })[key]).toBe("#ABCDEF");
+    }
+  });
+
+  it("rejects invalid keys and values and repeated resets without state, writes or notifications", () => {
+    const store = configure();
+    const before = useChartPreferences.getState();
+    const listener = vi.fn();
+    const unsubscribe = useChartPreferences.subscribe(listener);
+    try {
+      for (const key of keys) {
+        for (const value of invalid) store.setCandleDetailColor(key, value as string);
+        store.setCandleDetailColor(key, null);
+      }
+      for (const key of ["candleUpColor", "__proto__", "constructor", "unknown", null, undefined])
+        store.setCandleDetailColor(key as (typeof keys)[number], "#ffffff");
+      expect(useChartPreferences.getState()).toBe(before);
+      expect(listener).not.toHaveBeenCalled();
+      expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+      store.setCandleDetailColor("candleWickUpColor", "#123456");
+      store.setCandleDetailColor("candleWickUpColor", "#123456");
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it.each(keys)("edits and resets %s without altering body colors or other overrides", (key) => {
+    const store = configure();
+    for (const other of keys) store.setCandleDetailColor(other, "#111111");
+    const before = normalizeChartPreferences(useChartPreferences.getState());
+    store.setCandleDetailColor(key, "#abcdef");
+    expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+      ...before,
+      [key]: "#abcdef",
+    });
+    store.setCandleUpColor("#123456");
+    store.setCandleDownColor("#654321");
+    expect(useChartPreferences.getState()[key]).toBe("#abcdef");
+    store.setCandleDetailColor(key, null);
+    expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+      ...before,
+      candleUpColor: "#123456",
+      candleDownColor: "#654321",
+      [key]: null,
+    });
+  });
+
+  it("persists mixed overrides and inherited colors across reload and workspace reset", async () => {
+    const store = configure();
+    store.setCandleDetailColor("candleWickUpColor", "#111111");
+    store.setCandleDetailColor("candleBorderDownColor", "#aBcDeF");
+    const expected = normalizeChartPreferences(useChartPreferences.getState());
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    expect(JSON.parse(saved).state).toMatchObject({
+      candleWickUpColor: "#111111",
+      candleWickDownColor: null,
+      candleBorderUpColor: null,
+      candleBorderDownColor: "#aBcDeF",
+    });
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    await useChartPreferences.persist.rehydrate();
+    expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+    const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+      JSON.stringify({ version: 0, state: { candleUpColor: "#222222" } }),
+    );
+    await hydrate();
+    for (const key of keys) expect(useChartPreferences.getState()[key]).toBeNull();
+    expect(useChartPreferences.getState().candleUpColor).toBe("#222222");
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    await hydrate();
+    expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+  });
+});

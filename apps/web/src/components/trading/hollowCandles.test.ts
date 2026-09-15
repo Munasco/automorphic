@@ -109,3 +109,66 @@ describe("hollowCandleColors", () => {
     },
   );
 });
+
+describe("hollow candle detail palette", () => {
+  const palette = {
+    up: "#111111",
+    down: "#222222",
+    wickUp: "#333333",
+    wickDown: "#444444",
+    borderUp: "#555555",
+    borderDown: "#666666",
+  };
+  it.each([
+    [10, 11, "transparent", "#333333", "#555555"],
+    [14, 11, "#111111", "#333333", "#555555"],
+    [10, 13, "transparent", "#444444", "#666666"],
+    [14, 13, "#222222", "#444444", "#666666"],
+  ] as const)(
+    "uses independent details for open %s and prior close %s",
+    (open, prior, color, wickColor, borderColor) => {
+      const original = { ...palette };
+      expect(hollowCandleColors(candle(open, 12), candle(prior, prior, 1), palette)).toEqual({
+        color,
+        wickColor,
+        borderColor,
+      });
+      expect(palette).toEqual(original);
+    },
+  );
+  it("falls back independently for missing detail colors using the corresponding body direction", () => {
+    const partial = {
+      up: palette.up,
+      down: palette.down,
+      wickUp: palette.wickUp,
+      borderDown: palette.borderDown,
+    };
+    expect(hollowCandleColors(candle(14, 12), candle(11, 11, 1), partial)).toEqual({
+      color: palette.up,
+      wickColor: palette.wickUp,
+      borderColor: palette.up,
+    });
+    expect(hollowCandleColors(candle(14, 12), candle(13, 13, 1), partial)).toEqual({
+      color: palette.down,
+      wickColor: palette.down,
+      borderColor: palette.borderDown,
+    });
+  });
+  it("keeps equality and missing previous-close rules for custom detail colors", () => {
+    expect(hollowCandleColors(candle(14, 12), candle(12, 12, 1), palette)).toEqual({
+      color: palette.up,
+      wickColor: palette.wickUp,
+      borderColor: palette.borderUp,
+    });
+    expect(hollowCandleColors(candle(14, 12), undefined, palette)).toEqual({
+      color: palette.down,
+      wickColor: palette.wickDown,
+      borderColor: palette.borderDown,
+    });
+    expect(hollowCandleColors(candle(12, 12), undefined, palette)).toEqual({
+      color: palette.up,
+      wickColor: palette.wickUp,
+      borderColor: palette.borderUp,
+    });
+  });
+});
