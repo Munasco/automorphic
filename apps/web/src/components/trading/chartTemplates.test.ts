@@ -35,6 +35,7 @@ const chart = () => ({
   priceScaleMode: "logarithmic",
   timeZone: "America/New_York",
   replaySpeed: 5,
+  lockVisibleTimeRangeOnResize: true,
   favoriteIndicators: ["rsi"],
   indicators: { rsi: true, ib: true },
   indicatorInputs: { rsi: { period: 7 } },
@@ -56,6 +57,7 @@ describe("chart template snapshots", () => {
       gridMode: "horizontal",
       priceScaleMode: "logarithmic",
       timeZone: "America/New_York",
+      lockVisibleTimeRangeOnResize: true,
       indicatorInputs: { rsi: { period: 7 } },
     });
     for (const key of ["favoriteIndicators", "replaySpeed", "symbol", "drawings", "alerts"])

@@ -474,6 +474,13 @@ export function TradovateChart({
   }, [activeEngine, replay.visible, replay.session?.seekVersion]);
 
   useEffect(() => {
+    if (!engine || engine.disposed) return;
+    engine.chart.timeScale().applyOptions({
+      lockVisibleTimeRangeOnResize: settings.lockVisibleTimeRangeOnResize,
+    });
+  }, [engine, settings.lockVisibleTimeRangeOnResize]);
+
+  useEffect(() => {
     priceScaleMargins.current = settings.priceScaleMargins;
     if (!engine || engine.disposed) return;
     engine.chart.priceScale("right", 0).applyOptions({
@@ -558,7 +565,8 @@ export function TradovateChart({
       intraday,
       interval.unit === "second" || interval.unit === "tick",
     );
-    const { chartBackgroundColor, chartTextColor } = useChartPreferences.getState();
+    const { chartBackgroundColor, chartTextColor, lockVisibleTimeRangeOnResize } =
+      useChartPreferences.getState();
     const chart = createChart(host.current, {
       autoSize: true,
       layout: {
@@ -576,6 +584,7 @@ export function TradovateChart({
         secondsVisible: interval.unit === "second" || interval.unit === "tick",
         borderColor: "#242730",
         rightOffset: 5,
+        lockVisibleTimeRangeOnResize,
       },
       rightPriceScale: {
         borderColor: "#242730",
@@ -1409,6 +1418,8 @@ export function TradovateChart({
         chartTextColor={settings.chartTextColor}
         onChartBackgroundColorChange={settings.setChartBackgroundColor}
         onChartTextColorChange={settings.setChartTextColor}
+        lockVisibleTimeRangeOnResize={settings.lockVisibleTimeRangeOnResize}
+        onLockVisibleTimeRangeOnResizeChange={settings.setLockVisibleTimeRangeOnResize}
         showSymbolWatermark={settings.showSymbolWatermark}
         onShowSymbolWatermarkChange={settings.setShowSymbolWatermark}
         showChartTitle={settings.showChartTitle}

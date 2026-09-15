@@ -4105,3 +4105,51 @@ describe("price scale whitespace margins", () => {
     expect(useChartPreferences.getState().priceScaleMargins).toBeNull();
   });
 });
+
+describe("visible range resize preference", () => {
+  it("preserves legacy resizing and accepts only explicit booleans", () => {
+    expect(useChartPreferences.getInitialState().lockVisibleTimeRangeOnResize).toBe(false);
+    for (const value of [undefined, null, "true", 1, {}, [], false]) {
+      expect(
+        normalizeChartPreferences({ lockVisibleTimeRangeOnResize: value })
+          .lockVisibleTimeRangeOnResize,
+      ).toBe(false);
+    }
+    expect(
+      normalizeChartPreferences({ lockVisibleTimeRangeOnResize: true })
+        .lockVisibleTimeRangeOnResize,
+    ).toBe(true);
+    const store = useChartPreferences.getState();
+    store.setLockVisibleTimeRangeOnResize(true);
+    const writes = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.length;
+    store.setLockVisibleTimeRangeOnResize(true);
+    store.setLockVisibleTimeRangeOnResize("false" as unknown as boolean);
+    expect(vi.mocked(tradingWorkspaceStorage.setItem)).toHaveBeenCalledTimes(writes);
+    expect(useChartPreferences.getState().lockVisibleTimeRangeOnResize).toBe(true);
+  });
+
+  it.each([true, false])("persists %s independently of chart configuration", async (lock) => {
+    const store = configure();
+    const before = normalizeChartPreferences(store);
+    store.setLockVisibleTimeRangeOnResize(!lock);
+    store.setLockVisibleTimeRangeOnResize(lock);
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    await useChartPreferences.persist.rehydrate();
+    expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+      ...before,
+      lockVisibleTimeRangeOnResize: lock,
+    });
+  });
+
+  it("does not leak the previous workspace choice into legacy saved state", async () => {
+    useChartPreferences.getState().setLockVisibleTimeRangeOnResize(true);
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+      JSON.stringify({ version: 0, state: {} }),
+    );
+    const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+    await hydrate();
+    expect(useChartPreferences.getState().lockVisibleTimeRangeOnResize).toBe(false);
+  });
+});

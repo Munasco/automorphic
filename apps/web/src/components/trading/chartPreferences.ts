@@ -140,6 +140,7 @@ type SavedChartPreferences = {
   lineChartShape: ChartLineShape;
   showLineMarkers: boolean;
   showSymbolWatermark: boolean;
+  lockVisibleTimeRangeOnResize: boolean;
   lineMarkerRadius: ChartLineMarkerRadius;
   thinBars: boolean;
   showBarOpen: boolean;
@@ -242,6 +243,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     lineChartShape: validLineChartShape(saved.lineChartShape) ? saved.lineChartShape : "straight",
     showLineMarkers: saved.showLineMarkers === true,
     showSymbolWatermark: saved.showSymbolWatermark === true,
+    lockVisibleTimeRangeOnResize: saved.lockVisibleTimeRangeOnResize === true,
     lineMarkerRadius: validLineMarkerRadius(saved.lineMarkerRadius) ? saved.lineMarkerRadius : 3,
     thinBars: typeof saved.thinBars === "boolean" ? saved.thinBars : true,
     showBarOpen: typeof saved.showBarOpen === "boolean" ? saved.showBarOpen : true,
@@ -302,6 +304,7 @@ export const useChartPreferences = create<{
   lineChartShape: ChartLineShape;
   showLineMarkers: boolean;
   showSymbolWatermark: boolean;
+  lockVisibleTimeRangeOnResize: boolean;
   lineMarkerRadius: ChartLineMarkerRadius;
   thinBars: boolean;
   showBarOpen: boolean;
@@ -368,6 +371,7 @@ export const useChartPreferences = create<{
   setLineChartShape: (shape: ChartLineShape) => void;
   toggleLineMarkers: () => void;
   setShowSymbolWatermark: (show: boolean) => void;
+  setLockVisibleTimeRangeOnResize: (lock: boolean) => void;
   setLineMarkerRadius: (radius: ChartLineMarkerRadius) => void;
   toggleThinBars: () => void;
   toggleBarOpen: () => void;
@@ -415,6 +419,7 @@ export const useChartPreferences = create<{
       lineChartShape: "straight",
       showLineMarkers: false,
       showSymbolWatermark: false,
+      lockVisibleTimeRangeOnResize: false,
       lineMarkerRadius: 3,
       thinBars: true,
       showBarOpen: true,
@@ -782,6 +787,13 @@ export const useChartPreferences = create<{
       },
       setGridColor: (gridColor) => {
         if (validColor(gridColor) && gridColor !== get().gridColor) set({ gridColor });
+      },
+      setLockVisibleTimeRangeOnResize: (lockVisibleTimeRangeOnResize) => {
+        if (
+          typeof lockVisibleTimeRangeOnResize === "boolean" &&
+          lockVisibleTimeRangeOnResize !== get().lockVisibleTimeRangeOnResize
+        )
+          set({ lockVisibleTimeRangeOnResize });
       },
       setShowSymbolWatermark: (showSymbolWatermark) => {
         if (

@@ -109,6 +109,8 @@ export type ChartToolbarProps = {
   chartTextColor: string;
   onChartBackgroundColorChange: (color: string) => void;
   onChartTextColorChange: (color: string) => void;
+  lockVisibleTimeRangeOnResize: boolean;
+  onLockVisibleTimeRangeOnResizeChange: (lock: boolean) => void;
   showSymbolWatermark: boolean;
   onShowSymbolWatermarkChange: (show: boolean) => void;
   showChartTitle: boolean;
@@ -206,6 +208,8 @@ export function ChartToolbar({
   chartTextColor,
   onChartBackgroundColorChange,
   onChartTextColorChange,
+  lockVisibleTimeRangeOnResize,
+  onLockVisibleTimeRangeOnResizeChange,
   showSymbolWatermark,
   onShowSymbolWatermarkChange,
   showChartTitle,
@@ -794,6 +798,17 @@ export function ChartToolbar({
               >
                 Reset canvas colors
               </button>
+            </fieldset>
+            <fieldset className="space-y-2 border-t border-white/10 px-2 py-2.5">
+              <legend className="text-xs text-zinc-400">Time scale</legend>
+              <label htmlFor={`${id}-resize-range`} className="flex items-center gap-2 text-xs">
+                <Checkbox
+                  id={`${id}-resize-range`}
+                  checked={lockVisibleTimeRangeOnResize}
+                  onCheckedChange={onLockVisibleTimeRangeOnResizeChange}
+                />
+                Keep visible range on resize
+              </label>
             </fieldset>
             <fieldset className="space-y-1 border-y border-white/10 px-2 py-2.5">
               <legend className="text-xs text-zinc-400">Legend</legend>
