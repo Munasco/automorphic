@@ -147,14 +147,17 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
       const showPriceLabel = options.histogram
         ? pane > 0 && (instance.appearance.histogramPriceLabel ?? true)
         : style.visible && style.opacity > 0 && (style.showPriceLabel ?? pane > 0);
+      const title =
+        showPriceLabel && !(indicator === "volume" && instance.id === "base:volume")
+          ? (options.title ?? "")
+          : "";
       let plot = plots.get(id);
       if (!plot) {
         const priceFormat = options.volumeFormat
           ? { type: "volume" as const }
           : { type: "price" as const, precision: 2, minMove: pane ? 0.01 : minMove };
         const common = {
-          title:
-            indicator === "volume" && instance.id === "base:volume" ? "" : (options.title ?? ""),
+          title,
           priceLineVisible: false,
           lastValueVisible: showPriceLabel,
           priceFormat,
@@ -231,7 +234,7 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
       if (options.histogram) {
         plot.series.applyOptions({
           lastValueVisible: showPriceLabel,
-          title: showPriceLabel ? (options.title ?? "") : "",
+          title,
         });
       } else {
         plot.series.applyOptions({
@@ -242,6 +245,7 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
           lineVisible: !options.invisible && !options.markers && style.visible,
           crosshairMarkerVisible: !options.invisible && style.visible,
           lastValueVisible: showPriceLabel,
+          title,
           lineWidth: style.lineWidth as 1 | 2 | 3 | 4,
           ...(options.breakOnGaps
             ? { crosshairMarkerBackgroundColor: indicatorStyleColor(style) }

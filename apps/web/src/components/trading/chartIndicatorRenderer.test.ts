@@ -1369,10 +1369,14 @@ it("toggles overlay and oscillator line price labels without recreating plots or
   expect(sma.options.lastValueVisible).toBe(true);
   expect(signal.options.lastValueVisible).toBe(false);
   expect(macd.options.lastValueVisible).toBe(false);
+  expect(macd.options.title).toBe("");
+  expect(signal.options.title).toBe("");
   expect(histogram.options.lastValueVisible).toBe(true);
   renderer.update(bars, enabled, DEFAULT_INITIAL_BALANCE, 1);
   expect(sma.options.lastValueVisible).toBe(false);
   expect(signal.options.lastValueVisible).toBe(true);
+  expect(signal.options.title).toBe("Signal");
+  expect(macd.options.title).toBe("MACD");
 });
 
 it("keeps duplicate label choices independent and hides labels for invisible or transparent lines", () => {
@@ -1457,4 +1461,47 @@ it("controls AO and pane-volume labels without creating an overlay volume plot",
   update();
   expect(histograms.map((series) => series.options.lastValueVisible)).toEqual([true, true]);
   expect(harness.series).toEqual(original);
+});
+
+it("removes titled axis labels when a line is hidden or transparent and restores them without losing readings", () => {
+  const harness = chartHarness();
+  const renderer = createIndicatorRenderer(harness.chart, 0.25);
+  const instance = createIndicatorInstance("rsi", "base:rsi");
+  const bars = inputBars();
+  const update = () =>
+    renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [instance]);
+  const initial = update();
+  const series = harness.series[0]!;
+  const data = structuredClone(series.data);
+  expect(series.options).toMatchObject({ title: "RSI", lastValueVisible: true });
+  for (const override of [{ visible: false }, { opacity: 0 }, { showPriceLabel: false }]) {
+    instance.appearance = { plots: { main: override } };
+    expect(update().readings).toEqual(initial.readings);
+    expect(series.options).toMatchObject({ title: "", lastValueVisible: false });
+    expect(series.data).toEqual(data);
+    instance.appearance = {};
+    update();
+    expect(series.options).toMatchObject({ title: "RSI", lastValueVisible: true });
+    expect(harness.series[0]).toBe(series);
+  }
+});
+
+it("keeps named overlay labels absent by default and restores their name when enabled", () => {
+  const harness = chartHarness();
+  const renderer = createIndicatorRenderer(harness.chart, 0.25);
+  const instance = createIndicatorInstance("wma", "base:wma");
+  const update = () =>
+    renderer.update(inputBars(), disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [
+      instance,
+    ]);
+  update();
+  const series = harness.series[0]!;
+  expect(series.options).toMatchObject({ title: "", lastValueVisible: false });
+  instance.appearance = { showPriceLabel: true };
+  update();
+  expect(series.options).toMatchObject({ title: "WMA", lastValueVisible: true });
+  instance.appearance = {};
+  update();
+  expect(series.options).toMatchObject({ title: "", lastValueVisible: false });
+  expect(harness.series[0]).toBe(series);
 });
