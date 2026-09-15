@@ -1,11 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Pause, Play, RotateCcw, SkipBack, SkipForward, X } from "lucide-react";
+import {
+  CalendarDays,
+  ChevronDown,
+  Pause,
+  Play,
+  RotateCcw,
+  SkipBack,
+  SkipForward,
+  X,
+} from "lucide-react";
 import type { Candle } from "./chartIndicators";
 import { createReplayHistory, replayIndex, replayIndexAt, replayPrefix } from "./replayHistory";
 import { formatReplayDateTime, parseReplayDateTime } from "./replayDateTime";
 import { TradingSelect } from "./TradingSelect";
 import { useChartPreferences, type ChartReplaySpeed } from "./chartPreferences";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 
 export function useChartReplay(context: string) {
   const [session, setSession] = useState<{
@@ -13,6 +23,7 @@ export function useChartReplay(context: string) {
     bars: readonly Candle[];
     index: number;
     start: number;
+    seekVersion: number;
     playing: boolean;
   } | null>(null);
   const speed = useChartPreferences((state) => state.replaySpeed);
@@ -23,16 +34,18 @@ export function useChartReplay(context: string) {
     if (!active?.playing) return;
     const timer = window.setInterval(() => {
       setSession((current) => {
-        if (!current || current.context !== context) return current;
+        if (!current || current.context !== context || !current.playing) return current;
         const index = replayIndex(current.index + 1, current.bars.length);
         return { ...current, index, playing: index < current.bars.length - 1 };
       });
     }, 1000 / speed);
     return () => window.clearInterval(timer);
   }, [active?.playing, context, speed]);
+  const history = active?.bars;
+  const index = active?.index;
   const visible = useMemo(
-    () => (active ? replayPrefix(active.bars, active.index) : null),
-    [active],
+    () => (history && index !== undefined ? replayPrefix(history, index) : null),
+    [history, index],
   );
   return {
     session: active,
@@ -43,14 +56,21 @@ export function useChartReplay(context: string) {
       const frozen = createReplayHistory(bars);
       if (frozen.length < 2) return false;
       const index = Math.max(0, frozen.length - 101);
-      setSession({ context, bars: frozen, index, start: index, playing: false });
+      setSession({ context, bars: frozen, index, start: index, seekVersion: 0, playing: false });
       return true;
     },
     exit: () => setSession(null),
+    pause: () =>
+      setSession((current) => (current?.playing ? { ...current, playing: false } : current)),
     seek(index: number) {
       setSession((current) =>
         current
-          ? { ...current, index: replayIndex(index, current.bars.length), playing: false }
+          ? {
+              ...current,
+              index: replayIndex(index, current.bars.length),
+              seekVersion: current.seekVersion + 1,
+              playing: false,
+            }
           : null,
       );
     },
@@ -75,6 +95,7 @@ export function ChartReplayControls({
   const session = replay.session;
   const [date, setDate] = useState("");
   const [error, setError] = useState("");
+  const [dateOpen, setDateOpen] = useState(false);
   if (!session) return null;
   const { bars, index, playing, start } = session;
   const current = bars[index]!;
@@ -112,119 +133,151 @@ export function ChartReplayControls({
   return (
     <div
       aria-label="Bar replay controls"
-      className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-blue-400/20 bg-[#101723] px-2 py-1.5 text-xs text-zinc-300"
+      className="flex shrink-0 flex-col gap-1 border-b border-blue-400/20 bg-[#101723] px-2 py-1.5 text-xs text-zinc-300"
     >
-      {controls.map(({ id, label, icon: Icon, action, disabled }) => (
-        <Tooltip key={id}>
-          <TooltipTrigger
-            type="button"
-            aria-label={label}
-            disabled={disabled}
-            onClick={action}
-            className="flex size-8 items-center justify-center rounded hover:bg-white/10 disabled:opacity-30"
-          >
-            <Icon className="size-4" />
-          </TooltipTrigger>
-          <TooltipPopup>{label}</TooltipPopup>
-        </Tooltip>
-      ))}
-      <TradingSelect
-        label="Replay speed"
-        value={String(replay.speed)}
-        options={[
-          ["0.5", "0.5×"],
-          ["1", "1×"],
-          ["2", "2×"],
-          ["5", "5×"],
-          ["10", "10×"],
-        ]}
-        onChange={(value) => replay.setSpeed(Number(value) as ChartReplaySpeed)}
-        variant="ghost"
-        className="h-8 w-16 rounded-none"
-      />
-      <span aria-hidden="true" className="mx-1 h-4 w-px bg-white/10" />
-      <time dateTime={new Date(timestamp(current) * 1000).toISOString()} className="tabular-nums">
-        {new Date(timestamp(current) * 1000).toLocaleString([], {
-          timeZone,
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        })}
-      </time>
-      <input
-        aria-label="Replay position"
-        aria-valuetext={`${index + 1} of ${bars.length} bars`}
-        type="range"
-        min={0}
-        max={bars.length - 1}
-        value={index}
-        onChange={(event) => replay.seek(Number(event.target.value))}
-        className="min-w-24 max-w-56 flex-1 accent-blue-400"
-      />
-      <span className="text-zinc-500 tabular-nums">
-        {index + 1}/{bars.length}
-        {atEnd ? " · End" : ""}
-      </span>
-      <form
-        className="flex items-center gap-1"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const timestamp = parseReplayDateTime(date, timeZone);
-          if (timestamp === null) {
-            setError(`Choose a valid, unambiguous time in ${timeZone}.`);
-            return;
-          }
-          const next = replayIndexAt(bars, timestamp);
-          if (next === null) {
-            setError("Choose a time within the loaded replay history.");
-            return;
-          }
-          setError("");
-          replay.seek(next);
-        }}
+      <div
+        className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]"
+        data-replay-row="playback"
       >
-        <input
-          aria-label="Replay start date and time"
-          aria-description={`Time zone: ${timeZone}`}
-          type="datetime-local"
-          step="1"
-          min={formatReplayDateTime(timestamp(bars[0]!), timeZone)}
-          max={formatReplayDateTime(timestamp(bars.at(-1)!), timeZone)}
-          value={date}
-          onChange={(event) => setDate(event.target.value)}
-          className="h-8 w-44 border border-white/10 bg-transparent px-2 text-[11px] [color-scheme:dark]"
+        <span className="mr-1 shrink-0 text-[11px] font-medium text-blue-300">Replay</span>
+        {controls.map(({ id, label, icon: Icon, action, disabled }) => (
+          <Tooltip key={id}>
+            <TooltipTrigger
+              type="button"
+              aria-label={label}
+              disabled={disabled}
+              onClick={action}
+              className="flex size-7 shrink-0 items-center justify-center rounded hover:bg-white/10 disabled:opacity-30"
+            >
+              <Icon className="size-4" />
+            </TooltipTrigger>
+            <TooltipPopup>{label}</TooltipPopup>
+          </Tooltip>
+        ))}
+        <TradingSelect
+          label="Replay speed"
+          value={String(replay.speed)}
+          options={[
+            ["0.5", "0.5 bars/s"],
+            ["1", "1 bar/s"],
+            ["2", "2 bars/s"],
+            ["5", "5 bars/s"],
+            ["10", "10 bars/s"],
+          ]}
+          onChange={(value) => replay.setSpeed(Number(value) as ChartReplaySpeed)}
+          variant="ghost"
+          className="h-7 w-24 shrink-0 rounded-none"
         />
         <Tooltip>
           <TooltipTrigger
-            type="submit"
-            aria-label="Jump to replay date"
-            disabled={!date}
-            className="flex size-8 items-center justify-center hover:bg-white/10 disabled:opacity-30"
+            type="button"
+            aria-label="Exit replay and return to live chart"
+            onClick={replay.exit}
+            className="ml-auto flex size-7 shrink-0 items-center justify-center rounded hover:bg-white/10"
           >
-            <ArrowRight className="size-4" />
+            <X className="size-4" />
           </TooltipTrigger>
-          <TooltipPopup>Jump to date in loaded history</TooltipPopup>
+          <TooltipPopup>Exit replay and return to live chart</TooltipPopup>
         </Tooltip>
-      </form>
-      <Tooltip>
-        <TooltipTrigger
-          type="button"
-          aria-label="Exit replay and return to live chart"
-          onClick={replay.exit}
-          className="ml-auto flex size-8 items-center justify-center rounded hover:bg-white/10"
+      </div>
+      <div className="flex min-w-0 items-center gap-2" data-replay-row="position">
+        <input
+          aria-label="Replay position"
+          aria-valuetext={`${index + 1} of ${bars.length} bars`}
+          type="range"
+          min={0}
+          max={bars.length - 1}
+          value={index}
+          onChange={(event) => replay.seek(Number(event.target.value))}
+          className="min-w-8 flex-1 accent-blue-400"
+        />
+        <span className="shrink-0 whitespace-nowrap text-[11px] text-zinc-500 tabular-nums">
+          {index + 1}/{bars.length}
+          {atEnd ? " · End" : ""}
+        </span>
+        <Popover
+          open={dateOpen}
+          onOpenChange={(open) => {
+            setDateOpen(open);
+            if (open) {
+              replay.pause();
+              setDate(formatReplayDateTime(timestamp(current), timeZone));
+              setError("");
+            }
+          }}
         >
-          <X className="size-4" />
-        </TooltipTrigger>
-        <TooltipPopup>Exit replay and return to live chart</TooltipPopup>
-      </Tooltip>
-      {error && (
-        <p role="alert" className="basis-full text-xs text-red-400">
-          {error}
-        </p>
-      )}
+          <PopoverTrigger
+            aria-label="Choose replay date"
+            className="flex h-7 min-w-0 shrink items-center gap-1 rounded px-1 text-[11px] hover:bg-white/10"
+          >
+            <CalendarDays className="size-3.5 shrink-0" />
+            <time
+              dateTime={new Date(timestamp(current) * 1000).toISOString()}
+              className="truncate tabular-nums"
+            >
+              {new Date(timestamp(current) * 1000).toLocaleString([], {
+                timeZone,
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </time>
+            <ChevronDown className="size-3 shrink-0" />
+          </PopoverTrigger>
+          <PopoverPopup align="end" className="w-72" viewportClassName="p-3">
+            <PopoverTitle className="mb-2 text-sm">Go to replay date</PopoverTitle>
+            <form
+              className="flex flex-col gap-3"
+              noValidate
+              onSubmit={(event) => {
+                event.preventDefault();
+                const target = parseReplayDateTime(date, timeZone);
+                if (target === null) {
+                  setError(`Choose a valid, unambiguous time in ${timeZone}.`);
+                  return;
+                }
+                const next = replayIndexAt(bars, target);
+                if (next === null) {
+                  setError("Choose a time within the loaded replay history.");
+                  return;
+                }
+                setError("");
+                replay.seek(next);
+                setDateOpen(false);
+              }}
+            >
+              <label className="flex flex-col gap-1 text-xs text-zinc-400">
+                Date and time · {timeZone}
+                <input
+                  aria-label="Replay start date and time"
+                  aria-description={`Time zone: ${timeZone}`}
+                  type="datetime-local"
+                  step="1"
+                  min={formatReplayDateTime(timestamp(bars[0]!), timeZone)}
+                  max={formatReplayDateTime(timestamp(bars.at(-1)!), timeZone)}
+                  value={date}
+                  onChange={(event) => setDate(event.target.value)}
+                  className="h-9 min-w-0 w-full rounded border border-white/15 bg-transparent px-2 text-xs text-zinc-200 [color-scheme:dark]"
+                />
+              </label>
+              <button
+                type="submit"
+                aria-label="Jump to replay date"
+                disabled={!date}
+                className="h-8 rounded bg-blue-500 px-3 text-xs text-white hover:bg-blue-400 disabled:opacity-30"
+              >
+                Go to date
+              </button>
+              {error && (
+                <p role="alert" className="text-xs text-red-400">
+                  {error}
+                </p>
+              )}
+            </form>
+          </PopoverPopup>
+        </Popover>
+      </div>
     </div>
   );
 }

@@ -137,6 +137,14 @@ export function subscribeChartMarket(
                 quote[key] = input[key];
             if (typeof input.timestamp === "string" && Number.isFinite(Date.parse(input.timestamp)))
               quote.timestamp = input.timestamp;
+            // Quotes can arrive out of order; never replace timestamped market data
+            // with an older or undated frame. Equal timestamps may contain distinct trades.
+            if (
+              current.quote?.timestamp &&
+              (!quote.timestamp ||
+                Date.parse(quote.timestamp) < Date.parse(current.quote.timestamp))
+            )
+              return;
             if (quote.timestamp)
               enqueue({
                 type: "quote",

@@ -125,6 +125,64 @@ describe("shared chart market history", () => {
     expect(first.alertFeed?.events).toHaveLength(3);
     stop();
   });
+  it("rejects regressing or undated quotes without changing candles or the accepted trade journal", async () => {
+    const t = transport(),
+      emit = vi.fn<(snapshot: ChartMarketSnapshot) => void>();
+    const stop = subscribeChartMarket("NQU6", interval, emit, undefined, t.open);
+    t.send(0, { ...batch([bar(100)], true), historyComplete: true });
+    const sendQuote = (last: number, timestamp?: string) =>
+      t.send(0, { type: "quote", quote: { symbol: "NQU6", last, timestamp } });
+    sendQuote(101, "2026-09-11T12:00:02Z");
+    // Rejection also applies before the current 16ms notification is published.
+    sendQuote(99, "2026-09-11T12:00:01Z");
+    sendQuote(98);
+    sendQuote(97, "invalid");
+    await vi.advanceTimersByTimeAsync(16);
+    const first = emit.mock.lastCall![0];
+    expect(first.quote).toMatchObject({ last: 101, timestamp: "2026-09-11T12:00:02Z" });
+    expect(first.alertFeed?.events).toMatchObject([{ price: 101, sequence: 1 }]);
+    emit.mockClear();
+    sendQuote(96, "2026-09-11T12:00:00Z");
+    sendQuote(95);
+    await vi.advanceTimersByTimeAsync(16);
+    expect(emit).not.toHaveBeenCalled();
+    sendQuote(102, "2026-09-11T12:00:02Z");
+    sendQuote(103, "2026-09-11T12:00:03Z");
+    await vi.advanceTimersByTimeAsync(16);
+    const next = emit.mock.lastCall![0];
+    expect(next.quote?.last).toBe(103);
+    expect(next.alertFeed?.events).toMatchObject([
+      { price: 101, sequence: 1 },
+      { price: 102, sequence: 2 },
+      { price: 103, sequence: 3 },
+    ]);
+    expect(next.bars).toBe(first.bars);
+    expect(next.revision).toBe(first.revision);
+    stop();
+  });
+
+  it("accepts undated quotes until a timestamp arrives and clears ordering on stream disconnection", async () => {
+    const t = transport(),
+      emit = vi.fn<(snapshot: ChartMarketSnapshot) => void>();
+    const stop = subscribeChartMarket("NQU6", interval, emit, undefined, t.open);
+    const sendQuote = (last: number, timestamp?: string) =>
+      t.send(0, { type: "quote", quote: { symbol: "NQU6", last, timestamp } });
+    sendQuote(100);
+    sendQuote(101);
+    await vi.advanceTimersByTimeAsync(16);
+    expect(emit.mock.lastCall![0].quote).toEqual({ symbol: "NQU6", last: 101, source: "quote" });
+    sendQuote(102, "2026-09-11T12:00:02Z");
+    await vi.advanceTimersByTimeAsync(16);
+    expect(emit.mock.lastCall![0].quote?.timestamp).toBe("2026-09-11T12:00:02Z");
+    t.send(0, { type: "status", state: "disconnected", intervalKey: "minute:5" });
+    await vi.advanceTimersByTimeAsync(16);
+    expect(emit.mock.lastCall![0].quote).toBeNull();
+    sendQuote(103);
+    await vi.advanceTimersByTimeAsync(16);
+    expect(emit.mock.lastCall![0].quote?.last).toBe(103);
+    stop();
+  });
+
   it("does not journal history/warmup quotes or unproven closes; accepts explicit live finality and resets on disconnect", async () => {
     const t = transport(),
       emit = vi.fn<(snapshot: ChartMarketSnapshot) => void>();

@@ -47,6 +47,32 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 describe("bar replay controls", () => {
+  it("keeps the visible history stable through play, pause and speed changes", async () => {
+    await act(async () => {
+      replay.start(candles);
+    });
+    const visible = replay.visible;
+    await act(async () => replay.toggle());
+    expect(replay.visible).toBe(visible);
+    await act(async () => replay.setSpeed(5));
+    expect(replay.visible).toBe(visible);
+    await act(async () => replay.pause());
+    expect(replay.visible).toBe(visible);
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(replay.visible).toBe(visible);
+    await act(async () => replay.seek(12));
+    expect(replay.session?.seekVersion).toBe(1);
+    const seekVersion = replay.session?.seekVersion;
+    await act(async () => replay.toggle());
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(replay.session?.index).toBe(13);
+    expect(replay.session?.seekVersion).toBe(seekVersion);
+  });
   it.each([0.5, 1, 2, 5, 10] as const)("advances one bar per %s× interval", async (speed) => {
     await act(async () => {
       replay.setSpeed(speed);

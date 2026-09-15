@@ -94,6 +94,8 @@ import { DrawingObjectTree } from "./DrawingObjectTree";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 import { ChartReplayControls, useChartReplay } from "./ChartReplay";
+import { chartLastTrade } from "./chartLastTrade";
+import { replayViewport } from "./replayViewport";
 import { replayMinuteHistory } from "./replayHistory";
 
 type ChartEngine = ChartTableSource & {
@@ -102,13 +104,15 @@ type ChartEngine = ChartTableSource & {
   chart: IChartApi;
   prices: Record<ChartStyle, ISeriesApi<SeriesType>>;
   marketPriceLine: IPriceLine;
+  tradePriceLines: Record<ChartStyle, IPriceLine>;
+  refreshTradePrice: () => void;
   volume: ISeriesApi<"Histogram">;
   indicators: ReturnType<typeof createIndicatorRenderer>;
   bars: Map<number, Candle>;
   heikinAshiBars: Map<number, Candle>;
   refreshIndicators: () => void;
   refreshLineSource: () => void;
-  showReplay: (bars: readonly Candle[] | null) => void;
+  showReplay: (bars: readonly Candle[] | null, seekVersion: number) => void;
   disposed: boolean;
 };
 
@@ -333,6 +337,11 @@ export function TradovateChart({
   const inputSettings = useRef(settings.indicatorInputs);
   const volumeColors = useRef(settings.volumeColors);
   const candleColors = useRef({ up: settings.candleUpColor, down: settings.candleDownColor });
+  const priceDisplay = useRef({
+    style: settings.style,
+    line: settings.showPriceLine,
+    label: settings.showPriceLabel,
+  });
   const lineChartSource = useRef(settings.lineChartSource);
   const chartTimeZone = useRef(settings.timeZone);
   const initialBalanceSettings = useRef(settings.initialBalance);
@@ -444,8 +453,8 @@ export function TradovateChart({
   useEffect(() => {
     if (!activeEngine) return;
     drawingAlertsRef.current.reset();
-    activeEngine.showReplay(replay.visible);
-  }, [activeEngine, replay.visible]);
+    activeEngine.showReplay(replay.visible, replay.session?.seekVersion ?? 0);
+  }, [activeEngine, replay.visible, replay.session?.seekVersion]);
 
   useEffect(() => {
     lineChartSource.current = settings.lineChartSource;
@@ -470,6 +479,7 @@ export function TradovateChart({
         ? hollowCandleColors(latest, bars.at(-2), candleColors.current).borderColor
         : "",
     });
+    engine.refreshTradePrice();
   }, [engine, settings.candleUpColor, settings.candleDownColor]);
 
   useEffect(() => {
@@ -585,16 +595,21 @@ export function TradovateChart({
         priceFormat,
       }),
     };
-    // Keep the actual closing price distinct from the averaged candle value.
-    const marketPriceLine = prices["heikin-ashi"].createPriceLine({
-      price: 0,
-      color: "#9299a7",
-      lineWidth: 1,
-      lineStyle: 2,
-      lineVisible: false,
-      axisLabelVisible: false,
-      title: "Price",
-    });
+    const tradePriceLines = Object.fromEntries(
+      Object.entries(prices).map(([style, series]) => [
+        style,
+        series.createPriceLine({
+          price: 0,
+          color: "#9299a7",
+          lineWidth: 1,
+          lineStyle: 2,
+          lineVisible: false,
+          axisLabelVisible: false,
+          title: style === "heikin-ashi" ? "Price" : "",
+        }),
+      ]),
+    ) as Record<ChartStyle, IPriceLine>;
+    const marketPriceLine = tradePriceLines["heikin-ashi"];
     const volume = chart.addSeries(HistogramSeries, {
       priceScaleId: "volume",
       priceFormat: { type: "volume" },
@@ -605,6 +620,10 @@ export function TradovateChart({
     const indicators = createIndicatorRenderer(chart, priceFormat.minMove);
     let appliedVolumeColors = "";
     let replaying = false;
+    let replayHistory: readonly Candle[] | null = null;
+    let replaySeekVersion = 0;
+    let liveViewport: { range: { from: number; to: number }; count: number } | null = null;
+    let pendingViewport: { from: number; to: number } | null = null;
     let barRevision = 0;
     const barListeners = new Set<() => void>();
     const state: ChartEngine = {
@@ -613,6 +632,46 @@ export function TradovateChart({
       chart,
       prices,
       marketPriceLine,
+      tradePriceLines,
+      refreshTradePrice: () => {
+        if (state.disposed) return;
+        const latest = bars.get(renderedTime);
+        const trade = replaying ? null : chartLastTrade(previousQuote, latest, symbol);
+        const display = priceDisplay.current;
+        for (const style of Object.keys(prices) as ChartStyle[]) {
+          const useTrade = trade !== null && style !== "heikin-ashi";
+          const showGuide =
+            style === display.style && !!latest && (trade !== null || style === "heikin-ashi");
+          const native = prices[style].options();
+          const priceLineVisible = display.line && !useTrade;
+          const lastValueVisible = display.label && !useTrade;
+          if (
+            native.priceLineVisible !== priceLineVisible ||
+            native.lastValueVisible !== lastValueVisible
+          )
+            prices[style].applyOptions({ priceLineVisible, lastValueVisible });
+          const guide = tradePriceLines[style].options();
+          if (!showGuide && !guide.lineVisible && !guide.axisLabelVisible) continue;
+          const next = {
+            price: trade ?? latest?.close ?? 0,
+            color:
+              style === "heikin-ashi"
+                ? "#9299a7"
+                : (trade ?? latest?.close ?? 0) >= (latest?.open ?? 0)
+                  ? candleColors.current.up
+                  : candleColors.current.down,
+            lineVisible: showGuide && display.line,
+            axisLabelVisible: showGuide && display.label,
+          };
+          if (
+            guide.price !== next.price ||
+            guide.color !== next.color ||
+            guide.lineVisible !== next.lineVisible ||
+            guide.axisLabelVisible !== next.axisLabelVisible
+          )
+            tradePriceLines[style].applyOptions(next);
+        }
+      },
       volume,
       indicators,
       bars,
@@ -625,22 +684,58 @@ export function TradovateChart({
       },
       getBarRevision: () => barRevision,
       disposed: false,
-      showReplay: (history) => {
-        if (state.disposed) return;
-        if (!history && !replaying) return;
+      showReplay: (history, seekVersion) => {
+        if (state.disposed || (!history && !replaying)) return;
+        if (history === replayHistory && seekVersion === replaySeekVersion) return;
+        const previousHistory = replayHistory;
+        const wasReplaying = replaying;
+        const range = chart.timeScale().getVisibleLogicalRange();
+        if (!wasReplaying && range) liveViewport = { range, count: bars.size };
+        const seek = !wasReplaying || seekVersion !== replaySeekVersion;
+        const append =
+          !!history &&
+          !!previousHistory &&
+          history.length > previousHistory.length &&
+          history[0] === previousHistory[0] &&
+          history[previousHistory.length - 1] === previousHistory.at(-1);
         replaying = history !== null;
+        replayHistory = history;
+        replaySeekVersion = seekVersion;
         if (render !== undefined) cancelAnimationFrame(render);
         render = undefined;
         pending.clear();
-        setHovered(null);
-        setHoverReadings(null);
-        replaceHistory = true;
-        renderedTime = -Infinity;
-        fitted = false;
+        if (!append) {
+          setHovered(null);
+          setHoverReadings(null);
+          replaceHistory = true;
+          renderedTime = -Infinity;
+        }
+        // Playback owns horizontal movement; data updates must never fit the chart again.
+        fitted = true;
         if (history) {
-          applyChartBarBatch(bars, pending, history, true);
+          pendingViewport = replayViewport(
+            range,
+            previousHistory?.length ?? bars.size,
+            history.length,
+            seek,
+          );
+          applyChartBarBatch(
+            bars,
+            pending,
+            append ? history.slice(previousHistory!.length) : history,
+            !append,
+          );
           renderBars();
         } else {
+          const snapshot = queryClient.getQueryData<ChartMarketSnapshot>(marketOptions.queryKey);
+          if (liveViewport)
+            pendingViewport = replayViewport(
+              liveViewport.range,
+              liveViewport.count,
+              snapshot?.bars.length ?? liveViewport.count,
+              false,
+            );
+          liveViewport = null;
           revision = null;
           previousQuote = null;
           syncCache();
@@ -825,8 +920,12 @@ export function TradovateChart({
           .setVisibleLogicalRange({ from: Math.max(0, bars.size - 100), to: bars.size + 5 });
         fitted = true;
       }
+      if (pendingViewport) {
+        chart.timeScale().setVisibleLogicalRange(pendingViewport);
+        pendingViewport = null;
+      }
       const latest = bars.get(renderedTime) ?? null;
-      if (latest) marketPriceLine.applyOptions({ price: latest.close });
+      state.refreshTradePrice();
       setLast(latest);
       barRevision++;
       for (const listener of barListeners) listener();
@@ -860,6 +959,7 @@ export function TradovateChart({
       if (snapshot.quote !== previousQuote) {
         previousQuote = snapshot.quote;
         onQuote?.(snapshot.quote);
+        state.refreshTradePrice();
       }
       if (snapshot.revision === revision) {
         if (render === undefined) drawingAlertsRef.current.consume(snapshot);
@@ -989,6 +1089,7 @@ export function TradovateChart({
       }[settings.priceScaleMode],
       invertScale: settings.invertScale,
     });
+    engine.refreshTradePrice();
   }, [
     engine,
     settings.style,
@@ -1017,13 +1118,13 @@ export function TradovateChart({
   ]);
 
   useEffect(() => {
-    if (!engine || engine.disposed) return;
-    const hasPrice = last !== null && engine.bars.size > 0;
-    engine.marketPriceLine.applyOptions({
-      lineVisible: hasPrice && settings.showPriceLine,
-      axisLabelVisible: hasPrice && settings.showPriceLabel,
-    });
-  }, [engine, last, settings.showPriceLine, settings.showPriceLabel]);
+    priceDisplay.current = {
+      style: settings.style,
+      line: settings.showPriceLine,
+      label: settings.showPriceLabel,
+    };
+    if (engine && !engine.disposed) engine.refreshTradePrice();
+  }, [engine, settings.style, settings.showPriceLine, settings.showPriceLabel]);
 
   const zoom = (factor: number) => {
     const scale = engine?.chart.timeScale();
