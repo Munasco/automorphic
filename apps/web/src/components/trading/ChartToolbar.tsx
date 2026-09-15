@@ -97,6 +97,8 @@ export type ChartToolbarProps = {
   onToggleCandleBorders: () => void;
   showPriceLine: boolean;
   onTogglePriceLine: () => void;
+  showBarCountdown: boolean;
+  onToggleBarCountdown: () => void;
   showPriceLabel: boolean;
   onTogglePriceLabel: () => void;
   showChartTitle: boolean;
@@ -181,6 +183,8 @@ export function ChartToolbar({
   onToggleCandleBorders,
   showPriceLine,
   onTogglePriceLine,
+  showBarCountdown,
+  onToggleBarCountdown,
   showPriceLabel,
   onTogglePriceLabel,
   showChartTitle,
@@ -856,6 +860,17 @@ export function ChartToolbar({
                 onCheckedChange={onTogglePriceLabel}
               />
               Last price label
+            </label>
+            <label
+              htmlFor={`${id}-bar-countdown`}
+              className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"
+            >
+              <Checkbox
+                id={`${id}-bar-countdown`}
+                checked={showBarCountdown}
+                onCheckedChange={onToggleBarCountdown}
+              />
+              Countdown to bar close
             </label>
             <div className="space-y-2 px-2 py-2.5">
               <label htmlFor={`${id}-price-scale`} className="text-xs text-zinc-400">

@@ -95,6 +95,9 @@ import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 import { ChartReplayControls, useChartReplay } from "./ChartReplay";
 import { chartLastTrade } from "./chartLastTrade";
+import { barCountdown } from "./barCountdown";
+import { createBarCountdownPrimitive } from "./barCountdownPrimitive";
+import { getFuturesSession } from "./marketSession";
 import { replayViewport } from "./replayViewport";
 import { replayMinuteHistory } from "./replayHistory";
 
@@ -106,6 +109,8 @@ type ChartEngine = ChartTableSource & {
   marketPriceLine: IPriceLine;
   tradePriceLines: Record<ChartStyle, IPriceLine>;
   refreshTradePrice: () => void;
+  countdowns: Record<ChartStyle, ReturnType<typeof createBarCountdownPrimitive>>;
+  refreshCountdown: () => void;
   volume: ISeriesApi<"Histogram">;
   indicators: ReturnType<typeof createIndicatorRenderer>;
   bars: Map<number, Candle>;
@@ -341,6 +346,7 @@ export function TradovateChart({
     style: settings.style,
     line: settings.showPriceLine,
     label: settings.showPriceLabel,
+    countdown: settings.showBarCountdown,
   });
   const lineChartSource = useRef(settings.lineChartSource);
   const chartTimeZone = useRef(settings.timeZone);
@@ -610,6 +616,16 @@ export function TradovateChart({
       ]),
     ) as Record<ChartStyle, IPriceLine>;
     const marketPriceLine = tradePriceLines["heikin-ashi"];
+    const countdowns = Object.fromEntries(
+      Object.entries(prices).map(([style, series]) => {
+        const countdown = createBarCountdownPrimitive(
+          series,
+          () => chart.options().layout.fontSize,
+        );
+        series.attachPrimitive(countdown.primitive);
+        return [style, countdown];
+      }),
+    ) as Record<ChartStyle, ReturnType<typeof createBarCountdownPrimitive>>;
     const volume = chart.addSeries(HistogramSeries, {
       priceScaleId: "volume",
       priceFormat: { type: "volume" },
@@ -633,6 +649,25 @@ export function TradovateChart({
       prices,
       marketPriceLine,
       tradePriceLines,
+      countdowns,
+      refreshCountdown: () => {
+        if (state.disposed) return;
+        const latest = bars.get(renderedTime) ?? null;
+        const display = priceDisplay.current;
+        const now = Date.now();
+        const text = barCountdown(latest, interval, now, {
+          enabled: display.countdown,
+          live:
+            display.countdown &&
+            alertSnapshot?.status === "Tradovate connected" &&
+            getFuturesSession(root, new Date(now)).status === "scheduled-open",
+          replay: replaying,
+        });
+        const price =
+          chartLastTrade(previousQuote, latest ?? undefined, symbol) ?? latest?.close ?? NaN;
+        for (const style of Object.keys(countdowns) as ChartStyle[])
+          countdowns[style].update(style === display.style ? text : null, price, display.label);
+      },
       refreshTradePrice: () => {
         if (state.disposed) return;
         const latest = bars.get(renderedTime);
@@ -671,6 +706,7 @@ export function TradovateChart({
           )
             tradePriceLines[style].applyOptions(next);
         }
+        state.refreshCountdown();
       },
       volume,
       indicators,
@@ -954,6 +990,7 @@ export function TradovateChart({
       if (replaying) return;
       alertSnapshot = snapshot;
       setStatus(snapshot.status);
+      state.refreshCountdown();
       setTickHistory(snapshot.tickHistory);
       receivedQuote = snapshot.quote !== null;
       if (snapshot.quote !== previousQuote) {
@@ -983,7 +1020,9 @@ export function TradovateChart({
       if (event.type === "updated" && event.query.queryHash === queryHash) syncCache();
     });
     syncCache();
+    const countdownTimer = window.setInterval(state.refreshCountdown, 1000);
     return () => {
+      window.clearInterval(countdownTimer);
       document.fonts.removeEventListener("loadingdone", syncFont);
       fontObserver.disconnect();
       state.disposed = true;
@@ -1122,9 +1161,16 @@ export function TradovateChart({
       style: settings.style,
       line: settings.showPriceLine,
       label: settings.showPriceLabel,
+      countdown: settings.showBarCountdown,
     };
     if (engine && !engine.disposed) engine.refreshTradePrice();
-  }, [engine, settings.style, settings.showPriceLine, settings.showPriceLabel]);
+  }, [
+    engine,
+    settings.style,
+    settings.showPriceLine,
+    settings.showPriceLabel,
+    settings.showBarCountdown,
+  ]);
 
   const zoom = (factor: number) => {
     const scale = engine?.chart.timeScale();
@@ -1248,6 +1294,8 @@ export function TradovateChart({
         onToggleCandleBorders={settings.toggleCandleBorders}
         showPriceLine={settings.showPriceLine}
         onTogglePriceLine={settings.togglePriceLine}
+        showBarCountdown={settings.showBarCountdown}
+        onToggleBarCountdown={settings.toggleBarCountdown}
         showPriceLabel={settings.showPriceLabel}
         onTogglePriceLabel={settings.togglePriceLabel}
         showChartTitle={settings.showChartTitle}

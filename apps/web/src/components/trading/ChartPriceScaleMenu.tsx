@@ -90,6 +90,13 @@ export function ChartPriceScaleMenu({
       >
         Last value label
       </MenuCheckboxItem>
+      <MenuCheckboxItem
+        className={drawingContextMenuItemClass}
+        checked={settings.showBarCountdown}
+        onCheckedChange={() => run(settings.toggleBarCountdown)}
+      >
+        Countdown to bar close
+      </MenuCheckboxItem>
       <MenuSeparator />
       <MenuItem className={drawingContextMenuItemClass} onClick={() => run(onOpenSettings)}>
         <ChartIcon name="adjustments-horizontal" />

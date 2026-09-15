@@ -133,6 +133,7 @@ type SavedChartPreferences = {
   indicatorLegendCollapsed: boolean;
   showPriceLine: boolean;
   showPriceLabel: boolean;
+  showBarCountdown: boolean;
   priceScaleMode: ChartPriceScaleMode;
   invertScale: boolean;
 };
@@ -225,6 +226,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     indicatorLegendCollapsed: saved.indicatorLegendCollapsed === true,
     showPriceLine: typeof saved.showPriceLine === "boolean" ? saved.showPriceLine : true,
     showPriceLabel: typeof saved.showPriceLabel === "boolean" ? saved.showPriceLabel : true,
+    showBarCountdown: saved.showBarCountdown === true,
     priceScaleMode: validPriceScaleMode(saved.priceScaleMode)
       ? saved.priceScaleMode
       : saved.logScale === true
@@ -271,6 +273,7 @@ export const useChartPreferences = create<{
   indicatorLegendCollapsed: boolean;
   showPriceLine: boolean;
   showPriceLabel: boolean;
+  showBarCountdown: boolean;
   priceScaleMode: ChartPriceScaleMode;
   invertScale: boolean;
   setShowChartTitle: (show: boolean) => void;
@@ -322,6 +325,7 @@ export const useChartPreferences = create<{
   toggleCandleBorders: () => void;
   togglePriceLine: () => void;
   togglePriceLabel: () => void;
+  toggleBarCountdown: () => void;
   setPriceScaleMode: (mode: ChartPriceScaleMode) => void;
   toggleInvertScale: () => void;
 }>()(
@@ -369,6 +373,7 @@ export const useChartPreferences = create<{
       indicatorLegendCollapsed: false,
       showPriceLine: true,
       showPriceLabel: true,
+      showBarCountdown: false,
       priceScaleMode: "normal",
       invertScale: false,
       setShowChartTitle: (showChartTitle) => {
@@ -710,6 +715,7 @@ export const useChartPreferences = create<{
       toggleCandleBorders: () => set((state) => ({ showCandleBorders: !state.showCandleBorders })),
       togglePriceLine: () => set((state) => ({ showPriceLine: !state.showPriceLine })),
       togglePriceLabel: () => set((state) => ({ showPriceLabel: !state.showPriceLabel })),
+      toggleBarCountdown: () => set((state) => ({ showBarCountdown: !state.showBarCountdown })),
       setPriceScaleMode: (priceScaleMode) => {
         if (validPriceScaleMode(priceScaleMode) && priceScaleMode !== get().priceScaleMode)
           set({ priceScaleMode });

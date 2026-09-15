@@ -3614,3 +3614,27 @@ describe("chart legend preferences", () => {
     expect(useChartPreferences.getState()).toMatchObject(defaults);
   });
 });
+
+it("persists the bar countdown independently of price labels and restores it on workspace reload", async () => {
+  const store = configure();
+  store.toggleBarCountdown();
+  store.togglePriceLabel();
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  expect(useChartPreferences.getState()).toMatchObject({
+    showBarCountdown: true,
+    showPriceLabel: false,
+    showPriceLine: true,
+  });
+  expect(useChartPreferences.getState().indicatorInputs.sma).toEqual(store.indicatorInputs.sma);
+  useChartPreferences.getState().toggleBarCountdown();
+  expect(useChartPreferences.getState().showBarCountdown).toBe(false);
+});
+
+it("keeps the countdown opt-in for legacy and invalid saved settings", () => {
+  for (const value of [undefined, null, "true", 1, false])
+    expect(normalizeChartPreferences({ showBarCountdown: value }).showBarCountdown).toBe(false);
+  expect(normalizeChartPreferences({ showBarCountdown: true }).showBarCountdown).toBe(true);
+});
