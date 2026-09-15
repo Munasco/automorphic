@@ -100,6 +100,18 @@ describe("chart template snapshots", () => {
     expect(restored.extraIndicators[0]!.initialBalance).toEqual(expected);
     expect(snapshot.initialBalance).not.toBe(snapshot.extraIndicators[0]!.initialBalance);
   });
+  it("captures and reloads indicator ordering without sharing mutable order arrays", () => {
+    const source = { ...chart(), indicatorOrder: ["second-rsi", "base:rsi", "second-ib"] };
+    const captured = captureChartTemplateSettings(source);
+    expect(captured.indicatorOrder.slice(0, 3)).toEqual(source.indicatorOrder);
+    source.indicatorOrder.reverse();
+    expect(captured.indicatorOrder[0]).toBe("second-rsi");
+    const restored = normalizeChartTemplates([
+      { id: "ordered", name: "Ordered", settings: captured },
+    ])[0]!.settings;
+    expect(restored.indicatorOrder).toEqual(captured.indicatorOrder);
+    expect(restored.indicatorOrder).not.toBe(captured.indicatorOrder);
+  });
   it("normalizes malformed values and legacy chart scale choices", () => {
     expect(
       captureChartTemplateSettings({

@@ -98,6 +98,40 @@ const disabled = Object.fromEntries(
 ) as ChartIndicators;
 
 describe("native indicator renderer", () => {
+  it("reorders oscillator panes without replacing price overlays or changing readings", () => {
+    const harness = chartHarness();
+    const renderer = createIndicatorRenderer(harness.chart, 0.25);
+    const bars = inputBars(80);
+    const ema = createIndicatorInstance("ema", "base:ema");
+    const rsi = createIndicatorInstance("rsi", "base:rsi");
+    const obv = createIndicatorInstance("obv", "base:obv");
+    const before = renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [
+      ema,
+      rsi,
+      obv,
+    ]);
+    const overlay = harness.series.find((series) => series.pane === 0)!;
+    const firstPane = harness.series
+      .filter((series) => series.pane === 1)
+      .map((series) => series.data);
+    const secondPane = harness.series
+      .filter((series) => series.pane === 2)
+      .map((series) => series.data);
+    const after = renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [
+      obv,
+      ema,
+      rsi,
+    ]);
+    expect(after).toEqual(before);
+    expect(harness.series.find((series) => series.pane === 0)).toBe(overlay);
+    expect(
+      harness.series.filter((series) => series.pane === 1).map((series) => series.data),
+    ).toEqual(secondPane);
+    expect(
+      harness.series.filter((series) => series.pane === 2).map((series) => series.data),
+    ).toEqual(firstPane);
+    expect(harness.paneCount()).toBe(3);
+  });
   it.each([0, 1])(
     "gaps Keltner basis %s through missing selected prices and reconnects a corrected bar",
     (basisType) => {

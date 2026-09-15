@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { XIcon } from "lucide-react";
+import { MoreHorizontalIcon, XIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
@@ -18,6 +18,10 @@ export interface DrawingObjectTreeIndicator {
   onRemove: () => void;
   settingsContent?: ReactNode;
   settingsLabel?: string;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  onMove?: (direction: "up" | "down") => void;
+  onDrop?: (sourceId: string, position: "before" | "after") => void;
 }
 
 const NO_INDICATORS: readonly DrawingObjectTreeIndicator[] = [];
@@ -128,11 +132,52 @@ function DrawingNameInput({
   );
 }
 
+const INDICATOR_DRAG_TYPE = "application/x-automorphic-indicator";
+
 function IndicatorTreeRow({ indicator }: { indicator: DrawingObjectTreeIndicator }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
+  const [dropEdge, setDropEdge] = useState<"before" | "after" | null>(null);
   return (
-    <li className="group/object flex h-[38px] items-center gap-1 px-2 hover:bg-white/5 focus-within:bg-white/5">
+    <li
+      data-indicator-object={indicator.key}
+      draggable={!!indicator.onDrop}
+      onDragStart={(event) => {
+        if (!indicator.onDrop) return;
+        event.dataTransfer.setData(INDICATOR_DRAG_TYPE, indicator.key);
+        event.dataTransfer.effectAllowed = "move";
+      }}
+      onDragOver={(event) => {
+        if (!indicator.onDrop || !event.dataTransfer.types.includes(INDICATOR_DRAG_TYPE)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        const rect = event.currentTarget.getBoundingClientRect();
+        setDropEdge(event.clientY < rect.top + rect.height / 2 ? "before" : "after");
+      }}
+      onDragLeave={(event) => {
+        if (
+          !(event.relatedTarget instanceof Node) ||
+          !event.currentTarget.contains(event.relatedTarget)
+        )
+          setDropEdge(null);
+      }}
+      onDragEnd={() => setDropEdge(null)}
+      onDrop={(event) => {
+        const sourceId = event.dataTransfer.getData(INDICATOR_DRAG_TYPE);
+        if (!sourceId || !indicator.onDrop) return;
+        event.preventDefault();
+        const rect = event.currentTarget.getBoundingClientRect();
+        indicator.onDrop(sourceId, event.clientY < rect.top + rect.height / 2 ? "before" : "after");
+        setDropEdge(null);
+      }}
+      className={cn(
+        "group/object relative flex h-[38px] items-center gap-1 px-2 hover:bg-white/5 focus-within:bg-white/5",
+        dropEdge === "before" &&
+          "before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-blue-400",
+        dropEdge === "after" &&
+          "after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-blue-400",
+      )}
+    >
       <ChartIcon name="chart-area-line" className="mx-1 size-5 shrink-0 text-zinc-400" />
       {indicator.settingsContent ? (
         <button
@@ -175,6 +220,24 @@ function IndicatorTreeRow({ indicator }: { indicator: DrawingObjectTreeIndicator
       >
         <DrawingToolIcon name={indicator.hidden ? "eye-off" : "eye"} className="size-4" />
       </RowAction>
+      {indicator.onMove ? (
+        <Menu>
+          <MenuTrigger
+            aria-label={`Reorder ${indicator.label}`}
+            className="flex size-7 shrink-0 items-center justify-center rounded text-zinc-400 opacity-0 hover:bg-white/10 group-hover/object:opacity-100 group-focus-within/object:opacity-100 data-popup-open:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
+          >
+            <MoreHorizontalIcon className="size-4" />
+          </MenuTrigger>
+          <MenuPopup align="end">
+            <MenuItem disabled={!indicator.canMoveUp} onClick={() => indicator.onMove?.("up")}>
+              Move up
+            </MenuItem>
+            <MenuItem disabled={!indicator.canMoveDown} onClick={() => indicator.onMove?.("down")}>
+              Move down
+            </MenuItem>
+          </MenuPopup>
+        </Menu>
+      ) : null}
       <RowAction label={`Remove ${indicator.label}`} onClick={indicator.onRemove}>
         <ChartIcon name="trash" className="size-4" />
       </RowAction>

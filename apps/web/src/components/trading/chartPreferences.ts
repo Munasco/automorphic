@@ -12,6 +12,7 @@ import {
   getChartIndicatorInstances,
   isIndicatorKey,
   normalizeExtraIndicators,
+  normalizeIndicatorOrder,
   type ChartIndicatorInstance,
 } from "./chartIndicatorInstances";
 export { DEFAULT_VOLUME_COLORS } from "./chartIndicatorInstances";
@@ -108,6 +109,7 @@ type SavedChartPreferences = {
   appearance: ChartAppearance;
   indicatorInputs: IndicatorInputSettings;
   extraIndicators: ChartIndicatorInstance[];
+  indicatorOrder: string[];
   favoriteIndicators: IndicatorKey[];
   volumeColors: typeof DEFAULT_VOLUME_COLORS;
   initialBalance: InitialBalanceSettings;
@@ -149,6 +151,10 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
       if (Object.keys(next).length) appearance[key] = next;
     }
   }
+  const extraIndicators = normalizeExtraIndicators(
+    saved.extraIndicators,
+    MAX_CHART_INDICATORS - Object.values(indicators).filter(Boolean).length,
+  );
   return {
     style:
       saved.style === "hollow" ||
@@ -166,10 +172,11 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     favoriteIndicators: Array.isArray(saved.favoriteIndicators)
       ? [...new Set(saved.favoriteIndicators.filter(isIndicatorKey))]
       : [],
-    extraIndicators: normalizeExtraIndicators(
-      saved.extraIndicators,
-      MAX_CHART_INDICATORS - Object.values(indicators).filter(Boolean).length,
-    ),
+    extraIndicators,
+    indicatorOrder: normalizeIndicatorOrder(saved.indicatorOrder, [
+      ...INDICATOR_CATALOG.filter(({ key }) => indicators[key]).map(({ key }) => `base:${key}`),
+      ...extraIndicators.map(({ id }) => id),
+    ]),
     volumeColors: {
       up: validColor(saved.volumeColors?.up) ? saved.volumeColors.up : DEFAULT_VOLUME_COLORS.up,
       down: validColor(saved.volumeColors?.down)
@@ -229,6 +236,7 @@ export const useChartPreferences = create<{
   appearance: ChartAppearance;
   indicatorInputs: IndicatorInputSettings;
   extraIndicators: ChartIndicatorInstance[];
+  indicatorOrder: string[];
   favoriteIndicators: IndicatorKey[];
   volumeColors: typeof DEFAULT_VOLUME_COLORS;
   initialBalance: InitialBalanceSettings;
@@ -270,6 +278,8 @@ export const useChartPreferences = create<{
   addIndicator: (key: IndicatorKey) => string | null;
   duplicateIndicatorInstance: (id: string) => string | null;
   removeIndicatorInstance: (id: string) => void;
+  moveIndicatorInstance: (id: string, direction: "up" | "down") => boolean;
+  moveIndicatorInstanceTo: (id: string, targetId: string, position: "before" | "after") => boolean;
   toggleIndicatorInstanceVisibility: (id: string) => void;
   setIndicatorInstanceInputs: (id: string, patch: IndicatorInputValues) => boolean;
   resetIndicatorInstanceInputs: (id: string) => void;
@@ -309,6 +319,9 @@ export const useChartPreferences = create<{
       appearance: {},
       indicatorInputs: {},
       extraIndicators: [],
+      indicatorOrder: INDICATOR_CATALOG.filter(({ key }) => DEFAULT_INDICATORS[key]).map(
+        ({ key }) => `base:${key}`,
+      ),
       favoriteIndicators: [],
       volumeColors: { ...DEFAULT_VOLUME_COLORS },
       initialBalance: { ...DEFAULT_INITIAL_BALANCE },
@@ -372,6 +385,7 @@ export const useChartPreferences = create<{
         }));
       },
       toggleIndicator: (key) => {
+        if (!isIndicatorKey(key)) return;
         const state = get();
         if (
           !state.indicators[key] &&
@@ -381,6 +395,11 @@ export const useChartPreferences = create<{
         set({
           indicators: { ...state.indicators, [key]: !state.indicators[key] },
           hiddenIndicators: { ...state.hiddenIndicators, [key]: false },
+          indicatorOrder: state.indicators[key]
+            ? getChartIndicatorInstances(state)
+                .map(({ id }) => id)
+                .filter((id) => id !== `base:${key}`)
+            : [...getChartIndicatorInstances(state).map(({ id }) => id), `base:${key}`],
         });
       },
       toggleIndicatorVisibility: (key) =>
@@ -402,6 +421,7 @@ export const useChartPreferences = create<{
           indicators: hiddenDefaults(),
           hiddenIndicators: hiddenDefaults(),
           extraIndicators: [],
+          indicatorOrder: [],
         }),
       setIndicatorAppearance: (key, patch) =>
         set((state) => {
@@ -443,7 +463,10 @@ export const useChartPreferences = create<{
           return `base:${key}`;
         }
         const id = randomUUID();
-        set({ extraIndicators: [...state.extraIndicators, createIndicatorInstance(key, id)] });
+        set({
+          extraIndicators: [...state.extraIndicators, createIndicatorInstance(key, id)],
+          indicatorOrder: [...getChartIndicatorInstances(state).map((instance) => instance.id), id],
+        });
         return id;
       },
       duplicateIndicatorInstance: (id) => {
@@ -453,7 +476,10 @@ export const useChartPreferences = create<{
         const source = instances.find((instance) => instance.id === id);
         if (!source) return null;
         const copy = { ...structuredClone(source), id: randomUUID() };
-        set({ extraIndicators: [...state.extraIndicators, copy] });
+        set({
+          extraIndicators: [...state.extraIndicators, copy],
+          indicatorOrder: [...instances.map((instance) => instance.id), copy.id],
+        });
         return copy.id;
       },
       removeIndicatorInstance: (id) => {
@@ -462,7 +488,32 @@ export const useChartPreferences = create<{
         if (key) {
           if (state.indicators[key]) state.toggleIndicator(key);
         } else if (state.extraIndicators.some((instance) => instance.id === id))
-          set({ extraIndicators: state.extraIndicators.filter((instance) => instance.id !== id) });
+          set({
+            extraIndicators: state.extraIndicators.filter((instance) => instance.id !== id),
+            indicatorOrder: getChartIndicatorInstances(state)
+              .map((instance) => instance.id)
+              .filter((current) => current !== id),
+          });
+      },
+      moveIndicatorInstance: (id, direction) => {
+        if (direction !== "up" && direction !== "down") return false;
+        const order = getChartIndicatorInstances(get()).map((instance) => instance.id);
+        const index = order.indexOf(id);
+        if (index < 0) return false;
+        const target = order[index + (direction === "up" ? -1 : 1)];
+        return target
+          ? get().moveIndicatorInstanceTo(id, target, direction === "up" ? "before" : "after")
+          : false;
+      },
+      moveIndicatorInstanceTo: (id, targetId, position) => {
+        if (id === targetId || (position !== "before" && position !== "after")) return false;
+        const order = getChartIndicatorInstances(get()).map((instance) => instance.id);
+        if (!order.includes(id) || !order.includes(targetId)) return false;
+        const next = order.filter((current) => current !== id);
+        next.splice(next.indexOf(targetId) + (position === "after" ? 1 : 0), 0, id);
+        if (next.every((current, index) => current === order[index])) return false;
+        set({ indicatorOrder: next });
+        return true;
       },
       toggleIndicatorInstanceVisibility: (id) => {
         const state = get();

@@ -285,6 +285,7 @@ export function TradovateChart({
         initialBalance: settings.initialBalance,
         volumeColors: settings.volumeColors,
         extraIndicators: settings.extraIndicators,
+        indicatorOrder: settings.indicatorOrder,
       }),
     [
       settings.indicators,
@@ -294,6 +295,7 @@ export function TradovateChart({
       settings.initialBalance,
       settings.volumeColors,
       settings.extraIndicators,
+      settings.indicatorOrder,
     ],
   );
   const visibleInstances = useMemo(
@@ -1381,6 +1383,12 @@ export function TradovateChart({
                 ),
                 onToggleHidden: () => settings.toggleIndicatorInstanceVisibility(instance.id),
                 onRemove: () => settings.removeIndicatorInstance(instance.id),
+                canMoveUp: index > 0,
+                canMoveDown: index < indicatorInstances.length - 1,
+                onMove: (direction: "up" | "down") =>
+                  settings.moveIndicatorInstance(instance.id, direction),
+                onDrop: (sourceId: string, position: "before" | "after") =>
+                  settings.moveIndicatorInstanceTo(sourceId, instance.id, position),
               };
             })}
           />

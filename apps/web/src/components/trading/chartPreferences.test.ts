@@ -3336,3 +3336,91 @@ it("preserves independent OBV smoothing modes and band appearance through duplic
   expect(instances()[1]!.appearance).toEqual({});
   expect(instances()[0]).toEqual(before[0]);
 });
+
+describe("saved indicator instance order", () => {
+  const ids = () =>
+    getChartIndicatorInstances(useChartPreferences.getState()).map((item) => item.id);
+  it("moves instances atomically without changing inputs, appearance, visibility or identity", () => {
+    const store = useChartPreferences.getState();
+    store.removeAllIndicators();
+    const rsi = store.addIndicator("rsi")!,
+      macd = store.addIndicator("macd")!,
+      extra = store.addIndicator("rsi")!;
+    store.setIndicatorInstanceInputs(extra, { period: 7 });
+    store.setIndicatorInstanceAppearance(extra, { color: "#123456" });
+    store.toggleIndicatorInstanceVisibility(extra);
+    const before = new Map(
+      getChartIndicatorInstances(useChartPreferences.getState()).map((item) => [
+        item.id,
+        structuredClone(item),
+      ]),
+    );
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    expect(store.moveIndicatorInstance(extra, "up")).toBe(true);
+    expect(ids()).toEqual([rsi, extra, macd]);
+    expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(1);
+    expect(store.moveIndicatorInstanceTo(macd, rsi, "before")).toBe(true);
+    expect(ids()).toEqual([macd, rsi, extra]);
+    expect(store.moveIndicatorInstanceTo(macd, extra, "after")).toBe(true);
+    expect(ids()).toEqual([rsi, extra, macd]);
+    for (const item of getChartIndicatorInstances(useChartPreferences.getState()))
+      expect(item).toEqual(before.get(item.id));
+  });
+  it("does not write for stale, self, boundary or already-positioned moves", () => {
+    const store = useChartPreferences.getState();
+    store.removeAllIndicators();
+    const first = store.addIndicator("rsi")!,
+      second = store.addIndicator("macd")!;
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    expect(store.moveIndicatorInstance(first, "up")).toBe(false);
+    expect(store.moveIndicatorInstance(second, "down")).toBe(false);
+    expect(store.moveIndicatorInstance("missing", "down")).toBe(false);
+    expect(store.moveIndicatorInstanceTo(first, first, "before")).toBe(false);
+    expect(store.moveIndicatorInstanceTo(first, second, "before")).toBe(false);
+    expect(store.moveIndicatorInstanceTo(second, first, "after")).toBe(false);
+    expect(store.moveIndicatorInstanceTo(first, "missing", "after")).toBe(false);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  });
+  it("prunes removed rows and appends new, re-enabled and duplicate instances", () => {
+    const store = useChartPreferences.getState();
+    store.removeAllIndicators();
+    const first = store.addIndicator("rsi")!,
+      second = store.addIndicator("macd")!,
+      extra = store.addIndicator("rsi")!;
+    store.moveIndicatorInstanceTo(extra, first, "before");
+    store.removeIndicatorInstance(first);
+    expect(ids()).toEqual([extra, second]);
+    expect(useChartPreferences.getState().indicatorOrder).toEqual([extra, second]);
+    store.toggleIndicator("rsi");
+    const duplicate = store.duplicateIndicatorInstance(second)!;
+    expect(ids()).toEqual([extra, second, first, duplicate]);
+    store.removeIndicatorInstance(extra);
+    expect(useChartPreferences.getState().indicatorOrder).toEqual([second, first, duplicate]);
+    store.removeAllIndicators();
+    expect(useChartPreferences.getState().indicatorOrder).toEqual([]);
+  });
+  it("restores order per workspace and normalizes legacy, stale and duplicated saved IDs", async () => {
+    const store = useChartPreferences.getState();
+    store.removeAllIndicators();
+    const first = store.addIndicator("rsi")!,
+      second = store.addIndicator("macd")!;
+    store.moveIndicatorInstance(second, "up");
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    await useChartPreferences.persist.rehydrate();
+    expect(ids()).toEqual([second, first]);
+    const raw = JSON.parse(saved).state;
+    const normalized = normalizeChartPreferences({
+      ...raw,
+      indicatorOrder: [first, "stale", first],
+    });
+    expect(normalized.indicatorOrder).toEqual([first, second]);
+    const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(null);
+    await hydrate();
+    expect(useChartPreferences.getState().indicatorOrder).toEqual(
+      getChartIndicatorInstances(useChartPreferences.getInitialState()).map((item) => item.id),
+    );
+  });
+});

@@ -40,6 +40,7 @@ export function IndicatorSettingsContent({
   const initialBalance = instance.initialBalance ?? DEFAULT_INITIAL_BALANCE;
   const volumeColors = instance.volumeColors ?? DEFAULT_VOLUME_COLORS;
   const added = getChartIndicatorInstances(settings);
+  const position = added.findIndex((item) => item.id === id);
   const [inputResetVersion, setInputResetVersion] = useState(0);
   return (
     <>
@@ -54,6 +55,29 @@ export function IndicatorSettingsContent({
             onChange={() => settings.toggleIndicatorInstanceVisibility(id)}
           />
         </label>
+        <div className="flex items-center justify-between gap-3">
+          <span>Order</span>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              disabled={position <= 0}
+              onClick={() => settings.moveIndicatorInstance(id, "up")}
+              aria-label={accessible(`Move ${label} up`)}
+              className="rounded border border-white/15 px-2 py-1 hover:bg-white/10 disabled:opacity-30"
+            >
+              Move up
+            </button>
+            <button
+              type="button"
+              disabled={position < 0 || position >= added.length - 1}
+              onClick={() => settings.moveIndicatorInstance(id, "down")}
+              aria-label={accessible(`Move ${label} down`)}
+              className="rounded border border-white/15 px-2 py-1 hover:bg-white/10 disabled:opacity-30"
+            >
+              Move down
+            </button>
+          </div>
+        </div>
         {INDICATOR_INPUTS[key]
           .filter(
             (input) => !input.shownWhen || inputs[input.shownWhen.key] === input.shownWhen.value,

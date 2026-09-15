@@ -32,6 +32,7 @@ export type ChartIndicatorPreferences = {
   initialBalance: InitialBalanceSettings;
   volumeColors: typeof DEFAULT_VOLUME_COLORS;
   extraIndicators?: ChartIndicatorInstance[];
+  indicatorOrder?: string[];
 };
 export const isIndicatorKey = (value: unknown): value is IndicatorKey =>
   typeof value === "string" && INDICATOR_CATALOG.some(({ key }) => key === value);
@@ -50,10 +51,19 @@ export function createIndicatorInstance(key: IndicatorKey, id: string): ChartInd
     ...(key === "volume" ? { volumeColors: { ...DEFAULT_VOLUME_COLORS } } : {}),
   };
 }
+/** Keep valid saved positions, then append newly available instances in their default order. */
+export function normalizeIndicatorOrder(order: unknown, activeIds: readonly string[]): string[] {
+  const active = new Set(activeIds);
+  const result = new Set<string>();
+  if (Array.isArray(order))
+    for (const id of order) if (typeof id === "string" && active.has(id)) result.add(id);
+  for (const id of activeIds) result.add(id);
+  return [...result];
+}
 export function getChartIndicatorInstances(
   preferences: ChartIndicatorPreferences,
 ): ChartIndicatorInstance[] {
-  return [
+  const instances: ChartIndicatorInstance[] = [
     ...INDICATOR_CATALOG.filter(({ key }) => preferences.indicators[key]).map(({ key }) => ({
       id: `base:${key}`,
       key,
@@ -65,6 +75,12 @@ export function getChartIndicatorInstances(
     })),
     ...(preferences.extraIndicators ?? []),
   ];
+  if (!preferences.indicatorOrder?.length) return instances;
+  const byId = new Map(instances.map((instance) => [instance.id, instance]));
+  return normalizeIndicatorOrder(
+    preferences.indicatorOrder,
+    instances.map(({ id }) => id),
+  ).map((id) => byId.get(id)!);
 }
 export const indicatorReadingKey = (instance: ChartIndicatorInstance): string =>
   instance.id === `base:${instance.key}` ? instance.key : instance.id;
