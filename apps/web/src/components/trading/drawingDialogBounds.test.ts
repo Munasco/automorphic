@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { getDrawingDialogBounds } from "./drawingDialogBounds";
+import { getDrawingDialogBounds, getZoomedDrawingDialogBounds } from "./drawingDialogBounds";
 
 describe("drawing settings dialog bounds", () => {
   it("fixes the observed 400px Visibility tab overflow using the actual constrained width", () => {
@@ -95,5 +95,58 @@ describe("drawing settings dialog bounds", () => {
     expect(getDrawingDialogBounds(position, 380, { ...viewport, width: 0 })).toBeNull();
     expect(getDrawingDialogBounds(position, 380, viewport, { margin: -1 })).toBeNull();
     expect(getDrawingDialogBounds(position, 380, viewport, { minHeight: -1 })).toBeNull();
+  });
+});
+
+describe("zoomed drawing settings dialog bounds", () => {
+  const panel = { left: 340, top: 120, width: 560, height: 480 };
+
+  it("converts viewport drag coordinates without scaling the pointer displacement twice", () => {
+    const first = getZoomedDrawingDialogBounds({ left: 400, top: 180 }, 380, panel, 0.85)!;
+    const moved = getZoomedDrawingDialogBounds({ left: 450, top: 220 }, 380, panel, 0.85)!;
+    expect(first.left * 0.85).toBeCloseTo(400);
+    expect(first.top * 0.85).toBeCloseTo(180);
+    expect((moved.left - first.left) * 0.85).toBeCloseTo(50);
+    expect((moved.top - first.top) * 0.85).toBeCloseTo(40);
+    expect(first.width).toBe(380);
+  });
+
+  it("contains both drag extremes in an offset chart panel and reserves usable height", () => {
+    const before = getZoomedDrawingDialogBounds({ left: -500, top: -200 }, 380, panel, 0.85)!;
+    expect(before.left * 0.85).toBeCloseTo(panel.left);
+    expect(before.top * 0.85).toBeCloseTo(panel.top);
+    const after = getZoomedDrawingDialogBounds({ left: 2000, top: 2000 }, 380, panel, 0.85)!;
+    expect((after.left + after.width) * 0.85).toBeCloseTo(panel.left + panel.width);
+    expect((after.top + after.maxHeight) * 0.85).toBeCloseTo(panel.top + panel.height);
+    expect(after.maxHeight).toBeCloseTo(240);
+  });
+
+  it("adapts to wider tabs and resized/scaled panels while preserving the desired viewport origin", () => {
+    const position = { left: 470, top: 200 };
+    const narrow = getZoomedDrawingDialogBounds(position, 380, panel, 0.85)!;
+    const wide = getZoomedDrawingDialogBounds(position, 460, panel, 0.85)!;
+    expect(narrow.left * 0.85).toBeCloseTo(470);
+    expect(wide.left * 0.85).toBeCloseTo(470);
+    expect(wide.top).toBe(narrow.top);
+    const compact = getZoomedDrawingDialogBounds(
+      position,
+      460,
+      { left: 40, top: 80, width: 300, height: 150 },
+      0.85,
+    )!;
+    expect(compact.left * 0.85).toBeCloseTo(40);
+    expect(compact.top * 0.85).toBeCloseTo(80);
+    expect(compact.width * 0.85).toBeCloseTo(300);
+    expect(compact.maxHeight * 0.85).toBeCloseTo(150);
+    expect(getZoomedDrawingDialogBounds(position, 380, panel, 1)!.left).toBe(470);
+  });
+
+  it("rejects unusable zoom and nonfinite panel origins", () => {
+    for (const scale of [0, -1, Infinity, Number.NaN]) {
+      expect(getZoomedDrawingDialogBounds({ left: 400, top: 180 }, 380, panel, scale)).toBeNull();
+    }
+    expect(
+      getZoomedDrawingDialogBounds({ left: 400, top: 180 }, 380, { ...panel, top: Infinity }, 1),
+    ).toBeNull();
   });
 });

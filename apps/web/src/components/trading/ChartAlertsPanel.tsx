@@ -1,7 +1,5 @@
-import { TradingSelect } from "./TradingSelect";
 import {
   useEffect,
-  useId,
   useMemo,
   useReducer,
   useRef,
@@ -10,7 +8,6 @@ import {
   type ReactNode,
 } from "react";
 import { Tabs } from "@base-ui/react/tabs";
-import { Dialog, DialogPopup, DialogTitle, DialogDescription } from "../ui/dialog";
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from "../ui/menu";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { DrawingAlertDialog } from "./DrawingAlertDialog";
@@ -24,7 +21,6 @@ import {
   writeChartAlertSort,
 } from "./chartAlertSort";
 import {
-  ALERT_CONDITIONS,
   createChartAlertSession,
   type AlertCondition,
   type ChartAlertState,
@@ -33,7 +29,7 @@ import {
 import type { DrawingAlertsController } from "./useDrawingAlerts";
 import type { DrawingAlertCondition, DrawingAlertTrigger } from "./drawingAlerts";
 import { useAlertNotifications } from "./useAlertNotifications";
-import { parseExpirationDateTime } from "./drawingAlertDates";
+import { PriceAlertDialog } from "./PriceAlertDialog";
 import { drawingAlertTargetLabel } from "./drawingAlertPresentation";
 
 const getAlertSortSnapshot = () => readChartAlertSort(tradingWorkspaceStorage);
@@ -194,6 +190,7 @@ function AlertAction({
 
 export function ChartAlerts({
   initialCreatePrice,
+  initialEditAlert,
   controller,
   drawingController,
   symbol,
@@ -201,20 +198,24 @@ export function ChartAlerts({
   onClose,
 }: {
   initialCreatePrice?: number | undefined;
+  initialEditAlert?: ChartPriceAlert | undefined;
   controller: ChartAlertsController;
   drawingController?: DrawingAlertsController | null;
   symbol: string;
   lastPrice?: number | undefined;
   onClose?: (() => void) | undefined;
 }) {
-  const formId = useId();
   const [tab, setTab] = useState("alerts");
-  const [editorOpen, setEditorOpen] = useState(initialCreatePrice !== undefined);
+  const [editorOpen, setEditorOpen] = useState(
+    initialEditAlert !== undefined || initialCreatePrice !== undefined,
+  );
+  const [createPrice, setCreatePrice] = useState(initialCreatePrice);
   const [editingPrice, setEditingPrice] = useState<{
-    id: string;
-    symbol: string;
+    alert: ChartPriceAlert;
     update: ChartAlertsController["update"];
-  } | null>(null);
+  } | null>(() =>
+    initialEditAlert ? { alert: initialEditAlert, update: controller.update } : null,
+  );
   const [editingDrawingId, setEditingDrawingId] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [search, setSearch] = useState("");
@@ -225,20 +226,7 @@ export function ChartAlerts({
     tradingWorkspaceStorage.subscribe,
     tradingWorkspaceStorage.getSnapshot,
   );
-  const [name, setName] = useState("");
-  const [message, setMessage] = useState("");
-  const [target, setTarget] = useState(
-    initialCreatePrice === undefined ? "" : String(initialCreatePrice),
-  );
-  const [condition, setCondition] = useState<AlertCondition>("crossing");
-  const [repeat, setRepeat] = useState(false);
-  const [cooldownMs, setCooldownMs] = useState(60_000);
-  const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
-  const [expiresText, setExpiresText] = useState("");
-  const [notifications, setNotifications] = useState({ toast: true, sound: false, desktop: false });
-  const [saving, setSaving] = useState(false);
-  const submitting = useRef(false);
   const currentController = useRef(controller);
   useEffect(() => {
     currentController.current = controller;
@@ -280,25 +268,13 @@ export function ChartAlerts({
   }
   const priceEditorAvailable =
     !editingPrice ||
-    (editingPrice.symbol === symbol &&
+    (editingPrice.alert.symbol === symbol &&
       editingPrice.update === controller.update &&
-      controller.alerts.some((alert) => alert.id === editingPrice.id && alert.symbol === symbol));
+      controller.alerts.some(
+        (alert) => alert.id === editingPrice.alert.id && alert.symbol === symbol,
+      ));
   const openPriceEdit = (alert: ChartPriceAlert) => {
-    setEditingPrice({ id: alert.id, symbol: alert.symbol, update: controller.update });
-    setName(alert.name ?? "");
-    setMessage(alert.message ?? "");
-    setTarget(String(alert.price));
-    const expiry = alert.expiresAt == null ? null : new Date(alert.expiresAt);
-    setExpiresText(
-      expiry
-        ? `${expiry.getFullYear()}-${String(expiry.getMonth() + 1).padStart(2, "0")}-${String(expiry.getDate()).padStart(2, "0")}T${String(expiry.getHours()).padStart(2, "0")}:${String(expiry.getMinutes()).padStart(2, "0")}`
-        : "",
-    );
-    setNotifications(alert.notifications ?? { toast: true, sound: false, desktop: false });
-    setCondition(alert.condition);
-    setRepeat(alert.repeat);
-    setCooldownMs(alert.cooldownMs);
-    setError("");
+    setEditingPrice({ alert, update: controller.update });
     setEditorOpen(true);
   };
   const allAlerts = [
@@ -397,15 +373,7 @@ export function ChartAlerts({
     .toSorted((a, b) => compareChartAlerts(a, b, sort));
   const openCreate = () => {
     setEditingPrice(null);
-    setName("");
-    setMessage("");
-    setCondition("crossing");
-    setRepeat(false);
-    setCooldownMs(60_000);
-    setTarget(Number.isFinite(lastPrice) ? String(lastPrice) : "");
-    setExpiresText("");
-    setNotifications({ toast: true, sound: false, desktop: false });
-    setError("");
+    setCreatePrice(Number.isFinite(lastPrice) ? lastPrice : undefined);
     setEditorOpen(true);
   };
   const empty = tab === "alerts" ? !alerts.length : !history.length;
@@ -707,220 +675,35 @@ export function ChartAlerts({
           onClose={() => setEditingDrawingId(null)}
         />
       ) : null}
-      <Dialog
-        open={editorOpen}
-        onOpenChange={(open) => {
-          if (!submitting.current) setEditorOpen(open);
-        }}
-      >
-        <DialogPopup className="w-[min(420px,calc(100vw-32px))] overflow-y-auto bg-[#161616] p-6">
-          <DialogTitle className="text-lg font-semibold">
-            {editingPrice ? "Edit alert" : "Create alert"}
-          </DialogTitle>
-          <DialogDescription className="mt-1 text-sm text-zinc-400">
-            {editingPrice?.symbol || symbol || "Select a symbol to create an alert."}
-          </DialogDescription>
-          <form
-            className="mt-6 space-y-4"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              if (submitting.current) return;
-              submitting.current = true;
-              setSaving(true);
-              try {
-                if (!target.trim()) throw Error("Enter a target price.");
-                const expiresAt = expiresText
-                  ? parseExpirationDateTime(expiresText.slice(0, 10), expiresText.slice(11, 16))
-                  : null;
-                if (expiresText && (expiresAt === null || expiresAt <= Date.now()))
-                  throw Error("Choose an expiration in the future.");
-                const notificationError = await controller.prepareNotifications(notifications);
-                if (notificationError) throw Error(notificationError);
-                if (
-                  currentController.current.add !== controller.add ||
-                  !currentController.current.ready
-                )
-                  throw Error("The workspace changed. Close this editor and try again.");
-                const input = {
-                  expiresAt,
-                  notifications,
-                  name,
-                  message,
-                  price: Number(target),
-                  condition,
-                  repeat,
-                  cooldownMs,
-                };
-                if (editingPrice) {
-                  if (!priceEditorAvailable || !controller.update(editingPrice.id, input))
-                    throw Error("Could not save this alert. Check its settings and try again.");
-                } else controller.add(input);
-                setError("");
-                setTab("alerts");
-                setSearch("");
-                setEditorOpen(false);
-              } catch (cause) {
-                setError(cause instanceof Error ? cause.message : "Could not save the alert.");
-              } finally {
-                submitting.current = false;
-                setSaving(false);
-              }
-            }}
-          >
-            <label htmlFor={`${formId}-name`} className="block text-sm text-zinc-400">
-              Alert name
-              <input
-                id={`${formId}-name`}
-                className={fieldClass}
-                maxLength={80}
-                placeholder="Optional"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <label htmlFor={`${formId}-condition`} className="text-sm text-zinc-400">
-                Condition
-                <TradingSelect
-                  id={`${formId}-condition`}
-                  label="Condition"
-                  className="mt-1 w-full"
-                  value={condition}
-                  onChange={(value) => setCondition(value as AlertCondition)}
-                  options={ALERT_CONDITIONS.map((value) => [value, conditionLabel[value]] as const)}
-                />
-              </label>
-              <label htmlFor={`${formId}-price`} className="text-sm text-zinc-400">
-                Price
-                <input
-                  id={`${formId}-price`}
-                  className={fieldClass}
-                  type="number"
-                  step="any"
-                  inputMode="decimal"
-                  required
-                  value={target}
-                  onChange={(event) => setTarget(event.target.value)}
-                />
-              </label>
-            </div>
-            {priceEditorAvailable && Number.isFinite(lastPrice) ? (
-              <button
-                type="button"
-                className="text-xs text-blue-400 hover:text-blue-300"
-                onClick={() => setTarget(String(lastPrice))}
-              >
-                Use last price · {priceLabel(lastPrice!)}
-              </button>
-            ) : null}
-            <label htmlFor={`${formId}-repeat`} className="block text-sm text-zinc-400">
-              Frequency
-              <TradingSelect
-                id={`${formId}-repeat`}
-                label="Frequency"
-                className="mt-1 w-full"
-                value={repeat ? "repeat" : "once"}
-                onChange={(value) => setRepeat(value === "repeat")}
-                options={[
-                  ["once", "Only once"],
-                  ["repeat", "Repeating"],
-                ]}
-              />
-            </label>
-            {repeat ? (
-              <label htmlFor={`${formId}-cooldown`} className="block text-sm text-zinc-400">
-                Time between alerts
-                <TradingSelect
-                  id={`${formId}-cooldown`}
-                  label="Time between alerts"
-                  className="mt-1 w-full"
-                  value={String(cooldownMs)}
-                  onChange={(value) => setCooldownMs(Number(value))}
-                  options={[
-                    ["60000", "1 minute"],
-                    ["300000", "5 minutes"],
-                    ["900000", "15 minutes"],
-                  ]}
-                />
-              </label>
-            ) : null}
-            <label htmlFor={`${formId}-message`} className="block text-sm text-zinc-400">
-              Message
-              <textarea
-                id={`${formId}-message`}
-                className="mt-2 min-h-24 w-full resize-y rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-400"
-                rows={3}
-                maxLength={2000}
-                placeholder="Optional reminder when this alert triggers"
-                value={message}
-                onChange={(event) => setMessage(event.target.value)}
-              />
-            </label>
-            <label className="block text-sm text-zinc-400" htmlFor={`${formId}-expiration`}>
-              Expiration
-              <input
-                id={`${formId}-expiration`}
-                aria-label="Expiration"
-                type="datetime-local"
-                value={expiresText}
-                onChange={(event) => setExpiresText(event.target.value)}
-                className={fieldClass}
-              />
-              <span className="mt-1 block text-xs text-zinc-500">
-                {expiresText ? "Your local time" : "Open-ended"}
-              </span>
-            </label>
-            <fieldset className="space-y-2 text-sm">
-              <legend className="mb-2 text-zinc-400">Notifications</legend>
-              <div className="flex flex-wrap gap-4">
-                {(
-                  [
-                    ["toast", "Toast"],
-                    ["sound", "Sound"],
-                    ["desktop", "Desktop"],
-                  ] as const
-                ).map(([key, label]) => (
-                  <label key={key} className="flex items-center gap-2 text-zinc-200">
-                    <input
-                      type="checkbox"
-                      checked={notifications[key]}
-                      onChange={(event) =>
-                        setNotifications((value) => ({ ...value, [key]: event.target.checked }))
-                      }
-                      className="size-4 accent-blue-500"
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-            {!priceEditorAvailable || error ? (
-              <p role="alert" className="text-sm text-red-400">
-                {!priceEditorAvailable
-                  ? "This alert is no longer available. Close this editor and reopen the alert."
-                  : error}
-              </p>
-            ) : null}
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                type="button"
-                className="rounded px-3 py-2 text-sm text-zinc-400 hover:text-white"
-                disabled={saving}
-                onClick={() => setEditorOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={saving || !symbol || !priceEditorAvailable}
-                className={primaryClass}
-              >
-                {saving ? "Saving…" : editingPrice ? "Save" : "Create"}
-              </button>
-            </div>
-          </form>
-        </DialogPopup>
-      </Dialog>
+      {editorOpen ? (
+        <PriceAlertDialog
+          key={editingPrice?.alert.id ?? "create"}
+          alert={editingPrice?.alert}
+          symbol={editingPrice?.alert.symbol || symbol}
+          initialPrice={createPrice}
+          lastPrice={lastPrice}
+          available={priceEditorAvailable && controller.ready}
+          onClose={() => setEditorOpen(false)}
+          onSubmit={async (input) => {
+            const notificationError = await controller.prepareNotifications(
+              input.notifications ?? { toast: true, sound: false, desktop: false },
+            );
+            if (notificationError) return notificationError;
+            if (
+              currentController.current.add !== controller.add ||
+              !currentController.current.ready
+            )
+              return "The workspace changed. Close this editor and try again.";
+            if (editingPrice) {
+              if (!priceEditorAvailable || !controller.update(editingPrice.alert.id, input))
+                return "Could not save this alert. Check its settings and try again.";
+            } else controller.add(input);
+            setTab("alerts");
+            setSearch("");
+            return null;
+          }}
+        />
+      ) : null}
     </section>
   );
 }

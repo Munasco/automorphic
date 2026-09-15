@@ -1,5 +1,7 @@
 "use client";
 
+import { useOverlayLayout, mergeOverlayStyle, overlayCollisionBoundary } from "./overlay-layout";
+
 import { mergeProps } from "@base-ui/react/merge-props";
 import { Select as SelectPrimitive } from "@base-ui/react/select";
 import { useRender } from "@base-ui/react/use-render";
@@ -129,6 +131,10 @@ function SelectPopup({
   scrollArrows?: boolean;
   anchor?: SelectPrimitive.Positioner.Props["anchor"];
 }) {
+  const overlayLayout = useOverlayLayout();
+  const popupStyle = overlayLayout.measured
+    ? { ...overlayLayout.popupStyle, overflowY: "auto" as const }
+    : overlayLayout.popupStyle;
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Positioner
@@ -136,6 +142,7 @@ function SelectPopup({
         alignItemWithTrigger={alignItemWithTrigger}
         alignOffset={alignOffset}
         anchor={anchor}
+        collisionBoundary={overlayCollisionBoundary(overlayLayout)}
         className="z-[130] select-none"
         data-slot="select-positioner"
         side={side}
@@ -145,6 +152,7 @@ function SelectPopup({
           className="origin-(--transform-origin) rounded-lg text-foreground outline-none"
           data-slot="select-popup"
           {...props}
+          style={mergeOverlayStyle(props.style, popupStyle)}
         >
           {scrollArrows && (
             <SelectPrimitive.ScrollUpArrow

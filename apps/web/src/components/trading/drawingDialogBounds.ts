@@ -5,6 +5,26 @@ export interface DrawingDialogBounds {
   maxHeight: number;
 }
 
+/** Drag measurements are viewport pixels; fixed coordinates on a zoomed popup are CSS pixels.
+ * Panel bounds already include their safe inset, so do not inset them again. */
+export function getZoomedDrawingDialogBounds(
+  position: { left: number; top: number },
+  preferredWidth: number,
+  panel: { left: number; top: number; width: number; height: number },
+  scale: number,
+): DrawingDialogBounds | null {
+  if (![panel.left, panel.top, scale].every(Number.isFinite) || scale <= 0) return null;
+  const local = getDrawingDialogBounds(
+    { left: (position.left - panel.left) / scale, top: (position.top - panel.top) / scale },
+    preferredWidth,
+    { width: panel.width / scale, height: panel.height / scale },
+    { margin: 0 },
+  );
+  return local
+    ? { ...local, left: local.left + panel.left / scale, top: local.top + panel.top / scale }
+    : null;
+}
+
 /** Keep the measured top pinned across tabs, reserving usable space when the viewport shrinks. */
 export function getDrawingDialogBounds(
   position: { left: number; top: number },

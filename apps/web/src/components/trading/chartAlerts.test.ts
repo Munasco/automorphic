@@ -1186,3 +1186,34 @@ describe("price alert expiration and notification preferences", () => {
     expect(h.onTrigger).toHaveBeenCalledTimes(1);
   });
 });
+
+it("persists alert line visibility independently without rearming pending crossings", () => {
+  const h = harness(),
+    session = h.open();
+  const alert = session.add(crossing);
+  expect(alert.showLine).toBe(true);
+  session.observeQuote(h.quote(99));
+  session.update(alert.id, { ...crossing, showLine: false });
+  expect(session.getSnapshot().alerts[0]).toMatchObject({
+    showLine: false,
+    armedAt: alert.armedAt,
+  });
+  session.update(alert.id, crossing);
+  expect(session.getSnapshot().alerts[0]!.showLine).toBe(false);
+  h.storage.setItem.mockClear();
+  session.update(alert.id, { ...crossing, showLine: false });
+  expect(h.storage.setItem).not.toHaveBeenCalled();
+  expect(
+    session.update(alert.id, { ...crossing, showLine: "false" } as unknown as NewChartAlert),
+  ).toBe(false);
+  session.observeQuote(h.quote(101));
+  expect(h.onTrigger).toHaveBeenCalledTimes(1);
+  session.dispose();
+  const reopened = h.open();
+  expect(reopened.getSnapshot().alerts[0]!.showLine).toBe(false);
+  const saved = JSON.parse(h.values.get(CHART_ALERTS_KEY)!);
+  delete saved.alerts[0].showLine;
+  expect(parseChartAlerts(JSON.stringify(saved)).alerts[0]!.showLine).toBe(true);
+  saved.alerts[0].showLine = 0;
+  expect(parseChartAlerts(JSON.stringify(saved)).alerts).toEqual([]);
+});

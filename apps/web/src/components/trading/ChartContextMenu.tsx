@@ -23,6 +23,7 @@ type MenuPoint = {
 
 /** Drawing hits own their context menu; this handles the rest of the chart and axes. */
 export function ChartContextMenu({
+  symbol,
   chart,
   series,
   priceStep,
@@ -32,6 +33,7 @@ export function ChartContextMenu({
   onOpenSettings,
   onOpenObjectTree,
 }: {
+  symbol?: string;
   chart: IChartApi | null;
   series: ISeriesApi<SeriesType> | null;
   priceStep: number;
@@ -174,7 +176,8 @@ export function ChartContextMenu({
         {point.price !== null && onAddAlert ? (
           <MenuItem className={itemClass} onClick={() => run(() => onAddAlert(point.price!))}>
             <ChartIcon name="bell" />
-            Add alert at {point.priceLabel}
+            Add alert{symbol ? ` on ${symbol}` : ""} at {point.priceLabel}…
+            <MenuShortcut className="tracking-normal">{mac ? "⌥" : "Alt"} A</MenuShortcut>
           </MenuItem>
         ) : null}
         {point.price !== null ? (

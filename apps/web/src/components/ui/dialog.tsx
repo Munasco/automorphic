@@ -1,6 +1,7 @@
 "use client";
 
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
+import { useOverlayLayout, mergeOverlayStyle } from "./overlay-layout";
 import { XIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
@@ -37,6 +38,7 @@ function DialogBackdrop({ className, ...props }: DialogPrimitive.Backdrop.Props)
 }
 
 function DialogViewport({ className, ...props }: DialogPrimitive.Viewport.Props) {
+  const overlayLayout = useOverlayLayout();
   return (
     <DialogPrimitive.Viewport
       className={cn(
@@ -45,6 +47,7 @@ function DialogViewport({ className, ...props }: DialogPrimitive.Viewport.Props)
       )}
       data-slot="dialog-viewport"
       {...props}
+      style={mergeOverlayStyle(props.style, overlayLayout.dialogViewportStyle)}
     />
   );
 }
@@ -61,21 +64,24 @@ function DialogPopup({
   bottomStickOnMobile?: boolean;
   backdropStyle?: React.CSSProperties;
 }) {
+  const overlayLayout = useOverlayLayout();
+  const mobileSheet = bottomStickOnMobile && !overlayLayout.measured;
   return (
     <DialogPortal>
       <DialogBackdrop style={backdropStyle} />
       <DialogViewport
-        className={cn(bottomStickOnMobile && "max-sm:grid-rows-[1fr_auto] max-sm:p-0 max-sm:pt-12")}
+        className={cn(mobileSheet && "max-sm:grid-rows-[1fr_auto] max-sm:p-0 max-sm:pt-12")}
       >
         <DialogPrimitive.Popup
           className={cn(
             DIALOG_POPUP_CLASS,
             "row-start-2 max-h-full max-w-lg text-popover-foreground",
-            bottomStickOnMobile && DIALOG_MOBILE_SHEET_CLASS,
+            mobileSheet && DIALOG_MOBILE_SHEET_CLASS,
             className,
           )}
           data-slot="dialog-popup"
           {...props}
+          style={mergeOverlayStyle(props.style, overlayLayout.dialogStyle)}
         >
           {children}
           {showCloseButton && (

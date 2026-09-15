@@ -8,7 +8,8 @@ import {
 import { DrawingGroupSettings } from "./DrawingGroupSettings";
 import { getDrawingGroupAppearance } from "./drawingGroupAppearance";
 import { supportsInlineDrawingText } from "./drawingPrimitive";
-import { getDrawingDialogBounds } from "./drawingDialogBounds";
+import { getZoomedDrawingDialogBounds } from "./drawingDialogBounds";
+import { useChartOverlayLayout } from "./chartOverlayLayout";
 import { DRAWING_TEXT_FONT_SIZES, DrawingTextSettings } from "./DrawingTextSettings";
 import { DrawingNumberField } from "./DrawingNumberField";
 import { DrawingVisibilitySettings } from "./DrawingVisibilitySettings";
@@ -297,6 +298,7 @@ function DrawingSettings({
   const coordinateLabel = coordinateHasPrice ? (coordinateHasBar ? "price, bar" : "price") : "bar";
   const selectedStats = draft.stats ?? defaultDrawingStats(draft.kind);
   const extendable = supportsLineExtensions(draft.kind);
+  const overlayLayout = useChartOverlayLayout();
   const [dialogPosition, setDialogPosition] = useState<{ left: number; top: number } | null>(null);
   const dialogDrag = useRef<{
     pointerId: number;
@@ -337,15 +339,6 @@ function DrawingSettings({
   }, []);
   const measureDialog = useCallback((node: HTMLDivElement | null) => {
     dialogElement.current = node;
-    if (!node) return;
-    const rect = node.getBoundingClientRect();
-    setDialogPosition(
-      (current) =>
-        current ?? {
-          left: rect.x + (rect.width - node.offsetWidth) / 2,
-          top: rect.y + (rect.height - node.offsetHeight) / 2,
-        },
-    );
   }, []);
   const visibility = sanitizeDrawingVisibility(draft.visibility);
   const { left: extendLeft, right: extendRight } = drawingLineExtensions(draft);
@@ -363,7 +356,17 @@ function DrawingSettings({
           ? 460
           : 380;
   const dialogBounds = dialogPosition
-    ? getDrawingDialogBounds(dialogPosition, dialogWidth, viewport)
+    ? getZoomedDrawingDialogBounds(
+        dialogPosition,
+        dialogWidth,
+        overlayLayout.bounds ?? {
+          left: Math.min(12, viewport.width / 2),
+          top: Math.min(12, viewport.height / 2),
+          width: Math.max(0, viewport.width - 24),
+          height: Math.max(0, viewport.height - 24),
+        },
+        overlayLayout.scale,
+      )
     : null;
   const save = () => {
     if (!canSave) return;
@@ -395,7 +398,9 @@ function DrawingSettings({
           fontFamily: '-apple-system, system-ui, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
           backdropFilter: "none",
           width: dialogWidth,
-          ...(dialogBounds ? { position: "fixed", ...dialogBounds } : {}),
+          ...(dialogBounds
+            ? { position: "fixed", ...dialogBounds, maxBlockSize: dialogBounds.maxHeight }
+            : {}),
         }}
       >
         <DialogClose
@@ -416,14 +421,16 @@ function DrawingSettings({
           drawing={draft}
           onChange={update}
           onPointerDown={(event) => {
-            if (event.button !== 0 || !event.isPrimary || !dialogBounds) return;
+            if (event.button !== 0 || !event.isPrimary) return;
             if (event.target instanceof Element && event.target.closest("button,input")) return;
+            const rect = dialogElement.current?.getBoundingClientRect();
+            if (!rect) return;
             dialogDrag.current = {
               pointerId: event.pointerId,
               x: event.clientX,
               y: event.clientY,
-              left: dialogBounds.left,
-              top: dialogBounds.top,
+              left: rect.left,
+              top: rect.top,
             };
             event.currentTarget.setPointerCapture(event.pointerId);
             event.preventDefault();
@@ -1387,7 +1394,8 @@ function DrawingMenuCommands({
           <DrawingMenuIcon>
             <AlertIcon name="alarm-add" size={18} />
           </DrawingMenuIcon>
-          Add alert…
+          Add alert on {drawingKindLabel(selected.kind).toLowerCase()}…
+          <MenuShortcut className="tracking-normal">{mac ? "⌥" : "Alt"} A</MenuShortcut>
         </MenuItem>
       ) : null}
       <DrawingTemplateSubmenu

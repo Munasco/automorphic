@@ -82,6 +82,9 @@ import { DrawingAlertDialog } from "./DrawingAlertDialog";
 import { useDrawingAlerts, type DrawingAlertsController } from "./useDrawingAlerts";
 import type { ChartDrawing } from "./drawingGeometry";
 import { DrawingInlineTextEditor } from "./DrawingInlineTextEditor";
+import { ChartPriceAlertsOverlay } from "./ChartPriceAlertsOverlay";
+import type { ChartAlertsController } from "./ChartAlertsPanel";
+import type { ChartPriceAlert } from "./chartAlerts";
 import { ChartContextMenu } from "./ChartContextMenu";
 import { DrawingObjectTree } from "./DrawingObjectTree";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
@@ -219,6 +222,8 @@ export function TradovateChart({
   onBackFromTechnicals,
   onDrawingAlertsChange,
   onAddPriceAlert,
+  priceAlerts,
+  onEditPriceAlert,
 }: {
   symbol: string;
   interval: ChartInterval;
@@ -233,6 +238,8 @@ export function TradovateChart({
   technicalInterval: ChartInterval;
   onTechnicalIntervalChange: (interval: ChartInterval) => void;
   onBackFromTechnicals: () => void;
+  priceAlerts?: ChartAlertsController | undefined;
+  onEditPriceAlert?: ((alert: ChartPriceAlert) => void) | undefined;
   onAddPriceAlert?: ((price: number) => void) | undefined;
   onDrawingAlertsChange?: ((controller: DrawingAlertsController | null) => void) | undefined;
 }) {
@@ -1206,7 +1213,17 @@ export function TradovateChart({
                 series={activeEngine?.prices[settings.style] ?? null}
                 drawings={drawings}
               />
+              {priceAlerts && onEditPriceAlert ? (
+                <ChartPriceAlertsOverlay
+                  chart={activeEngine?.chart ?? null}
+                  series={activeEngine?.prices[settings.style] ?? null}
+                  symbol={symbol}
+                  controller={priceAlerts}
+                  onEdit={onEditPriceAlert}
+                />
+              ) : null}
               <ChartContextMenu
+                symbol={symbol}
                 priceStep={activeEngine?.prices.candles.options().priceFormat.minMove ?? 0.01}
                 onAddAlert={onAddPriceAlert}
                 onOpenSettings={() => setDisplaySettingsOpen(true)}

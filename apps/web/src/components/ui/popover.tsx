@@ -1,5 +1,7 @@
 "use client";
 
+import { useOverlayLayout, mergeOverlayStyle, overlayCollisionBoundary } from "./overlay-layout";
+
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 
 import { cn } from "~/lib/utils";
@@ -38,12 +40,17 @@ function PopoverPopup({
   instant?: boolean;
   anchor?: PopoverPrimitive.Positioner.Props["anchor"];
 }) {
+  const overlayLayout = useOverlayLayout();
+  const popupStyle = overlayLayout.measured
+    ? { ...overlayLayout.popupStyle, overflowY: "auto" as const }
+    : overlayLayout.popupStyle;
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}
         anchor={anchor}
+        collisionBoundary={overlayCollisionBoundary(overlayLayout)}
         className={cn(
           "z-[130] h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-transform data-instant:transition-none",
           instant && "transition-none",
@@ -65,6 +72,7 @@ function PopoverPopup({
           )}
           data-slot="popover-popup"
           {...props}
+          style={mergeOverlayStyle(props.style, popupStyle)}
         >
           <PopoverPrimitive.Viewport
             className={cn(

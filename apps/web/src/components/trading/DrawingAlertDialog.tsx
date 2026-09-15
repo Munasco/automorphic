@@ -1,3 +1,4 @@
+import { cn } from "../../lib/utils";
 import { useRef, useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
@@ -191,8 +192,6 @@ export function DrawingAlertDialog({
     }
   }
 
-  const mainHeight = vertical ? 445 : channel ? 517 : 475;
-  const height = page === "main" ? mainHeight : page === "message" ? 508 : 406;
   return (
     <Dialog
       open
@@ -204,9 +203,8 @@ export function DrawingAlertDialog({
         showCloseButton={false}
         bottomStickOnMobile={false}
         backdropStyle={{ background: "transparent", backdropFilter: "none" }}
-        className="fixed left-1/2 w-[480px] max-w-[calc(100vw-32px)] -translate-x-1/2 translate-y-0 scale-100 overflow-hidden rounded-md border-0 bg-[#1f1f1f] p-0 text-[#dbdbdb] shadow-xl transition-none data-starting-style:scale-100 data-ending-style:scale-100 data-starting-style:opacity-100 data-ending-style:opacity-100"
+        className="w-[480px] max-w-[calc(100vw-32px)] translate-y-0 scale-100 overflow-hidden rounded-md border-0 bg-[#1f1f1f] p-0 text-[#dbdbdb] shadow-xl transition-none data-starting-style:scale-100 data-ending-style:scale-100 data-starting-style:opacity-100 data-ending-style:opacity-100"
         style={{
-          top: `max(20px, min(calc(50dvh - ${mainHeight / 2}px), calc(100dvh - ${height}px - 20px)))`,
           maxHeight: "calc(100dvh - 40px)",
           fontFamily: '-apple-system, "system-ui", "Trebuchet MS", Roboto, Ubuntu, sans-serif',
         }}
@@ -516,7 +514,10 @@ export function DrawingAlertDialog({
           </button>
           <button
             type="button"
-            className={`${actionClass} border-[#f2f2f2] bg-[#f2f2f2] text-[#131313] hover:bg-white`}
+            className={cn(
+              actionClass,
+              "border-[#f2f2f2] bg-[#f2f2f2] text-[#131313] hover:bg-white",
+            )}
             disabled={pending}
             onClick={() => {
               if (page === "main") void create();

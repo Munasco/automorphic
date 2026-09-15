@@ -17,6 +17,7 @@ export const DEFAULT_CHART_ALERT_NOTIFICATIONS: Readonly<ChartAlertNotifications
   desktop: false,
 });
 export type ChartPriceAlert = {
+  showLine?: boolean;
   expiresAt?: number | null;
   notifications?: ChartAlertNotifications;
   id: string;
@@ -56,6 +57,7 @@ export type NewChartAlert = Pick<
   | "message"
   | "expiresAt"
   | "notifications"
+  | "showLine"
 >;
 type AlertStorage = Pick<Storage, "getItem" | "setItem"> & {
   subscribe?: (listener: () => void) => () => void;
@@ -141,6 +143,7 @@ export function parseChartAlerts(raw: string | null): ChartAlertState {
         !validMessage(item.message) ||
         !validNotifications(item.notifications) ||
         !validExpiration(item.expiresAt) ||
+        !(item.showLine === undefined || typeof item.showLine === "boolean") ||
         ids.has(item.id) ||
         !contract(item.symbol) ||
         !finite(item.price) ||
@@ -159,6 +162,7 @@ export function parseChartAlerts(raw: string | null): ChartAlertState {
           {
             ...(item as ChartPriceAlert),
             expiresAt: item.expiresAt ?? null,
+            showLine: item.showLine ?? true,
             notifications: notificationsFor(item.notifications),
           },
           item.name,
@@ -289,6 +293,7 @@ export function createChartAlertSession(
         !validMessage(input.message) ||
         !validNotifications(input.notifications) ||
         !validExpiration(input.expiresAt) ||
+        !(input.showLine === undefined || typeof input.showLine === "boolean") ||
         (input.expiresAt != null && input.expiresAt <= now()) ||
         typeof input.repeat !== "boolean" ||
         !cooldown(input.cooldownMs)
@@ -299,6 +304,7 @@ export function createChartAlertSession(
       const alert: ChartPriceAlert = {
         ...withText(input, input.name, input.message),
         expiresAt: input.expiresAt ?? null,
+        showLine: input.showLine ?? true,
         notifications: notificationsFor(input.notifications),
         id: newId(),
         symbol,
@@ -323,6 +329,7 @@ export function createChartAlertSession(
         !validMessage(input.message) ||
         !validNotifications(input.notifications) ||
         !validExpiration(input.expiresAt) ||
+        !(input.showLine === undefined || typeof input.showLine === "boolean") ||
         (input.expiresAt != null && input.expiresAt <= now()) ||
         typeof input.repeat !== "boolean" ||
         !cooldown(input.cooldownMs)
@@ -338,12 +345,14 @@ export function createChartAlertSession(
         alert.cooldownMs !== input.cooldownMs;
       const expiresAt = input.expiresAt === undefined ? (alert.expiresAt ?? null) : input.expiresAt;
       const notifications = notificationsFor(input.notifications ?? alert.notifications);
+      const showLine = input.showLine ?? alert.showLine ?? true;
       if (
         !ruleChanged &&
         alert.name === name &&
         alert.message === message &&
         (alert.expiresAt ?? null) === expiresAt &&
-        sameNotifications(notificationsFor(alert.notifications), notifications)
+        sameNotifications(notificationsFor(alert.notifications), notifications) &&
+        (alert.showLine ?? true) === showLine
       )
         return true;
       // Rule edits rearm evaluation; text and delivery settings preserve pending crossings.
@@ -352,6 +361,7 @@ export function createChartAlertSession(
         ...withText(alert, name, message),
         expiresAt,
         notifications,
+        showLine,
         price: input.price,
         condition: input.condition,
         repeat: input.repeat,
