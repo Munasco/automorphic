@@ -614,7 +614,7 @@ function DrawingToolbarSelectPopup({ children }: { children: ReactNode }) {
       matchTriggerWidth={false}
       scrollArrows={false}
       className="px-0 py-1.5 [&:has([data-highlighted])_[data-selected]:not([data-highlighted])]:bg-transparent [&:has([data-highlighted])_[data-selected]:not([data-highlighted])]:text-[#dbdbdb]"
-      popupClassName="w-max overflow-hidden rounded-[6px] border-0! bg-[#1f1f1f]! backdrop-filter-none!"
+      popupClassName="w-max overflow-hidden rounded-[6px] border! border-[#575757]! bg-[#292929]! backdrop-filter-none!"
       style={{ fontFamily: '-apple-system, system-ui, "Trebuchet MS", Roboto, Ubuntu, sans-serif' }}
     >
       {children}
@@ -925,10 +925,10 @@ export function MarkerPicker({
       <SelectPopup
         align="start"
         alignItemWithTrigger={false}
-        sideOffset={0}
+        sideOffset={4}
         scrollArrows={false}
         className="p-1.5 [&:has([data-highlighted])_[data-selected]:not([data-highlighted])]:bg-transparent [&:has([data-highlighted])_[data-selected]:not([data-highlighted])]:text-[#dbdbdb]"
-        popupClassName="rounded-[10px] border-0! bg-[#1f1f1f]! backdrop-filter-none! shadow-[0_2px_4px_0_rgb(0_0_0/20%)] dark:shadow-[0_2px_4px_0_rgb(0_0_0/20%)]"
+        popupClassName="rounded-[10px] border! border-[#575757]! bg-[#292929]! backdrop-filter-none! shadow-[0_8px_24px_rgb(0_0_0/35%)] dark:shadow-[0_8px_24px_rgb(0_0_0/35%)]"
         style={{
           fontFamily: '-apple-system, system-ui, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
         }}
@@ -1087,7 +1087,7 @@ export function DrawingSelect({ className, ...props }: ComponentProps<typeof Tra
           "--foreground": "#dbdbdb",
         } as CSSProperties,
         popupClassName:
-          "rounded-[10px] border-0! bg-[#1f1f1f]! backdrop-filter-none! shadow-[0_2px_4px_0_rgb(0_0_0/20%)] dark:shadow-[0_2px_4px_0_rgb(0_0_0/20%)]",
+          "rounded-[10px] border! border-[#575757]! bg-[#292929]! backdrop-filter-none! shadow-[0_8px_24px_rgb(0_0_0/35%)] dark:shadow-[0_8px_24px_rgb(0_0_0/35%)]",
       }}
       itemClassName="min-h-8 rounded-[6px] px-2 py-0.5 text-sm text-[#dbdbdb] sm:min-h-8 data-highlighted:bg-[#2e2e2e] data-highlighted:text-[#dbdbdb] data-selected:bg-[#f2f2f2] data-selected:text-[#0f0f0f] data-selected:data-highlighted:bg-[#f2f2f2] data-selected:data-highlighted:text-[#0f0f0f] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#2962ff] focus-visible:[outline-style:solid] data-highlighted:focus-visible:not-hover:not-data-selected:bg-transparent"
       className={cn(
