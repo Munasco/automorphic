@@ -357,6 +357,7 @@ export function TradovateChart({
     label: settings.showPriceLabel,
     countdown: settings.showBarCountdown,
   });
+  const priceScaleMargins = useRef(settings.priceScaleMargins);
   const lineChartSource = useRef(settings.lineChartSource);
   const chartTimeZone = useRef(settings.timeZone);
   const initialBalanceSettings = useRef(settings.initialBalance);
@@ -473,6 +474,17 @@ export function TradovateChart({
   }, [activeEngine, replay.visible, replay.session?.seekVersion]);
 
   useEffect(() => {
+    priceScaleMargins.current = settings.priceScaleMargins;
+    if (!engine || engine.disposed) return;
+    engine.chart.priceScale("right", 0).applyOptions({
+      scaleMargins: settings.priceScaleMargins ?? {
+        top: 0.08,
+        bottom: visibleIndicators.volume ? 0.2 : 0.06,
+      },
+    });
+  }, [engine, settings.priceScaleMargins, visibleIndicators.volume]);
+
+  useEffect(() => {
     lineChartSource.current = settings.lineChartSource;
     if (engine && !engine.disposed) engine.refreshLineSource();
   }, [engine, settings.lineChartSource]);
@@ -565,7 +577,13 @@ export function TradovateChart({
         borderColor: "#242730",
         rightOffset: 5,
       },
-      rightPriceScale: { borderColor: "#242730", scaleMargins: { top: 0.08, bottom: 0.2 } },
+      rightPriceScale: {
+        borderColor: "#242730",
+        scaleMargins: priceScaleMargins.current ?? {
+          top: 0.08,
+          bottom: indicatorSettings.current.volume ? 0.2 : 0.06,
+        },
+      },
       crosshair: { mode: 0 },
     });
     const priceFormat = {
@@ -848,9 +866,12 @@ export function TradovateChart({
           volume.setData(sorted.map(volumePoint));
           appliedVolumeColors = colorSignature;
         }
-        chart
-          .priceScale("right", 0)
-          .applyOptions({ scaleMargins: { top: 0.08, bottom: enabled.volume ? 0.2 : 0.06 } });
+        chart.priceScale("right", 0).applyOptions({
+          scaleMargins: priceScaleMargins.current ?? {
+            top: 0.08,
+            bottom: enabled.volume ? 0.2 : 0.06,
+          },
+        });
         setReadings(result.readings);
         setInitialBalanceStatus(result.initialBalanceStatus);
         setInitialBalanceStatuses(result.initialBalanceStatuses);
@@ -1404,6 +1425,11 @@ export function TradovateChart({
         onCrosshairLineStyleChange={settings.setCrosshairLineStyle}
         crosshairLineWidth={settings.crosshairLineWidth}
         onCrosshairLineWidthChange={settings.setCrosshairLineWidth}
+        priceScaleMargins={
+          settings.priceScaleMargins ?? { top: 0.08, bottom: visibleIndicators.volume ? 0.2 : 0.06 }
+        }
+        customPriceScaleMargins={settings.priceScaleMargins !== null}
+        onPriceScaleMarginsChange={settings.setPriceScaleMargins}
         priceScaleMode={settings.priceScaleMode}
         onPriceScaleModeChange={settings.setPriceScaleMode}
         invertScale={settings.invertScale}

@@ -22,6 +22,7 @@ function PopoverPopup({
   children,
   className,
   viewportClassName,
+  positionerClassName,
   side = "bottom",
   align = "center",
   sideOffset = 4,
@@ -32,6 +33,7 @@ function PopoverPopup({
   ...props
 }: PopoverPrimitive.Popup.Props & {
   viewportClassName?: string;
+  positionerClassName?: string;
   side?: PopoverPrimitive.Positioner.Props["side"];
   align?: PopoverPrimitive.Positioner.Props["align"];
   sideOffset?: PopoverPrimitive.Positioner.Props["sideOffset"];
@@ -54,6 +56,7 @@ function PopoverPopup({
         className={cn(
           "z-[130] h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-transform data-instant:transition-none",
           instant && "transition-none",
+          positionerClassName,
         )}
         data-slot="popover-positioner"
         side={side}

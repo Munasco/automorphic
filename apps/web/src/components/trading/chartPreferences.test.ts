@@ -4002,3 +4002,106 @@ describe("independent candle detail colors", () => {
     expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
   });
 });
+
+describe("price scale whitespace margins", () => {
+  const invalid: unknown[] = [
+    undefined,
+    {},
+    [],
+    "auto",
+    0,
+    new Date(),
+    { top: 0.1 },
+    { bottom: 0.1 },
+    { top: "0.1", bottom: 0.1 },
+    { top: NaN, bottom: 0.1 },
+    { top: 0.1, bottom: Infinity },
+    { top: -0.01, bottom: 0.1 },
+    { top: 0.1, bottom: -0.01 },
+    { top: 0.450001, bottom: 0.1 },
+    { top: 0.1, bottom: 0.450001 },
+    Object.assign([], { top: 0.1, bottom: 0.1 }),
+    Object.create({ top: 0.1, bottom: 0.1 }),
+  ];
+  it("uses automatic margins for legacy and malformed saves and detaches normalized records", () => {
+    expect(useChartPreferences.getInitialState().priceScaleMargins).toBeNull();
+    expect(normalizeChartPreferences({}).priceScaleMargins).toBeNull();
+    for (const value of [...invalid, null])
+      expect(normalizeChartPreferences({ priceScaleMargins: value }).priceScaleMargins).toBeNull();
+    const input = { top: 0, bottom: 0.45, unused: "ignored" };
+    const normalized = normalizeChartPreferences({ priceScaleMargins: input }).priceScaleMargins;
+    expect(normalized).toEqual({ top: 0, bottom: 0.45 });
+    input.top = 0.2;
+    expect(normalized).toEqual({ top: 0, bottom: 0.45 });
+  });
+  it("ignores invalid and deep-equal updates without writes or notifications, and copies inputs", () => {
+    const store = configure();
+    for (const value of invalid)
+      store.setPriceScaleMargins(value as { top: number; bottom: number });
+    store.setPriceScaleMargins(null);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+    const input = { top: 0.15, bottom: 0.2 };
+    store.setPriceScaleMargins(input);
+    input.top = 0.4;
+    expect(useChartPreferences.getState().priceScaleMargins).toEqual({ top: 0.15, bottom: 0.2 });
+    const before = useChartPreferences.getState();
+    const listener = vi.fn();
+    const unsubscribe = useChartPreferences.subscribe(listener);
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    try {
+      store.setPriceScaleMargins({ top: 0.15, bottom: 0.2 });
+      for (const value of invalid)
+        store.setPriceScaleMargins(value as { top: number; bottom: number });
+      expect(useChartPreferences.getState()).toBe(before);
+      expect(listener).not.toHaveBeenCalled();
+      expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+      store.setPriceScaleMargins({ top: 0.15, bottom: 0.3 });
+      expect(useChartPreferences.getState().priceScaleMargins).toEqual({ top: 0.15, bottom: 0.3 });
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(1);
+      store.setPriceScaleMargins(null);
+      store.setPriceScaleMargins(null);
+      expect(listener).toHaveBeenCalledTimes(2);
+      expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(2);
+    } finally {
+      unsubscribe();
+    }
+  });
+  it.each([
+    { top: 0, bottom: 0.45 },
+    { top: 0.45, bottom: 0 },
+    { top: 0.125, bottom: 0.375 },
+    null,
+  ])(
+    "persists custom and automatic margins %j without changing other preferences",
+    async (priceScaleMargins) => {
+      const store = configure();
+      store.setPriceScaleMode("logarithmic");
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      store.setPriceScaleMargins({ top: 0.1, bottom: 0.1 });
+      store.setPriceScaleMargins(priceScaleMargins);
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+        ...before,
+        priceScaleMargins,
+      });
+      const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      expect(JSON.parse(saved).state.priceScaleMargins).toEqual(priceScaleMargins);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+        ...before,
+        priceScaleMargins,
+      });
+    },
+  );
+  it("clears custom margins when switching to a legacy workspace", async () => {
+    const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+    useChartPreferences.getState().setPriceScaleMargins({ top: 0.2, bottom: 0.4 });
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+      JSON.stringify({ version: 0, state: {} }),
+    );
+    await hydrate();
+    expect(useChartPreferences.getState().priceScaleMargins).toBeNull();
+  });
+});

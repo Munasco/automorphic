@@ -8,6 +8,7 @@ import type {
   ChartGridMode,
   ChartGridLineStyle,
   ChartPriceScaleMode,
+  ChartPriceScaleMargins,
   ChartLineWidth,
   ChartLineShape,
   ChartLineMarkerRadius,
@@ -124,6 +125,9 @@ export type ChartToolbarProps = {
   onCrosshairLineStyleChange: (value: ChartCrosshairLineStyle) => void;
   crosshairLineWidth: ChartCrosshairLineWidth;
   onCrosshairLineWidthChange: (value: ChartCrosshairLineWidth) => void;
+  priceScaleMargins: ChartPriceScaleMargins;
+  customPriceScaleMargins: boolean;
+  onPriceScaleMarginsChange: (value: ChartPriceScaleMargins | null) => void;
   priceScaleMode: ChartPriceScaleMode;
   onPriceScaleModeChange: (value: ChartPriceScaleMode) => void;
   invertScale: boolean;
@@ -218,6 +222,9 @@ export function ChartToolbar({
   onCrosshairLineStyleChange,
   crosshairLineWidth,
   onCrosshairLineWidthChange,
+  priceScaleMargins,
+  customPriceScaleMargins,
+  onPriceScaleMarginsChange,
   priceScaleMode,
   onPriceScaleModeChange,
   invertScale,
@@ -543,7 +550,12 @@ export function ChartToolbar({
             </TooltipTrigger>
             <TooltipPopup>Chart display settings</TooltipPopup>
           </Tooltip>
-          <PopoverPopup align="end" className="w-56" viewportClassName="px-3 py-3">
+          <PopoverPopup
+            align="end"
+            className="w-56"
+            viewportClassName="px-3 py-3"
+            positionerClassName="h-auto"
+          >
             <PopoverTitle className="px-1 pb-2 text-xs">Chart display</PopoverTitle>
             {style !== "line" && style !== "area" && (
               <fieldset className="space-y-2 px-2 py-2.5">
@@ -970,6 +982,52 @@ export function ChartToolbar({
               />
               Countdown to bar close
             </label>
+            <fieldset className="space-y-2 border-t border-white/10 px-2 py-2.5">
+              <legend className="text-xs text-zinc-400">Chart margins</legend>
+              <label
+                htmlFor={`${id}-custom-margins`}
+                className="flex cursor-pointer items-center gap-2 text-xs"
+              >
+                <Checkbox
+                  id={`${id}-custom-margins`}
+                  checked={customPriceScaleMargins}
+                  onCheckedChange={(checked) =>
+                    onPriceScaleMarginsChange(checked ? priceScaleMargins : null)
+                  }
+                />
+                Custom margins
+              </label>
+              {customPriceScaleMargins &&
+                (["top", "bottom"] as const).map((side) => (
+                  <div key={side} className="space-y-1">
+                    <label
+                      htmlFor={`${id}-${side}-margin`}
+                      className="flex justify-between text-xs"
+                    >
+                      <span>{side === "top" ? "Top" : "Bottom"}</span>
+                      <span className="tabular-nums text-zinc-400">
+                        {Math.round(priceScaleMargins[side] * 100)}%
+                      </span>
+                    </label>
+                    <input
+                      id={`${id}-${side}-margin`}
+                      type="range"
+                      aria-label={`${side === "top" ? "Top" : "Bottom"} chart margin`}
+                      min={0}
+                      max={45}
+                      step={1}
+                      value={Math.round(priceScaleMargins[side] * 100)}
+                      onChange={(event) =>
+                        onPriceScaleMarginsChange({
+                          ...priceScaleMargins,
+                          [side]: Number(event.target.value) / 100,
+                        })
+                      }
+                      className="h-5 w-full cursor-pointer accent-blue-500"
+                    />
+                  </div>
+                ))}
+            </fieldset>
             <div className="space-y-2 px-2 py-2.5">
               <label htmlFor={`${id}-price-scale`} className="text-xs text-zinc-400">
                 Price scale

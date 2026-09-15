@@ -69,6 +69,7 @@ const validCrosshairLineStyle = (value: unknown): value is ChartCrosshairLineSty
 const validCrosshairLineWidth = (value: unknown): value is ChartCrosshairLineWidth =>
   value === 1 || value === 2 || value === 3;
 export type ChartGridMode = "both" | "horizontal" | "vertical" | "none";
+export type ChartPriceScaleMargins = { top: number; bottom: number };
 export type ChartPriceScaleMode = "normal" | "logarithmic" | "percentage" | "indexedTo100";
 const validPriceScaleMode = (value: unknown): value is ChartPriceScaleMode =>
   value === "normal" ||
@@ -84,6 +85,16 @@ const validCrosshairMode = (value: unknown): value is ChartCrosshairMode =>
   value === "normal" || value === "magnet" || value === "ohlc" || value === "hidden";
 const validTimeZone = (value: unknown): value is string =>
   typeof value === "string" && CHART_TIME_ZONES.some((zone) => zone.value === value);
+function validPriceScaleMargins(value: unknown): value is ChartPriceScaleMargins {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  if (!("top" in value) || !("bottom" in value)) return false;
+  return [value.top, value.bottom].every(
+    (margin) =>
+      typeof margin === "number" && Number.isFinite(margin) && margin >= 0 && margin <= 0.45,
+  );
+}
 const validColor = (value: unknown): value is string =>
   typeof value === "string" && /^#[a-f0-9]{6}$/i.test(value);
 const hiddenDefaults = () =>
@@ -147,6 +158,7 @@ type SavedChartPreferences = {
   showPriceLabel: boolean;
   showBarCountdown: boolean;
   priceScaleMode: ChartPriceScaleMode;
+  priceScaleMargins: ChartPriceScaleMargins | null;
   invertScale: boolean;
 };
 
@@ -250,6 +262,9 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     showPriceLine: typeof saved.showPriceLine === "boolean" ? saved.showPriceLine : true,
     showPriceLabel: typeof saved.showPriceLabel === "boolean" ? saved.showPriceLabel : true,
     showBarCountdown: saved.showBarCountdown === true,
+    priceScaleMargins: validPriceScaleMargins(saved.priceScaleMargins)
+      ? { top: saved.priceScaleMargins.top, bottom: saved.priceScaleMargins.bottom }
+      : null,
     priceScaleMode: validPriceScaleMode(saved.priceScaleMode)
       ? saved.priceScaleMode
       : saved.logScale === true
@@ -305,6 +320,7 @@ export const useChartPreferences = create<{
   showPriceLabel: boolean;
   showBarCountdown: boolean;
   priceScaleMode: ChartPriceScaleMode;
+  priceScaleMargins: ChartPriceScaleMargins | null;
   invertScale: boolean;
   setShowChartTitle: (show: boolean) => void;
   setShowCandleValues: (show: boolean) => void;
@@ -361,6 +377,7 @@ export const useChartPreferences = create<{
   togglePriceLabel: () => void;
   toggleBarCountdown: () => void;
   setPriceScaleMode: (mode: ChartPriceScaleMode) => void;
+  setPriceScaleMargins: (value: ChartPriceScaleMargins | null) => void;
   toggleInvertScale: () => void;
 }>()(
   persist(
@@ -416,6 +433,7 @@ export const useChartPreferences = create<{
       showPriceLabel: true,
       showBarCountdown: false,
       priceScaleMode: "normal",
+      priceScaleMargins: null,
       invertScale: false,
       setShowChartTitle: (showChartTitle) => {
         if (typeof showChartTitle === "boolean" && showChartTitle !== get().showChartTitle)
@@ -784,6 +802,21 @@ export const useChartPreferences = create<{
       togglePriceLine: () => set((state) => ({ showPriceLine: !state.showPriceLine })),
       togglePriceLabel: () => set((state) => ({ showPriceLabel: !state.showPriceLabel })),
       toggleBarCountdown: () => set((state) => ({ showBarCountdown: !state.showBarCountdown })),
+      setPriceScaleMargins: (value) => {
+        if (value !== null && !validPriceScaleMargins(value)) return;
+        const current = get().priceScaleMargins;
+        if (current === null && value === null) return;
+        if (
+          current !== null &&
+          value !== null &&
+          current.top === value.top &&
+          current.bottom === value.bottom
+        )
+          return;
+        set({
+          priceScaleMargins: value === null ? null : { top: value.top, bottom: value.bottom },
+        });
+      },
       setPriceScaleMode: (priceScaleMode) => {
         if (validPriceScaleMode(priceScaleMode) && priceScaleMode !== get().priceScaleMode)
           set({ priceScaleMode });
