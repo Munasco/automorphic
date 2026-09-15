@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import { MoreHorizontalIcon } from "lucide-react";
 import {
   Menu,
@@ -21,6 +21,12 @@ import {
   type ChartTemplate,
 } from "./chartTemplates";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
+import {
+  MAX_CHART_TEMPLATE_FILE_BYTES,
+  serializeChartTemplate,
+  parseChartTemplateFile,
+  chartTemplateFileName,
+} from "./chartTemplateTransfer";
 import {
   drawingContextMenuItemClass,
   drawingContextMenuPopupClass,
@@ -134,6 +140,41 @@ export function ChartTemplatesDialog({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [error, setError] = useState("");
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [imported, setImported] = useState<{
+    settings: ChartTemplate["settings"];
+    projectId: string | null;
+  } | null>(null);
+  async function importFile(file: File) {
+    const projectId = tradingWorkspaceStorage.getSnapshot().projectId;
+    setImporting(true);
+    try {
+      if (file.size > MAX_CHART_TEMPLATE_FILE_BYTES)
+        throw Error("Choose a template smaller than 250 KB.");
+      const template = parseChartTemplateFile(await file.text());
+      if (tradingWorkspaceStorage.getSnapshot().projectId !== projectId)
+        throw Error("The workspace changed. Choose the template again.");
+      setImported({ settings: template.settings, projectId });
+      setName(template.name);
+      setMode("save");
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not import the template.");
+    } finally {
+      setImporting(false);
+    }
+  }
+  function exportTemplate(template: ChartTemplate) {
+    const url = URL.createObjectURL(
+      new Blob([serializeChartTemplate(template)], { type: "application/json" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = chartTemplateFileName(template.name);
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
   const form = mode === "save" || editingId !== null;
   function run(action: () => void) {
     try {
@@ -151,7 +192,9 @@ export function ChartTemplatesDialog({
         setEditingId(null);
         setName("");
       } else {
-        store.saveTemplate(name, useChartPreferences.getState());
+        if (imported && tradingWorkspaceStorage.getSnapshot().projectId !== imported.projectId)
+          throw Error("The workspace changed. Choose the template again.");
+        store.saveTemplate(name, imported?.settings ?? useChartPreferences.getState());
         onClose();
       }
     });
@@ -175,7 +218,9 @@ export function ChartTemplatesDialog({
             {editingId
               ? "Rename template"
               : mode === "save"
-                ? "Save chart template"
+                ? imported
+                  ? "Import chart template"
+                  : "Save chart template"
                 : "Chart templates"}
           </DialogTitle>
         </header>
@@ -197,9 +242,19 @@ export function ChartTemplatesDialog({
               autoFocus
               maxLength={80}
               value={name}
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) => {
+                setName(event.target.value);
+                setError("");
+              }}
               className="mt-2 h-9 w-full rounded border border-zinc-600 bg-[#292929] px-2 text-sm outline-none focus:border-blue-400"
             />
+            {imported ? (
+              <p className="mt-3 text-xs text-zinc-400">
+                {Object.values(imported.settings.indicators).filter(Boolean).length +
+                  imported.settings.extraIndicators.length}{" "}
+                indicators. Save this template, then select it to apply it to your chart.
+              </p>
+            ) : null}
             {error ? (
               <p role="alert" className="mt-3 text-sm text-red-400">
                 {error}
@@ -212,6 +267,11 @@ export function ChartTemplatesDialog({
                 onClick={() => {
                   if (editingId) {
                     setEditingId(null);
+                    setError("");
+                  } else if (imported) {
+                    setImported(null);
+                    setMode("manage");
+                    setName("");
                     setError("");
                   } else onClose();
                 }}
@@ -238,7 +298,7 @@ export function ChartTemplatesDialog({
                   >
                     <button
                       type="button"
-                      disabled={!workspace.ready}
+                      disabled={!workspace.ready || importing}
                       className="min-w-0 flex-1 px-3 py-3 text-left"
                       onClick={() =>
                         run(() => {
@@ -257,7 +317,7 @@ export function ChartTemplatesDialog({
                     <Menu>
                       <MenuTrigger
                         aria-label={`Options for ${template.name}`}
-                        disabled={!workspace.ready}
+                        disabled={!workspace.ready || importing}
                         className="mr-2 inline-flex size-8 items-center justify-center rounded opacity-0 hover:bg-white/10 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
                       >
                         <MoreHorizontalIcon className="size-4" />
@@ -284,6 +344,9 @@ export function ChartTemplatesDialog({
                         >
                           Rename
                         </MenuItem>
+                        <MenuItem onClick={() => run(() => exportTemplate(template))}>
+                          Export…
+                        </MenuItem>
                         <MenuItem
                           variant="destructive"
                           onClick={() =>
@@ -308,10 +371,30 @@ export function ChartTemplatesDialog({
                 {error}
               </p>
             ) : null}
-            <footer className="flex shrink-0 justify-end border-t border-zinc-700 p-4">
+            <footer className="flex shrink-0 justify-end gap-2 border-t border-zinc-700 p-4">
+              <input
+                ref={fileInput}
+                type="file"
+                accept=".json,application/json"
+                aria-label="Import chart template file"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (file) void importFile(file);
+                }}
+              />
               <button
                 type="button"
-                disabled={!workspace.ready}
+                disabled={!workspace.ready || importing}
+                className={buttonClass}
+                onClick={() => fileInput.current?.click()}
+              >
+                {importing ? "Importing…" : "Import…"}
+              </button>
+              <button
+                type="button"
+                disabled={!workspace.ready || importing}
                 className={buttonClass}
                 onClick={() => {
                   setMode("save");
