@@ -1,3 +1,5 @@
+import { ChartPriceScaleMenu } from "./ChartPriceScaleMenu";
+import { chartContextTarget } from "./chartContextTarget";
 import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ContextMenu } from "@base-ui/react/context-menu";
@@ -20,6 +22,7 @@ type MenuPoint = {
   y: number;
   price: number | null;
   priceLabel: string | null;
+  target: "price-axis" | "chart";
 };
 
 /** Drawing hits own their context menu; this handles the rest of the chart and axes. */
@@ -81,6 +84,7 @@ export function ChartContextMenu({
           : null;
       setPoint({
         chart,
+        target: chartContextTarget(event.clientX, event.clientY, rect, series.priceScale().width()),
         x: event.clientX,
         y: event.clientY,
         price: price !== null && Number.isFinite(price) ? price : null,
@@ -139,7 +143,7 @@ export function ChartContextMenu({
       }}
     >
       <MenuPopup
-        aria-label="Chart context menu"
+        aria-label={point.target === "price-axis" ? "Price scale menu" : "Chart context menu"}
         className={drawingContextMenuPopupClass}
         style={drawingContextMenuStyle}
         align="start"
@@ -163,106 +167,117 @@ export function ChartContextMenu({
           }
         }}
       >
-        <MenuItem
-          className={itemClass}
-          onClick={() => {
-            close();
-            chart.timeScale().fitContent();
-            series.priceScale().applyOptions({ autoScale: true });
-          }}
-        >
-          <ChartIcon name="maximize" className="size-4.5" />
-          Reset chart view
-        </MenuItem>
-        <MenuItem
-          className={itemClass}
-          onClick={() => run(() => chart.timeScale().scrollToRealTime())}
-        >
-          <ChartIcon name="arrow-bar-to-right" />
-          Go to latest bar
-        </MenuItem>
-        {onGoToDate ? (
-          <MenuItem className={itemClass} onClick={() => run(onGoToDate)}>
-            <span aria-hidden="true" className="size-4.5 shrink-0" />
-            Go to date…
-            <MenuShortcut className="tracking-normal">{mac ? "⌥" : "Alt"} G</MenuShortcut>
-          </MenuItem>
-        ) : null}
-        <MenuSeparator />
-        {point.price !== null && onAddAlert ? (
-          <MenuItem className={itemClass} onClick={() => run(() => onAddAlert(point.price!))}>
-            <ChartIcon name="bell" />
-            Add alert{symbol ? ` on ${symbol}` : ""} at {point.priceLabel}…
-            <MenuShortcut className="tracking-normal">{mac ? "⌥" : "Alt"} A</MenuShortcut>
-          </MenuItem>
-        ) : null}
-        {point.price !== null ? (
-          <MenuItem className={itemClass} onClick={() => void copyPrice()}>
-            <span aria-hidden="true" className="size-4.5 shrink-0" />
-            Copy price {point.priceLabel}
-          </MenuItem>
-        ) : null}
-        <MenuItem className={itemClass} onClick={() => void paste()}>
-          <span aria-hidden="true" className="size-4.5 shrink-0" />
-          Paste
-          <MenuShortcut className="tracking-normal">{mac ? "⌘" : "Ctrl"} V</MenuShortcut>
-        </MenuItem>
-        <MenuSeparator />
-        {onOpenTable ? (
-          <MenuItem className={itemClass} onClick={() => run(onOpenTable)}>
-            <span aria-hidden="true" className="size-4.5 shrink-0" />
-            Table view
-          </MenuItem>
-        ) : null}
-        <MenuItem className={itemClass} onClick={() => run(onOpenObjectTree)}>
-          <ChartIcon name="stack" />
-          Object tree
-        </MenuItem>
-        {onSaveTemplate && onManageTemplates ? (
-          <ChartTemplateSubmenu
-            onSave={onSaveTemplate}
-            onManage={onManageTemplates}
-            onAction={run}
+        {point.target === "price-axis" ? (
+          <ChartPriceScaleMenu
+            chart={chart}
+            series={series}
+            onClose={close}
+            onOpenSettings={onOpenSettings}
           />
-        ) : null}
-        <MenuItem
-          className={itemClass}
-          disabled={!drawings.count}
-          onClick={() => run(drawings.toggleHidden)}
-        >
-          {drawings.hidden ? <EyeIcon /> : <EyeOffIcon />}
-          {drawings.hidden ? "Show drawings" : "Hide drawings"}
-        </MenuItem>
-        <MenuItem
-          className={itemClass}
-          disabled={!indicators.count}
-          onClick={() => run(() => indicators.setHidden(!indicators.hidden))}
-        >
-          {indicators.hidden ? <EyeIcon /> : <EyeOffIcon />}
-          {indicators.hidden ? "Show indicators" : "Hide indicators"}
-        </MenuItem>
-        <MenuSeparator />
-        <MenuItem
-          className={itemClass}
-          disabled={!drawings.count}
-          onClick={() => run(() => drawings.removeDrawings())}
-        >
-          <ChartIcon name="trash" />
-          Remove drawings
-        </MenuItem>
-        <MenuItem
-          className={itemClass}
-          disabled={!indicators.count}
-          onClick={() => run(indicators.remove)}
-        >
-          <ChartIcon name="trash" />
-          Remove indicators
-        </MenuItem>
-        <MenuSeparator />
-        <MenuItem className={itemClass} onClick={() => run(onOpenSettings)}>
-          <ChartIcon name="adjustments-horizontal" />
-          Chart settings
-        </MenuItem>
+        ) : (
+          <>
+            <MenuItem
+              className={itemClass}
+              onClick={() => {
+                close();
+                chart.timeScale().fitContent();
+                series.priceScale().applyOptions({ autoScale: true });
+              }}
+            >
+              <ChartIcon name="maximize" className="size-4.5" />
+              Reset chart view
+            </MenuItem>
+            <MenuItem
+              className={itemClass}
+              onClick={() => run(() => chart.timeScale().scrollToRealTime())}
+            >
+              <ChartIcon name="arrow-bar-to-right" />
+              Go to latest bar
+            </MenuItem>
+            {onGoToDate ? (
+              <MenuItem className={itemClass} onClick={() => run(onGoToDate)}>
+                <span aria-hidden="true" className="size-4.5 shrink-0" />
+                Go to date…
+                <MenuShortcut className="tracking-normal">{mac ? "⌥" : "Alt"} G</MenuShortcut>
+              </MenuItem>
+            ) : null}
+            <MenuSeparator />
+            {point.price !== null && onAddAlert ? (
+              <MenuItem className={itemClass} onClick={() => run(() => onAddAlert(point.price!))}>
+                <ChartIcon name="bell" />
+                Add alert{symbol ? ` on ${symbol}` : ""} at {point.priceLabel}…
+                <MenuShortcut className="tracking-normal">{mac ? "⌥" : "Alt"} A</MenuShortcut>
+              </MenuItem>
+            ) : null}
+            {point.price !== null ? (
+              <MenuItem className={itemClass} onClick={() => void copyPrice()}>
+                <span aria-hidden="true" className="size-4.5 shrink-0" />
+                Copy price {point.priceLabel}
+              </MenuItem>
+            ) : null}
+            <MenuItem className={itemClass} onClick={() => void paste()}>
+              <span aria-hidden="true" className="size-4.5 shrink-0" />
+              Paste
+              <MenuShortcut className="tracking-normal">{mac ? "⌘" : "Ctrl"} V</MenuShortcut>
+            </MenuItem>
+            <MenuSeparator />
+            {onOpenTable ? (
+              <MenuItem className={itemClass} onClick={() => run(onOpenTable)}>
+                <span aria-hidden="true" className="size-4.5 shrink-0" />
+                Table view
+              </MenuItem>
+            ) : null}
+            <MenuItem className={itemClass} onClick={() => run(onOpenObjectTree)}>
+              <ChartIcon name="stack" />
+              Object tree
+            </MenuItem>
+            {onSaveTemplate && onManageTemplates ? (
+              <ChartTemplateSubmenu
+                onSave={onSaveTemplate}
+                onManage={onManageTemplates}
+                onAction={run}
+              />
+            ) : null}
+            <MenuItem
+              className={itemClass}
+              disabled={!drawings.count}
+              onClick={() => run(drawings.toggleHidden)}
+            >
+              {drawings.hidden ? <EyeIcon /> : <EyeOffIcon />}
+              {drawings.hidden ? "Show drawings" : "Hide drawings"}
+            </MenuItem>
+            <MenuItem
+              className={itemClass}
+              disabled={!indicators.count}
+              onClick={() => run(() => indicators.setHidden(!indicators.hidden))}
+            >
+              {indicators.hidden ? <EyeIcon /> : <EyeOffIcon />}
+              {indicators.hidden ? "Show indicators" : "Hide indicators"}
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem
+              className={itemClass}
+              disabled={!drawings.count}
+              onClick={() => run(() => drawings.removeDrawings())}
+            >
+              <ChartIcon name="trash" />
+              Remove drawings
+            </MenuItem>
+            <MenuItem
+              className={itemClass}
+              disabled={!indicators.count}
+              onClick={() => run(indicators.remove)}
+            >
+              <ChartIcon name="trash" />
+              Remove indicators
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem className={itemClass} onClick={() => run(onOpenSettings)}>
+              <ChartIcon name="adjustments-horizontal" />
+              Chart settings
+            </MenuItem>
+          </>
+        )}
       </MenuPopup>
     </ContextMenu.Root>
   );
