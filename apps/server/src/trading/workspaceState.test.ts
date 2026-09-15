@@ -83,6 +83,17 @@ it("rejects unrelated keys, malformed JSON and oversized settings", () => {
   );
 });
 
+it("accepts replay bookmarks while retaining payload validation", () => {
+  const key = "automorphic:replay-bookmarks:v1";
+  const value = JSON.stringify({
+    state: { bookmarks: [{ id: "open", scope: "NQU6:5m", name: "Open", time: 1789128000 }] },
+    version: 0,
+  });
+  assert.deepEqual(parseWorkspaceValue({ key, value }), { key, value });
+  assert.equal(parseWorkspaceValue({ key, value: "invalid" }), null);
+  assert.equal(parseWorkspaceValue({ key, value: "null" }), null);
+});
+
 it.effect("saved settings survive reopening storage and remain isolated by project", () =>
   Effect.gen(function* () {
     const store = yield* makeWorkspaceState;

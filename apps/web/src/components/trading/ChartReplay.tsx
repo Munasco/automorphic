@@ -9,6 +9,7 @@ import {
   SkipForward,
   X,
 } from "lucide-react";
+import { ReplayBookmarks } from "./ReplayBookmarksMenu";
 import type { Candle } from "./chartIndicators";
 import { createReplayHistory, replayIndex, replayIndexAt, replayPrefix } from "./replayHistory";
 import { formatReplayDateTime, parseReplayDateTime } from "./replayDateTime";
@@ -87,9 +88,11 @@ export function useChartReplay(context: string) {
 const timestamp = (bar: Candle) => bar.actualTime ?? bar.time;
 export function ChartReplayControls({
   replay,
+  bookmarkScope,
   timeZone = "UTC",
 }: {
   replay: ReturnType<typeof useChartReplay>;
+  bookmarkScope: string;
   timeZone?: string;
 }) {
   const session = replay.session;
@@ -167,6 +170,14 @@ export function ChartReplayControls({
           onChange={(value) => replay.setSpeed(Number(value) as ChartReplaySpeed)}
           variant="ghost"
           className="h-7 w-24 shrink-0 rounded-none"
+        />
+        <ReplayBookmarks
+          scope={bookmarkScope}
+          time={timestamp(current)}
+          timeZone={timeZone}
+          bars={bars}
+          onPause={replay.pause}
+          onSeek={replay.seek}
         />
         <Tooltip>
           <TooltipTrigger

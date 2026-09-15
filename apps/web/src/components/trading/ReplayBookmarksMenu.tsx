@@ -1,0 +1,160 @@
+import { useState, useSyncExternalStore } from "react";
+import { BookmarkIcon, Trash2Icon } from "lucide-react";
+import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { tradingWorkspaceStorage } from "./workspaceStorage";
+import { useReplayBookmarks } from "./replayBookmarks";
+import { replayIndexAt } from "./replayHistory";
+import type { Candle } from "./chartIndicators";
+
+export function ReplayBookmarks({
+  scope,
+  time,
+  timeZone,
+  bars,
+  onPause,
+  onSeek,
+}: {
+  scope: string;
+  time: number;
+  timeZone: string;
+  bars: readonly Candle[];
+  onPause: () => void;
+  onSeek: (index: number) => void;
+}) {
+  const store = useReplayBookmarks();
+  const workspace = useSyncExternalStore(
+    tradingWorkspaceStorage.subscribe,
+    tradingWorkspaceStorage.getSnapshot,
+  );
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const bookmarks = store.bookmarks.filter((bookmark) => bookmark.scope === scope);
+  const dateLabel = (value: number) =>
+    new Date(value * 1000).toLocaleString([], {
+      timeZone,
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  function run(action: () => void) {
+    try {
+      action();
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not update the bookmark.");
+    }
+  }
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) {
+          onPause();
+          setError("");
+        }
+      }}
+    >
+      <Tooltip>
+        <TooltipTrigger
+          render={<PopoverTrigger />}
+          aria-label="Replay bookmarks"
+          className="flex size-7 shrink-0 items-center justify-center rounded hover:bg-white/10 data-popup-open:text-blue-400"
+        >
+          <BookmarkIcon className="size-4" />
+        </TooltipTrigger>
+        <TooltipPopup>Replay bookmarks</TooltipPopup>
+      </Tooltip>
+      <PopoverPopup
+        align="end"
+        className="w-72"
+        positionerClassName="h-auto"
+        viewportClassName="p-3"
+      >
+        <PopoverTitle className="mb-3 text-sm">Replay bookmarks</PopoverTitle>
+        <form
+          className="space-y-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            run(() => {
+              store.add(scope, name, time);
+              setName("");
+            });
+          }}
+        >
+          <input
+            aria-label="Bookmark name"
+            placeholder="Name this moment"
+            maxLength={80}
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value);
+              setError("");
+            }}
+            className="h-8 w-full rounded border border-zinc-600 bg-transparent px-2 text-xs outline-none focus:border-blue-400"
+          />
+          <div className="text-[11px] text-zinc-400">{dateLabel(time)}</div>
+          <button
+            type="submit"
+            disabled={!workspace.ready || !name.trim()}
+            className="h-8 rounded border border-zinc-600 px-2 text-xs hover:bg-white/10 disabled:opacity-40"
+          >
+            Save current bar
+          </button>
+        </form>
+        {error && (
+          <p role="alert" className="mt-2 text-xs text-red-400">
+            {error}
+          </p>
+        )}
+        <div className="mt-3 max-h-60 overflow-y-auto overscroll-contain border-t border-white/10 pt-2">
+          {bookmarks.length ? (
+            bookmarks.map((bookmark) => (
+              <div key={bookmark.id} className="flex items-center gap-1 rounded hover:bg-white/5">
+                <button
+                  type="button"
+                  aria-label={`Go to bookmark ${bookmark.name}`}
+                  disabled={!workspace.ready}
+                  onClick={() =>
+                    run(() => {
+                      const index = replayIndexAt(bars, bookmark.time);
+                      if (index === null)
+                        throw Error("This bookmark is outside the loaded replay history.");
+                      onSeek(index);
+                      setOpen(false);
+                    })
+                  }
+                  className="min-w-0 flex-1 rounded px-1 py-2 text-left disabled:opacity-40"
+                >
+                  <span className="block truncate text-xs">{bookmark.name}</span>
+                  <span className="block text-[11px] text-zinc-400">
+                    {dateLabel(bookmark.time)}
+                  </span>
+                </button>
+                <Tooltip>
+                  <TooltipTrigger
+                    type="button"
+                    aria-label={`Delete bookmark ${bookmark.name}`}
+                    disabled={!workspace.ready}
+                    onClick={() =>
+                      run(() => {
+                        store.remove(bookmark.id);
+                      })
+                    }
+                    className="flex size-7 shrink-0 items-center justify-center rounded text-zinc-400 hover:bg-white/10 hover:text-white disabled:opacity-40"
+                  >
+                    <Trash2Icon className="size-3.5" />
+                  </TooltipTrigger>
+                  <TooltipPopup>Delete bookmark</TooltipPopup>
+                </Tooltip>
+              </div>
+            ))
+          ) : (
+            <p className="py-2 text-xs text-zinc-400">No bookmarks for this chart yet.</p>
+          )}
+        </div>
+      </PopoverPopup>
+    </Popover>
+  );
+}

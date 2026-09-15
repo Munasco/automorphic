@@ -68,6 +68,31 @@ describe("trading workspace persistence", () => {
     expect(readChartNavigationTime(reopened, "SIU6")).toBeNull();
   });
 
+  it("persists replay bookmarks through the request queue and restores them after reopening", async () => {
+    const values: Record<string, string> = {};
+    const key = "automorphic:replay-bookmarks:v1";
+    const value = JSON.stringify({
+      state: { bookmarks: [{ id: "open", scope: "NQU6:5m", name: "Open", time: 1789128000 }] },
+      version: 0,
+    });
+    const request = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+      if (init?.method === "PUT") {
+        const body = JSON.parse(init.body as string) as { key: string; value: string };
+        values[body.key] = body.value;
+        return json({});
+      }
+      return json(payload(values));
+    });
+    const first = createTradingWorkspaceStorage(request, () => undefined);
+    await first.initialize();
+    first.setItem(key, value);
+    await first.flush();
+    expect(values).toEqual({ [key]: value });
+    const reopened = createTradingWorkspaceStorage(request, () => undefined);
+    await reopened.initialize();
+    expect(reopened.getItem(key)).toBe(value);
+  });
+
   it("loads and transports chart templates through workspace storage", async () => {
     const key = "automorphic:chart-templates:v1";
     const value = JSON.stringify({
