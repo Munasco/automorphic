@@ -22,6 +22,7 @@ import type { ChartAppearance } from "./chartPreferences";
 import {
   indicatorReadingKey,
   DEFAULT_VOLUME_COLORS,
+  MAX_CHART_INDICATORS,
   type ChartIndicatorInstance,
 } from "./chartIndicatorInstances";
 import {
@@ -68,6 +69,9 @@ type Plot = {
 export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
   const plots = new Map<string, Plot>();
   let paneSignature = "";
+  let previousPaneIds: string[] = [];
+  let mainPaneFactor = 3;
+  const paneFactors = new Map<string, number>();
   const removePlot = (plot: Plot) => {
     for (const { line } of plot.levels) plot.series.removePriceLine(line);
     plot.levels.length = 0;
@@ -113,6 +117,22 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
     const nextSignature = oscillatorIds.join(",");
     const changedPanes = nextSignature !== paneSignature;
     if (changedPanes) {
+      // Native separator drags change stretch factors. Keep them attached to the
+      // indicator instance when membership or order forces its pane to be rebuilt.
+      if (previousPaneIds.length) {
+        const currentPanes = chart.panes();
+        mainPaneFactor = currentPanes[0]!.getStretchFactor();
+        previousPaneIds.forEach((id, index) => {
+          const pane = currentPanes[index + 1];
+          if (pane) paneFactors.set(id, pane.getStretchFactor());
+        });
+      }
+      // Retain hidden instances, but bound history if tools are repeatedly added/deleted.
+      for (const id of paneFactors.keys()) {
+        if (paneFactors.size <= MAX_CHART_INDICATORS) break;
+        if (!oscillatorIds.includes(id)) paneFactors.delete(id);
+      }
+      previousPaneIds = oscillatorIds;
       // Removing the final series also removes its pane. Rebuild the oscillator group
       // together so every remaining pane has the correct index after a toggle.
       for (const [id, plot] of plots)
@@ -462,8 +482,13 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
         plots.delete(id);
       }
     if (changedPanes) {
-      chart.panes()[0]?.setStretchFactor(3);
-      for (const pane of chart.panes().slice(1)) pane.setStretchFactor(1);
+      chart.panes()[0]?.setStretchFactor(mainPaneFactor);
+      chart
+        .panes()
+        .slice(1)
+        .forEach((pane, index) => {
+          pane.setStretchFactor(paneFactors.get(oscillatorIds[index]!) ?? 1);
+        });
     }
     return { readings, initialBalanceStatus, initialBalanceStats, initialBalanceStatuses };
   };

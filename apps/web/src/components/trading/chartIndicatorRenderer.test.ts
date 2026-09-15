@@ -30,9 +30,11 @@ type FakeSeries = {
 function chartHarness() {
   const series: FakeSeries[] = [];
   let paneCount = 1;
+  const paneFactors = [1];
   const chart = {
     addSeries(definition: { type: string }, options: Record<string, unknown>, pane = 0) {
       paneCount = Math.max(paneCount, pane + 1);
+      while (paneFactors.length < paneCount) paneFactors.push(1);
       const next: FakeSeries = {
         pane,
         options,
@@ -77,10 +79,17 @@ function chartHarness() {
       series.splice(index, 1);
       if (target.pane > 0 && !series.some((item) => item.pane === target.pane)) {
         paneCount -= 1;
+        paneFactors.splice(target.pane, 1);
         for (const item of series) if (item.pane > target.pane) item.pane -= 1;
       }
     },
-    panes: () => Array.from({ length: paneCount }, () => ({ setStretchFactor() {} })),
+    panes: () =>
+      paneFactors.map((_, index) => ({
+        getStretchFactor: () => paneFactors[index],
+        setStretchFactor: (value: number) => {
+          paneFactors[index] = value;
+        },
+      })),
   };
   return { chart: chart as unknown as IChartApi, series, paneCount: () => paneCount };
 }
@@ -1504,4 +1513,36 @@ it("keeps named overlay labels absent by default and restores their name when en
   update();
   expect(series.options).toMatchObject({ title: "", lastValueVisible: false });
   expect(harness.series[0]).toBe(series);
+});
+
+it("keeps manually resized panes attached to instances through reorder, hide/show and membership changes", () => {
+  const harness = chartHarness();
+  const renderer = createIndicatorRenderer(harness.chart, 0.25);
+  const rsi = createIndicatorInstance("rsi", "base:rsi");
+  const obv = createIndicatorInstance("obv", "base:obv");
+  const macd = createIndicatorInstance("macd", "base:macd");
+  const bars = inputBars(80);
+  const update = (instances: (typeof rsi)[]) =>
+    renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, instances);
+  const factors = () => harness.chart.panes().map((pane) => pane.getStretchFactor());
+  update([rsi, obv]);
+  expect(factors()).toEqual([3, 1, 1]);
+  [4, 2, 7].forEach((factor, index) => harness.chart.panes()[index]!.setStretchFactor(factor));
+  update([obv, rsi]);
+  expect(factors()).toEqual([4, 7, 2]);
+  update([rsi]);
+  expect(factors()).toEqual([4, 2]);
+  update([rsi, macd]);
+  expect(factors()).toEqual([4, 2, 1]);
+  update([rsi, obv, macd]);
+  expect(factors()).toEqual([4, 2, 7, 1]);
+  update([]);
+  expect(factors()).toEqual([4]);
+  update([obv, rsi]);
+  expect(factors()).toEqual([4, 7, 2]);
+  harness.chart.panes()[1]!.setStretchFactor(5);
+  update([obv, rsi]);
+  expect(factors()).toEqual([4, 5, 2]);
+  update([rsi, obv]);
+  expect(factors()).toEqual([4, 2, 5]);
 });
