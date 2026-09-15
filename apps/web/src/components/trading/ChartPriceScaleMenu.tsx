@@ -1,3 +1,4 @@
+import { ResetChartPaneSizes } from "./ResetChartPaneSizes";
 import type { IChartApi, ISeriesApi, SeriesType } from "lightweight-charts";
 import {
   MenuCheckboxItem,
@@ -49,6 +50,7 @@ export function ChartPriceScaleMenu({
         <ChartIcon name="maximize" />
         Reset chart view
       </MenuItem>
+      <ResetChartPaneSizes menu onReset={onClose} />
       <MenuSeparator />
       <MenuRadioGroup
         value={settings.priceScaleMode}

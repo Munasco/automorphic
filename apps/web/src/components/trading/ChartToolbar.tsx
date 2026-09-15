@@ -1,3 +1,4 @@
+import { ResetChartPaneSizes } from "./ResetChartPaneSizes";
 import { PRICE_SOURCES, type PriceSource } from "./chartIndicators";
 import { TradingSelect } from "./TradingSelect";
 import type {
@@ -565,6 +566,9 @@ export function ChartToolbar({
             positionerClassName="h-auto"
           >
             <PopoverTitle className="px-1 pb-2 text-xs">Chart display</PopoverTitle>
+            <div className="px-2 pb-2">
+              <ResetChartPaneSizes />
+            </div>
             {style !== "line" && style !== "area" && (
               <fieldset className="space-y-2 px-2 py-2.5">
                 <legend className="text-xs text-zinc-400">

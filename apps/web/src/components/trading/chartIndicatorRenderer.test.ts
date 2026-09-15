@@ -1588,3 +1588,34 @@ it("restores saved pane sizes by instance ID before first render and retains hid
   next.applyPaneSizes({});
   expect(reloaded.chart.panes().map((pane) => pane.getStretchFactor())).toEqual([3, 1, 1]);
 });
+
+it("resets hidden pane sizes without disturbing plotted indicator data", () => {
+  const harness = chartHarness();
+  const renderer = createIndicatorRenderer(harness.chart, 0.25, {
+    $price: 5,
+    "base:rsi": 4,
+    "base:obv": 6,
+  });
+  const rsi = createIndicatorInstance("rsi", "base:rsi");
+  const obv = createIndicatorInstance("obv", "base:obv");
+  const update = (instances: (typeof rsi)[]) =>
+    renderer.update(
+      inputBars(80),
+      disabled,
+      DEFAULT_INITIAL_BALANCE,
+      1,
+      {},
+      {},
+      undefined,
+      instances,
+    );
+  update([rsi]);
+  const series = [...harness.series];
+  const data = series.map((item) => structuredClone(item.data));
+  renderer.applyPaneSizes({});
+  expect(harness.series).toEqual(series);
+  expect(harness.series.map((item) => item.data)).toEqual(data);
+  expect(renderer.capturePaneSizes()).toEqual({ $price: 3, "base:rsi": 1 });
+  update([obv, rsi]);
+  expect(harness.chart.panes().map((pane) => pane.getStretchFactor())).toEqual([3, 1, 1]);
+});

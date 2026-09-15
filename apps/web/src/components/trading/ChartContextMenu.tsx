@@ -1,3 +1,4 @@
+import { ResetChartPaneSizes } from "./ResetChartPaneSizes";
 import { ChartPriceScaleMenu } from "./ChartPriceScaleMenu";
 import { chartContextTarget } from "./chartContextTarget";
 import { EyeIcon, EyeOffIcon } from "lucide-react";
@@ -187,6 +188,7 @@ export function ChartContextMenu({
               <ChartIcon name="maximize" className="size-4.5" />
               Reset chart view
             </MenuItem>
+            <ResetChartPaneSizes menu onReset={close} />
             <MenuItem
               className={itemClass}
               onClick={() => run(() => chart.timeScale().scrollToRealTime())}

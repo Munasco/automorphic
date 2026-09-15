@@ -4264,3 +4264,21 @@ it("persists pane proportions, skips equal saves and clears them on a legacy wor
   await useChartPreferences.persist.rehydrate();
   expect(useChartPreferences.getState().paneStretchFactors).toEqual({});
 });
+
+it("persists a pane size reset without changing indicator settings or other chart preferences", async () => {
+  const store = useChartPreferences.getState();
+  store.addIndicator("rsi");
+  store.setIndicatorInstanceInputs("base:rsi", { period: 7 });
+  store.setGridMode("none");
+  store.setPaneStretchFactors({ $price: 4, "base:rsi": 3, hidden: 2 });
+  const before = normalizeChartPreferences(useChartPreferences.getState());
+  store.setPaneStretchFactors({});
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+    ...before,
+    paneStretchFactors: {},
+  });
+});
