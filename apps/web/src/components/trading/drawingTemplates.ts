@@ -195,6 +195,7 @@ export const useDrawingTemplates = create<{
   templates: DrawingTemplate[];
   saveTemplate: (drawing: ChartDrawing, name: string) => boolean;
   deleteTemplate: (kind: DrawingKind, name: string) => void;
+  renameTemplate: (kind: DrawingKind, name: string, nextName: string) => void;
 }>()(
   persist(
     (set, get) => ({
@@ -204,6 +205,23 @@ export const useDrawingTemplates = create<{
         if (!templates) return false;
         set({ templates });
         return true;
+      },
+      renameTemplate: (kind, name, nextName) => {
+        const current = get().templates;
+        const existing = current.find((item) => item.kind === kind && item.name === name);
+        if (!existing) throw Error("This template is no longer available.");
+        if (typeof nextName !== "string" || !nextName.trim() || nextName.trim().length > 80)
+          throw Error("Enter a template name between 1 and 80 characters.");
+        const normalizedName = nextName.trim();
+        if (normalizedName === name) return;
+        if (current.some((item) => item.kind === kind && item.name === normalizedName))
+          throw Error("A template with this name already exists for this drawing tool.");
+        const templates = current.map((item) =>
+          item === existing ? { ...item, name: normalizedName } : item,
+        );
+        if (JSON.stringify(templates).length > 250_000)
+          throw Error("Template storage is full. Use a shorter name or remove a template.");
+        set({ templates });
       },
       deleteTemplate: (kind, name) =>
         set((state) => ({

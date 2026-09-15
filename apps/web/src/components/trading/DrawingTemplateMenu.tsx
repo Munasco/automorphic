@@ -1,3 +1,4 @@
+import { PencilIcon } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../../lib/utils";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
@@ -28,6 +29,7 @@ export function DrawingTemplateMenu({
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [renameFrom, setRenameFrom] = useState<string>();
   const allTemplates = useDrawingTemplates((state) => state.templates);
   const deleteTemplate = useDrawingTemplates((state) => state.deleteTemplate);
   const templates = allTemplates.filter((template) => template.kind === drawing.kind);
@@ -102,6 +104,18 @@ export function DrawingTemplateMenu({
                   </button>
                   <button
                     type="button"
+                    aria-label={`Rename template ${template.name}`}
+                    className="flex size-8 shrink-0 items-center justify-center rounded text-zinc-400 hover:text-white"
+                    onClick={() => {
+                      setOpen(false);
+                      setRenameFrom(template.name);
+                      setSaving(true);
+                    }}
+                  >
+                    <PencilIcon className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
                     aria-label={`Delete template ${template.name}`}
                     className="flex size-8 shrink-0 items-center justify-center rounded text-zinc-400 hover:text-red-300"
                     onClick={() => deleteTemplate(template.kind, template.name)}
@@ -115,7 +129,14 @@ export function DrawingTemplateMenu({
         </PopoverPopup>
       </Popover>
       {saving ? (
-        <DrawingTemplateSaveDialog drawing={drawing} onClose={() => setSaving(false)} />
+        <DrawingTemplateSaveDialog
+          drawing={drawing}
+          renameFrom={renameFrom}
+          onClose={() => {
+            setSaving(false);
+            setRenameFrom(undefined);
+          }}
+        />
       ) : null}
     </>
   );
@@ -124,15 +145,18 @@ export function DrawingTemplateMenu({
 /** Mount outside transient menus so closing their root does not dismiss the save form. */
 export function DrawingTemplateSaveDialog({
   drawing,
+  renameFrom,
   onClose,
 }: {
   drawing: ChartDrawing;
+  renameFrom?: string | undefined;
   onClose: () => void;
 }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(renameFrom ?? "");
   const [error, setError] = useState("");
   const allTemplates = useDrawingTemplates((state) => state.templates);
   const saveTemplate = useDrawingTemplates((state) => state.saveTemplate);
+  const renameTemplate = useDrawingTemplates((state) => state.renameTemplate);
   const templates = allTemplates.filter((template) => template.kind === drawing.kind);
   const existing = templates.some((template) => template.name === name.trim());
   return (
@@ -148,15 +172,22 @@ export function DrawingTemplateSaveDialog({
         backdropStyle={{ background: "transparent", transition: "none" }}
         className="w-[380px] max-w-[calc(100vw-32px)] rounded-lg border border-white/10 p-6 text-zinc-100 data-starting-style:scale-100 data-starting-style:opacity-100 data-ending-style:scale-100 data-ending-style:opacity-100"
       >
-        <DialogTitle className="mb-5 text-lg font-medium">Save Drawing Template As…</DialogTitle>
+        <DialogTitle className="mb-5 text-lg font-medium">
+          {renameFrom === undefined ? "Save Drawing Template As…" : "Rename drawing template"}
+        </DialogTitle>
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            if (!saveTemplate(drawing, name)) {
-              setError("Template limit reached. Delete a template before saving another.");
-              return;
+            try {
+              if (renameFrom !== undefined) renameTemplate(drawing.kind, renameFrom, name);
+              else if (!saveTemplate(drawing, name)) {
+                setError("Template limit reached. Delete a template before saving another.");
+                return;
+              }
+              onClose();
+            } catch (cause) {
+              setError(cause instanceof Error ? cause.message : "Could not update the template.");
             }
-            onClose();
           }}
         >
           <label
@@ -175,7 +206,7 @@ export function DrawingTemplateSaveDialog({
             }}
             className="h-9 w-full rounded border border-white/20 bg-transparent px-2 text-sm outline-none focus:border-blue-400"
           />
-          {templates.length >= MAX_TEMPLATES_PER_KIND && !existing ? (
+          {renameFrom === undefined && templates.length >= MAX_TEMPLATES_PER_KIND && !existing ? (
             <p className="mt-2 text-xs text-zinc-400">
               20 templates saved. Replace or delete one to save another.
             </p>
@@ -195,10 +226,15 @@ export function DrawingTemplateSaveDialog({
             </button>
             <button
               type="submit"
-              disabled={!name.trim() || (!existing && templates.length >= MAX_TEMPLATES_PER_KIND)}
+              disabled={
+                !name.trim() ||
+                (renameFrom === undefined &&
+                  !existing &&
+                  templates.length >= MAX_TEMPLATES_PER_KIND)
+              }
               className="h-9 rounded bg-[#2962ff] px-4 text-sm text-white hover:bg-blue-500 disabled:opacity-40"
             >
-              {existing ? "Replace" : "Save"}
+              {renameFrom !== undefined ? "Rename" : existing ? "Replace" : "Save"}
             </button>
           </div>
         </form>
@@ -215,10 +251,12 @@ export function DrawingTemplateSubmenu({
   drawing,
   onApply,
   onSave,
+  onRename,
 }: {
   drawing: ChartDrawing;
   onApply: (patch: DrawingPatch) => void;
   onSave: () => void;
+  onRename: (name: string) => void;
 }) {
   const allTemplates = useDrawingTemplates((state) => state.templates);
   const templates = allTemplates.filter((template) => template.kind === drawing.kind);
@@ -252,6 +290,13 @@ export function DrawingTemplateSubmenu({
               onClick={() => onApply(template.settings)}
             >
               <span className="truncate">{template.name}</span>
+            </MenuItem>
+            <MenuItem
+              aria-label={`Rename template ${template.name}`}
+              className="size-8 min-h-8 shrink-0 justify-center px-0 py-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 data-highlighted:opacity-100 sm:min-h-8"
+              onClick={() => onRename(template.name)}
+            >
+              <PencilIcon className="size-4" />
             </MenuItem>
             <MenuItem
               aria-label={`Delete template ${template.name}`}

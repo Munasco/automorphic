@@ -537,3 +537,47 @@ describe("Text box templates", () => {
     expect(reset.textWrapWidth).toBeUndefined();
   });
 });
+
+describe("renaming saved drawing templates", () => {
+  it("preserves the stored appearance and list position through reload and application", async () => {
+    const store = useDrawingTemplates.getState();
+    store.saveTemplate(drawing, "Original");
+    store.saveTemplate({ ...drawing, color: "#abcdef" }, "Other");
+    const before = structuredClone(useDrawingTemplates.getState().templates);
+    store.renameTemplate("fib", "Original", "  Retest levels  ");
+    const expected = [{ ...before[0]!, name: "Retest levels" }, before[1]!];
+    expect(useDrawingTemplates.getState().templates).toEqual(expected);
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    useDrawingTemplates.setState(useDrawingTemplates.getInitialState(), true);
+    await useDrawingTemplates.persist.rehydrate();
+    expect(useDrawingTemplates.getState().templates).toEqual(expected);
+    const altered = { ...drawing, color: "#ff0000", width: 4 };
+    expect(
+      applyDrawingTemplate(altered, useDrawingTemplates.getState().templates[0]!.settings),
+    ).toEqual(drawing);
+  });
+  it("rejects collisions, missing templates and invalid names without touching saved data", () => {
+    const store = useDrawingTemplates.getState();
+    store.saveTemplate(drawing, "First");
+    store.saveTemplate(drawing, "Second");
+    const before = useDrawingTemplates.getState();
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    expect(() => store.renameTemplate("fib", "First", "Second")).toThrow("already exists");
+    expect(() => store.renameTemplate("fib", "Missing", "New")).toThrow("no longer");
+    for (const name of ["", "  ", "a".repeat(81)])
+      expect(() => store.renameTemplate("fib", "First", name)).toThrow("between");
+    store.renameTemplate("fib", "First", "  First  ");
+    expect(useDrawingTemplates.getState()).toBe(before);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  });
+  it("renames at capacity and allows the same name for another drawing tool", () => {
+    const store = useDrawingTemplates.getState();
+    for (let i = 0; i < 20; i++) store.saveTemplate(drawing, `Style ${i}`);
+    store.saveTemplate({ ...drawing, kind: "trend" }, "Retest");
+    store.renameTemplate("fib", "Style 0", "Retest");
+    const templates = useDrawingTemplates.getState().templates;
+    expect(templates.filter((item) => item.kind === "fib")).toHaveLength(20);
+    expect(templates.filter((item) => item.name === "Retest")).toHaveLength(2);
+  });
+});

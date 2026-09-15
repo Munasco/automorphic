@@ -872,7 +872,10 @@ export function DrawingSelectionOverlay({
     [toolbarScale],
   );
   const [settingsTab, setSettingsTab] = useState("Style");
-  const [templateDrawing, setTemplateDrawing] = useState<ChartDrawing | null>(null);
+  const [templateDrawing, setTemplateDrawing] = useState<{
+    drawing: ChartDrawing;
+    renameFrom?: string;
+  } | null>(null);
   const [renameTarget, setRenameTarget] = useState<{
     drawing: ChartDrawing;
     trigger: HTMLElement | null;
@@ -1258,7 +1261,10 @@ export function DrawingSelectionOverlay({
           >
             <DrawingMenuCommands
               drawings={drawings}
-              onSaveTemplate={() => setTemplateDrawing(selected)}
+              onSaveTemplate={() => setTemplateDrawing({ drawing: selected })}
+              onRenameTemplate={(name) =>
+                setTemplateDrawing({ drawing: selected, renameFrom: name })
+              }
               onRename={() =>
                 setRenameTarget({ drawing: selected, trigger: moreTriggerRef.current })
               }
@@ -1318,7 +1324,10 @@ export function DrawingSelectionOverlay({
             <DrawingMenuCommands
               drawings={drawings}
               onAction={closeThen}
-              onSaveTemplate={() => setTemplateDrawing(selected)}
+              onSaveTemplate={() => setTemplateDrawing({ drawing: selected })}
+              onRenameTemplate={(name) =>
+                setTemplateDrawing({ drawing: selected, renameFrom: name })
+              }
               onRename={() => {
                 const renameInTree = drawings.getContextMenuRenameAction();
                 if (renameInTree) renameInTree();
@@ -1347,7 +1356,8 @@ export function DrawingSelectionOverlay({
       ) : null}
       {templateDrawing ? (
         <DrawingTemplateSaveDialog
-          drawing={templateDrawing}
+          drawing={templateDrawing.drawing}
+          renameFrom={templateDrawing.renameFrom}
           onClose={() => setTemplateDrawing(null)}
         />
       ) : null}
@@ -1367,6 +1377,7 @@ function DrawingMenuCommands({
   drawings,
   onAction = executeDrawingAction,
   onSaveTemplate,
+  onRenameTemplate,
   onRename,
   onOpenObjectTree,
   onCreateAlert,
@@ -1374,6 +1385,7 @@ function DrawingMenuCommands({
   drawings: ChartDrawingsController;
   onAction?: (action: () => void) => void;
   onSaveTemplate: () => void;
+  onRenameTemplate: (name: string) => void;
   onRename: () => void;
   onOpenObjectTree?: (() => void) | undefined;
   onCreateAlert?: ((drawing: ChartDrawing) => void) | undefined;
@@ -1414,6 +1426,7 @@ function DrawingMenuCommands({
         drawing={selected}
         onApply={(patch) => onAction(() => drawings.applySelectedTemplate(patch))}
         onSave={() => onAction(onSaveTemplate)}
+        onRename={(name) => onAction(() => onRenameTemplate(name))}
       />
       <DrawingOrderSubmenu drawings={drawings} />
       <DrawingVisibilitySubmenu
