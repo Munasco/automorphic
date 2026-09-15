@@ -36,6 +36,7 @@ import {
 } from "react";
 import {
   createChart,
+  createTextWatermark,
   CandlestickSeries,
   BarSeries,
   LineSeries,
@@ -1159,6 +1160,45 @@ export function TradovateChart({
   ]);
 
   useEffect(() => {
+    if (!engine || engine.disposed || !settings.showSymbolWatermark || !symbol) return;
+    const pane = engine.chart.panes()[0];
+    const element = pane?.getHTMLElement();
+    if (!pane || !element) return;
+    const watermark = createTextWatermark(pane, {
+      horzAlign: "center",
+      vertAlign: "center",
+    });
+    let previousSize = -1;
+    const resize = () => {
+      if (engine.disposed) return;
+      const fontSize = Math.max(
+        12,
+        Math.floor(Math.min(element.clientWidth / 7, element.clientHeight / 3, 120)),
+      );
+      if (fontSize === previousSize) return;
+      previousSize = fontSize;
+      watermark.applyOptions({
+        lines: [
+          {
+            text: symbol,
+            color: "rgba(146, 153, 167, 0.14)",
+            fontSize,
+            fontStyle: "bold",
+            fontFamily: engine.chart.options().layout.fontFamily,
+          },
+        ],
+      });
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(element);
+    resize();
+    return () => {
+      observer.disconnect();
+      if (!engine.disposed) watermark.detach();
+    };
+  }, [engine, settings.showSymbolWatermark, symbol]);
+
+  useEffect(() => {
     priceDisplay.current = {
       style: settings.style,
       line: settings.showPriceLine,
@@ -1304,6 +1344,8 @@ export function TradovateChart({
         onToggleBarCountdown={settings.toggleBarCountdown}
         showPriceLabel={settings.showPriceLabel}
         onTogglePriceLabel={settings.togglePriceLabel}
+        showSymbolWatermark={settings.showSymbolWatermark}
+        onShowSymbolWatermarkChange={settings.setShowSymbolWatermark}
         showChartTitle={settings.showChartTitle}
         showCandleValues={settings.showCandleValues}
         indicatorLegendCollapsed={settings.indicatorLegendCollapsed}

@@ -3711,3 +3711,82 @@ it("saves histogram label choices per instance across reload and appearance rese
   expect(state().appearance).toEqual({});
   expect(state().extraIndicators).toEqual([]);
 });
+
+describe("symbol watermark", () => {
+  it("defaults off and accepts only a saved boolean true", () => {
+    expect(useChartPreferences.getInitialState().showSymbolWatermark).toBe(false);
+    for (const value of [undefined, null, "true", 1, 0, {}, [], false]) {
+      expect(normalizeChartPreferences({ showSymbolWatermark: value }).showSymbolWatermark).toBe(
+        false,
+      );
+    }
+    expect(normalizeChartPreferences({ showSymbolWatermark: true }).showSymbolWatermark).toBe(true);
+  });
+
+  it("ignores invalid or repeated choices without writing or notifying", () => {
+    const store = configure();
+    const before = useChartPreferences.getState();
+    const listener = vi.fn();
+    const unsubscribe = useChartPreferences.subscribe(listener);
+    try {
+      for (const value of [undefined, null, "true", 1, 0, {}, []])
+        store.setShowSymbolWatermark(value as boolean);
+      store.setShowSymbolWatermark(false);
+      expect(useChartPreferences.getState()).toBe(before);
+      expect(listener).not.toHaveBeenCalled();
+      expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+      store.setShowSymbolWatermark(true);
+      store.setShowSymbolWatermark(true);
+      expect(useChartPreferences.getState().showSymbolWatermark).toBe(true);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it.each([true, false])(
+    "persists watermark %s independently of chart style and indicators",
+    async (showSymbolWatermark) => {
+      const store = configure();
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      store.setShowSymbolWatermark(true);
+      store.setShowSymbolWatermark(showSymbolWatermark);
+      for (const style of ["area", "line", "candles"] as const) {
+        store.setStyle(style);
+        expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+          ...before,
+          style,
+          showSymbolWatermark,
+        });
+      }
+      const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      expect(JSON.parse(saved).state.showSymbolWatermark).toBe(showSymbolWatermark);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+        ...before,
+        style: "candles",
+        showSymbolWatermark,
+      });
+    },
+  );
+
+  it("restores each workspace choice and clears it for legacy or malformed saves", async () => {
+    const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+    for (const [state, expected] of [
+      [{ showSymbolWatermark: true }, true],
+      [{}, false],
+      [{ showSymbolWatermark: true }, true],
+      [{ showSymbolWatermark: "true" }, false],
+      [{ showSymbolWatermark: false }, false],
+    ] as const) {
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+        JSON.stringify({ version: 0, state }),
+      );
+      await hydrate();
+      expect(useChartPreferences.getState().showSymbolWatermark).toBe(expected);
+    }
+  });
+});

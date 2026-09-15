@@ -101,6 +101,8 @@ export type ChartToolbarProps = {
   onToggleBarCountdown: () => void;
   showPriceLabel: boolean;
   onTogglePriceLabel: () => void;
+  showSymbolWatermark: boolean;
+  onShowSymbolWatermarkChange: (show: boolean) => void;
   showChartTitle: boolean;
   showCandleValues: boolean;
   indicatorLegendCollapsed: boolean;
@@ -187,6 +189,8 @@ export function ChartToolbar({
   onToggleBarCountdown,
   showPriceLabel,
   onTogglePriceLabel,
+  showSymbolWatermark,
+  onShowSymbolWatermarkChange,
   showChartTitle,
   showCandleValues,
   indicatorLegendCollapsed,
@@ -694,6 +698,12 @@ export function ChartToolbar({
             <fieldset className="space-y-1 border-y border-white/10 px-2 py-2.5">
               <legend className="text-xs text-zinc-400">Legend</legend>
               {[
+                {
+                  key: "watermark",
+                  label: "Symbol watermark",
+                  checked: showSymbolWatermark,
+                  onChange: onShowSymbolWatermarkChange,
+                },
                 {
                   key: "title",
                   label: "Chart title",

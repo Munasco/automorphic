@@ -121,6 +121,7 @@ type SavedChartPreferences = {
   lineChartWidth: ChartLineWidth;
   lineChartShape: ChartLineShape;
   showLineMarkers: boolean;
+  showSymbolWatermark: boolean;
   lineMarkerRadius: ChartLineMarkerRadius;
   thinBars: boolean;
   showBarOpen: boolean;
@@ -213,6 +214,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     lineChartWidth: validLineChartWidth(saved.lineChartWidth) ? saved.lineChartWidth : 2,
     lineChartShape: validLineChartShape(saved.lineChartShape) ? saved.lineChartShape : "straight",
     showLineMarkers: saved.showLineMarkers === true,
+    showSymbolWatermark: saved.showSymbolWatermark === true,
     lineMarkerRadius: validLineMarkerRadius(saved.lineMarkerRadius) ? saved.lineMarkerRadius : 3,
     thinBars: typeof saved.thinBars === "boolean" ? saved.thinBars : true,
     showBarOpen: typeof saved.showBarOpen === "boolean" ? saved.showBarOpen : true,
@@ -261,6 +263,7 @@ export const useChartPreferences = create<{
   lineChartWidth: ChartLineWidth;
   lineChartShape: ChartLineShape;
   showLineMarkers: boolean;
+  showSymbolWatermark: boolean;
   lineMarkerRadius: ChartLineMarkerRadius;
   thinBars: boolean;
   showBarOpen: boolean;
@@ -318,6 +321,7 @@ export const useChartPreferences = create<{
   setLineChartWidth: (width: ChartLineWidth) => void;
   setLineChartShape: (shape: ChartLineShape) => void;
   toggleLineMarkers: () => void;
+  setShowSymbolWatermark: (show: boolean) => void;
   setLineMarkerRadius: (radius: ChartLineMarkerRadius) => void;
   toggleThinBars: () => void;
   toggleBarOpen: () => void;
@@ -361,6 +365,7 @@ export const useChartPreferences = create<{
       lineChartWidth: 2,
       lineChartShape: "straight",
       showLineMarkers: false,
+      showSymbolWatermark: false,
       lineMarkerRadius: 3,
       thinBars: true,
       showBarOpen: true,
@@ -703,6 +708,13 @@ export const useChartPreferences = create<{
       },
       setGridColor: (gridColor) => {
         if (validColor(gridColor) && gridColor !== get().gridColor) set({ gridColor });
+      },
+      setShowSymbolWatermark: (showSymbolWatermark) => {
+        if (
+          typeof showSymbolWatermark === "boolean" &&
+          showSymbolWatermark !== get().showSymbolWatermark
+        )
+          set({ showSymbolWatermark });
       },
       toggleLineMarkers: () => set((state) => ({ showLineMarkers: !state.showLineMarkers })),
       setLineMarkerRadius: (lineMarkerRadius) => {
