@@ -162,3 +162,24 @@ describe("indicator price label styles", () => {
     });
   });
 });
+
+it("normalizes histogram labels independently from line and color-phase styles", () => {
+  for (const histogramPriceLabel of [true, false]) {
+    const normalized = normalizeIndicatorAppearance("macd", {
+      histogramPriceLabel,
+      plots: { main: { showPriceLabel: !histogramPriceLabel }, positive: { histogramPriceLabel } },
+    });
+    expect(normalized).toEqual({
+      histogramPriceLabel,
+      plots: { main: { showPriceLabel: !histogramPriceLabel } },
+    });
+    expect(resolveIndicatorStyle("macd", "main", normalized).showPriceLabel).toBe(
+      !histogramPriceLabel,
+    );
+  }
+  for (const histogramPriceLabel of [undefined, null, 0, 1, "true", "false", {}, []]) {
+    expect(normalizeIndicatorAppearance("ao", { histogramPriceLabel, color: "#abcdef" })).toEqual({
+      color: "#abcdef",
+    });
+  }
+});

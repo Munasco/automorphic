@@ -138,6 +138,21 @@ export function IndicatorSettingsContent({
             Reset inputs
           </button>
         ) : null}
+        {(key === "macd" || key === "ao" || (key === "volume" && id !== "base:volume")) && (
+          <label className="flex items-center justify-between border-t border-white/10 pt-3">
+            Histogram price label
+            <input
+              type="checkbox"
+              aria-label={accessible(`${label} histogram price label`)}
+              checked={appearance.histogramPriceLabel ?? true}
+              onChange={(event) =>
+                settings.setIndicatorInstanceAppearance(id, {
+                  histogramPriceLabel: event.target.checked,
+                })
+              }
+            />
+          </label>
+        )}
         {key === "volume" &&
           (["up", "down"] as const).map((direction) => (
             <label key={direction} className="flex items-center justify-between">

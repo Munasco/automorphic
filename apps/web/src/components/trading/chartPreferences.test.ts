@@ -3677,3 +3677,37 @@ it("persists independent indicator price labels through duplication and resets a
   expect(state().appearance).toEqual({});
   expect(state().extraIndicators).toEqual([]);
 });
+
+it("saves histogram label choices per instance across reload and appearance reset", async () => {
+  const state = useChartPreferences.getState;
+  state().removeAllIndicators();
+  const id = state().addIndicator("macd")!;
+  state().setIndicatorInstanceInputs(id, { fast: 10 });
+  state().setIndicatorInstanceAppearance(id, {
+    histogramPriceLabel: false,
+    plots: { signal: { showPriceLabel: false } },
+  });
+  const duplicate = state().duplicateIndicatorInstance(id)!;
+  state().setIndicatorInstanceAppearance(duplicate, { histogramPriceLabel: true });
+  const instances = getChartIndicatorInstances(state());
+  expect(instances.map((item) => item.appearance.histogramPriceLabel)).toEqual([false, true]);
+  expect(instances.map((item) => item.appearance.plots?.signal?.showPriceLabel)).toEqual([
+    false,
+    false,
+  ]);
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  expect(getChartIndicatorInstances(state())).toEqual(instances);
+  state().resetIndicatorInstanceAppearance(duplicate);
+  const reset = getChartIndicatorInstances(state());
+  expect(reset.find((item) => item.id === duplicate)?.appearance).toEqual({});
+  expect(reset.find((item) => item.id === duplicate)?.inputs.fast).toBe(10);
+  expect(reset.find((item) => item.id === id)?.appearance.histogramPriceLabel).toBe(false);
+  const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(null);
+  await hydrate();
+  expect(state().appearance).toEqual({});
+  expect(state().extraIndicators).toEqual([]);
+});

@@ -145,7 +145,7 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
       desired.add(id);
       const pane = panes.get(instance.id) ?? 0;
       const showPriceLabel = options.histogram
-        ? pane > 0
+        ? pane > 0 && (instance.appearance.histogramPriceLabel ?? true)
         : style.visible && style.opacity > 0 && (style.showPriceLabel ?? pane > 0);
       let plot = plots.get(id);
       if (!plot) {
@@ -228,7 +228,12 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
       }
       while (plot.levels.length > levels.length)
         plot.series.removePriceLine(plot.levels.pop()!.line);
-      if (!options.histogram) {
+      if (options.histogram) {
+        plot.series.applyOptions({
+          lastValueVisible: showPriceLabel,
+          title: showPriceLabel ? (options.title ?? "") : "",
+        });
+      } else {
         plot.series.applyOptions({
           // Hidden auxiliary oscillator lines must not stretch the remaining plots.
           // Keep primary/overlay hosts visible for independent reference levels and fills.

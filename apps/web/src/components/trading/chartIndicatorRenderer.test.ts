@@ -1399,3 +1399,62 @@ it("keeps duplicate label choices independent and hides labels for invisible or 
   expect(harness.series).toEqual(original);
   expect(original.map((s) => s.options.lastValueVisible)).toEqual([true, false]);
 });
+
+it("updates histogram axis labels independently of MACD lines and duplicate instances", () => {
+  const harness = chartHarness();
+  const renderer = createIndicatorRenderer(harness.chart, 0.25);
+  const first = createIndicatorInstance("macd", "base:macd");
+  const second = createIndicatorInstance("macd", "second-macd");
+  const bars = inputBars();
+  const update = () =>
+    renderer.update(bars, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [first, second]);
+  const before = update();
+  const original = [...harness.series];
+  const originalData = original.map((series) => structuredClone(series.data));
+  const histograms = original.filter((series) => series.seriesType() === "Histogram");
+  expect(histograms.map((series) => series.options.lastValueVisible)).toEqual([true, true]);
+  first.appearance = { histogramPriceLabel: false };
+  expect(update().readings).toEqual(before.readings);
+  expect(histograms.map((series) => series.options.lastValueVisible)).toEqual([false, true]);
+  expect(histograms.map((series) => series.options.title)).toEqual(["", "Histogram"]);
+  expect(
+    original
+      .filter((series) => series.seriesType() === "Line")
+      .every((series) => series.options.lastValueVisible),
+  ).toBe(true);
+  expect(harness.series).toEqual(original);
+  expect(original.map((series) => series.data)).toEqual(originalData);
+  first.appearance = {};
+  update();
+  expect(histograms.map((series) => series.options.lastValueVisible)).toEqual([true, true]);
+  expect(histograms.map((series) => series.options.title)).toEqual(["Histogram", "Histogram"]);
+});
+
+it("controls AO and pane-volume labels without creating an overlay volume plot", () => {
+  const harness = chartHarness();
+  const renderer = createIndicatorRenderer(harness.chart, 0.25);
+  const ao = createIndicatorInstance("ao", "base:ao");
+  const volume = createIndicatorInstance("volume", "second-volume");
+  const overlay = createIndicatorInstance("volume", "base:volume");
+  overlay.appearance = { histogramPriceLabel: true };
+  const update = () =>
+    renderer.update(inputBars(), disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [
+      ao,
+      volume,
+      overlay,
+    ]);
+  update();
+  const original = [...harness.series];
+  const histograms = original.filter((series) => series.seriesType() === "Histogram");
+  expect(histograms.every((series) => series.pane > 0)).toBe(true);
+  expect(histograms.map((series) => series.options.lastValueVisible)).toEqual([true, true]);
+  ao.appearance = { histogramPriceLabel: false };
+  volume.appearance = { histogramPriceLabel: false };
+  update();
+  expect(histograms.map((series) => series.options.lastValueVisible)).toEqual([false, false]);
+  ao.appearance = {};
+  volume.appearance = {};
+  update();
+  expect(histograms.map((series) => series.options.lastValueVisible)).toEqual([true, true]);
+  expect(harness.series).toEqual(original);
+});
