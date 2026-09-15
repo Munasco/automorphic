@@ -1,3 +1,4 @@
+import { drawingLabel, drawingMatchesSearch, objectTreeMatches } from "./drawingObjectSearch";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { MoreHorizontalIcon, XIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
@@ -25,27 +26,6 @@ export interface DrawingObjectTreeIndicator {
 }
 
 const NO_INDICATORS: readonly DrawingObjectTreeIndicator[] = [];
-
-function drawingLabel(drawing: ChartDrawing) {
-  const labels: Partial<Record<ChartDrawing["kind"], string>> = {
-    trend: "Trendline",
-    horizontal: "Horizontal line",
-    vertical: "Vertical line",
-    fib: "Fib retracement",
-    "fib-extension": "Trend-based fib extension",
-    "fib-trend-time": "Trend-based fib time",
-    channel: "Parallel channel",
-    "flat-channel": "Flat top/bottom",
-    "arrow-up": "Arrow mark up",
-    "arrow-down": "Arrow mark down",
-  };
-  return (
-    drawing.name ||
-    (drawing.kind === "text" ? drawing.text : null) ||
-    labels[drawing.kind] ||
-    drawing.kind.replaceAll("-", " ").replace(/^\w/, (letter) => letter.toUpperCase())
-  );
-}
 
 function RowAction({
   label,
@@ -268,11 +248,23 @@ export function DrawingObjectTree({
   onClose: () => void;
   indicators?: readonly DrawingObjectTreeIndicator[];
 }) {
+  const [search, setSearch] = useState({ symbol, text: "" });
+  const query = search.symbol === symbol ? search.text : "";
+  const filtering = query.trim().length > 0;
+  const visibleObjects = drawings.objects.filter((drawing) => drawingMatchesSearch(drawing, query));
+  const visibleIndicators = indicators.filter((indicator) =>
+    objectTreeMatches(query, indicator.label),
+  );
+  const selectionVisible = drawings.selectedIds.every((id) =>
+    visibleObjects.some((drawing) => drawing.id === id),
+  );
   const [editingId, setEditingId] = useState<string | null>(null);
   const restoreRenameFocus = useRef<string | null>(null);
   if (editingId && !drawings.objects.some((drawing) => drawing.id === editingId))
     setEditingId(null);
   const openMenu = (id: string, trigger: HTMLButtonElement, point?: { x: number; y: number }) => {
+    if (filtering && !selectionVisible)
+      drawings.selectDrawing(id, { includeHidden: true, replaceSelection: true });
     trigger.focus({ preventScroll: true });
     const rect = trigger.getBoundingClientRect();
     drawings.openDrawingContextMenu(id, point ?? { x: rect.left, y: rect.bottom }, trigger, () =>
@@ -314,7 +306,7 @@ export function DrawingObjectTree({
                 render={
                   <MenuTrigger
                     aria-label="Visual order"
-                    disabled={selectedIndex < 0}
+                    disabled={selectedIndex < 0 || filtering}
                     className="flex size-7 shrink-0 items-center justify-center rounded text-zinc-400 hover:bg-white/10 hover:text-white data-popup-open:bg-white/10 data-popup-open:text-white disabled:pointer-events-none disabled:text-zinc-600 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400"
                   />
                 }
@@ -334,7 +326,7 @@ export function DrawingObjectTree({
               ).map(([direction, label, boundary]) => (
                 <MenuItem
                   key={direction}
-                  disabled={selectedIndex < 0 || boundary}
+                  disabled={selectedIndex < 0 || boundary || filtering}
                   onClick={() => drawings.reorderSelected(direction)}
                 >
                   {label}
@@ -349,7 +341,9 @@ export function DrawingObjectTree({
                 : "Duplicate selected drawing"
             }
             active
-            disabled={!selected || drawings.count + drawings.selectedIds.length > 100}
+            disabled={
+              !selected || !selectionVisible || drawings.count + drawings.selectedIds.length > 100
+            }
             onClick={() => {
               if (selected) drawings.duplicateSelected();
             }}
@@ -365,10 +359,37 @@ export function DrawingObjectTree({
         <ChartIcon name="chart-candle" className="size-5 shrink-0 text-zinc-400" />
         <span className="truncate">{symbol}</span>
       </div>
+      <div className="relative shrink-0 border-b border-white/10 p-2">
+        <input
+          type="search"
+          aria-label="Search chart objects"
+          placeholder="Search drawings and indicators"
+          value={query}
+          onChange={(event) => setSearch({ symbol, text: event.target.value })}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              setSearch({ symbol, text: "" });
+            }
+          }}
+          className="h-8 w-full rounded border border-zinc-600 bg-transparent pl-2 pr-8 text-xs outline-none focus:border-blue-400 [&::-webkit-search-cancel-button]:appearance-none"
+        />
+        {query && (
+          <button
+            type="button"
+            aria-label="Clear object search"
+            onClick={() => setSearch({ symbol, text: "" })}
+            className="absolute right-3 top-3 flex size-6 items-center justify-center rounded text-zinc-400 hover:bg-white/10 hover:text-white"
+          >
+            <XIcon className="size-3.5" />
+          </button>
+        )}
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        {indicators.length > 0 ? (
+        {visibleIndicators.length > 0 ? (
           <ul aria-label="Indicators">
-            {indicators.map((indicator) => (
+            {visibleIndicators.map((indicator) => (
               <IndicatorTreeRow key={indicator.key} indicator={indicator} />
             ))}
           </ul>
@@ -383,7 +404,7 @@ export function DrawingObjectTree({
           </button>
         ) : null}
         <ul aria-label="Drawings">
-          {drawings.objects.toReversed().map((object) => {
+          {visibleObjects.toReversed().map((object) => {
             const label = drawingLabel(object);
             const isSelected = drawings.selectedIds.includes(object.id);
             return (
@@ -472,7 +493,7 @@ export function DrawingObjectTree({
                     type="button"
                     aria-label={`Select ${label}`}
                     data-drawing-select
-                    draggable
+                    draggable={!filtering}
                     onDragStart={(event) => {
                       drawings.selectDrawing(object.id, { includeHidden: true });
                       dragging.current = object.id;
@@ -505,10 +526,13 @@ export function DrawingObjectTree({
                     aria-pressed={isSelected}
                     onClick={(event) =>
                       drawings.selectDrawing(object.id, {
-                        additive: event.metaKey || event.ctrlKey,
+                        additive: selectionVisible && (event.metaKey || event.ctrlKey),
                         includeHidden: true,
-                        range: event.shiftKey,
-                        replaceSelection: !event.metaKey && !event.ctrlKey && !event.shiftKey,
+                        range: !filtering && event.shiftKey,
+                        replaceSelection:
+                          !selectionVisible ||
+                          (filtering && event.shiftKey) ||
+                          (!event.metaKey && !event.ctrlKey && !event.shiftKey),
                       })
                     }
                     onDoubleClick={() => {
@@ -532,7 +556,7 @@ export function DrawingObjectTree({
                   active={!!object.locked}
                   onClick={() => {
                     const patch = { locked: !object.locked };
-                    if (isSelected) drawings.updateSelected(patch);
+                    if (isSelected && selectionVisible) drawings.updateSelected(patch);
                     else drawings.updateDrawing(object.id, patch);
                   }}
                 >
@@ -543,7 +567,7 @@ export function DrawingObjectTree({
                   active={!!object.hidden}
                   onClick={() => {
                     const patch = { hidden: !object.hidden };
-                    if (isSelected) drawings.updateSelected(patch);
+                    if (isSelected && selectionVisible) drawings.updateSelected(patch);
                     else drawings.updateDrawing(object.id, patch);
                   }}
                 >
@@ -552,7 +576,7 @@ export function DrawingObjectTree({
                 <RowAction
                   label={`Remove ${label}`}
                   onClick={() => {
-                    if (isSelected) drawings.deleteSelected();
+                    if (isSelected && selectionVisible) drawings.deleteSelected();
                     else drawings.deleteDrawing(object.id);
                   }}
                 >
@@ -562,7 +586,12 @@ export function DrawingObjectTree({
             );
           })}
         </ul>
-        {drawings.objects.length === 0 ? (
+        {filtering && !visibleObjects.length && !visibleIndicators.length ? (
+          <p role="status" className="px-3 py-4 text-xs text-zinc-500">
+            No matching objects.
+          </p>
+        ) : null}
+        {!filtering && drawings.objects.length === 0 ? (
           <p className="px-3 py-4 text-xs text-zinc-500">Draw on the chart to add an object.</p>
         ) : null}
       </div>
