@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { clampDrawingToolbarOffset } from "./drawingToolbarBounds";
+import { clampDrawingToolbarOffset, clampFavoriteToolbarPosition } from "./drawingToolbarBounds";
 
 describe("drawing toolbar bounds", () => {
   it("uses rendered dimensions when clamping a scaled toolbar", () => {
@@ -54,6 +54,52 @@ describe("drawing toolbar bounds", () => {
         { x: 40, y: 40 },
         { width: 100, height: 20 },
         { width: 400, height: 40 },
+        1,
+      ),
+    ).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe("favorite toolbar placement", () => {
+  it("keeps screen-space drag deltas unchanged and clamps measured scaled dimensions", () => {
+    const chart = { width: 500, height: 300 },
+      toolbar = { width: 200, height: 40 };
+    expect(clampFavoriteToolbarPosition({ x: 116, y: 220 }, chart, toolbar, 0.85)).toEqual({
+      x: 116,
+      y: 220,
+    });
+    expect(clampFavoriteToolbarPosition({ x: 900, y: 900 }, chart, toolbar, 0.85)).toEqual({
+      x: 322,
+      y: 258,
+    });
+    expect(clampFavoriteToolbarPosition({ x: -90, y: -90 }, chart, toolbar, 0.85)).toEqual({
+      x: 8,
+      y: 8,
+    });
+  });
+  it("reclamps a saved position when the chart shrinks or more favorites are added", () => {
+    const chart = { width: 300, height: 200 };
+    expect(
+      clampFavoriteToolbarPosition({ x: 250, y: 170 }, chart, { width: 200, height: 40 }, 1),
+    ).toEqual({ x: 92, y: 152 });
+    expect(
+      clampFavoriteToolbarPosition({ x: 250, y: 170 }, chart, { width: 290, height: 40 }, 1),
+    ).toEqual({ x: 5, y: 152 });
+  });
+  it("does not produce negative coordinates before layout or when the toolbar fills the chart", () => {
+    expect(
+      clampFavoriteToolbarPosition(
+        { x: 16, y: 180 },
+        { width: 0, height: 0 },
+        { width: 200, height: 40 },
+        1,
+      ),
+    ).toEqual({ x: 0, y: 0 });
+    expect(
+      clampFavoriteToolbarPosition(
+        { x: 16, y: 180 },
+        { width: 200, height: 40 },
+        { width: 200, height: 40 },
         1,
       ),
     ).toEqual({ x: 0, y: 0 });

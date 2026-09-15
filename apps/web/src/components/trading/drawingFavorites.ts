@@ -14,16 +14,40 @@ export function normalizeDrawingFavorites(value: unknown): DrawingKind[] {
     ),
   ];
 }
+export type DrawingFavoritesPosition = { x: number; y: number };
+const DEFAULT_POSITION: DrawingFavoritesPosition = { x: 16, y: 180 };
+function validPosition(value: unknown): value is DrawingFavoritesPosition {
+  if (!value || typeof value !== "object" || !("x" in value) || !("y" in value)) return false;
+  return [value.x, value.y].every(
+    (coordinate) =>
+      typeof coordinate === "number" &&
+      Number.isFinite(coordinate) &&
+      coordinate >= 0 &&
+      coordinate <= 100_000,
+  );
+}
+
 export const useDrawingFavorites = create<{
   kinds: DrawingKind[];
   visible: boolean;
+  position: DrawingFavoritesPosition;
+  setPosition: (position: DrawingFavoritesPosition) => void;
+  resetPosition: () => void;
   toggle: (kind: DrawingKind) => void;
   toggleVisible: () => void;
 }>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       kinds: [],
       visible: true,
+      position: { ...DEFAULT_POSITION },
+      setPosition: (position) => {
+        if (!validPosition(position)) return;
+        const current = get().position;
+        if (current.x !== position.x || current.y !== position.y)
+          set({ position: { x: position.x, y: position.y } });
+      },
+      resetPosition: () => get().setPosition(DEFAULT_POSITION),
       toggle: (kind) =>
         set((state) => ({
           kinds: state.kinds.includes(kind)
@@ -43,6 +67,10 @@ export const useDrawingFavorites = create<{
           ...current,
           kinds: normalizeDrawingFavorites("kinds" in data ? data.kinds : undefined),
           visible: !("visible" in data && data.visible === false),
+          position:
+            "position" in data && validPosition(data.position)
+              ? { x: data.position.x, y: data.position.y }
+              : { ...DEFAULT_POSITION },
         };
       },
     },

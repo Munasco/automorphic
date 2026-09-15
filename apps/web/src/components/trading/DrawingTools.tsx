@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState, type ReactNode } from "react";
+import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { RulerIcon } from "lucide-react";
 import { ChartIcon } from "./ChartIcon";
 import { ChartDrawingGlyph } from "./ChartDrawingGlyph";
@@ -7,6 +7,8 @@ import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popov
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ChartDrawingsController, ChartDrawingTool } from "./useChartDrawings";
 import { useDrawingFavorites } from "./drawingFavorites";
+import { clampFavoriteToolbarPosition } from "./drawingToolbarBounds";
+import { useChartOverlayLayout } from "./chartOverlayLayout";
 import { cn } from "../../lib/utils";
 
 function Action({
@@ -543,67 +545,153 @@ function FavoriteStar({ filled = false }: { filled?: boolean }) {
 export function FavoriteDrawingToolbar({ drawings }: { drawings: ChartDrawingsController }) {
   const favorites = useDrawingFavorites((state) => state.kinds);
   const visible = useDrawingFavorites((state) => state.visible);
-  const [position, setPosition] = useState({ x: 16, y: 180 });
-  const drag = useRef<{ x: number; y: number; originX: number; originY: number } | null>(null);
+  const position = useDrawingFavorites((state) => state.position);
+  const savePosition = useDrawingFavorites((state) => state.setPosition);
+  const resetPosition = useDrawingFavorites((state) => state.resetPosition);
+  const { scale } = useChartOverlayLayout();
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({
+    chart: { width: 0, height: 0 },
+    toolbar: { width: 0, height: 0 },
+  });
+  const [draft, setDraft] = useState<{ x: number; y: number } | null>(null);
+  const drag = useRef<{
+    pointer: number;
+    x: number;
+    y: number;
+    originX: number;
+    originY: number;
+    latest: { x: number; y: number };
+  } | null>(null);
+  useLayoutEffect(() => {
+    if (!visible || !favorites.length) return;
+    const toolbar = toolbarRef.current;
+    const chart = toolbar?.parentElement;
+    if (!toolbar || !chart) return;
+    const measure = () => {
+      const next = {
+        chart: { width: chart.clientWidth, height: chart.clientHeight },
+        toolbar: { width: toolbar.offsetWidth, height: toolbar.offsetHeight },
+      };
+      setSize((previous) => (JSON.stringify(previous) === JSON.stringify(next) ? previous : next));
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(toolbar);
+    observer.observe(chart);
+    measure();
+    return () => observer.disconnect();
+  }, [visible, favorites.length]);
+  const displayed = clampFavoriteToolbarPosition(
+    draft ?? position,
+    size.chart,
+    size.toolbar,
+    scale,
+  );
+  const cancelDrag = () => {
+    drag.current = null;
+    setDraft(null);
+  };
   if (!visible || !favorites.length) return null;
   return (
     <div
+      ref={toolbarRef}
       role="toolbar"
       aria-label="Favorite drawing tools"
       className="absolute z-20 flex max-w-[calc(100%-24px)] items-center rounded-md border border-white/15 bg-[#1f1f1f] p-1 shadow-lg"
       style={{
-        left: `min(${position.x}px, max(0px, calc(100% - ${favorites.length * 32 + 30}px)))`,
-        top: `min(${position.y}px, max(0px, calc(100% - 44px)))`,
+        left: displayed.x,
+        top: displayed.y,
+        scale,
+        transformOrigin: "top left",
+        maxWidth: `calc((100% - 16px) / ${scale})`,
       }}
     >
-      <button
-        type="button"
-        aria-label="Move favorite drawing tools"
-        className="flex h-8 w-5 shrink-0 touch-none cursor-grab items-center justify-center text-zinc-500 active:cursor-grabbing"
-        onPointerDown={(event) => {
-          const toolbar = event.currentTarget.parentElement!;
-          drag.current = {
-            x: event.clientX,
-            y: event.clientY,
-            originX: toolbar.offsetLeft,
-            originY: toolbar.offsetTop,
-          };
-          event.currentTarget.setPointerCapture(event.pointerId);
-        }}
-        onPointerMove={(event) => {
-          if (!drag.current) return;
-          const toolbar = event.currentTarget.parentElement!;
-          const chart = toolbar.parentElement!;
-          setPosition({
-            x: Math.max(
-              0,
-              Math.min(
-                chart.clientWidth - toolbar.offsetWidth,
-                drag.current.originX + event.clientX - drag.current.x,
+      <Tooltip>
+        <TooltipTrigger
+          type="button"
+          aria-label="Move favorite drawing tools"
+          className="flex h-8 w-5 shrink-0 touch-none cursor-grab items-center justify-center text-zinc-500 active:cursor-grabbing"
+          aria-description="Drag to move. Arrow keys move; Home or double-click resets."
+          onDoubleClick={resetPosition}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && drag.current) {
+              event.preventDefault();
+              cancelDrag();
+              return;
+            }
+            if (event.key === "Home") {
+              event.preventDefault();
+              resetPosition();
+              return;
+            }
+            const step = event.shiftKey ? 1 : 10;
+            const delta = {
+              ArrowLeft: [-step, 0],
+              ArrowRight: [step, 0],
+              ArrowUp: [0, -step],
+              ArrowDown: [0, step],
+            }[event.key];
+            if (!delta) return;
+            event.preventDefault();
+            event.stopPropagation();
+            savePosition(
+              clampFavoriteToolbarPosition(
+                { x: displayed.x + delta[0]!, y: displayed.y + delta[1]! },
+                size.chart,
+                size.toolbar,
+                scale,
               ),
-            ),
-            y: Math.max(
-              0,
-              Math.min(
-                chart.clientHeight - toolbar.offsetHeight,
-                drag.current.originY + event.clientY - drag.current.y,
-              ),
-            ),
-          });
-        }}
-        onPointerUp={() => {
-          drag.current = null;
-        }}
-        onPointerCancel={() => {
-          drag.current = null;
-        }}
-      >
-        <svg width="8" height="18" fill="currentColor" aria-hidden="true">
-          {[4, 9, 14].flatMap((y) =>
-            [2, 6].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1" />),
-          )}
-        </svg>
-      </button>
+            );
+          }}
+          onPointerDown={(event) => {
+            if (event.button !== 0 || drag.current) return;
+            event.preventDefault();
+            event.currentTarget.focus({ preventScroll: true });
+            drag.current = {
+              pointer: event.pointerId,
+              x: event.clientX,
+              y: event.clientY,
+              originX: displayed.x,
+              originY: displayed.y,
+              latest: displayed,
+            };
+            setDraft(displayed);
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            const current = drag.current;
+            if (!current || current.pointer !== event.pointerId) return;
+            const next = clampFavoriteToolbarPosition(
+              {
+                x: current.originX + event.clientX - current.x,
+                y: current.originY + event.clientY - current.y,
+              },
+              size.chart,
+              size.toolbar,
+              scale,
+            );
+            current.latest = next;
+            setDraft(next);
+          }}
+          onPointerUp={(event) => {
+            if (!drag.current || drag.current.pointer !== event.pointerId) return;
+            savePosition(drag.current.latest);
+            cancelDrag();
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }}
+          onPointerCancel={cancelDrag}
+          onLostPointerCapture={cancelDrag}
+        >
+          <svg width="8" height="18" fill="currentColor" aria-hidden="true">
+            {[4, 9, 14].flatMap((y) =>
+              [2, 6].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1" />),
+            )}
+          </svg>
+        </TooltipTrigger>
+        <TooltipPopup>
+          Drag to move · Arrow keys to adjust · Home or double-click to reset
+        </TooltipPopup>
+      </Tooltip>
       <div className="flex min-w-0 overflow-x-auto">
         {favorites.map((kind) => (
           <Action
