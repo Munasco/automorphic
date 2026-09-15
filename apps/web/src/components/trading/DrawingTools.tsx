@@ -1,4 +1,5 @@
 import { Fragment, useRef, useState, type ReactNode } from "react";
+import { RulerIcon } from "lucide-react";
 import { ChartIcon } from "./ChartIcon";
 import { ChartDrawingGlyph } from "./ChartDrawingGlyph";
 import { DrawingToolIcon } from "./DrawingToolIcon";
@@ -150,7 +151,7 @@ function DrawingToolGroup({
 }: {
   label: string;
   entries: DrawingTool[];
-  currentTool: ChartDrawingTool;
+  currentTool: ChartDrawingTool | null;
   onSelect: (tool: ChartDrawingTool) => void;
 }) {
   const favorites = useDrawingFavorites((state) => state.kinds);
@@ -268,8 +269,10 @@ function DrawingToolGroup({
 export function DrawingTools({
   drawings,
   indicatorControls,
+  measure,
 }: {
   drawings: ChartDrawingsController;
+  measure: { active: boolean; disabled: boolean; toggle: () => void; close: () => void };
   indicatorControls: {
     count: number;
     hidden: boolean;
@@ -293,10 +296,21 @@ export function DrawingTools({
           key={group.label}
           label={group.label}
           entries={group.kinds.map((kind) => tools.find((tool) => tool.kind === kind)!)}
-          currentTool={drawings.tool}
-          onSelect={drawings.setTool}
+          currentTool={measure.active ? null : drawings.tool}
+          onSelect={(tool) => {
+            measure.close();
+            drawings.setTool(tool);
+          }}
         />
       ))}
+      <Action
+        label="Measure"
+        active={measure.active}
+        disabled={measure.disabled}
+        onClick={measure.toggle}
+      >
+        <RulerIcon className="size-[22px]" strokeWidth={1.5} />
+      </Action>
       <div className="my-1 w-5 border-t border-white/10" />
       <Popover open={magnetOpen} onOpenChange={setMagnetOpen}>
         <div className="group/tool relative flex h-9 w-10 shrink-0 items-center justify-center rounded hover:bg-white/5 focus-within:bg-white/5">

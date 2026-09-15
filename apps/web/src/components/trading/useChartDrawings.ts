@@ -1,3 +1,4 @@
+import { snapDrawingAnchor } from "./drawingMagnet";
 import { drawingCopyName } from "./drawingNames";
 import { applyDrawingChanges, mergeDrawingChanges } from "./drawingChanges";
 import { createDrawingDefaults, drawingAppearanceChanged } from "./drawingDefaults";
@@ -733,18 +734,10 @@ export function createChartDrawingSession(
     if (logical === null) return anchor;
     const candle = series.dataByIndex(Math.round(logical));
     if (!candle || !("open" in candle)) return anchor;
-    let distance = magnetMode === "strong" ? Infinity : 12;
-    let snapped = anchor;
-    for (const price of [candle.open, candle.high, candle.low, candle.close]) {
-      const y = series.priceToCoordinate(price);
-      if (y === null || !Number.isFinite(price)) continue;
-      const delta = Math.abs(point.y - y);
-      if (delta <= distance) {
-        distance = delta;
-        snapped = quantizePointerAnchor({ time: candle.time, price });
-      }
-    }
-    return snapped;
+    const snapped = snapDrawingAnchor(anchor, point, candle, magnetMode, (price) =>
+      series.priceToCoordinate(price),
+    );
+    return snapped === anchor ? anchor : quantizePointerAnchor(snapped);
   };
   const placementAnchor = (
     anchor: DrawingAnchor,

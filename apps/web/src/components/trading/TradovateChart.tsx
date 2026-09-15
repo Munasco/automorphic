@@ -1,4 +1,5 @@
 import { CalendarDaysIcon } from "lucide-react";
+import { ChartMeasureOverlay } from "./ChartMeasureOverlay";
 import { ChartGoToDateDialog } from "./ChartGoToDateDialog";
 import {
   applyChartBarBatch,
@@ -368,6 +369,7 @@ export function TradovateChart({
   const objectTreeOpen = objectTreeState?.open ?? localObjectTreeOpen;
   const setObjectTreeOpen = objectTreeState?.onOpenChange ?? setLocalObjectTreeOpen;
   const [tableOpen, setTableOpen] = useState(false);
+  const [measureEngine, setMeasureEngine] = useState<ChartEngine | null>(null);
   const [goToDateOpen, setGoToDateOpen] = useState(false);
   const [templateDialog, setTemplateDialog] = useState<"save" | "manage" | null>(null);
   const [alertDrawing, setAlertDrawing] = useState<ChartDrawing | null>(null);
@@ -1172,6 +1174,10 @@ export function TradovateChart({
     settings.showBarCountdown,
   ]);
 
+  const measuring =
+    !!activeEngine && measureEngine === activeEngine && drawings.tool === "cursor" && !technicals;
+  if (measureEngine && drawings.tool !== "cursor") setMeasureEngine(null);
+
   const zoom = (factor: number) => {
     const scale = engine?.chart.timeScale();
     const range = scale?.getVisibleLogicalRange();
@@ -1383,11 +1389,13 @@ export function TradovateChart({
         timeZone={intraday ? settings.timeZone : "UTC"}
       />
       <div className="relative flex min-h-0 min-w-0 flex-1">
-        <DrawingSelectionOverlay
-          drawings={drawings}
-          onOpenObjectTree={() => setObjectTreeOpen(true)}
-          onCreateAlert={setAlertDrawing}
-        />
+        {!measuring && (
+          <DrawingSelectionOverlay
+            drawings={drawings}
+            onOpenObjectTree={() => setObjectTreeOpen(true)}
+            onCreateAlert={setAlertDrawing}
+          />
+        )}
         {alertDrawing ? (
           <DrawingAlertDialog
             key={`${symbol}:${chartIntervalKey(interval)}:${alertDrawing.id}`}
@@ -1405,6 +1413,15 @@ export function TradovateChart({
         >
           <DrawingTools
             drawings={drawings}
+            measure={{
+              active: measuring,
+              disabled: !activeEngine || !last || technicals,
+              toggle: () => {
+                drawings.setTool("cursor");
+                setMeasureEngine(measuring ? null : activeEngine);
+              },
+              close: () => setMeasureEngine(null),
+            }}
             indicatorControls={{
               count: indicatorInstances.length,
               hidden: indicatorInstances.every((instance) => instance.hidden),
@@ -1439,6 +1456,16 @@ export function TradovateChart({
           <div className="relative min-h-0 min-w-0 flex-1 overflow-y-auto">
             <div className="relative h-full" style={{ minHeight: 240 + paneCount * 110 }}>
               <div ref={host} className="absolute inset-0" />
+              {measuring && activeEngine && (
+                <ChartMeasureOverlay
+                  key={`${settings.style}:${!!replay.session}`}
+                  chart={activeEngine.chart}
+                  series={activeEngine.prices[settings.style]}
+                  source={activeEngine}
+                  magnetMode={drawings.magnetMode}
+                  onClose={() => setMeasureEngine(null)}
+                />
+              )}
 
               <DrawingInlineTextEditor
                 chart={activeEngine?.chart ?? null}
