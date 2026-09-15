@@ -85,6 +85,7 @@ import { DrawingInlineTextEditor } from "./DrawingInlineTextEditor";
 import { ChartPriceAlertsOverlay } from "./ChartPriceAlertsOverlay";
 import type { ChartAlertsController } from "./ChartAlertsPanel";
 import type { ChartPriceAlert } from "./chartAlerts";
+import { ChartDataTableDialog, type ChartTableSource } from "./ChartDataTableDialog";
 import { ChartContextMenu } from "./ChartContextMenu";
 import { DrawingObjectTree } from "./DrawingObjectTree";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
@@ -93,7 +94,7 @@ import { ObjectTreeIcon } from "./ObjectTreeIcon";
 import { ChartReplayControls, useChartReplay } from "./ChartReplay";
 import { replayMinuteHistory } from "./replayHistory";
 
-type ChartEngine = {
+type ChartEngine = ChartTableSource & {
   symbol: string;
   interval: ChartInterval;
   chart: IChartApi;
@@ -344,6 +345,7 @@ export function TradovateChart({
   const [notice, setNotice] = useState("");
   const [displaySettingsOpen, setDisplaySettingsOpen] = useState(false);
   const [objectTreeOpen, setObjectTreeOpen] = useState(false);
+  const [tableOpen, setTableOpen] = useState(false);
   const [alertDrawing, setAlertDrawing] = useState<ChartDrawing | null>(null);
   const [readings, setReadings] = useState<IndicatorReadings>({});
   const [hoverReadings, setHoverReadings] = useState<IndicatorReadings | null>(null);
@@ -573,6 +575,8 @@ export function TradovateChart({
     const indicators = createIndicatorRenderer(chart, priceFormat.minMove);
     let appliedVolumeColors = "";
     let replaying = false;
+    let barRevision = 0;
+    const barListeners = new Set<() => void>();
     const state: ChartEngine = {
       symbol,
       interval,
@@ -583,6 +587,13 @@ export function TradovateChart({
       indicators,
       bars,
       heikinAshiBars,
+      subscribeBars: (listener) => {
+        barListeners.add(listener);
+        return () => {
+          barListeners.delete(listener);
+        };
+      },
+      getBarRevision: () => barRevision,
       disposed: false,
       showReplay: (history) => {
         if (state.disposed) return;
@@ -789,6 +800,8 @@ export function TradovateChart({
       const latest = bars.get(renderedTime) ?? null;
       if (latest) marketPriceLine.applyOptions({ price: latest.close });
       setLast(latest);
+      barRevision++;
+      for (const listener of barListeners) listener();
       if (alertSnapshot && !replaying) drawingAlertsRef.current.consume(alertSnapshot);
       if (latest && (replaying || !receivedQuote))
         onQuote?.({
@@ -846,6 +859,7 @@ export function TradovateChart({
       document.fonts.removeEventListener("loadingdone", syncFont);
       fontObserver.disconnect();
       state.disposed = true;
+      barListeners.clear();
       unsubscribe();
       if (render !== undefined) cancelAnimationFrame(render);
       chart.remove();
@@ -1016,6 +1030,17 @@ export function TradovateChart({
       onCopy={drawings.onCopy}
       onPaste={drawings.onPaste}
     >
+      {tableOpen && activeEngine ? (
+        <ChartDataTableDialog
+          key={`${symbol}:${chartIntervalKey(interval)}`}
+          source={activeEngine}
+          symbol={symbol}
+          intervalLabel={formatChartInterval(interval)}
+          timeZone={intraday ? settings.timeZone : "UTC"}
+          formatPrice={(price) => activeEngine.prices.candles.priceFormatter().format(price)}
+          onClose={() => setTableOpen(false)}
+        />
+      ) : null}
       <ChartToolbar
         displaySettingsOpen={displaySettingsOpen}
         onDisplaySettingsOpenChange={setDisplaySettingsOpen}
@@ -1228,6 +1253,7 @@ export function TradovateChart({
                 onAddAlert={onAddPriceAlert}
                 onOpenSettings={() => setDisplaySettingsOpen(true)}
                 onOpenObjectTree={() => setObjectTreeOpen(true)}
+                onOpenTable={() => setTableOpen(true)}
                 indicators={{
                   count: indicatorInstances.length,
                   hidden: indicatorInstances.every((instance) => instance.hidden),

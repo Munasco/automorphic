@@ -32,6 +32,7 @@ export function ChartContextMenu({
   onAddAlert,
   onOpenSettings,
   onOpenObjectTree,
+  onOpenTable,
 }: {
   symbol?: string;
   chart: IChartApi | null;
@@ -47,6 +48,7 @@ export function ChartContextMenu({
   onAddAlert?: ((price: number) => void) | undefined;
   onOpenSettings: () => void;
   onOpenObjectTree: () => void;
+  onOpenTable?: (() => void) | undefined;
 }) {
   const [point, setPoint] = useState<MenuPoint | null>(null);
   const { setTool } = drawings;
@@ -192,6 +194,12 @@ export function ChartContextMenu({
           <MenuShortcut className="tracking-normal">{mac ? "⌘" : "Ctrl"} V</MenuShortcut>
         </MenuItem>
         <MenuSeparator />
+        {onOpenTable ? (
+          <MenuItem className={itemClass} onClick={() => run(onOpenTable)}>
+            <span aria-hidden="true" className="size-4.5 shrink-0" />
+            Table view
+          </MenuItem>
+        ) : null}
         <MenuItem className={itemClass} onClick={() => run(onOpenObjectTree)}>
           <ChartIcon name="stack" />
           Object tree

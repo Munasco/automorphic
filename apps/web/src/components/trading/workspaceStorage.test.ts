@@ -7,6 +7,12 @@ import type { ChartDrawing } from "./drawingGeometry";
 
 import { CHART_ALERT_SORT_KEY, readChartAlertSort, writeChartAlertSort } from "./chartAlertSort";
 
+import {
+  CHART_DATA_TABLE_SORT_KEY,
+  readChartDataTableSort,
+  writeChartDataTableSort,
+} from "./chartDataTable";
+
 const chartKey = "automorphic:chart:v1";
 const settingsKey = "automorphic:trading-settings:v1";
 const payload = (values: Record<string, string> = {}) => ({
@@ -35,6 +41,27 @@ function legacyStorage(values: Record<string, string>) {
 }
 
 describe("trading workspace persistence", () => {
+  it("transports table ordering as JSON and restores it after reopening workspace storage", async () => {
+    const values: Record<string, string> = {};
+    const request = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+      if (init?.method === "PUT") {
+        const body = JSON.parse(init.body as string) as { key: string; value: string };
+        values[body.key] = body.value;
+        return json({});
+      }
+      return json(payload(values));
+    });
+    const first = createTradingWorkspaceStorage(request, () => undefined);
+    await first.initialize();
+    writeChartDataTableSort(first, { field: "volume", direction: "asc" });
+    await first.flush();
+    expect(values).toEqual({ [CHART_DATA_TABLE_SORT_KEY]: '{"field":"volume","direction":"asc"}' });
+    const reopened = createTradingWorkspaceStorage(request, () => undefined);
+    await reopened.initialize();
+    expect(readChartDataTableSort(reopened)).toEqual({ field: "volume", direction: "asc" });
+    expect(request.mock.calls.filter((call) => call[1]?.method === "PUT")).toHaveLength(1);
+  });
+
   it("loads custom palettes and keeps their writes scoped to the originating workspace", async () => {
     const key = "automorphic:drawing-custom-colors:v1";
     const palette = (color: string) => JSON.stringify({ state: { colors: [color] }, version: 0 });
