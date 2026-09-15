@@ -121,6 +121,10 @@ export type ChartToolbarProps = {
   onShowCandleValuesChange: (show: boolean) => void;
   onIndicatorLegendCollapsedChange: (collapsed: boolean) => void;
   crosshairMode: ChartCrosshairMode;
+  showCrosshairPriceLabel: boolean;
+  showCrosshairTimeLabel: boolean;
+  onShowCrosshairPriceLabelChange: (show: boolean) => void;
+  onShowCrosshairTimeLabelChange: (show: boolean) => void;
   onCrosshairModeChange: (value: ChartCrosshairMode) => void;
   crosshairColor: string;
   onCrosshairColorChange: (value: string) => void;
@@ -223,6 +227,10 @@ export function ChartToolbar({
   onIndicatorLegendCollapsedChange,
   crosshairMode,
   onCrosshairModeChange,
+  showCrosshairPriceLabel,
+  showCrosshairTimeLabel,
+  onShowCrosshairPriceLabelChange,
+  onShowCrosshairTimeLabelChange,
   crosshairColor,
   onCrosshairColorChange,
   crosshairLineStyle,
@@ -880,6 +888,35 @@ export function ChartToolbar({
             </div>
             {crosshairMode !== "hidden" && (
               <div className="space-y-2 px-2 pb-2.5">
+                {(
+                  [
+                    [
+                      "price",
+                      "Crosshair price label",
+                      showCrosshairPriceLabel,
+                      onShowCrosshairPriceLabelChange,
+                    ],
+                    [
+                      "time",
+                      "Crosshair time label",
+                      showCrosshairTimeLabel,
+                      onShowCrosshairTimeLabelChange,
+                    ],
+                  ] as const
+                ).map(([key, label, checked, onChange]) => (
+                  <label
+                    key={key}
+                    htmlFor={`${id}-crosshair-${key}-label`}
+                    className="flex cursor-pointer items-center gap-2 py-1 text-xs"
+                  >
+                    <Checkbox
+                      id={`${id}-crosshair-${key}-label`}
+                      checked={checked}
+                      onCheckedChange={onChange}
+                    />
+                    {label}
+                  </label>
+                ))}
                 <label htmlFor={`${id}-crosshair-style`} className="text-xs text-zinc-400">
                   Crosshair style
                 </label>

@@ -121,6 +121,8 @@ type SavedChartPreferences = {
   style: ChartStyle;
   timeZone: string;
   crosshairMode: ChartCrosshairMode;
+  showCrosshairPriceLabel: boolean;
+  showCrosshairTimeLabel: boolean;
   crosshairColor: string;
   crosshairLineStyle: ChartCrosshairLineStyle;
   crosshairLineWidth: ChartCrosshairLineWidth;
@@ -202,6 +204,8 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
       saved.style === "area"
         ? saved.style
         : "candles",
+    showCrosshairPriceLabel: saved.showCrosshairPriceLabel !== false,
+    showCrosshairTimeLabel: saved.showCrosshairTimeLabel !== false,
     crosshairMode: validCrosshairMode(saved.crosshairMode) ? saved.crosshairMode : "normal",
     indicators,
     hiddenIndicators,
@@ -288,6 +292,8 @@ export const useChartPreferences = create<{
   style: ChartStyle;
   timeZone: string;
   crosshairMode: ChartCrosshairMode;
+  showCrosshairPriceLabel: boolean;
+  showCrosshairTimeLabel: boolean;
   crosshairColor: string;
   crosshairLineStyle: ChartCrosshairLineStyle;
   crosshairLineWidth: ChartCrosshairLineWidth;
@@ -342,6 +348,8 @@ export const useChartPreferences = create<{
   setStyle: (style: ChartStyle) => void;
   setTimeZone: (timeZone: string) => void;
   setCrosshairMode: (mode: ChartCrosshairMode) => void;
+  setShowCrosshairPriceLabel: (show: boolean) => void;
+  setShowCrosshairTimeLabel: (show: boolean) => void;
   setReplaySpeed: (speed: ChartReplaySpeed) => void;
   setCrosshairColor: (color: string) => void;
   setCrosshairLineStyle: (style: ChartCrosshairLineStyle) => void;
@@ -402,6 +410,8 @@ export const useChartPreferences = create<{
       style: "candles",
       timeZone: "UTC",
       crosshairMode: "normal",
+      showCrosshairPriceLabel: true,
+      showCrosshairTimeLabel: true,
       crosshairColor: "#9598A1",
       crosshairLineStyle: "largeDashed",
       crosshairLineWidth: 1,
@@ -473,6 +483,14 @@ export const useChartPreferences = create<{
       setStyle: (style) => set({ style }),
       setTimeZone: (timeZone) => {
         if (validTimeZone(timeZone) && timeZone !== get().timeZone) set({ timeZone });
+      },
+      setShowCrosshairPriceLabel: (show) => {
+        if (typeof show === "boolean" && show !== get().showCrosshairPriceLabel)
+          set({ showCrosshairPriceLabel: show });
+      },
+      setShowCrosshairTimeLabel: (show) => {
+        if (typeof show === "boolean" && show !== get().showCrosshairTimeLabel)
+          set({ showCrosshairTimeLabel: show });
       },
       setCrosshairMode: (crosshairMode) => {
         if (validCrosshairMode(crosshairMode) && crosshairMode !== get().crosshairMode)

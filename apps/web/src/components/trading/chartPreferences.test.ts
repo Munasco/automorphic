@@ -4328,3 +4328,57 @@ it("commits independent IB session times and rejects incomplete or overlapping b
     useChartPreferences.getState().extraIndicators.find((item) => item.id === copy)?.initialBalance,
   ).toMatchObject({ startTime: "10:00", sessionEndTime: "17:00" });
 });
+
+describe("crosshair axis labels", () => {
+  it("keeps legacy labels visible and ignores invalid/redundant writes", () => {
+    for (const value of [undefined, null, 0, "false", {}, []]) {
+      expect(
+        normalizeChartPreferences({
+          showCrosshairPriceLabel: value,
+          showCrosshairTimeLabel: value,
+        }),
+      ).toMatchObject({ showCrosshairPriceLabel: true, showCrosshairTimeLabel: true });
+    }
+    const store = useChartPreferences.getState();
+    const writes = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.length;
+    store.setShowCrosshairPriceLabel(true);
+    store.setShowCrosshairTimeLabel(true);
+    store.setShowCrosshairPriceLabel("false" as unknown as boolean);
+    store.setShowCrosshairTimeLabel(null as unknown as boolean);
+    expect(vi.mocked(tradingWorkspaceStorage.setItem)).toHaveBeenCalledTimes(writes);
+  });
+  it.each([
+    [true, true],
+    [false, true],
+    [true, false],
+    [false, false],
+  ])(
+    "persists price=%s and time=%s independently through hidden mode and reload",
+    async (price, time) => {
+      const store = useChartPreferences.getState();
+      store.setCrosshairMode("ohlc");
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      store.setShowCrosshairPriceLabel(price!);
+      store.setShowCrosshairTimeLabel(time!);
+      store.setCrosshairMode("hidden");
+      store.setCrosshairMode("ohlc");
+      const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+        ...before,
+        showCrosshairPriceLabel: price,
+        showCrosshairTimeLabel: time,
+      });
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+        JSON.stringify({ version: 0, state: {} }),
+      );
+      await useChartPreferences.persist.rehydrate();
+      expect(useChartPreferences.getState()).toMatchObject({
+        showCrosshairPriceLabel: true,
+        showCrosshairTimeLabel: true,
+      });
+    },
+  );
+});
