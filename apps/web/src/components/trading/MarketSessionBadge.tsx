@@ -16,14 +16,15 @@ export function MarketSessionBadge({ root }: { root: InstrumentRoot }) {
     };
   }, []);
   const session = getFuturesSession(root, now);
-  const isOpen = session.status === "scheduled-open";
+  if (session.status === "scheduled-open") return null;
+
   return (
     <Tooltip>
       <TooltipTrigger
-        aria-label={isOpen ? "Market open, regular schedule" : session.label}
-        className={`inline-flex size-7 shrink-0 items-center justify-center rounded text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring ${isOpen ? "text-emerald-400" : "text-zinc-400"}`}
+        aria-label={session.label}
+        className="inline-flex size-7 shrink-0 items-center justify-center rounded text-xs text-zinc-400 outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <MarketStatusIcon open={isOpen} />
+        <MarketStatusIcon open={false} />
       </TooltipTrigger>
       <TooltipPopup className="max-w-72">
         <p className="font-semibold">{session.label}</p>
