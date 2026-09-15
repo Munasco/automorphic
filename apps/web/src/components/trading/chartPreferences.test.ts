@@ -4199,3 +4199,44 @@ describe("price scale ticks", () => {
     expect(useChartPreferences.getState().showPriceScaleTicks).toBe(false);
   });
 });
+
+it("acknowledges valid IB duration commits and persists each instance independently", async () => {
+  const store = useChartPreferences.getState();
+  const base = store.addIndicator("ib")!;
+  const copy = store.duplicateIndicatorInstance(base)!;
+  const settings = { ...DEFAULT_INITIAL_BALANCE, durationMinutes: 30 };
+  expect(store.setIndicatorInstanceInitialBalance(base, settings)).toBe(true);
+  expect(store.setIndicatorInstanceInitialBalance(copy, { ...settings, durationMinutes: 90 })).toBe(
+    true,
+  );
+  const accepted = useChartPreferences.getState();
+  vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+  for (const durationMinutes of [0, 241, 1.5, NaN, Infinity])
+    expect(store.setIndicatorInstanceInitialBalance(base, { ...settings, durationMinutes })).toBe(
+      false,
+    );
+  expect(
+    store.setIndicatorInstanceInitialBalance(base, {
+      ...settings,
+      startTime: "15:50",
+      durationMinutes: 30,
+    }),
+  ).toBe(false);
+  expect(store.setIndicatorInstanceInitialBalance("missing", settings)).toBe(false);
+  expect(store.setIndicatorInstanceInitialBalance("base:volume", settings)).toBe(false);
+  expect(useChartPreferences.getState()).toBe(accepted);
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  expect(
+    store.setIndicatorInstanceInitialBalance(copy, { ...settings, durationMinutes: 120 }),
+  ).toBe(true);
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  const instances = getChartIndicatorInstances(useChartPreferences.getState()).filter(
+    (i) => i.key === "ib",
+  );
+  expect(instances.map((i) => i.initialBalance!.durationMinutes)).toEqual([30, 120]);
+  store.removeIndicatorInstance(base);
+  expect(store.setIndicatorInstanceInitialBalance(base, settings)).toBe(false);
+});

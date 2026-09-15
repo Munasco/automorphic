@@ -358,7 +358,7 @@ export const useChartPreferences = create<{
   resetIndicatorInstanceInputs: (id: string) => void;
   setIndicatorInstanceAppearance: (id: string, patch: IndicatorAppearance) => void;
   resetIndicatorInstanceAppearance: (id: string) => void;
-  setIndicatorInstanceInitialBalance: (id: string, settings: InitialBalanceSettings) => void;
+  setIndicatorInstanceInitialBalance: (id: string, settings: InitialBalanceSettings) => boolean;
   setIndicatorInstanceVolumeColors: (id: string, colors: typeof DEFAULT_VOLUME_COLORS) => void;
   setGridMode: (mode: ChartGridMode) => void;
   setGridLineStyle: (style: ChartGridLineStyle) => void;
@@ -712,7 +712,7 @@ export const useChartPreferences = create<{
           });
       },
       setIndicatorInstanceInitialBalance: (id, settings) => {
-        if (!isValidInitialBalanceSettings(settings)) return;
+        if (!isValidInitialBalanceSettings(settings)) return false;
         const state = get();
         if (id === "base:ib" && state.indicators.ib) state.setInitialBalance(settings);
         else if (
@@ -725,6 +725,8 @@ export const useChartPreferences = create<{
                 : instance,
             ),
           });
+        else return false;
+        return true;
       },
       setIndicatorInstanceVolumeColors: (id, colors) => {
         if (!validColor(colors.up) || !validColor(colors.down)) return;

@@ -272,17 +272,18 @@ export function IndicatorSettingsContent({
             </label>
             <label className="flex items-center justify-between">
               Duration
-              <input
-                type="number"
+              <IndicatorNumberField
                 min={1}
                 max={240}
+                step={1}
+                resetKey={inputResetVersion}
                 className={cn(inputClass, "w-20")}
-                aria-label={accessible("Initial balance minutes")}
+                label={accessible("Initial balance minutes")}
                 value={initialBalance.durationMinutes}
-                onChange={(event) =>
+                onCommit={(durationMinutes) =>
                   settings.setIndicatorInstanceInitialBalance(id, {
                     ...initialBalance,
-                    durationMinutes: Number(event.target.value),
+                    durationMinutes,
                   })
                 }
               />
