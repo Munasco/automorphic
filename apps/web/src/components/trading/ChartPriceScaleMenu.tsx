@@ -71,6 +71,13 @@ export function ChartPriceScaleMenu({
       <MenuSeparator />
       <MenuCheckboxItem
         className={drawingContextMenuItemClass}
+        checked={settings.showPriceScaleTicks}
+        onCheckedChange={(show) => run(() => settings.setShowPriceScaleTicks(show))}
+      >
+        Price scale ticks
+      </MenuCheckboxItem>
+      <MenuCheckboxItem
+        className={drawingContextMenuItemClass}
         checked={settings.invertScale}
         onCheckedChange={() => run(settings.toggleInvertScale)}
       >

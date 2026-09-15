@@ -161,6 +161,7 @@ type SavedChartPreferences = {
   priceScaleMode: ChartPriceScaleMode;
   priceScaleMargins: ChartPriceScaleMargins | null;
   invertScale: boolean;
+  showPriceScaleTicks: boolean;
 };
 
 /** Old saved charts keep their choices while newly introduced indicators stay disabled. */
@@ -273,6 +274,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
         ? "logarithmic"
         : "normal",
     invertScale: typeof saved.invertScale === "boolean" ? saved.invertScale : false,
+    showPriceScaleTicks: saved.showPriceScaleTicks === true,
   };
 }
 export const useChartPreferences = create<{
@@ -325,6 +327,7 @@ export const useChartPreferences = create<{
   priceScaleMode: ChartPriceScaleMode;
   priceScaleMargins: ChartPriceScaleMargins | null;
   invertScale: boolean;
+  showPriceScaleTicks: boolean;
   setShowChartTitle: (show: boolean) => void;
   setShowCandleValues: (show: boolean) => void;
   setIndicatorLegendCollapsed: (collapsed: boolean) => void;
@@ -383,6 +386,7 @@ export const useChartPreferences = create<{
   setPriceScaleMode: (mode: ChartPriceScaleMode) => void;
   setPriceScaleMargins: (value: ChartPriceScaleMargins | null) => void;
   toggleInvertScale: () => void;
+  setShowPriceScaleTicks: (show: boolean) => void;
 }>()(
   persist(
     (set, get) => ({
@@ -440,6 +444,7 @@ export const useChartPreferences = create<{
       priceScaleMode: "normal",
       priceScaleMargins: null,
       invertScale: false,
+      showPriceScaleTicks: false,
       setShowChartTitle: (showChartTitle) => {
         if (typeof showChartTitle === "boolean" && showChartTitle !== get().showChartTitle)
           set({ showChartTitle });
@@ -834,6 +839,13 @@ export const useChartPreferences = create<{
           set({ priceScaleMode });
       },
       toggleInvertScale: () => set((state) => ({ invertScale: !state.invertScale })),
+      setShowPriceScaleTicks: (showPriceScaleTicks) => {
+        if (
+          typeof showPriceScaleTicks === "boolean" &&
+          showPriceScaleTicks !== get().showPriceScaleTicks
+        )
+          set({ showPriceScaleTicks });
+      },
     }),
     {
       name: "automorphic:chart:v1",

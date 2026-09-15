@@ -4153,3 +4153,49 @@ describe("visible range resize preference", () => {
     expect(useChartPreferences.getState().lockVisibleTimeRangeOnResize).toBe(false);
   });
 });
+
+describe("price scale ticks", () => {
+  it("keeps ticks off for old or malformed settings and rejects invalid writes", () => {
+    expect(useChartPreferences.getInitialState().showPriceScaleTicks).toBe(false);
+    for (const value of [undefined, null, "true", 1, {}, [], false])
+      expect(normalizeChartPreferences({ showPriceScaleTicks: value }).showPriceScaleTicks).toBe(
+        false,
+      );
+    expect(normalizeChartPreferences({ showPriceScaleTicks: true }).showPriceScaleTicks).toBe(true);
+    const store = useChartPreferences.getState();
+    store.setShowPriceScaleTicks(true);
+    const writes = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.length;
+    store.setShowPriceScaleTicks(true);
+    store.setShowPriceScaleTicks("false" as unknown as boolean);
+    expect(vi.mocked(tradingWorkspaceStorage.setItem)).toHaveBeenCalledTimes(writes);
+    expect(useChartPreferences.getState().showPriceScaleTicks).toBe(true);
+  });
+  it.each([true, false])(
+    "restores ticks %s without changing indicators or scale settings",
+    async (showPriceScaleTicks) => {
+      const store = configure();
+      store.setPriceScaleMode("logarithmic");
+      store.toggleInvertScale();
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      store.setShowPriceScaleTicks(!showPriceScaleTicks);
+      store.setShowPriceScaleTicks(showPriceScaleTicks);
+      const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+        ...before,
+        showPriceScaleTicks,
+      });
+    },
+  );
+  it("clears ticks when switching to a workspace without the setting", async () => {
+    useChartPreferences.getState().setShowPriceScaleTicks(true);
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+      JSON.stringify({ version: 0, state: {} }),
+    );
+    const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+    await hydrate();
+    expect(useChartPreferences.getState().showPriceScaleTicks).toBe(false);
+  });
+});
