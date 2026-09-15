@@ -1,5 +1,4 @@
 import { IndicatorSettingsContent } from "./IndicatorSettingsContent";
-import { useState } from "react";
 import { ChartIcon } from "./ChartIcon";
 import { SolarSettingsIcon } from "./SolarSettingsIcon";
 import { DrawingToolIcon } from "./DrawingToolIcon";
@@ -25,7 +24,7 @@ export function IndicatorLegend({
   initialBalanceStatus: string;
   initialBalanceStatuses?: Readonly<Record<string, string>>;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const collapsed = settings.indicatorLegendCollapsed;
   const added = getChartIndicatorInstances(settings);
   const counts = new Map<string, number>();
   for (const instance of added) counts.set(instance.key, (counts.get(instance.key) ?? 0) + 1);
@@ -145,7 +144,7 @@ export function IndicatorLegend({
               className="pointer-events-auto mt-2 inline-flex h-7 min-w-9 items-center justify-center gap-1 px-2 rounded border border-white/15 text-zinc-500 hover:text-zinc-200"
               aria-label={collapsed ? "Expand indicator legend" : "Collapse indicator legend"}
               aria-expanded={!collapsed}
-              onClick={() => setCollapsed(!collapsed)}
+              onClick={() => settings.setIndicatorLegendCollapsed(!collapsed)}
             />
           }
         >

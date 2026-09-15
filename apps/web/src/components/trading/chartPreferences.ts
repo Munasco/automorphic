@@ -128,6 +128,9 @@ type SavedChartPreferences = {
   showCandleBorders: boolean;
   candleUpColor: string;
   candleDownColor: string;
+  showChartTitle: boolean;
+  showCandleValues: boolean;
+  indicatorLegendCollapsed: boolean;
   showPriceLine: boolean;
   showPriceLabel: boolean;
   priceScaleMode: ChartPriceScaleMode;
@@ -217,6 +220,9 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
       typeof saved.showCandleBorders === "boolean" ? saved.showCandleBorders : true,
     candleUpColor: validColor(saved.candleUpColor) ? saved.candleUpColor : "#26a69a",
     candleDownColor: validColor(saved.candleDownColor) ? saved.candleDownColor : "#ef5350",
+    showChartTitle: typeof saved.showChartTitle === "boolean" ? saved.showChartTitle : true,
+    showCandleValues: typeof saved.showCandleValues === "boolean" ? saved.showCandleValues : true,
+    indicatorLegendCollapsed: saved.indicatorLegendCollapsed === true,
     showPriceLine: typeof saved.showPriceLine === "boolean" ? saved.showPriceLine : true,
     showPriceLabel: typeof saved.showPriceLabel === "boolean" ? saved.showPriceLabel : true,
     priceScaleMode: validPriceScaleMode(saved.priceScaleMode)
@@ -260,10 +266,16 @@ export const useChartPreferences = create<{
   showCandleBorders: boolean;
   candleUpColor: string;
   candleDownColor: string;
+  showChartTitle: boolean;
+  showCandleValues: boolean;
+  indicatorLegendCollapsed: boolean;
   showPriceLine: boolean;
   showPriceLabel: boolean;
   priceScaleMode: ChartPriceScaleMode;
   invertScale: boolean;
+  setShowChartTitle: (show: boolean) => void;
+  setShowCandleValues: (show: boolean) => void;
+  setIndicatorLegendCollapsed: (collapsed: boolean) => void;
   setStyle: (style: ChartStyle) => void;
   setTimeZone: (timeZone: string) => void;
   setCrosshairMode: (mode: ChartCrosshairMode) => void;
@@ -352,10 +364,28 @@ export const useChartPreferences = create<{
       showCandleBorders: true,
       candleUpColor: "#26a69a",
       candleDownColor: "#ef5350",
+      showChartTitle: true,
+      showCandleValues: true,
+      indicatorLegendCollapsed: false,
       showPriceLine: true,
       showPriceLabel: true,
       priceScaleMode: "normal",
       invertScale: false,
+      setShowChartTitle: (showChartTitle) => {
+        if (typeof showChartTitle === "boolean" && showChartTitle !== get().showChartTitle)
+          set({ showChartTitle });
+      },
+      setShowCandleValues: (showCandleValues) => {
+        if (typeof showCandleValues === "boolean" && showCandleValues !== get().showCandleValues)
+          set({ showCandleValues });
+      },
+      setIndicatorLegendCollapsed: (indicatorLegendCollapsed) => {
+        if (
+          typeof indicatorLegendCollapsed === "boolean" &&
+          indicatorLegendCollapsed !== get().indicatorLegendCollapsed
+        )
+          set({ indicatorLegendCollapsed });
+      },
       setStyle: (style) => set({ style }),
       setTimeZone: (timeZone) => {
         if (validTimeZone(timeZone) && timeZone !== get().timeZone) set({ timeZone });

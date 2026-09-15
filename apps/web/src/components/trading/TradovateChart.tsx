@@ -1149,6 +1149,12 @@ export function TradovateChart({
         onTogglePriceLine={settings.togglePriceLine}
         showPriceLabel={settings.showPriceLabel}
         onTogglePriceLabel={settings.togglePriceLabel}
+        showChartTitle={settings.showChartTitle}
+        showCandleValues={settings.showCandleValues}
+        indicatorLegendCollapsed={settings.indicatorLegendCollapsed}
+        onShowChartTitleChange={settings.setShowChartTitle}
+        onShowCandleValuesChange={settings.setShowCandleValues}
+        onIndicatorLegendCollapsedChange={settings.setIndicatorLegendCollapsed}
         crosshairMode={settings.crosshairMode}
         onCrosshairModeChange={settings.setCrosshairMode}
         crosshairColor={settings.crosshairColor}
@@ -1324,24 +1330,26 @@ export function TradovateChart({
                 aria-label="Chart legend"
                 className="pointer-events-none absolute left-2.5 right-20 top-2 z-10 text-xs"
               >
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <Tooltip>
-                    <TooltipTrigger
-                      onClick={onSelectSymbol}
-                      className="pointer-events-auto trading-heading truncate font-medium text-zinc-200 hover:text-white"
-                    >
-                      {INSTRUMENTS[root].name} · {formatChartInterval(interval)} ·{" "}
-                      {INSTRUMENTS[root].exchange}
-                      {settings.style === "heikin-ashi" ? " · Heikin Ashi" : null}
-                    </TooltipTrigger>
-                    <TooltipPopup>
-                      {settings.style === "heikin-ashi"
-                        ? "Averaged candles; indicators and alerts use market prices."
-                        : "Select contract"}
-                    </TooltipPopup>
-                  </Tooltip>
-                </div>
-                {shown ? (
+                {settings.showChartTitle && (
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <Tooltip>
+                      <TooltipTrigger
+                        onClick={onSelectSymbol}
+                        className="pointer-events-auto trading-heading truncate font-medium text-zinc-200 hover:text-white"
+                      >
+                        {INSTRUMENTS[root].name} · {formatChartInterval(interval)} ·{" "}
+                        {INSTRUMENTS[root].exchange}
+                        {settings.style === "heikin-ashi" ? " · Heikin Ashi" : null}
+                      </TooltipTrigger>
+                      <TooltipPopup>
+                        {settings.style === "heikin-ashi"
+                          ? "Averaged candles; indicators and alerts use market prices."
+                          : "Select contract"}
+                      </TooltipPopup>
+                    </Tooltip>
+                  </div>
+                )}
+                {settings.showCandleValues && shown ? (
                   <div
                     className={cn(
                       "mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs tabular-nums",

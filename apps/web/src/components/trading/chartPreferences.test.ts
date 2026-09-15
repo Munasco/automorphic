@@ -3536,3 +3536,81 @@ describe("candle and bar color preferences", () => {
     expect(useChartPreferences.getState()).toMatchObject(defaults);
   });
 });
+
+describe("chart legend preferences", () => {
+  const defaults = {
+    showChartTitle: true,
+    showCandleValues: true,
+    indicatorLegendCollapsed: false,
+  };
+  it("keeps legacy legends visible and validates each saved choice", () => {
+    expect(normalizeChartPreferences({})).toMatchObject(defaults);
+    for (const value of [null, undefined, "false", "true", 0, 1, {}, []]) {
+      expect(
+        normalizeChartPreferences({
+          showChartTitle: value,
+          showCandleValues: value,
+          indicatorLegendCollapsed: value,
+        }),
+      ).toMatchObject(defaults);
+    }
+    expect(
+      normalizeChartPreferences({
+        showChartTitle: false,
+        showCandleValues: true,
+        indicatorLegendCollapsed: true,
+      }),
+    ).toMatchObject({
+      showChartTitle: false,
+      showCandleValues: true,
+      indicatorLegendCollapsed: true,
+    });
+  });
+  it("ignores invalid/no-op inputs and only changes legend display", () => {
+    const store = configure();
+    const before = normalizeChartPreferences(store);
+    for (const value of [null, undefined, "false", 0, 1]) {
+      store.setShowChartTitle(value as unknown as boolean);
+      store.setShowCandleValues(value as unknown as boolean);
+      store.setIndicatorLegendCollapsed(value as unknown as boolean);
+    }
+    store.setShowChartTitle(true);
+    store.setShowCandleValues(true);
+    store.setIndicatorLegendCollapsed(false);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+    store.setShowChartTitle(false);
+    store.setShowCandleValues(false);
+    store.setIndicatorLegendCollapsed(true);
+    expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+      ...before,
+      showChartTitle: false,
+      showCandleValues: false,
+      indicatorLegendCollapsed: true,
+    });
+    store.setShowChartTitle(true);
+    store.setShowCandleValues(true);
+    store.setIndicatorLegendCollapsed(false);
+    expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(before);
+  });
+  it("restores choices after reload and resets missing choices in another workspace", async () => {
+    const store = configure();
+    store.setShowChartTitle(false);
+    store.setShowCandleValues(false);
+    store.setIndicatorLegendCollapsed(true);
+    const expected = normalizeChartPreferences(useChartPreferences.getState());
+    const serialized = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(serialized);
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    await useChartPreferences.persist.rehydrate();
+    expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+    const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+      JSON.stringify({ version: 0, state: { showCandleValues: false } }),
+    );
+    await hydrate();
+    expect(useChartPreferences.getState()).toMatchObject({ ...defaults, showCandleValues: false });
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(null);
+    await hydrate();
+    expect(useChartPreferences.getState()).toMatchObject(defaults);
+  });
+});

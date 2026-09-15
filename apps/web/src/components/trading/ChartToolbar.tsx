@@ -99,6 +99,12 @@ export type ChartToolbarProps = {
   onTogglePriceLine: () => void;
   showPriceLabel: boolean;
   onTogglePriceLabel: () => void;
+  showChartTitle: boolean;
+  showCandleValues: boolean;
+  indicatorLegendCollapsed: boolean;
+  onShowChartTitleChange: (show: boolean) => void;
+  onShowCandleValuesChange: (show: boolean) => void;
+  onIndicatorLegendCollapsedChange: (collapsed: boolean) => void;
   crosshairMode: ChartCrosshairMode;
   onCrosshairModeChange: (value: ChartCrosshairMode) => void;
   crosshairColor: string;
@@ -177,6 +183,12 @@ export function ChartToolbar({
   onTogglePriceLine,
   showPriceLabel,
   onTogglePriceLabel,
+  showChartTitle,
+  showCandleValues,
+  indicatorLegendCollapsed,
+  onShowChartTitleChange,
+  onShowCandleValuesChange,
+  onIndicatorLegendCollapsedChange,
   crosshairMode,
   onCrosshairModeChange,
   crosshairColor,
@@ -675,6 +687,42 @@ export function ChartToolbar({
                 )}
               </div>
             )}
+            <fieldset className="space-y-1 border-y border-white/10 px-2 py-2.5">
+              <legend className="text-xs text-zinc-400">Legend</legend>
+              {[
+                {
+                  key: "title",
+                  label: "Chart title",
+                  checked: showChartTitle,
+                  onChange: onShowChartTitleChange,
+                },
+                {
+                  key: "ohlc",
+                  label: "OHLC values",
+                  checked: showCandleValues,
+                  onChange: onShowCandleValuesChange,
+                },
+                {
+                  key: "indicators",
+                  label: "Indicator titles and values",
+                  checked: !indicatorLegendCollapsed,
+                  onChange: (show: boolean) => onIndicatorLegendCollapsedChange(!show),
+                },
+              ].map(({ key, label, checked, onChange }) => (
+                <label
+                  key={key}
+                  htmlFor={`${id}-legend-${key}`}
+                  className="flex cursor-pointer items-center gap-3 rounded py-2 text-xs hover:bg-white/5"
+                >
+                  <Checkbox
+                    id={`${id}-legend-${key}`}
+                    checked={checked}
+                    onCheckedChange={onChange}
+                  />
+                  {label}
+                </label>
+              ))}
+            </fieldset>
             <div className="flex flex-col gap-2 px-2 pb-2">
               <label htmlFor={`${id}-crosshair`} className="text-xs">
                 Crosshair
