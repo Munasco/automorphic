@@ -31,7 +31,10 @@ export function IndicatorLegend({
   const indices = new Map<string, number>();
   if (!added.length) return null;
   return (
-    <div className="mt-1 flex flex-col items-start text-xs text-zinc-400">
+    <div
+      className="mt-1 flex flex-col items-start text-xs"
+      style={{ color: settings.chartTextColor }}
+    >
       {!collapsed &&
         added.map((instance) => {
           const { id, key, hidden, inputs, appearance } = instance;

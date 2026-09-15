@@ -3790,3 +3790,110 @@ describe("symbol watermark", () => {
     }
   });
 });
+
+describe("chart canvas palette", () => {
+  const invalidColors: unknown[] = [
+    undefined,
+    null,
+    "",
+    "red",
+    "#abc",
+    "#12345678",
+    "123456",
+    "#gggggg",
+    " #abcdef",
+    123456,
+    {},
+    [],
+  ];
+  const defaults = { chartBackgroundColor: "#0b0d12", chartTextColor: "#9299a7" };
+
+  it("defaults legacy and malformed colors independently while retaining valid hex colors", () => {
+    expect(useChartPreferences.getInitialState()).toMatchObject(defaults);
+    expect(normalizeChartPreferences({})).toMatchObject(defaults);
+    for (const color of invalidColors) {
+      expect(
+        normalizeChartPreferences({ chartBackgroundColor: color, chartTextColor: "#ABCDEF" }),
+      ).toMatchObject({
+        chartBackgroundColor: defaults.chartBackgroundColor,
+        chartTextColor: "#ABCDEF",
+      });
+      expect(
+        normalizeChartPreferences({ chartTextColor: color, chartBackgroundColor: "#123456" }),
+      ).toMatchObject({ chartBackgroundColor: "#123456", chartTextColor: defaults.chartTextColor });
+    }
+  });
+
+  it("ignores invalid and unchanged colors without writes or notifications", () => {
+    const store = configure();
+    const before = useChartPreferences.getState();
+    const listener = vi.fn();
+    const unsubscribe = useChartPreferences.subscribe(listener);
+    try {
+      for (const value of invalidColors) {
+        store.setChartBackgroundColor(value as string);
+        store.setChartTextColor(value as string);
+      }
+      store.setChartBackgroundColor(defaults.chartBackgroundColor);
+      store.setChartTextColor(defaults.chartTextColor);
+      expect(useChartPreferences.getState()).toBe(before);
+      expect(listener).not.toHaveBeenCalled();
+      expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+      store.setChartBackgroundColor("#ffffff");
+      store.setChartBackgroundColor("#ffffff");
+      store.setChartTextColor("#000000");
+      store.setChartTextColor("#000000");
+      expect(listener).toHaveBeenCalledTimes(2);
+      expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(2);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("edits each palette color independently and preserves all other appearance through reload", async () => {
+    const store = configure();
+    store.setGridColor("#232323");
+    store.setCrosshairColor("#454545");
+    store.setLineChartColor("#676767");
+    const before = normalizeChartPreferences(useChartPreferences.getState());
+    store.setChartBackgroundColor("#fafafa");
+    expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+      ...before,
+      chartBackgroundColor: "#fafafa",
+    });
+    store.setChartTextColor("#121212");
+    const expected = { ...before, chartBackgroundColor: "#fafafa", chartTextColor: "#121212" };
+    expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    expect(JSON.parse(saved).state).toMatchObject({
+      chartBackgroundColor: "#fafafa",
+      chartTextColor: "#121212",
+    });
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    await useChartPreferences.persist.rehydrate();
+    expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual(expected);
+  });
+
+  it("restores separate workspace palettes without leaking prior custom colors into legacy saves", async () => {
+    const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+    for (const [state, expected] of [
+      [
+        { chartBackgroundColor: "#ffffff", chartTextColor: "#111111" },
+        { chartBackgroundColor: "#ffffff", chartTextColor: "#111111" },
+      ],
+      [{}, defaults],
+      [{ chartTextColor: "#ABCDEF" }, { ...defaults, chartTextColor: "#ABCDEF" }],
+      [
+        { chartBackgroundColor: "#123456", chartTextColor: "red" },
+        { ...defaults, chartBackgroundColor: "#123456" },
+      ],
+    ]) {
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+        JSON.stringify({ version: 0, state }),
+      );
+      await hydrate();
+      expect(useChartPreferences.getState()).toMatchObject(expected!);
+    }
+  });
+});

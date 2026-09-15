@@ -524,11 +524,12 @@ export function TradovateChart({
       intraday,
       interval.unit === "second" || interval.unit === "tick",
     );
+    const { chartBackgroundColor, chartTextColor } = useChartPreferences.getState();
     const chart = createChart(host.current, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: "#0b0d12" },
-        textColor: "#9299a7",
+        background: { type: ColorType.Solid, color: chartBackgroundColor },
+        textColor: chartTextColor,
         fontFamily: getComputedStyle(host.current).fontFamily,
         fontSize: 12,
         panes: { separatorColor: "#242730", separatorHoverColor: "#454b59", enableResize: true },
@@ -1097,6 +1098,10 @@ export function TradovateChart({
       }[settings.crosshairLineStyle],
     };
     engine.chart.applyOptions({
+      layout: {
+        background: { type: ColorType.Solid, color: settings.chartBackgroundColor },
+        textColor: settings.chartTextColor,
+      },
       crosshair: {
         vertLine: crosshairLine,
         horzLine: crosshairLine,
@@ -1138,6 +1143,8 @@ export function TradovateChart({
     settings.gridMode,
     settings.gridLineStyle,
     settings.gridColor,
+    settings.chartBackgroundColor,
+    settings.chartTextColor,
     settings.priceScaleMode,
     settings.invertScale,
     settings.crosshairMode,
@@ -1344,6 +1351,10 @@ export function TradovateChart({
         onToggleBarCountdown={settings.toggleBarCountdown}
         showPriceLabel={settings.showPriceLabel}
         onTogglePriceLabel={settings.togglePriceLabel}
+        chartBackgroundColor={settings.chartBackgroundColor}
+        chartTextColor={settings.chartTextColor}
+        onChartBackgroundColorChange={settings.setChartBackgroundColor}
+        onChartTextColorChange={settings.setChartTextColor}
         showSymbolWatermark={settings.showSymbolWatermark}
         onShowSymbolWatermarkChange={settings.setShowSymbolWatermark}
         showChartTitle={settings.showChartTitle}
@@ -1553,7 +1564,8 @@ export function TradovateChart({
                     <Tooltip>
                       <TooltipTrigger
                         onClick={onSelectSymbol}
-                        className="pointer-events-auto trading-heading truncate font-medium text-zinc-200 hover:text-white"
+                        className="pointer-events-auto trading-heading truncate font-medium"
+                        style={{ color: settings.chartTextColor }}
                       >
                         {INSTRUMENTS[root].name} · {formatChartInterval(interval)} ·{" "}
                         {INSTRUMENTS[root].exchange}

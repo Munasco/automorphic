@@ -116,6 +116,8 @@ type SavedChartPreferences = {
   gridMode: ChartGridMode;
   gridLineStyle: ChartGridLineStyle;
   gridColor: string;
+  chartBackgroundColor: string;
+  chartTextColor: string;
   lineChartSource: PriceSource;
   lineChartColor: string;
   lineChartWidth: ChartLineWidth;
@@ -209,6 +211,10 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
         : "both",
     gridLineStyle: validGridLineStyle(saved.gridLineStyle) ? saved.gridLineStyle : "solid",
     gridColor: validColor(saved.gridColor) ? saved.gridColor : "#171a23",
+    chartBackgroundColor: validColor(saved.chartBackgroundColor)
+      ? saved.chartBackgroundColor
+      : "#0b0d12",
+    chartTextColor: validColor(saved.chartTextColor) ? saved.chartTextColor : "#9299a7",
     lineChartSource: validLineChartSource(saved.lineChartSource) ? saved.lineChartSource : "close",
     lineChartColor: validColor(saved.lineChartColor) ? saved.lineChartColor : "#6097ee",
     lineChartWidth: validLineChartWidth(saved.lineChartWidth) ? saved.lineChartWidth : 2,
@@ -258,6 +264,8 @@ export const useChartPreferences = create<{
   gridMode: ChartGridMode;
   gridLineStyle: ChartGridLineStyle;
   gridColor: string;
+  chartBackgroundColor: string;
+  chartTextColor: string;
   lineChartSource: PriceSource;
   lineChartColor: string;
   lineChartWidth: ChartLineWidth;
@@ -314,6 +322,8 @@ export const useChartPreferences = create<{
   setGridMode: (mode: ChartGridMode) => void;
   setGridLineStyle: (style: ChartGridLineStyle) => void;
   setGridColor: (color: string) => void;
+  setChartBackgroundColor: (color: string) => void;
+  setChartTextColor: (color: string) => void;
   setLineChartSource: (source: PriceSource) => void;
   setLineChartColor: (color: string) => void;
   setCandleUpColor: (color: string) => void;
@@ -360,6 +370,8 @@ export const useChartPreferences = create<{
       gridMode: "both",
       gridLineStyle: "solid",
       gridColor: "#171a23",
+      chartBackgroundColor: "#0b0d12",
+      chartTextColor: "#9299a7",
       lineChartSource: "close",
       lineChartColor: "#6097ee",
       lineChartWidth: 2,
@@ -705,6 +717,14 @@ export const useChartPreferences = create<{
       setLineChartShape: (lineChartShape) => {
         if (validLineChartShape(lineChartShape) && lineChartShape !== get().lineChartShape)
           set({ lineChartShape });
+      },
+      setChartBackgroundColor: (chartBackgroundColor) => {
+        if (validColor(chartBackgroundColor) && chartBackgroundColor !== get().chartBackgroundColor)
+          set({ chartBackgroundColor });
+      },
+      setChartTextColor: (chartTextColor) => {
+        if (validColor(chartTextColor) && chartTextColor !== get().chartTextColor)
+          set({ chartTextColor });
       },
       setGridColor: (gridColor) => {
         if (validColor(gridColor) && gridColor !== get().gridColor) set({ gridColor });
