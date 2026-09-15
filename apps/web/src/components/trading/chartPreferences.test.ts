@@ -3638,3 +3638,42 @@ it("keeps the countdown opt-in for legacy and invalid saved settings", () => {
     expect(normalizeChartPreferences({ showBarCountdown: value }).showBarCountdown).toBe(false);
   expect(normalizeChartPreferences({ showBarCountdown: true }).showBarCountdown).toBe(true);
 });
+
+it("persists independent indicator price labels through duplication and resets appearance only", async () => {
+  const state = useChartPreferences.getState;
+  state().removeAllIndicators();
+  const id = state().addIndicator("rsi")!;
+  state().setIndicatorInstanceInputs(id, { period: 9 });
+  state().setIndicatorInstanceAppearance(id, {
+    showPriceLabel: false,
+    plots: { main: { showPriceLabel: true, color: "#123456" } },
+  });
+  const duplicate = state().duplicateIndicatorInstance(id)!;
+  state().setIndicatorInstanceAppearance(duplicate, { plots: { main: { showPriceLabel: false } } });
+  const instances = getChartIndicatorInstances(state());
+  expect(instances.find((item) => item.id === id)?.appearance.plots?.main).toMatchObject({
+    showPriceLabel: true,
+    color: "#123456",
+  });
+  expect(instances.find((item) => item.id === duplicate)?.appearance.plots?.main).toMatchObject({
+    showPriceLabel: false,
+    color: "#123456",
+  });
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  expect(getChartIndicatorInstances(state())).toEqual(instances);
+  state().resetIndicatorInstanceAppearance(duplicate);
+  const reset = getChartIndicatorInstances(state());
+  expect(reset.find((item) => item.id === duplicate)?.appearance).toEqual({});
+  expect(reset.find((item) => item.id === duplicate)?.inputs.period).toBe(9);
+  expect(reset.find((item) => item.id === id)?.appearance).toEqual(
+    instances.find((item) => item.id === id)?.appearance,
+  );
+  const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(null);
+  await hydrate();
+  expect(state().appearance).toEqual({});
+  expect(state().extraIndicators).toEqual([]);
+});

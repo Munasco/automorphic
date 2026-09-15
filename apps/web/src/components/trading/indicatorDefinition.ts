@@ -19,6 +19,7 @@ export type IndicatorInputDescriptor = {
 export type IndicatorInputValues = Partial<Record<IndicatorInputKey, number>>;
 
 export type IndicatorStyle = {
+  showPriceLabel?: boolean;
   color?: string;
   lineWidth?: number;
   visible?: boolean;

@@ -35,7 +35,7 @@ export function IndicatorSettingsContent({
   description: string;
 }) {
   const { id, key, hidden, inputs, appearance } = instance;
-  const { styles } = getIndicatorDefinition(key);
+  const { styles, placement } = getIndicatorDefinition(key);
   const label = getIndicatorLabel(key, { [key]: inputs });
   const initialBalance = instance.initialBalance ?? DEFAULT_INITIAL_BALANCE;
   const volumeColors = instance.volumeColors ?? DEFAULT_VOLUME_COLORS;
@@ -204,6 +204,22 @@ export function IndicatorSettingsContent({
                     />
                   </label>
                 )}
+                {plotStyle.kind !== "fill" &&
+                  plotStyle.kind !== "markers" &&
+                  id !== "base:volume" && (
+                    <label className="flex items-center justify-between">
+                      Price scale label
+                      <input
+                        type="checkbox"
+                        aria-label={accessible(`${label} ${plotStyle.label} price label`)}
+                        checked={
+                          style.showPriceLabel ??
+                          (placement === "pane" || (key === "volume" && id !== "base:volume"))
+                        }
+                        onChange={(event) => update({ showPriceLabel: event.target.checked })}
+                      />
+                    </label>
+                  )}
               </div>
             );
           })}

@@ -10,6 +10,7 @@ function normalizeStyle(value: unknown): IndicatorStyle {
   return {
     ...(validColor(input.color) ? { color: input.color } : {}),
     ...(typeof input.visible === "boolean" ? { visible: input.visible } : {}),
+    ...(typeof input.showPriceLabel === "boolean" ? { showPriceLabel: input.showPriceLabel } : {}),
     ...(typeof input.opacity === "number" &&
     Number.isFinite(input.opacity) &&
     input.opacity >= 0 &&
@@ -47,8 +48,10 @@ export function resolveIndicatorStyle(
   const definition = getIndicatorDefinition(key);
   const defaults = definition.styles.find((style) => style.key === plot);
   const saved = appearance.plots?.[plot];
+  const showPriceLabel = saved?.showPriceLabel ?? appearance.showPriceLabel;
   return {
     visible: saved?.visible ?? appearance.visible ?? defaults?.visible ?? true,
+    ...(showPriceLabel === undefined ? {} : { showPriceLabel }),
     opacity: saved?.opacity ?? appearance.opacity ?? defaults?.opacity ?? 1,
     color:
       saved?.color ??

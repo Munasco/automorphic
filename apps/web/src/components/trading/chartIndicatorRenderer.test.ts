@@ -1344,3 +1344,58 @@ it("renders SAR as independent markers and retains readings and instance ownersh
   ]);
   expect(harness.series).toHaveLength(0);
 });
+
+it("toggles overlay and oscillator line price labels without recreating plots or changing calculations", () => {
+  const harness = chartHarness();
+  const renderer = createIndicatorRenderer(harness.chart, 0.25);
+  const enabled = { ...disabled, sma: true, macd: true };
+  const bars = inputBars();
+  const initial = renderer.update(bars, enabled, DEFAULT_INITIAL_BALANCE, 1);
+  const original = [...harness.series];
+  const sma = original.find((s) => s.pane === 0)!;
+  const signal = original.find((s) => s.options.title === "Signal")!;
+  const macd = original.find((s) => s.options.title === "MACD")!;
+  const histogram = original.find((s) => s.options.title === "Histogram")!;
+  expect(sma.options.lastValueVisible).toBe(false);
+  expect(signal.options.lastValueVisible).toBe(true);
+  const data = original.map((s) => structuredClone(s.data));
+  const updated = renderer.update(bars, enabled, DEFAULT_INITIAL_BALANCE, 1, {
+    sma: { plots: { main: { showPriceLabel: true } } },
+    macd: { plots: { main: { showPriceLabel: false }, signal: { showPriceLabel: false } } },
+  });
+  expect(harness.series).toEqual(original);
+  expect(original.map((s) => s.data)).toEqual(data);
+  expect(updated.readings).toEqual(initial.readings);
+  expect(sma.options.lastValueVisible).toBe(true);
+  expect(signal.options.lastValueVisible).toBe(false);
+  expect(macd.options.lastValueVisible).toBe(false);
+  expect(histogram.options.lastValueVisible).toBe(true);
+  renderer.update(bars, enabled, DEFAULT_INITIAL_BALANCE, 1);
+  expect(sma.options.lastValueVisible).toBe(false);
+  expect(signal.options.lastValueVisible).toBe(true);
+});
+
+it("keeps duplicate label choices independent and hides labels for invisible or transparent lines", () => {
+  const harness = chartHarness();
+  const renderer = createIndicatorRenderer(harness.chart, 0.25);
+  const a = createIndicatorInstance("sma", "base:sma");
+  const b = createIndicatorInstance("sma", "second-sma");
+  const update = () =>
+    renderer.update(inputBars(), disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [a, b]);
+  a.appearance = { plots: { main: { showPriceLabel: true } } };
+  b.appearance = { plots: { main: { showPriceLabel: false } } };
+  update();
+  const original = [...harness.series];
+  expect(original.map((s) => s.options.lastValueVisible)).toEqual([true, false]);
+  a.appearance.plots!.main!.visible = false;
+  update();
+  expect(original.map((s) => s.options.lastValueVisible)).toEqual([false, false]);
+  a.appearance.plots!.main!.visible = true;
+  a.appearance.plots!.main!.opacity = 0;
+  update();
+  expect(original[0]!.options.lastValueVisible).toBe(false);
+  a.appearance.plots!.main!.opacity = 1;
+  update();
+  expect(harness.series).toEqual(original);
+  expect(original.map((s) => s.options.lastValueVisible)).toEqual([true, false]);
+});

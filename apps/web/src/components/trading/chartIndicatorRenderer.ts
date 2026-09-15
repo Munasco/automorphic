@@ -144,6 +144,9 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
       if (indicator === "volume" && options.styleKey === "average" && !style.visible) return;
       desired.add(id);
       const pane = panes.get(instance.id) ?? 0;
+      const showPriceLabel = options.histogram
+        ? pane > 0
+        : style.visible && style.opacity > 0 && (style.showPriceLabel ?? pane > 0);
       let plot = plots.get(id);
       if (!plot) {
         const priceFormat = options.volumeFormat
@@ -153,7 +156,7 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
           title:
             indicator === "volume" && instance.id === "base:volume" ? "" : (options.title ?? ""),
           priceLineVisible: false,
-          lastValueVisible: pane > 0,
+          lastValueVisible: showPriceLabel,
           priceFormat,
           ...(indicator === "volume" && instance.id === "base:volume"
             ? { priceScaleId: "volume" }
@@ -233,7 +236,7 @@ export function createIndicatorRenderer(chart: IChartApi, minMove: number) {
           color: indicatorStyleColor(style),
           lineVisible: !options.invisible && !options.markers && style.visible,
           crosshairMarkerVisible: !options.invisible && style.visible,
-          lastValueVisible: pane > 0 && style.visible,
+          lastValueVisible: showPriceLabel,
           lineWidth: style.lineWidth as 1 | 2 | 3 | 4,
           ...(options.breakOnGaps
             ? { crosshairMarkerBackgroundColor: indicatorStyleColor(style) }

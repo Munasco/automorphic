@@ -128,3 +128,37 @@ describe("declared indicator styles", () => {
     }
   });
 });
+
+describe("indicator price label styles", () => {
+  it("keeps legacy defaults unspecified and inherits explicit false as well as true", () => {
+    expect(resolveIndicatorStyle("rsi", "main").showPriceLabel).toBeUndefined();
+    expect(resolveIndicatorStyle("bollinger", "upper").showPriceLabel).toBeUndefined();
+    const appearance = normalizeIndicatorAppearance("bollinger", {
+      showPriceLabel: true,
+      plots: { upper: { showPriceLabel: false }, lower: { showPriceLabel: true } },
+    });
+    expect(resolveIndicatorStyle("bollinger", "main", appearance).showPriceLabel).toBe(true);
+    expect(resolveIndicatorStyle("bollinger", "upper", appearance).showPriceLabel).toBe(false);
+    expect(resolveIndicatorStyle("bollinger", "lower", appearance).showPriceLabel).toBe(true);
+    expect(
+      resolveIndicatorStyle("bollinger", "upper", {
+        showPriceLabel: false,
+        plots: { upper: { showPriceLabel: true } },
+      }).showPriceLabel,
+    ).toBe(true);
+  });
+
+  it("rejects nonboolean labels and unknown plot names without changing valid appearance", () => {
+    for (const value of [undefined, null, 0, 1, "true", "false", {}, []]) {
+      const appearance = normalizeIndicatorAppearance("bollinger", {
+        color: "#abcdef",
+        showPriceLabel: value,
+        plots: { upper: { showPriceLabel: value }, unknown: { showPriceLabel: true } },
+      });
+      expect(appearance).toEqual({ color: "#abcdef" });
+    }
+    expect(normalizeIndicatorAppearance("bollinger", { showPriceLabel: false })).toEqual({
+      showPriceLabel: false,
+    });
+  });
+});
