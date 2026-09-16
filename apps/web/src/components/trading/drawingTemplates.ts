@@ -191,9 +191,26 @@ export function saveDrawingTemplate(
   return JSON.stringify(next).length <= 250_000 ? next : null;
 }
 
+function appendDrawingTemplate(current: DrawingTemplate[], source: DrawingTemplate) {
+  const siblings = current.filter((item) => item.kind === source.kind);
+  if (siblings.length >= MAX_TEMPLATES_PER_KIND)
+    throw Error("Template limit reached. Delete a template before adding another.");
+  let name = source.name;
+  for (let index = 1; siblings.some((item) => item.name === name); index++) {
+    const suffix = index === 1 ? " copy" : ` copy ${index}`;
+    const base = source.name.slice(0, 80 - suffix.length).replace(/[\uD800-\uDBFF]$/, "");
+    name = `${base}${suffix}`;
+  }
+  const templates = [...current, { ...source, name, settings: structuredClone(source.settings) }];
+  if (JSON.stringify(templates).length > 250_000)
+    throw Error("Template storage is full. Remove a template before adding another.");
+  return { templates, name };
+}
+
 export const useDrawingTemplates = create<{
   templates: DrawingTemplate[];
   saveTemplate: (drawing: ChartDrawing, name: string) => boolean;
+  importTemplate: (template: DrawingTemplate) => string;
   duplicateTemplate: (kind: DrawingKind, name: string) => string;
   deleteTemplate: (kind: DrawingKind, name: string) => void;
   renameTemplate: (kind: DrawingKind, name: string, nextName: string) => void;
@@ -211,25 +228,16 @@ export const useDrawingTemplates = create<{
         const current = get().templates;
         const source = current.find((item) => item.kind === kind && item.name === name);
         if (!source) throw Error("This template is no longer available.");
-        const siblings = current.filter((item) => item.kind === kind);
-        if (siblings.length >= MAX_TEMPLATES_PER_KIND)
-          throw Error("Template limit reached. Delete a template before duplicating another.");
-        let copyName = "";
-        for (let index = 1; ; index++) {
-          const suffix = index === 1 ? " copy" : ` copy ${index}`;
-          // Keep the saved name limit without splitting an emoji at the cut point.
-          const base = source.name.slice(0, 80 - suffix.length).replace(/[\uD800-\uDBFF]$/, "");
-          copyName = `${base}${suffix}`;
-          if (!siblings.some((item) => item.name === copyName)) break;
-        }
-        const templates = [
-          ...current,
-          { ...source, name: copyName, settings: structuredClone(source.settings) },
-        ];
-        if (JSON.stringify(templates).length > 250_000)
-          throw Error("Template storage is full. Remove a template before duplicating another.");
-        set({ templates });
-        return copyName;
+        const result = appendDrawingTemplate(current, source);
+        set({ templates: result.templates });
+        return result.name;
+      },
+      importTemplate: (template) => {
+        const normalized = normalizeDrawingTemplates([template])[0];
+        if (!normalized) throw Error("This drawing template is invalid.");
+        const result = appendDrawingTemplate(get().templates, normalized);
+        set({ templates: result.templates });
+        return result.name;
       },
       renameTemplate: (kind, name, nextName) => {
         const current = get().templates;

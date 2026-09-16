@@ -1,4 +1,5 @@
-import { CopyIcon, PencilIcon } from "lucide-react";
+import { chooseDrawingTemplateFile, exportDrawingTemplate } from "./drawingTemplateFiles";
+import { CopyIcon, DownloadIcon, PencilIcon } from "lucide-react";
 import { useState } from "react";
 import { toastManager } from "../ui/toast";
 import { cn } from "../../lib/utils";
@@ -98,6 +99,13 @@ export function DrawingTemplateMenu({
           >
             Apply defaults
           </button>
+          <button
+            type="button"
+            className={menuClass}
+            onClick={() => chooseDrawingTemplateFile(drawing.kind)}
+          >
+            Import template…
+          </button>
           {templates.length ? (
             <div
               className="mt-1 max-h-60 overflow-y-auto border-t border-white/10 pt-1"
@@ -114,6 +122,14 @@ export function DrawingTemplateMenu({
                     }}
                   >
                     {template.name}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Export template ${template.name}`}
+                    className="flex size-8 shrink-0 items-center justify-center rounded text-zinc-400 hover:text-white"
+                    onClick={() => exportDrawingTemplate(template)}
+                  >
+                    <DownloadIcon className="size-3.5" />
                   </button>
                   <button
                     type="button"
@@ -304,6 +320,12 @@ export function DrawingTemplateSubmenu({
         >
           Apply default
         </MenuItem>
+        <MenuItem
+          className={templateMenuRowClass}
+          onClick={() => chooseDrawingTemplateFile(drawing.kind)}
+        >
+          Import template…
+        </MenuItem>
         {templates.length ? <MenuSeparator /> : null}
         {templates.map((template) => (
           <div key={template.name} className="group flex items-center">
@@ -312,6 +334,14 @@ export function DrawingTemplateSubmenu({
               onClick={() => onApply(template.settings)}
             >
               <span className="truncate">{template.name}</span>
+            </MenuItem>
+            <MenuItem
+              aria-label={`Export template ${template.name}`}
+              closeOnClick={false}
+              className="size-8 min-h-8 shrink-0 justify-center px-0 py-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 data-highlighted:opacity-100 sm:min-h-8 [@media(hover:none)]:opacity-100"
+              onClick={() => exportDrawingTemplate(template)}
+            >
+              <DownloadIcon className="size-4" />
             </MenuItem>
             <MenuItem
               aria-label={`Duplicate template ${template.name}`}
