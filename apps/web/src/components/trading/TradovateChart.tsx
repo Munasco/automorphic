@@ -1771,6 +1771,9 @@ export function TradovateChart({
                 label,
                 hidden: instance.hidden,
                 settingsLabel: accessible(`${label} settings`),
+                actionsLabel: accessible(`${label} actions`),
+                canDuplicate: indicatorInstances.length < MAX_CHART_INDICATORS,
+                onDuplicate: () => settings.duplicateIndicatorInstance(instance.id),
                 settingsContent: (
                   <IndicatorSettingsContent
                     instance={instance}

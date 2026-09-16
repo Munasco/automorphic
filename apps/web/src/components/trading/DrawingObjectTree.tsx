@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { MoreHorizontalIcon, XIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { Popover, PopoverPopup } from "../ui/popover";
 import { ChartDrawingGlyph } from "./ChartDrawingGlyph";
 import { ChartIcon } from "./ChartIcon";
@@ -19,6 +19,9 @@ export interface DrawingObjectTreeIndicator {
   onRemove: () => void;
   settingsContent?: ReactNode;
   settingsLabel?: string;
+  actionsLabel?: string;
+  canDuplicate?: boolean;
+  onDuplicate?: () => void;
   canMoveUp?: boolean;
   canMoveDown?: boolean;
   onMove?: (direction: "up" | "down") => void;
@@ -213,31 +216,41 @@ function IndicatorTreeRow({
       >
         <DrawingToolIcon name={indicator.hidden ? "eye-off" : "eye"} className="size-4" />
       </RowAction>
-      {indicator.onMove ? (
+      {indicator.onMove || indicator.onDuplicate ? (
         <Menu>
           <MenuTrigger
-            aria-label={`Reorder ${indicator.label}`}
+            aria-label={indicator.actionsLabel ?? `${indicator.label} actions`}
             className="flex size-7 shrink-0 items-center justify-center rounded text-zinc-400 opacity-0 hover:bg-white/10 group-hover/object:opacity-100 group-focus-within/object:opacity-100 data-popup-open:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
           >
             <MoreHorizontalIcon className="size-4" />
           </MenuTrigger>
           <MenuPopup align="end">
-            <MenuItem
-              disabled={reorderDisabled || !indicator.canMoveUp}
-              onClick={() => {
-                if (!reorderDisabled) indicator.onMove?.("up");
-              }}
-            >
-              Move up
-            </MenuItem>
-            <MenuItem
-              disabled={reorderDisabled || !indicator.canMoveDown}
-              onClick={() => {
-                if (!reorderDisabled) indicator.onMove?.("down");
-              }}
-            >
-              Move down
-            </MenuItem>
+            {indicator.onDuplicate && (
+              <MenuItem disabled={!indicator.canDuplicate} onClick={indicator.onDuplicate}>
+                Duplicate
+              </MenuItem>
+            )}
+            {indicator.onDuplicate && indicator.onMove && <MenuSeparator />}
+            {indicator.onMove && (
+              <>
+                <MenuItem
+                  disabled={reorderDisabled || !indicator.canMoveUp}
+                  onClick={() => {
+                    if (!reorderDisabled) indicator.onMove?.("up");
+                  }}
+                >
+                  Move up
+                </MenuItem>
+                <MenuItem
+                  disabled={reorderDisabled || !indicator.canMoveDown}
+                  onClick={() => {
+                    if (!reorderDisabled) indicator.onMove?.("down");
+                  }}
+                >
+                  Move down
+                </MenuItem>
+              </>
+            )}
           </MenuPopup>
         </Menu>
       ) : null}
