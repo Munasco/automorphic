@@ -177,6 +177,7 @@ type SavedChartPreferences = {
   lineMarkerRadius: ChartLineMarkerRadius;
   thinBars: boolean;
   showBarOpen: boolean;
+  colorBarsByPreviousClose: boolean;
   showCandleWicks: boolean;
   showCandleBorders: boolean;
   candleUpColor: string;
@@ -301,6 +302,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     lineMarkerRadius: validLineMarkerRadius(saved.lineMarkerRadius) ? saved.lineMarkerRadius : 3,
     thinBars: typeof saved.thinBars === "boolean" ? saved.thinBars : true,
     showBarOpen: typeof saved.showBarOpen === "boolean" ? saved.showBarOpen : true,
+    colorBarsByPreviousClose: saved.colorBarsByPreviousClose === true,
     showCandleWicks: typeof saved.showCandleWicks === "boolean" ? saved.showCandleWicks : true,
     showCandleBorders:
       typeof saved.showCandleBorders === "boolean" ? saved.showCandleBorders : true,
@@ -387,6 +389,7 @@ export const useChartPreferences = create<{
   lineMarkerRadius: ChartLineMarkerRadius;
   thinBars: boolean;
   showBarOpen: boolean;
+  colorBarsByPreviousClose: boolean;
   showCandleWicks: boolean;
   showCandleBorders: boolean;
   candleUpColor: string;
@@ -479,6 +482,7 @@ export const useChartPreferences = create<{
   setLineMarkerRadius: (radius: ChartLineMarkerRadius) => void;
   toggleThinBars: () => void;
   toggleBarOpen: () => void;
+  setColorBarsByPreviousClose: (enabled: boolean) => void;
   toggleCandleWicks: () => void;
   toggleCandleBorders: () => void;
   togglePriceLine: () => void;
@@ -541,6 +545,7 @@ export const useChartPreferences = create<{
       lineMarkerRadius: 3,
       thinBars: true,
       showBarOpen: true,
+      colorBarsByPreviousClose: false,
       showCandleWicks: true,
       showCandleBorders: true,
       candleUpColor: "#26a69a",
@@ -1053,6 +1058,10 @@ export const useChartPreferences = create<{
       },
       toggleThinBars: () => set((state) => ({ thinBars: !state.thinBars })),
       toggleBarOpen: () => set((state) => ({ showBarOpen: !state.showBarOpen })),
+      setColorBarsByPreviousClose: (enabled) => {
+        if (typeof enabled === "boolean" && enabled !== get().colorBarsByPreviousClose)
+          set({ colorBarsByPreviousClose: enabled });
+      },
       toggleCandleWicks: () => set((state) => ({ showCandleWicks: !state.showCandleWicks })),
       toggleCandleBorders: () => set((state) => ({ showCandleBorders: !state.showCandleBorders })),
       togglePriceLine: () => set((state) => ({ showPriceLine: !state.showPriceLine })),

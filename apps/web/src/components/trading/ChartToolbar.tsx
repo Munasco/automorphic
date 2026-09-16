@@ -1,3 +1,4 @@
+import { ChartPreviousCloseControl } from "./ChartPreviousCloseControl";
 import { ChartPriceLineControls } from "./ChartPriceLineControls";
 import { ChartAreaFillControls } from "./ChartAreaFillControls";
 import { ResetChartPaneSizes } from "./ResetChartPaneSizes";
@@ -556,6 +557,7 @@ export function ChartToolbar({
                     </label>
                   ))}
                 </div>
+                {style !== "hollow" && <ChartPreviousCloseControl />}
               </fieldset>
             )}
             {style === "bars" && (

@@ -1,3 +1,4 @@
+import { previousCloseColors } from "./previousCloseColors";
 import { chartBarChange, formatChartBarChange } from "./chartBarChange";
 import { priceLineAppearanceOptions } from "./chartPriceLineAppearance";
 import { chartAreaFillColors } from "./chartAreaFill";
@@ -349,6 +350,7 @@ export function TradovateChart({
   const appearanceSettings = useRef(settings.appearance);
   const inputSettings = useRef(settings.indicatorInputs);
   const volumeColors = useRef(settings.volumeColors);
+  const colorBarsByPreviousClose = useRef(settings.colorBarsByPreviousClose);
   const candleColors = useRef({
     up: settings.candleUpColor,
     down: settings.candleDownColor,
@@ -552,6 +554,7 @@ export function TradovateChart({
   }, [engine, settings.lineChartSource]);
 
   useEffect(() => {
+    colorBarsByPreviousClose.current = settings.colorBarsByPreviousClose;
     candleColors.current = {
       up: settings.candleUpColor,
       down: settings.candleDownColor,
@@ -561,7 +564,7 @@ export function TradovateChart({
       borderDown: settings.candleBorderDownColor ?? settings.candleDownColor,
     };
     if (!engine || engine.disposed) return;
-    // Hollow candles carry per-bar colors; changing series defaults alone leaves history stale.
+    // Per-bar colors must be rebuilt when the palette or comparison basis changes.
     const bars = [...engine.bars.values()].sort((a, b) => a.time - b.time);
     engine.prices.hollow.setData(
       bars.map((bar, index) => ({
@@ -570,9 +573,27 @@ export function TradovateChart({
         ...hollowCandleColors(bar, bars[index - 1], candleColors.current),
       })),
     );
+    const recolor = (source: readonly Candle[]) =>
+      source.map((bar, index) => ({
+        ...bar,
+        time: bar.time as UTCTimestamp,
+        ...previousCloseColors(
+          bar,
+          source[index - 1],
+          colorBarsByPreviousClose.current,
+          candleColors.current,
+        ),
+      }));
+    const colored = recolor(bars);
+    engine.prices.candles.setData(colored);
+    engine.prices.bars.setData(colored);
+    engine.prices["heikin-ashi"].setData(
+      recolor([...engine.heikinAshiBars.values()].sort((a, b) => a.time - b.time)),
+    );
     engine.refreshTradePrice();
   }, [
     engine,
+    settings.colorBarsByPreviousClose,
     settings.candleUpColor,
     settings.candleDownColor,
     settings.candleWickUpColor,
@@ -827,7 +848,10 @@ export function TradovateChart({
               display.appearance,
               style === "heikin-ashi"
                 ? "#9299a7"
-                : (trade ?? latest?.close ?? 0) >= (latest?.open ?? 0)
+                : (trade ?? latest?.close ?? 0) >=
+                    (colorBarsByPreviousClose.current && (style === "candles" || style === "bars")
+                      ? (hollowPrevious?.close ?? latest?.open ?? 0)
+                      : (latest?.open ?? 0))
                   ? candleColors.current.up
                   : candleColors.current.down,
             ),
@@ -1003,6 +1027,11 @@ export function TradovateChart({
     let hollowLatest: Candle | undefined;
     let heikinPrevious: Candle | undefined;
     let heikinLatest: Candle | undefined;
+    const coloredPoint = (bar: Candle, previous?: Candle) => ({
+      ...bar,
+      time: bar.time as UTCTimestamp,
+      ...previousCloseColors(bar, previous, colorBarsByPreviousClose.current, candleColors.current),
+    });
     const hollowPoint = (bar: Candle, previous?: Candle) => ({
       ...bar,
       time: bar.time as UTCTimestamp,
@@ -1037,7 +1066,7 @@ export function TradovateChart({
         }
         bars.clear();
         for (const bar of sorted) bars.set(bar.time, bar);
-        const ohlc = sorted.map((b) => ({ ...b, time: b.time as UTCTimestamp }));
+        const ohlc = sorted.map((bar, index) => coloredPoint(bar, sorted[index - 1]));
         const sourcePoints = sorted.map((b) => ({
           time: b.time as UTCTimestamp,
           value: sourcePrice(b, lineChartSource.current),
@@ -1048,7 +1077,7 @@ export function TradovateChart({
         heikinAshiBars.clear();
         for (const bar of averaged) heikinAshiBars.set(bar.time, bar);
         prices["heikin-ashi"].setData(
-          averaged.map((bar) => ({ ...bar, time: bar.time as UTCTimestamp })),
+          averaged.map((bar, index) => coloredPoint(bar, averaged[index - 1])),
         );
         heikinLatest = averaged.at(-1);
         heikinPrevious = averaged.at(-2);
@@ -1062,21 +1091,21 @@ export function TradovateChart({
         replaceHistory = false;
       } else {
         for (const bar of changes) {
-          const ohlc = { ...bar, time: bar.time as UTCTimestamp };
           const sourcePoint = {
             time: bar.time as UTCTimestamp,
             value: sourcePrice(bar, lineChartSource.current),
           };
-          prices.candles.update(ohlc);
           // Same-bar revisions still compare against the preceding candle, never
           // the previous tick. Corrections to earlier history use the rebuild above.
           if (!hollowLatest || bar.time > hollowLatest.time) hollowPrevious = hollowLatest;
           hollowLatest = bar;
+          const ohlc = coloredPoint(bar, hollowPrevious);
+          prices.candles.update(ohlc);
           prices.hollow.update(hollowPoint(bar, hollowPrevious));
           if (!heikinLatest || bar.time > heikinLatest.time) heikinPrevious = heikinLatest;
           heikinLatest = heikinAshiBar(bar, heikinPrevious);
           heikinAshiBars.set(bar.time, heikinLatest);
-          prices["heikin-ashi"].update({ ...heikinLatest, time: bar.time as UTCTimestamp });
+          prices["heikin-ashi"].update(coloredPoint(heikinLatest, heikinPrevious));
           prices.bars.update(ohlc);
           prices.line.update(sourcePoint);
           prices.area.update(sourcePoint);

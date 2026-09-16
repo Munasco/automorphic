@@ -389,3 +389,11 @@ it("keeps the personal object tree filter when capturing and applying chart temp
   useChartPreferences.setState(captured);
   expect(useChartPreferences.getState().objectTreeFilter).toBe("indicators");
 });
+
+it("captures previous-close bar coloring independently from its source", () => {
+  const source = { colorBarsByPreviousClose: true };
+  const settings = captureChartTemplateSettings(source);
+  source.colorBarsByPreviousClose = false;
+  expect(settings.colorBarsByPreviousClose).toBe(true);
+  expect(captureChartTemplateSettings({}).colorBarsByPreviousClose).toBe(false);
+});

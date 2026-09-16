@@ -4901,3 +4901,28 @@ describe("indicator legend contents", () => {
     expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
   });
 });
+
+describe("previous close coloring preference", () => {
+  it("defaults off, accepts only boolean input and persists the enabled state", async () => {
+    const store = useChartPreferences.getState();
+    expect(store.colorBarsByPreviousClose).toBe(false);
+    for (const value of ["true", 1, null, undefined]) {
+      store.setColorBarsByPreviousClose(value as unknown as boolean);
+      expect(useChartPreferences.getState().colorBarsByPreviousClose).toBe(false);
+      expect(
+        normalizeChartPreferences({ colorBarsByPreviousClose: value }).colorBarsByPreviousClose,
+      ).toBe(false);
+    }
+    store.setColorBarsByPreviousClose(true);
+    expect(useChartPreferences.getState().colorBarsByPreviousClose).toBe(true);
+    const payload = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    expect(JSON.parse(payload).state.colorBarsByPreviousClose).toBe(true);
+    store.setColorBarsByPreviousClose(false);
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(payload);
+    await useChartPreferences.persist.rehydrate();
+    expect(useChartPreferences.getState().colorBarsByPreviousClose).toBe(true);
+    const writes = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.length;
+    useChartPreferences.getState().setColorBarsByPreviousClose(true);
+    expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(writes);
+  });
+});
