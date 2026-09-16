@@ -136,13 +136,12 @@ export function ChartReplayControls({
   return (
     <div
       aria-label="Bar replay controls"
-      className="flex shrink-0 flex-col gap-1 border-b border-blue-400/20 bg-[#101723] px-2 py-1.5 text-xs text-zinc-300"
+      className="@container/replay flex w-full min-w-0 max-w-full shrink-0 flex-col gap-1 border-b border-blue-400/20 bg-[#101723] px-2 py-1.5 text-xs text-zinc-300"
     >
-      <div
-        className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]"
-        data-replay-row="playback"
-      >
-        <span className="mr-1 shrink-0 text-[11px] font-medium text-blue-300">Replay</span>
+      <div className="flex min-w-0 max-w-full items-center gap-1" data-replay-row="playback">
+        <span className="mr-1 hidden shrink-0 text-[11px] font-medium text-blue-300 @min-[360px]/replay:inline">
+          Replay
+        </span>
         {controls.map(({ id, label, icon: Icon, action, disabled }) => (
           <Tooltip key={id}>
             <TooltipTrigger
@@ -169,7 +168,7 @@ export function ChartReplayControls({
           ]}
           onChange={(value) => replay.setSpeed(Number(value) as ChartReplaySpeed)}
           variant="ghost"
-          className="h-7 w-24 shrink-0 rounded-none"
+          className="h-7 w-24 shrink rounded-none gap-1 px-1 text-[11px]"
         />
         <ReplayBookmarks
           scope={bookmarkScope}
