@@ -114,21 +114,32 @@ function DrawingNameInput({
 
 const INDICATOR_DRAG_TYPE = "application/x-automorphic-indicator";
 
-function IndicatorTreeRow({ indicator }: { indicator: DrawingObjectTreeIndicator }) {
+function IndicatorTreeRow({
+  indicator,
+  reorderDisabled,
+}: {
+  indicator: DrawingObjectTreeIndicator;
+  reorderDisabled: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const [dropEdge, setDropEdge] = useState<"before" | "after" | null>(null);
   return (
     <li
       data-indicator-object={indicator.key}
-      draggable={!!indicator.onDrop}
+      draggable={!reorderDisabled && !!indicator.onDrop}
       onDragStart={(event) => {
-        if (!indicator.onDrop) return;
+        if (reorderDisabled || !indicator.onDrop) return;
         event.dataTransfer.setData(INDICATOR_DRAG_TYPE, indicator.key);
         event.dataTransfer.effectAllowed = "move";
       }}
       onDragOver={(event) => {
-        if (!indicator.onDrop || !event.dataTransfer.types.includes(INDICATOR_DRAG_TYPE)) return;
+        if (
+          reorderDisabled ||
+          !indicator.onDrop ||
+          !event.dataTransfer.types.includes(INDICATOR_DRAG_TYPE)
+        )
+          return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
         const rect = event.currentTarget.getBoundingClientRect();
@@ -144,7 +155,7 @@ function IndicatorTreeRow({ indicator }: { indicator: DrawingObjectTreeIndicator
       onDragEnd={() => setDropEdge(null)}
       onDrop={(event) => {
         const sourceId = event.dataTransfer.getData(INDICATOR_DRAG_TYPE);
-        if (!sourceId || !indicator.onDrop) return;
+        if (reorderDisabled || !sourceId || !indicator.onDrop) return;
         event.preventDefault();
         const rect = event.currentTarget.getBoundingClientRect();
         indicator.onDrop(sourceId, event.clientY < rect.top + rect.height / 2 ? "before" : "after");
@@ -152,9 +163,11 @@ function IndicatorTreeRow({ indicator }: { indicator: DrawingObjectTreeIndicator
       }}
       className={cn(
         "group/object relative flex h-[38px] items-center gap-1 px-2 hover:bg-white/5 focus-within:bg-white/5",
-        dropEdge === "before" &&
+        !reorderDisabled &&
+          dropEdge === "before" &&
           "before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-blue-400",
-        dropEdge === "after" &&
+        !reorderDisabled &&
+          dropEdge === "after" &&
           "after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-blue-400",
       )}
     >
@@ -209,10 +222,20 @@ function IndicatorTreeRow({ indicator }: { indicator: DrawingObjectTreeIndicator
             <MoreHorizontalIcon className="size-4" />
           </MenuTrigger>
           <MenuPopup align="end">
-            <MenuItem disabled={!indicator.canMoveUp} onClick={() => indicator.onMove?.("up")}>
+            <MenuItem
+              disabled={reorderDisabled || !indicator.canMoveUp}
+              onClick={() => {
+                if (!reorderDisabled) indicator.onMove?.("up");
+              }}
+            >
               Move up
             </MenuItem>
-            <MenuItem disabled={!indicator.canMoveDown} onClick={() => indicator.onMove?.("down")}>
+            <MenuItem
+              disabled={reorderDisabled || !indicator.canMoveDown}
+              onClick={() => {
+                if (!reorderDisabled) indicator.onMove?.("down");
+              }}
+            >
               Move down
             </MenuItem>
           </MenuPopup>
@@ -390,7 +413,11 @@ export function DrawingObjectTree({
         {visibleIndicators.length > 0 ? (
           <ul aria-label="Indicators">
             {visibleIndicators.map((indicator) => (
-              <IndicatorTreeRow key={indicator.key} indicator={indicator} />
+              <IndicatorTreeRow
+                key={indicator.key}
+                indicator={indicator}
+                reorderDisabled={filtering}
+              />
             ))}
           </ul>
         ) : null}
