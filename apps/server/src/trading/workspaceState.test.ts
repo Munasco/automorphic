@@ -4,6 +4,10 @@ import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import { makeWorkspaceState, parseWorkspaceValue } from "./workspaceState.ts";
 
 it("rejects unrelated keys, malformed JSON and oversized settings", () => {
+  assert.deepEqual(
+    parseWorkspaceValue({ key: "automorphic:chart-alert-filter:v1", value: '{"status":"Paused"}' }),
+    { key: "automorphic:chart-alert-filter:v1", value: '{"status":"Paused"}' },
+  );
   assert.equal(parseWorkspaceValue({ key: "GEMINI_API_KEY", value: '"secret"' }), null);
   assert.equal(parseWorkspaceValue({ key: "automorphic:chart:v1", value: "invalid" }), null);
   assert.equal(parseWorkspaceValue({ key: "automorphic:chart:v1", value: "null" }), null);

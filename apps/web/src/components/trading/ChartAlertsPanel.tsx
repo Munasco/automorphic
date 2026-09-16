@@ -1,4 +1,11 @@
 import { chartAlertLogCsv } from "./chartAlertLogCsv";
+import { TradingSelect } from "./TradingSelect";
+import {
+  CHART_ALERT_FILTER_OPTIONS,
+  isChartAlertFilter,
+  readChartAlertFilter,
+  writeChartAlertFilter,
+} from "./chartAlertFilter";
 import {
   useEffect,
   useMemo,
@@ -34,6 +41,7 @@ import { PriceAlertDialog } from "./PriceAlertDialog";
 import { drawingAlertTargetLabel } from "./drawingAlertPresentation";
 
 const getAlertSortSnapshot = () => readChartAlertSort(tradingWorkspaceStorage);
+const getAlertFilterSnapshot = () => readChartAlertFilter(tradingWorkspaceStorage);
 
 const EMPTY: ChartAlertState = { alerts: [], history: [] };
 type PriceAlertSession = ReturnType<typeof createChartAlertSession>;
@@ -221,8 +229,12 @@ export function ChartAlerts({
   const [searching, setSearching] = useState(false);
   const [search, setSearch] = useState("");
   const sort = useSyncExternalStore(tradingWorkspaceStorage.subscribe, getAlertSortSnapshot);
+  const statusFilter = useSyncExternalStore(
+    tradingWorkspaceStorage.subscribe,
+    getAlertFilterSnapshot,
+  );
   // An in-flight workspace save may delay its subscription update. Render the local choice now.
-  const [, refreshSort] = useReducer((revision: number) => revision + 1, 0);
+  const [, refreshPreferences] = useReducer((revision: number) => revision + 1, 0);
   const workspace = useSyncExternalStore(
     tradingWorkspaceStorage.subscribe,
     tradingWorkspaceStorage.getSnapshot,
@@ -349,6 +361,7 @@ export function ChartAlerts({
     })),
   ];
   const alerts = allAlerts
+    .filter((alert) => statusFilter === "all" || alert.status === statusFilter)
     .filter((alert) => alert.searchText.toLowerCase().includes(query))
     .toSorted((a, b) => compareChartAlerts(a, b, sort));
   const allHistory = [
@@ -446,7 +459,7 @@ export function ChartAlerts({
                     onClick={() =>
                       act(() => {
                         writeChartAlertSort(tradingWorkspaceStorage, value);
-                        refreshSort();
+                        refreshPreferences();
                       }, "Could not save alert sorting. Try again.")
                     }
                   >
@@ -562,6 +575,24 @@ export function ChartAlerts({
               </MenuPopup>
             </Menu>
           </div>
+          {tab === "alerts" ? (
+            <div className="px-4 pb-3">
+              <TradingSelect
+                label="Filter alerts by status"
+                value={statusFilter}
+                options={CHART_ALERT_FILTER_OPTIONS}
+                disabled={!workspace.ready}
+                className="w-full"
+                onChange={(value) => {
+                  if (isChartAlertFilter(value))
+                    act(() => {
+                      writeChartAlertFilter(tradingWorkspaceStorage, value);
+                      refreshPreferences();
+                    }, "Could not save the alert filter. Try again.");
+                }}
+              />
+            </div>
+          ) : null}
           {searching ? (
             <div className="px-4 pb-3">
               <input
@@ -597,15 +628,15 @@ export function ChartAlerts({
               className="shrink-0 text-zinc-400"
             />
             <p className="max-w-64 text-[15px] leading-6 text-zinc-300">
-              {drawingLoading && !query
+              {drawingLoading && !query && (tab !== "alerts" || statusFilter === "all")
                 ? "Waiting for chart alerts…"
-                : query
+                : query || (tab === "alerts" && statusFilter !== "all")
                   ? "No matching alerts."
                   : tab === "alerts"
                     ? "Get notified when your conditions are met. Create an alert to get started."
                     : "Triggered alerts appear here."}
             </p>
-            {!query && tab === "alerts" ? (
+            {!query && tab === "alerts" && statusFilter === "all" ? (
               <button type="button" className={primaryClass} onClick={openCreate}>
                 Create alert
               </button>

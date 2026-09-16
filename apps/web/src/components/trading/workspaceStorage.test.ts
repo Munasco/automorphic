@@ -598,3 +598,24 @@ describe("Zustand workspace hydration", () => {
     await store.flush();
   });
 });
+
+it("persists an alert status filter through workspace storage and reload", async () => {
+  const key = "automorphic:chart-alert-filter:v1";
+  const values: Record<string, string> = {};
+  const request = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+    if (init?.method === "PUT") {
+      const body = JSON.parse(init.body as string) as { key: string; value: string };
+      values[body.key] = body.value;
+      return json({});
+    }
+    return json(payload(values));
+  });
+  const first = createTradingWorkspaceStorage(request, () => undefined);
+  await first.initialize();
+  first.setItem(key, '{"status":"Paused"}');
+  await first.flush();
+  expect(values).toEqual({ [key]: '{"status":"Paused"}' });
+  const reopened = createTradingWorkspaceStorage(request, () => undefined);
+  await reopened.initialize();
+  expect(reopened.getItem(key)).toBe('{"status":"Paused"}');
+});
