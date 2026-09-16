@@ -10,6 +10,7 @@ import {
   type ChartDataTableSort,
 } from "./chartDataTable";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
+import { chartDataTableCsv } from "./chartDataTableCsv";
 
 export interface ChartTableSource {
   bars: ReadonlyMap<number, Candle>;
@@ -60,6 +61,26 @@ export function ChartDataTableDialog({
   const lastPage = Math.max(0, Math.ceil(rows.length / pageSize) - 1);
   const currentPage = Math.min(page, lastPage);
   const start = currentPage * pageSize;
+  function exportCsv() {
+    try {
+      const url = URL.createObjectURL(
+        new Blob([chartDataTableCsv(rows, symbol, intervalLabel)], {
+          type: "text/csv;charset=utf-8",
+        }),
+      );
+      try {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `automorphic-${symbol.replace(/[^a-zA-Z0-9_-]/g, "_")}-market-data.csv`;
+        link.click();
+        setError("");
+      } finally {
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+    } catch {
+      setError("Couldn't export the market data. Try again.");
+    }
+  }
   function changeSort(field: ChartDataTableSort["field"]) {
     const next: ChartDataTableSort = {
       field,
@@ -161,6 +182,14 @@ export function ChartDataTableDialog({
               ? `${start + 1}–${Math.min(start + pageSize, rows.length)} of ${rows.length.toLocaleString()} bars`
               : "0 bars"}
           </span>
+          <button
+            type="button"
+            disabled={!rows.length}
+            onClick={exportCsv}
+            className="rounded border border-zinc-600 px-2 py-1 hover:bg-white/5 disabled:opacity-40"
+          >
+            Export CSV
+          </button>
           <button
             type="button"
             disabled={currentPage === 0}
