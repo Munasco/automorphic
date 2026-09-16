@@ -10,6 +10,7 @@ const preferenceKeys = new Set([
   "automorphic:chart-alert-sort:v1",
   "automorphic:chart-alert-filter:v1",
   "automorphic:chart-data-table-sort:v1",
+  "automorphic:chart-data-table-scope:v1",
   "automorphic:chart-templates:v1",
   "automorphic:replay-bookmarks:v1",
   "automorphic:chart-date-navigation:v1",

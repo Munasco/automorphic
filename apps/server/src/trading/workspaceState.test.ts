@@ -141,3 +141,8 @@ it.effect(
       assert.deepEqual(yield* reopenedAgain.read("second"), { [key]: second });
     }).pipe(Effect.provide(SqlitePersistenceMemory)),
 );
+
+it("accepts the saved chart table range", () => {
+  const value = { key: "automorphic:chart-data-table-scope:v1", value: '{"scope":"visible"}' };
+  assert.deepEqual(parseWorkspaceValue(value), value);
+});

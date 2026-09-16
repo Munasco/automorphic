@@ -1450,6 +1450,7 @@ export function TradovateChart({
         <ChartDataTableDialog
           key={`${symbol}:${chartIntervalKey(interval)}`}
           source={activeEngine}
+          chart={activeEngine.chart}
           symbol={symbol}
           intervalLabel={formatChartInterval(interval)}
           timeZone={intraday ? settings.timeZone : "UTC"}
