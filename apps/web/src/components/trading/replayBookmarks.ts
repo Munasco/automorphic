@@ -19,6 +19,29 @@ export type ReplayBookmark = {
   anchor?: ReplayBookmarkAnchor;
 };
 export const MAX_REPLAY_BOOKMARKS = 100;
+export type ReplayBookmarkSort = "saved" | "date" | "name";
+const validSort = (value: unknown): value is ReplayBookmarkSort =>
+  value === "saved" || value === "date" || value === "name";
+
+export function findReplayBookmarks(
+  bookmarks: readonly ReplayBookmark[],
+  scope: string,
+  query: string,
+  sort: ReplayBookmarkSort,
+): ReplayBookmark[] {
+  const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const matches = bookmarks.filter(
+    (bookmark) =>
+      bookmark.scope === scope &&
+      words.every((word) => bookmark.name.toLocaleLowerCase().includes(word)),
+  );
+  if (sort === "date") matches.sort((a, b) => a.time - b.time);
+  if (sort === "name")
+    matches.sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true }),
+    );
+  return matches;
+}
 const record = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
 const text = (value: unknown, max: number): value is string =>
@@ -115,6 +138,8 @@ function assertReady() {
 
 export const useReplayBookmarks = create<{
   bookmarks: ReplayBookmark[];
+  sort: ReplayBookmarkSort;
+  setSort: (sort: ReplayBookmarkSort) => void;
   add: (scope: string, name: string, time: number, anchor?: ReplayBookmarkAnchor) => string;
   rename: (id: string, name: string) => boolean;
   remove: (id: string) => boolean;
@@ -122,6 +147,11 @@ export const useReplayBookmarks = create<{
   persist(
     (set, get) => ({
       bookmarks: [],
+      sort: "saved",
+      setSort: (sort) => {
+        assertReady();
+        if (validSort(sort) && sort !== get().sort) set({ sort });
+      },
       add: (scope, name, time, anchor) => {
         assertReady();
         if (!text(scope, 160)) throw Error("Choose a valid chart before saving a bookmark.");
@@ -172,10 +202,11 @@ export const useReplayBookmarks = create<{
       name: "automorphic:replay-bookmarks:v1",
       storage: createJSONStorage(() => tradingWorkspaceStorage),
       skipHydration: true,
-      partialize: ({ bookmarks }) => ({ bookmarks }),
+      partialize: ({ bookmarks, sort }) => ({ bookmarks, sort }),
       merge: (saved, current) => ({
         ...current,
         bookmarks: normalizeReplayBookmarks(record(saved) ? saved.bookmarks : undefined),
+        sort: record(saved) && validSort(saved.sort) ? saved.sort : "saved",
       }),
     },
   ),

@@ -15,6 +15,7 @@ import {
   useReplayBookmarks,
   replayBookmarkAnchor,
   resolveReplayBookmark,
+  findReplayBookmarks,
 } from "./replayBookmarks";
 
 beforeEach(() => {
@@ -278,4 +279,63 @@ describe("bookmark renaming", () => {
     expect(() => store.rename(id, "Changed")).toThrow("loading");
     expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
   });
+});
+
+it("filters names within scope and sorts without mutating saved order or same-time anchors", () => {
+  const anchor = { time: 1, ohlcv: [2, 3, 1, 2, 4] as [number, number, number, number, number] };
+  const bookmarks = [
+    { id: "a", scope: "NQ", name: "Retest 10", time: 200, anchor },
+    { id: "b", scope: "NQ", name: "Retest 2", time: 100, anchor: { ...anchor, time: 2 } },
+    { id: "c", scope: "NQ", name: "retest 2", time: 100, anchor: { ...anchor, time: 3 } },
+    { id: "d", scope: "MGC", name: "Retest 2", time: 50 },
+  ];
+  const before = structuredClone(bookmarks);
+  expect(findReplayBookmarks(bookmarks, "NQ", "", "saved").map((b) => b.id)).toEqual([
+    "a",
+    "b",
+    "c",
+  ]);
+  for (const sort of ["date", "name"] as const)
+    expect(findReplayBookmarks(bookmarks, "NQ", " RETEST ", sort).map((b) => b.id)).toEqual([
+      "b",
+      "c",
+      "a",
+    ]);
+  expect(findReplayBookmarks(bookmarks, "NQ", "2 retest", "saved").map((b) => b.id)).toEqual([
+    "b",
+    "c",
+  ]);
+  expect(findReplayBookmarks(bookmarks, "NQ", "missing", "saved")).toEqual([]);
+  expect(bookmarks).toEqual(before);
+});
+it.each(["saved", "date", "name"] as const)(
+  "persists %s sort without altering bookmark records",
+  async (sort) => {
+    const store = useReplayBookmarks.getState();
+    store.add("NQ", "Retest", 100);
+    const original = structuredClone(useReplayBookmarks.getState().bookmarks);
+    store.setSort(sort === "saved" ? "date" : "saved");
+    store.setSort(sort);
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    useReplayBookmarks.setState(useReplayBookmarks.getInitialState(), true);
+    await useReplayBookmarks.persist.rehydrate();
+    expect(useReplayBookmarks.getState().sort).toBe(sort);
+    expect(useReplayBookmarks.getState().bookmarks).toEqual(original);
+  },
+);
+it("defaults malformed sort settings and ignores invalid/redundant writes", async () => {
+  const store = useReplayBookmarks.getState();
+  store.setSort("saved");
+  store.setSort("bad" as "saved");
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  for (const sort of [undefined, null, "bad", 2]) {
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(JSON.stringify({ state: { sort } }));
+    await useReplayBookmarks.persist.rehydrate();
+    expect(useReplayBookmarks.getState().sort).toBe("saved");
+  }
+  vi.mocked(tradingWorkspaceStorage.getSnapshot).mockReturnValue({ ready: false } as ReturnType<
+    typeof tradingWorkspaceStorage.getSnapshot
+  >);
+  expect(() => store.setSort("date")).toThrow("loading");
 });

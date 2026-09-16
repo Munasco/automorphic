@@ -1,9 +1,16 @@
-import { useState, useSyncExternalStore } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import { BookmarkIcon, Trash2Icon, PencilIcon, CheckIcon, XIcon } from "lucide-react";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
-import { useReplayBookmarks, replayBookmarkAnchor, resolveReplayBookmark } from "./replayBookmarks";
+import {
+  useReplayBookmarks,
+  replayBookmarkAnchor,
+  resolveReplayBookmark,
+  findReplayBookmarks,
+  type ReplayBookmarkSort,
+} from "./replayBookmarks";
+import { TradingSelect } from "./TradingSelect";
 import type { Candle } from "./chartIndicators";
 
 export function ReplayBookmarks({
@@ -30,6 +37,21 @@ export function ReplayBookmarks({
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState("");
+  const searchInput = useRef<HTMLInputElement>(null);
+  const [search, setSearch] = useState<{
+    scope: string;
+    projectId: string | null;
+    text: string;
+  } | null>(null);
+  const query =
+    workspace.ready && search?.scope === scope && search.projectId === workspace.projectId
+      ? search.text
+      : "";
+  if (
+    search &&
+    (!workspace.ready || search.scope !== scope || search.projectId !== workspace.projectId)
+  )
+    setSearch(null);
   const [edit, setEdit] = useState<{
     id: string;
     name: string;
@@ -40,7 +62,9 @@ export function ReplayBookmarks({
     edit?.scope === scope && edit.projectId === workspace.projectId && workspace.ready
       ? edit
       : null;
+  if (edit && !activeEdit) setEdit(null);
   const bookmarks = store.bookmarks.filter((bookmark) => bookmark.scope === scope);
+  const visibleBookmarks = findReplayBookmarks(bookmarks, scope, query, store.sort);
   const dateLabel = (value: number) =>
     new Date(value * 1000).toLocaleString([], {
       timeZone,
@@ -61,6 +85,7 @@ export function ReplayBookmarks({
       onOpenChange={(next) => {
         setOpen(next);
         setEdit(null);
+        setSearch(null);
         if (next) {
           onPause();
           setError("");
@@ -91,6 +116,7 @@ export function ReplayBookmarks({
             run(() => {
               store.add(scope, name, time, replayBookmarkAnchor(bar));
               setName("");
+              setSearch(null);
             });
           }}
         >
@@ -119,9 +145,60 @@ export function ReplayBookmarks({
             {error}
           </p>
         )}
-        <div className="mt-3 max-h-60 overflow-y-auto overscroll-contain border-t border-white/10 pt-2">
-          {bookmarks.length ? (
-            bookmarks.map((bookmark) => (
+        {bookmarks.length > 0 && (
+          <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
+            <div className="relative">
+              <input
+                ref={searchInput}
+                type="search"
+                aria-label="Search replay bookmarks"
+                placeholder="Search bookmarks"
+                value={query}
+                onChange={(event) => {
+                  setSearch({ scope, projectId: workspace.projectId, text: event.target.value });
+                  setEdit(null);
+                  setError("");
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && query && !event.nativeEvent.isComposing) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setSearch(null);
+                  }
+                }}
+                className="h-8 w-full rounded border border-zinc-600 bg-transparent pl-2 pr-8 text-xs outline-none focus:border-blue-400 [&::-webkit-search-cancel-button]:appearance-none"
+              />
+              {query && (
+                <button
+                  type="button"
+                  aria-label="Clear bookmark search"
+                  onClick={() => {
+                    setSearch(null);
+                    searchInput.current?.focus();
+                  }}
+                  className="absolute right-1 top-1 flex size-6 items-center justify-center rounded text-zinc-400 hover:bg-white/10"
+                >
+                  <XIcon className="size-3.5" />
+                </button>
+              )}
+            </div>
+            <TradingSelect
+              label="Sort replay bookmarks"
+              value={store.sort}
+              disabled={!workspace.ready}
+              options={[
+                ["saved", "Saved order"],
+                ["date", "Date: earliest first"],
+                ["name", "Name: A–Z"],
+              ]}
+              onChange={(value) => run(() => store.setSort(value as ReplayBookmarkSort))}
+              className="w-full"
+            />
+          </div>
+        )}
+        <div className="mt-2 max-h-60 overflow-y-auto overscroll-contain">
+          {visibleBookmarks.length ? (
+            visibleBookmarks.map((bookmark) => (
               <div key={bookmark.id} className="flex items-center gap-1 rounded hover:bg-white/5">
                 {activeEdit?.id === bookmark.id ? (
                   <form
@@ -132,6 +209,7 @@ export function ReplayBookmarks({
                         if (!store.rename(bookmark.id, activeEdit.name))
                           throw Error("This bookmark no longer exists.");
                         setEdit(null);
+                        if (query) searchInput.current?.focus();
                       });
                     }}
                   >
@@ -240,7 +318,9 @@ export function ReplayBookmarks({
               </div>
             ))
           ) : (
-            <p className="py-2 text-xs text-zinc-400">No bookmarks for this chart yet.</p>
+            <p role="status" className="py-2 text-xs text-zinc-400">
+              {bookmarks.length ? "No matching bookmarks." : "No bookmarks for this chart yet."}
+            </p>
           )}
         </div>
       </PopoverPopup>
