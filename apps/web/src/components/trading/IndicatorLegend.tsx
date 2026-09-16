@@ -9,6 +9,7 @@ import { getChartIndicatorInstances, indicatorReadingKey } from "./chartIndicato
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
+import { useRef, useState } from "react";
 
 type Preferences = ReturnType<typeof useChartPreferences.getState>;
 const controlClass =
@@ -24,8 +25,12 @@ export function IndicatorLegend({
   initialBalanceStatus: string;
   initialBalanceStatuses?: Readonly<Record<string, string>>;
 }) {
+  const [settingsId, setSettingsId] = useState<string | null>(null);
+  const settingsReturnFocus = useRef<HTMLElement | null>(null);
   const collapsed = settings.indicatorLegendCollapsed;
   const added = getChartIndicatorInstances(settings);
+  if (settingsId && (collapsed || !added.some((instance) => instance.id === settingsId)))
+    setSettingsId(null);
   const counts = new Map<string, number>();
   for (const instance of added) counts.set(instance.key, (counts.get(instance.key) ?? 0) + 1);
   const indices = new Map<string, number>();
@@ -76,8 +81,33 @@ export function IndicatorLegend({
               <Tooltip>
                 <TooltipTrigger
                   render={
-                    <span
-                      tabIndex={0}
+                    <button
+                      type="button"
+                      aria-label={accessible(`Edit ${label}`)}
+                      aria-haspopup="dialog"
+                      aria-expanded={settingsId === id}
+                      onDoubleClick={(event) => {
+                        event.stopPropagation();
+                        settingsReturnFocus.current = event.currentTarget;
+                        setSettingsId(id);
+                      }}
+                      onClick={(event) => {
+                        if (event.detail !== 0) return;
+                        event.stopPropagation();
+                        settingsReturnFocus.current = event.currentTarget;
+                        setSettingsId(id);
+                      }}
+                      onKeyDown={(event) => {
+                        if (
+                          event.nativeEvent.isComposing ||
+                          (event.key !== "Enter" && event.key !== " ")
+                        )
+                          return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        settingsReturnFocus.current = event.currentTarget;
+                        setSettingsId(id);
+                      }}
                       className={cn(
                         "shrink-0 rounded outline-none focus-visible:ring-1 focus-visible:ring-blue-400",
                         hidden && "text-zinc-600",
@@ -114,8 +144,16 @@ export function IndicatorLegend({
                     </TooltipTrigger>
                     <TooltipPopup>{`${hidden ? "Show" : "Hide"} ${label}`}</TooltipPopup>
                   </Tooltip>
-                  <Popover>
+                  <Popover
+                    open={settingsId === id}
+                    onOpenChange={(next) => {
+                      setSettingsId((current) => (next ? id : current === id ? null : current));
+                    }}
+                  >
                     <PopoverTrigger
+                      onClick={(event) => {
+                        settingsReturnFocus.current = event.currentTarget;
+                      }}
                       className={controlClass}
                       aria-label={accessible(`${label} settings`)}
                       title={`${label} settings`}
@@ -123,6 +161,12 @@ export function IndicatorLegend({
                       <SolarSettingsIcon className="size-4" />
                     </PopoverTrigger>
                     <PopoverPopup
+                      finalFocus={() =>
+                        (!settingsId || settingsId === id) &&
+                        settingsReturnFocus.current?.isConnected
+                          ? settingsReturnFocus.current
+                          : false
+                      }
                       align="start"
                       className="max-h-[min(70vh,36rem)] w-72 overflow-y-auto"
                     >
