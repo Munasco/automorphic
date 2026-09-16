@@ -20,6 +20,11 @@ export const CHART_INTERVALS: readonly ChartInterval[] = [
   ...WEEK_INTERVALS.map((value) => ({ unit: "week" as const, value })),
   ...MONTH_INTERVALS.map((value) => ({ unit: "month" as const, value })),
 ];
+/** Intervals currently exposed by the chart menu and available for favorites. */
+export const CHART_MENU_INTERVALS = CHART_INTERVALS.filter(
+  (item) => item.unit !== "tick" && (item.unit !== "second" || item.value === 30),
+);
+
 export const DEFAULT_CHART_INTERVAL: ChartInterval = { unit: "minute", value: 5 };
 
 export function isChartInterval(value: unknown): value is ChartInterval {
@@ -66,4 +71,12 @@ export function chartIntervalQuery(interval: ChartInterval): {
   intervalUnit: ChartInterval["unit"];
 } {
   return { interval: String(interval.value), intervalUnit: interval.unit };
+}
+
+export function normalizeFavoriteChartIntervals(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const available = new Set(CHART_MENU_INTERVALS.map(chartIntervalKey));
+  return [
+    ...new Set(value.filter((key): key is string => typeof key === "string" && available.has(key))),
+  ];
 }

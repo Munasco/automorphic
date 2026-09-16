@@ -44,6 +44,7 @@ const chart = () => ({
   watermarkOpacity: 60,
   chartFontSize: 18,
   favoriteIndicators: ["rsi"],
+  favoriteChartIntervals: ["minute:5"],
   indicators: { rsi: true, ib: true },
   indicatorInputs: { rsi: { period: 7 } },
   appearance: { rsi: { plots: { background: { color: "#123456", opacity: 0.3 } } } },
@@ -72,7 +73,14 @@ describe("chart template snapshots", () => {
       chartFontSize: 18,
       indicatorInputs: { rsi: { period: 7 } },
     });
-    for (const key of ["favoriteIndicators", "replaySpeed", "symbol", "drawings", "alerts"])
+    for (const key of [
+      "favoriteIndicators",
+      "favoriteChartIntervals",
+      "replaySpeed",
+      "symbol",
+      "drawings",
+      "alerts",
+    ])
       expect(snapshot).not.toHaveProperty(key);
     source.extraIndicators[0]!.inputs.period = 30;
     source.extraIndicators[1]!.initialBalance!.backgroundColor = "#abcdef";
@@ -349,4 +357,13 @@ it("rejects copies exceeding the payload limit without changing saved templates"
   }
   expect(error).toBeInstanceOf(Error);
   expect((error as Error).message).toContain("Chart templates are full");
+});
+
+it("keeps personal favorite intervals when a saved chart template is applied", () => {
+  const store = useChartPreferences.getState();
+  store.toggleFavoriteChartInterval("minute:60");
+  const captured = captureChartTemplateSettings({ ...chart(), favoriteChartIntervals: ["day:1"] });
+  expect(captured).not.toHaveProperty("favoriteChartIntervals");
+  useChartPreferences.setState(captured);
+  expect(useChartPreferences.getState().favoriteChartIntervals).toEqual(["minute:60"]);
 });

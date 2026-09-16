@@ -10,7 +10,7 @@ export const CHART_TEMPLATES_KEY = "automorphic:chart-templates:v1";
 export const MAX_CHART_TEMPLATES = 20;
 export type ChartTemplateSettings = Omit<
   ReturnType<typeof normalizeChartPreferences>,
-  "favoriteIndicators" | "replaySpeed"
+  "favoriteIndicators" | "favoriteChartIntervals" | "replaySpeed"
 >;
 export type ChartTemplate = { id: string; name: string; settings: ChartTemplateSettings };
 const MAX_PAYLOAD_SIZE = 250_000;
@@ -33,6 +33,7 @@ function captureInitialBalance(settings: InitialBalanceSettings): InitialBalance
 export function captureChartTemplateSettings(value: unknown): ChartTemplateSettings {
   const {
     favoriteIndicators: _favorites,
+    favoriteChartIntervals: _intervalFavorites,
     replaySpeed: _replaySpeed,
     ...settings
   } = normalizeChartPreferences(value);

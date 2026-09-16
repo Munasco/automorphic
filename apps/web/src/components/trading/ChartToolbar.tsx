@@ -18,23 +18,9 @@ import type {
   ChartLineMarkerRadius,
 } from "./chartPreferences";
 
-import {
-  CHART_INTERVALS,
-  chartIntervalKey,
-  chartIntervalFromKey,
-  formatChartInterval,
-  type ChartInterval,
-} from "./tradingIntervals";
+import type { ChartInterval } from "./tradingIntervals";
+import { ChartIntervalMenu } from "./ChartIntervalMenu";
 import { rootFromSymbol } from "./tradingInstruments";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectPopup,
-  SelectItem,
-  SelectGroup,
-  SelectGroupLabel,
-} from "../ui/select";
 import { MarketInstrumentIcon } from "./MarketInstrumentIcon";
 import { ChartIcon } from "./ChartIcon";
 import { useId, useState, type ReactNode } from "react";
@@ -274,31 +260,6 @@ export function ChartToolbar({
   historyControls,
 }: ChartToolbarProps) {
   const id = useId();
-  const intervalGroups = (
-    ["Ticks", "Seconds", "Minutes", "Hours", "Days", "Weeks", "Months"] as const
-  ).map((group) => ({
-    group,
-    items: CHART_INTERVALS.filter((item) =>
-      group === "Ticks"
-        ? item.unit === "tick"
-        : group === "Seconds"
-          ? item.unit === "second" && item.value === 30
-          : group === "Days"
-            ? item.unit === "day"
-            : group === "Weeks"
-              ? item.unit === "week"
-              : group === "Months"
-                ? item.unit === "month"
-                : item.unit === "minute" &&
-                  (group === "Minutes" ? item.value < 60 : item.value >= 60),
-    ).map((item) => {
-      const count = group === "Hours" ? item.value / 60 : item.value;
-      return {
-        key: chartIntervalKey(item),
-        label: `${count} ${group.toLowerCase().slice(0, -1)}${count === 1 ? "" : "s"}`,
-      };
-    }),
-  }));
   const [indicatorSearch, setIndicatorSearch] = useState("");
   const [indicatorCategory, setIndicatorCategory] = useState<string>("All");
   const matchingIndicators = findIndicators(indicatorSearch).filter(
@@ -342,44 +303,7 @@ export function ChartToolbar({
           <TooltipPopup>{symbol || "Select symbol"}</TooltipPopup>
         </Tooltip>
         <span className="mx-1 h-4 w-px shrink-0 bg-white/10" aria-hidden="true" />
-        <Select
-          value={chartIntervalKey(interval)}
-          onValueChange={(value) => {
-            const next = chartIntervalFromKey(value);
-            if (next) onIntervalChange(next);
-          }}
-        >
-          <SelectTrigger
-            aria-label="Chart interval"
-            size="sm"
-            variant="ghost"
-            className="h-9 w-auto min-w-0 shrink-0 rounded-none border-transparent bg-transparent px-2 shadow-none hover:bg-white/5 dark:bg-transparent"
-          >
-            <SelectValue>{formatChartInterval(interval)}</SelectValue>
-          </SelectTrigger>
-          <SelectPopup
-            align="end"
-            alignOffset={-8}
-            alignItemWithTrigger={false}
-            sideOffset={0}
-            scrollArrows={false}
-            popupClassName="rounded-none"
-            className="max-h-[min(var(--available-height),32rem)] rounded-none overflow-x-hidden [scrollbar-width:thin] [scrollbar-color:var(--color-zinc-600)_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-600 [&_[data-slot=select-item]]:rounded-none"
-          >
-            {intervalGroups
-              .filter((group) => group.items.length > 0)
-              .map(({ group, items }) => (
-                <SelectGroup key={group}>
-                  <SelectGroupLabel>{group}</SelectGroupLabel>
-                  {items.map((item) => (
-                    <SelectItem hideIndicator key={item.key} value={item.key}>
-                      {item.label}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              ))}
-          </SelectPopup>
-        </Select>
+        <ChartIntervalMenu interval={interval} onChange={onIntervalChange} />
         <span className="mx-1 h-4 w-px shrink-0 bg-white/10" aria-hidden="true" />
         <TradingSelect
           label="Chart style"

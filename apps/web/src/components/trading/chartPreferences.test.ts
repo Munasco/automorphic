@@ -4698,3 +4698,37 @@ describe("chart scale text size", () => {
     },
   );
 });
+
+describe("favorite chart intervals", () => {
+  it("accepts only exposed interval keys, deduplicates persisted values, and toggles favorites", () => {
+    const store = useChartPreferences.getState();
+    for (const key of ["tick:100", "second:1", "minute:7", "1h", "", null])
+      store.toggleFavoriteChartInterval(key as string);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+    expect(
+      normalizeChartPreferences({
+        favoriteChartIntervals: ["minute:5", "minute:5", "second:1", "second:30", 15, "tick:100"],
+      }).favoriteChartIntervals,
+    ).toEqual(["minute:5", "second:30"]);
+    store.toggleFavoriteChartInterval("minute:5");
+    store.toggleFavoriteChartInterval("minute:60");
+    store.toggleFavoriteChartInterval("minute:5");
+    expect(useChartPreferences.getState().favoriteChartIntervals).toEqual(["minute:60"]);
+  });
+  it("round-trips favorites and clears them for a workspace without preferences", async () => {
+    const before = configure();
+    before.toggleFavoriteChartInterval("month:1");
+    expect(useChartPreferences.getState()).toEqual({
+      ...before,
+      favoriteChartIntervals: ["month:1"],
+    });
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    await useChartPreferences.persist.rehydrate();
+    expect(useChartPreferences.getState().favoriteChartIntervals).toEqual(["month:1"]);
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(null);
+    await vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0]();
+    expect(useChartPreferences.getState().favoriteChartIntervals).toEqual([]);
+  });
+});

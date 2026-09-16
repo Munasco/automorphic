@@ -1,3 +1,4 @@
+import { normalizeFavoriteChartIntervals } from "./tradingIntervals";
 import {
   normalizeChartPaneSizes,
   equalChartPaneSizes,
@@ -140,6 +141,7 @@ type SavedChartPreferences = {
   extraIndicators: ChartIndicatorInstance[];
   indicatorOrder: string[];
   favoriteIndicators: IndicatorKey[];
+  favoriteChartIntervals: string[];
   volumeColors: typeof DEFAULT_VOLUME_COLORS;
   initialBalance: InitialBalanceSettings;
   gridMode: ChartGridMode;
@@ -225,6 +227,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     hiddenIndicators,
     appearance,
     indicatorInputs: normalizeIndicatorInputs(saved.indicatorInputs),
+    favoriteChartIntervals: normalizeFavoriteChartIntervals(saved.favoriteChartIntervals),
     favoriteIndicators: Array.isArray(saved.favoriteIndicators)
       ? [...new Set(saved.favoriteIndicators.filter(isIndicatorKey))]
       : [],
@@ -333,6 +336,7 @@ export const useChartPreferences = create<{
   extraIndicators: ChartIndicatorInstance[];
   indicatorOrder: string[];
   favoriteIndicators: IndicatorKey[];
+  favoriteChartIntervals: string[];
   volumeColors: typeof DEFAULT_VOLUME_COLORS;
   initialBalance: InitialBalanceSettings;
   setInitialBalance: (settings: InitialBalanceSettings) => void;
@@ -392,6 +396,7 @@ export const useChartPreferences = create<{
   setCrosshairLineWidth: (width: ChartCrosshairLineWidth) => void;
   toggleIndicator: (key: IndicatorKey) => void;
   toggleFavoriteIndicator: (key: IndicatorKey) => void;
+  toggleFavoriteChartInterval: (key: string) => void;
   toggleIndicatorVisibility: (key: IndicatorKey) => void;
   setIndicatorsHidden: (hidden: boolean) => void;
   removeAllIndicators: () => void;
@@ -470,6 +475,7 @@ export const useChartPreferences = create<{
         ({ key }) => `base:${key}`,
       ),
       favoriteIndicators: [],
+      favoriteChartIntervals: [],
       volumeColors: { ...DEFAULT_VOLUME_COLORS },
       initialBalance: { ...DEFAULT_INITIAL_BALANCE },
       setInitialBalance: (settings) => {
@@ -576,6 +582,14 @@ export const useChartPreferences = create<{
           crosshairLineWidth !== get().crosshairLineWidth
         )
           set({ crosshairLineWidth });
+      },
+      toggleFavoriteChartInterval: (key) => {
+        if (!normalizeFavoriteChartIntervals([key]).length) return;
+        set((state) => ({
+          favoriteChartIntervals: state.favoriteChartIntervals.includes(key)
+            ? state.favoriteChartIntervals.filter((favorite) => favorite !== key)
+            : [...state.favoriteChartIntervals, key],
+        }));
       },
       toggleFavoriteIndicator: (key) => {
         if (!isIndicatorKey(key)) return;
