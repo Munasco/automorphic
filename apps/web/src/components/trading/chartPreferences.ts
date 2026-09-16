@@ -736,7 +736,9 @@ export const useChartPreferences = create<{
       resetIndicatorAppearance: (key) =>
         set((state) => {
           const appearance = { ...state.appearance };
-          delete appearance[key];
+          const timeframeVisibility = appearance[key]?.timeframeVisibility;
+          if (timeframeVisibility) appearance[key] = { timeframeVisibility };
+          else delete appearance[key];
           return {
             appearance,
             ...(key === "volume" ? { volumeColors: { ...DEFAULT_VOLUME_COLORS } } : {}),
@@ -920,7 +922,9 @@ export const useChartPreferences = create<{
               instance.id === id
                 ? {
                     ...instance,
-                    appearance: {},
+                    appearance: instance.appearance.timeframeVisibility
+                      ? { timeframeVisibility: instance.appearance.timeframeVisibility }
+                      : {},
                     ...(instance.key === "volume"
                       ? { volumeColors: { ...DEFAULT_VOLUME_COLORS } }
                       : {}),

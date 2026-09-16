@@ -4977,3 +4977,46 @@ describe("watermark position", () => {
     expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
   });
 });
+
+describe("indicator timeframe persistence", () => {
+  it("keeps independent base and duplicate rules through edits, appearance reset, duplication and reload", async () => {
+    const store = useChartPreferences.getState();
+    const base = store.addIndicator("rsi")!;
+    const other = store.addIndicator("rsi")!;
+    store.setIndicatorInstanceAppearance(base, {
+      timeframeVisibility: { minutes: { enabled: false, min: 1, max: 59 } } as never,
+    });
+    store.setIndicatorInstanceAppearance(other, {
+      timeframeVisibility: { hours: { enabled: false, min: 1, max: 24 } } as never,
+    });
+    store.setIndicatorInstanceAppearance(base, { color: "#123456" });
+    const instance = (id: string) =>
+      getChartIndicatorInstances(useChartPreferences.getState()).find((item) => item.id === id)!;
+    expect(instance(base).appearance.timeframeVisibility?.minutes.enabled).toBe(false);
+    expect(instance(other).appearance.timeframeVisibility?.minutes.enabled).toBe(true);
+    store.resetIndicatorInstanceAppearance(base);
+    store.resetIndicatorInstanceAppearance(other);
+    expect(instance(base).appearance.timeframeVisibility?.minutes.enabled).toBe(false);
+    expect(instance(base).appearance.color).toBeUndefined();
+    expect(instance(other).appearance.timeframeVisibility?.hours.enabled).toBe(false);
+    const copied = store.duplicateIndicatorInstance(base)!;
+    expect(instance(copied).appearance.timeframeVisibility).toEqual(
+      instance(base).appearance.timeframeVisibility,
+    );
+    expect(instance(copied).appearance.timeframeVisibility).not.toBe(
+      instance(base).appearance.timeframeVisibility,
+    );
+    store.toggleIndicatorInstanceVisibility(base);
+    const payload = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(payload);
+    await useChartPreferences.persist.rehydrate();
+    expect(instance(base).hidden).toBe(true);
+    expect(instance(base).appearance.timeframeVisibility?.minutes.enabled).toBe(false);
+    expect(instance(copied).appearance.timeframeVisibility?.minutes.enabled).toBe(false);
+    useChartPreferences.getState().resetIndicatorInstance(base);
+    expect(instance(base).appearance.timeframeVisibility).toBeUndefined();
+    expect(instance(base).hidden).toBe(true);
+    expect(instance(copied).appearance.timeframeVisibility?.minutes.enabled).toBe(false);
+  });
+});

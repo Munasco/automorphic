@@ -17,6 +17,7 @@ export interface DrawingObjectTreeIndicator {
   key: string;
   label: string;
   hidden: boolean;
+  hiddenOnTimeframe?: boolean;
   onToggleHidden: () => void;
   onRemove: () => void;
   settingsContent?: ReactNode;
@@ -222,19 +223,33 @@ function IndicatorTreeRow({
           }}
           className={cn(
             "h-full min-w-0 flex-1 truncate pl-1 text-left text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400",
-            indicator.hidden && "text-zinc-500",
+            (indicator.hidden || indicator.hiddenOnTimeframe) && "text-zinc-500",
           )}
         >
-          {indicator.label}
+          {indicator.hiddenOnTimeframe ? (
+            <Tooltip>
+              <TooltipTrigger render={<span />}>{indicator.label}</TooltipTrigger>
+              <TooltipPopup>Hidden on this timeframe</TooltipPopup>
+            </Tooltip>
+          ) : (
+            indicator.label
+          )}
         </button>
       ) : (
         <span
           className={cn(
             "min-w-0 flex-1 truncate pl-1 text-xs",
-            indicator.hidden && "text-zinc-500",
+            (indicator.hidden || indicator.hiddenOnTimeframe) && "text-zinc-500",
           )}
         >
-          {indicator.label}
+          {indicator.hiddenOnTimeframe ? (
+            <Tooltip>
+              <TooltipTrigger render={<span />}>{indicator.label}</TooltipTrigger>
+              <TooltipPopup>Hidden on this timeframe</TooltipPopup>
+            </Tooltip>
+          ) : (
+            indicator.label
+          )}
         </span>
       )}
       <RowAction

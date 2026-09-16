@@ -1,3 +1,4 @@
+import { IndicatorTimeframeControls } from "./IndicatorTimeframeControls";
 import { useState } from "react";
 import { ColorPicker, DrawingSelect } from "./DrawingStyleControls";
 import { resolveIndicatorStyle } from "./indicatorStyles";
@@ -29,11 +30,13 @@ export function IndicatorSettingsContent({
   settings,
   accessible,
   description,
+  hiddenOnTimeframe = false,
 }: {
   instance: ChartIndicatorInstance;
   settings: Preferences;
   accessible: (text: string) => string;
   description: string;
+  hiddenOnTimeframe?: boolean;
 }) {
   const { id, key, hidden, inputs, appearance } = instance;
   const { styles, placement } = getIndicatorDefinition(key);
@@ -56,6 +59,18 @@ export function IndicatorSettingsContent({
             onChange={() => settings.toggleIndicatorInstanceVisibility(id)}
           />
         </label>
+        {hiddenOnTimeframe && (
+          <p role="status" className="text-zinc-400">
+            Hidden on this timeframe.
+          </p>
+        )}
+        <IndicatorTimeframeControls
+          value={appearance.timeframeVisibility}
+          accessible={accessible}
+          onChange={(timeframeVisibility) =>
+            settings.setIndicatorInstanceAppearance(id, { timeframeVisibility })
+          }
+        />
         <div className="flex items-center justify-between gap-3">
           <span>Order</span>
           <div className="flex gap-1">

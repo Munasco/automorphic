@@ -1,9 +1,11 @@
+import { sanitizeDrawingVisibility, type DrawingVisibility } from "./drawingVisibility";
 import { getIndicatorDefinition, type IndicatorKey } from "./indicatorCatalog";
 import type { IndicatorStyle } from "./indicatorDefinition";
 
 export type IndicatorAppearance = IndicatorStyle & {
   plots?: Record<string, IndicatorStyle>;
   histogramPriceLabel?: boolean;
+  timeframeVisibility?: DrawingVisibility;
 };
 const validColor = (value: unknown): value is string =>
   typeof value === "string" && /^#[a-f0-9]{6}$/i.test(value);
@@ -32,6 +34,8 @@ export function normalizeIndicatorAppearance(
 ): IndicatorAppearance {
   const next: IndicatorAppearance = normalizeStyle(value);
   if (!value || typeof value !== "object") return next;
+  if ("timeframeVisibility" in value)
+    next.timeframeVisibility = sanitizeDrawingVisibility(value.timeframeVisibility);
   const histogramPriceLabel = (value as IndicatorAppearance).histogramPriceLabel;
   if (typeof histogramPriceLabel === "boolean") next.histogramPriceLabel = histogramPriceLabel;
   const plots = (value as IndicatorAppearance).plots;

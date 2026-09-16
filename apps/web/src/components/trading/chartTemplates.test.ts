@@ -408,3 +408,28 @@ it("captures watermark position and defaults old templates to center", () => {
   expect(legacy.watermarkHorizontalAlignment).toBe("center");
   expect(legacy.watermarkVerticalAlignment).toBe("center");
 });
+
+it("round-trips independent base and extra indicator timeframe rules", () => {
+  const source = {
+    appearance: { rsi: { timeframeVisibility: { minutes: { enabled: false, min: 5, max: 15 } } } },
+    extraIndicators: [
+      {
+        id: "custom-rsi",
+        key: "rsi",
+        hidden: false,
+        inputs: { period: 21 },
+        appearance: { timeframeVisibility: { hours: { enabled: false, min: 1, max: 4 } } },
+      },
+    ],
+  };
+  const saved = captureChartTemplateSettings(source);
+  expect(saved.appearance.rsi?.timeframeVisibility?.minutes).toEqual({
+    enabled: false,
+    min: 5,
+    max: 15,
+  });
+  expect(saved.extraIndicators[0]?.appearance.timeframeVisibility?.hours.enabled).toBe(false);
+  source.appearance.rsi.timeframeVisibility.minutes.enabled = true;
+  expect(saved.appearance.rsi?.timeframeVisibility?.minutes.enabled).toBe(false);
+  expect(captureChartTemplateSettings(saved)).toEqual(saved);
+});

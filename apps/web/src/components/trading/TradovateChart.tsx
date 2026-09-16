@@ -1,3 +1,4 @@
+import { isIndicatorVisibleOnTimeframe } from "./indicatorTimeframeVisibility";
 import { previousCloseColors } from "./previousCloseColors";
 import { chartBarChange, formatChartBarChange } from "./chartBarChange";
 import { priceLineAppearanceOptions } from "./chartPriceLineAppearance";
@@ -319,9 +320,12 @@ export function TradovateChart({
   const visibleInstances = useMemo(
     () =>
       indicatorInstances.filter(
-        (instance) => !instance.hidden && (instance.key !== "ib" || intraday),
+        (instance) =>
+          !instance.hidden &&
+          (instance.key !== "ib" || intraday) &&
+          isIndicatorVisibleOnTimeframe(instance.appearance, interval),
       ),
-    [indicatorInstances, intraday],
+    [indicatorInstances, intraday, interval],
   );
   const firstInitialBalance = visibleInstances.find((instance) => instance.key === "ib");
   const indicatorCounts = useMemo(() => {
@@ -335,10 +339,10 @@ export function TradovateChart({
       Object.fromEntries(
         INDICATOR_CATALOG.map(({ key }) => [
           key,
-          settings.indicators[key] && !settings.hiddenIndicators[key] && (key !== "ib" || intraday),
+          visibleInstances.some((instance) => instance.id === `base:${key}`),
         ]),
       ) as ChartIndicators,
-    [settings.indicators, settings.hiddenIndicators, intraday],
+    [visibleInstances],
   );
   const auxiliaryHistory = useInitialBalanceHistory(
     symbol,
@@ -1847,6 +1851,7 @@ export function TradovateChart({
                   </div>
                 ) : null}
                 <IndicatorLegend
+                  interval={interval}
                   settings={settings}
                   readings={hoverReadings ?? readings}
                   initialBalanceStatus={initialBalanceStatus}
@@ -1892,12 +1897,16 @@ export function TradovateChart({
                 key: instance.id,
                 label,
                 hidden: instance.hidden,
+                hiddenOnTimeframe: !isIndicatorVisibleOnTimeframe(instance.appearance, interval),
                 settingsLabel: accessible(`${label} settings`),
                 actionsLabel: accessible(`${label} actions`),
                 canDuplicate: indicatorInstances.length < MAX_CHART_INDICATORS,
                 onDuplicate: () => settings.duplicateIndicatorInstance(instance.id),
                 settingsContent: (
                   <IndicatorSettingsContent
+                    hiddenOnTimeframe={
+                      !isIndicatorVisibleOnTimeframe(instance.appearance, interval)
+                    }
                     instance={instance}
                     settings={settings}
                     accessible={accessible}

@@ -1,3 +1,5 @@
+import { isIndicatorVisibleOnTimeframe } from "./indicatorTimeframeVisibility";
+import type { ChartInterval } from "./tradingIntervals";
 import { IndicatorSettingsContent } from "./IndicatorSettingsContent";
 import { ChartIcon } from "./ChartIcon";
 import { SolarSettingsIcon } from "./SolarSettingsIcon";
@@ -15,11 +17,13 @@ type Preferences = ReturnType<typeof useChartPreferences.getState>;
 const controlClass =
   "inline-flex size-6 items-center justify-center border-r border-white/10 text-zinc-400 last:border-r-0 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400";
 export function IndicatorLegend({
+  interval,
   settings,
   readings,
   initialBalanceStatus,
   initialBalanceStatuses,
 }: {
+  interval: ChartInterval;
   settings: Preferences;
   readings: IndicatorReadings;
   initialBalanceStatus: string;
@@ -43,6 +47,8 @@ export function IndicatorLegend({
       {!collapsed &&
         added.map((instance) => {
           const { id, key, hidden, inputs, appearance } = instance;
+          const hiddenOnTimeframe = !isIndicatorVisibleOnTimeframe(appearance, interval);
+          const muted = hidden || hiddenOnTimeframe;
           const { detail } = getIndicatorDefinition(key);
           const label = getIndicatorLabel(key, { [key]: inputs });
           const index = (indices.get(key) ?? 0) + 1;
@@ -110,7 +116,7 @@ export function IndicatorLegend({
                       }}
                       className={cn(
                         "shrink-0 rounded outline-none focus-visible:ring-1 focus-visible:ring-blue-400",
-                        hidden && "text-zinc-600",
+                        muted && "text-zinc-600",
                       )}
                     />
                   }
@@ -119,7 +125,9 @@ export function IndicatorLegend({
                     ? "Vol"
                     : getIndicatorLabel(key, { [key]: inputs }, settings.showIndicatorInputs)}
                 </TooltipTrigger>
-                <TooltipPopup>{description}</TooltipPopup>
+                <TooltipPopup>
+                  {hiddenOnTimeframe ? `Hidden on this timeframe. ${description}` : description}
+                </TooltipPopup>
               </Tooltip>
               <div
                 className={cn(
@@ -128,7 +136,7 @@ export function IndicatorLegend({
                 )}
               >
                 {settings.showIndicatorValues && (
-                  <span className={cn("tabular-nums", hidden && "invisible")} style={{ color }}>
+                  <span className={cn("tabular-nums", muted && "invisible")} style={{ color }}>
                     {readings[indicatorReadingKey(instance)]?.toLocaleString(
                       "en-US",
                       key === "volume" || key === "obv"
@@ -180,6 +188,7 @@ export function IndicatorLegend({
                       className="max-h-[min(70vh,36rem)] w-72 overflow-y-auto"
                     >
                       <IndicatorSettingsContent
+                        hiddenOnTimeframe={hiddenOnTimeframe}
                         instance={instance}
                         settings={settings}
                         accessible={accessible}
