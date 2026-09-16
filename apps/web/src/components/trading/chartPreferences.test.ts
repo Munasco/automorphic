@@ -4436,3 +4436,40 @@ describe("crosshair line visibility", () => {
     },
   );
 });
+
+describe("price scale visibility", () => {
+  it("keeps legacy axes visible and rejects malformed or redundant writes", () => {
+    for (const value of [undefined, null, "false", 0, {}, []])
+      expect(normalizeChartPreferences({ showPriceScale: value }).showPriceScale).toBe(true);
+    const writes = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.length;
+    const store = useChartPreferences.getState();
+    store.setShowPriceScale(true);
+    store.setShowPriceScale("false" as unknown as boolean);
+    expect(vi.mocked(tradingWorkspaceStorage.setItem)).toHaveBeenCalledTimes(writes);
+  });
+  it.each([true, false])(
+    "persists visible=%s without altering indicators, modes or ticks",
+    async (showPriceScale) => {
+      const store = configure();
+      store.setPriceScaleMode("logarithmic");
+      store.toggleInvertScale();
+      store.setShowPriceScaleTicks(true);
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      store.setShowPriceScale(!showPriceScale);
+      store.setShowPriceScale(showPriceScale);
+      const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+        ...before,
+        showPriceScale,
+      });
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+        JSON.stringify({ version: 0, state: {} }),
+      );
+      await useChartPreferences.persist.rehydrate();
+      expect(useChartPreferences.getState().showPriceScale).toBe(true);
+    },
+  );
+});

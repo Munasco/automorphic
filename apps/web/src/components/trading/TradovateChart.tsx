@@ -595,6 +595,7 @@ export function TradovateChart({
       chartBackgroundColor,
       chartTextColor,
       lockVisibleTimeRangeOnResize,
+      showPriceScale,
       showPriceScaleTicks,
     } = useChartPreferences.getState();
     const chart = createChart(host.current, {
@@ -617,6 +618,7 @@ export function TradovateChart({
         lockVisibleTimeRangeOnResize,
       },
       rightPriceScale: {
+        visible: showPriceScale,
         ticksVisible: showPriceScaleTicks,
         borderColor: "#242730",
         scaleMargins: priceScaleMargins.current ?? {
@@ -1186,7 +1188,10 @@ export function TradovateChart({
       }[settings.crosshairLineStyle],
     };
     engine.chart.applyOptions({
-      rightPriceScale: { ticksVisible: settings.showPriceScaleTicks },
+      rightPriceScale: {
+        visible: settings.showPriceScale,
+        ticksVisible: settings.showPriceScaleTicks,
+      },
       layout: {
         background: { type: ColorType.Solid, color: settings.chartBackgroundColor },
         textColor: settings.chartTextColor,
@@ -1244,6 +1249,7 @@ export function TradovateChart({
     settings.chartTextColor,
     settings.priceScaleMode,
     settings.invertScale,
+    settings.showPriceScale,
     settings.showPriceScaleTicks,
     settings.crosshairMode,
     settings.showCrosshairHorizontalLine,
@@ -1502,6 +1508,8 @@ export function TradovateChart({
         priceScaleMode={settings.priceScaleMode}
         onPriceScaleModeChange={settings.setPriceScaleMode}
         invertScale={settings.invertScale}
+        showPriceScale={settings.showPriceScale}
+        onShowPriceScaleChange={settings.setShowPriceScale}
         showPriceScaleTicks={settings.showPriceScaleTicks}
         onShowPriceScaleTicksChange={settings.setShowPriceScaleTicks}
         onToggleInvertScale={settings.toggleInvertScale}

@@ -171,6 +171,7 @@ type SavedChartPreferences = {
   priceScaleMargins: ChartPriceScaleMargins | null;
   paneStretchFactors: ChartPaneSizes;
   invertScale: boolean;
+  showPriceScale: boolean;
   showPriceScaleTicks: boolean;
 };
 
@@ -289,6 +290,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
         ? "logarithmic"
         : "normal",
     invertScale: typeof saved.invertScale === "boolean" ? saved.invertScale : false,
+    showPriceScale: saved.showPriceScale !== false,
     showPriceScaleTicks: saved.showPriceScaleTicks === true,
   };
 }
@@ -347,6 +349,7 @@ export const useChartPreferences = create<{
   priceScaleMargins: ChartPriceScaleMargins | null;
   paneStretchFactors: ChartPaneSizes;
   invertScale: boolean;
+  showPriceScale: boolean;
   showPriceScaleTicks: boolean;
   setShowChartTitle: (show: boolean) => void;
   setShowCandleValues: (show: boolean) => void;
@@ -411,6 +414,7 @@ export const useChartPreferences = create<{
   setPriceScaleMode: (mode: ChartPriceScaleMode) => void;
   setPriceScaleMargins: (value: ChartPriceScaleMargins | null) => void;
   toggleInvertScale: () => void;
+  setShowPriceScale: (show: boolean) => void;
   setShowPriceScaleTicks: (show: boolean) => void;
 }>()(
   persist(
@@ -474,6 +478,7 @@ export const useChartPreferences = create<{
       priceScaleMargins: null,
       paneStretchFactors: {},
       invertScale: false,
+      showPriceScale: true,
       showPriceScaleTicks: false,
       setShowChartTitle: (showChartTitle) => {
         if (typeof showChartTitle === "boolean" && showChartTitle !== get().showChartTitle)
@@ -891,6 +896,10 @@ export const useChartPreferences = create<{
           set({ priceScaleMode });
       },
       toggleInvertScale: () => set((state) => ({ invertScale: !state.invertScale })),
+      setShowPriceScale: (show) => {
+        if (typeof show === "boolean" && show !== get().showPriceScale)
+          set({ showPriceScale: show });
+      },
       setShowPriceScaleTicks: (showPriceScaleTicks) => {
         if (
           typeof showPriceScaleTicks === "boolean" &&

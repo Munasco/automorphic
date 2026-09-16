@@ -73,6 +73,13 @@ export function ChartPriceScaleMenu({
       <MenuSeparator />
       <MenuCheckboxItem
         className={drawingContextMenuItemClass}
+        checked={settings.showPriceScale}
+        onCheckedChange={(show) => run(() => settings.setShowPriceScale(show))}
+      >
+        Show price scale
+      </MenuCheckboxItem>
+      <MenuCheckboxItem
+        className={drawingContextMenuItemClass}
         checked={settings.showPriceScaleTicks}
         onCheckedChange={(show) => run(() => settings.setShowPriceScaleTicks(show))}
       >
