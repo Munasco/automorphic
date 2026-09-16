@@ -1,3 +1,4 @@
+import { CopyIcon } from "lucide-react";
 import { chartAlertLogCsv } from "./chartAlertLogCsv";
 import { TradingSelect } from "./TradingSelect";
 import {
@@ -221,11 +222,18 @@ export function ChartAlerts({
   const [createPrice, setCreatePrice] = useState(initialCreatePrice);
   const [editingPrice, setEditingPrice] = useState<{
     alert: ChartPriceAlert;
+    duplicate?: boolean;
     update: ChartAlertsController["update"];
   } | null>(() =>
     initialEditAlert ? { alert: initialEditAlert, update: controller.update } : null,
   );
-  const [editingDrawingId, setEditingDrawingId] = useState<string | null>(null);
+  const [drawingEditor, setDrawingEditor] = useState<{
+    id: string;
+    duplicate: boolean;
+    projectId: string | null;
+    symbol: string;
+    intervalKey: string;
+  } | null>(null);
   const [searching, setSearching] = useState(false);
   const [search, setSearch] = useState("");
   const sort = useSyncExternalStore(tradingWorkspaceStorage.subscribe, getAlertSortSnapshot);
@@ -264,7 +272,13 @@ export function ChartAlerts({
   const query = search.trim().toLowerCase();
   const drawingLoading = drawingController !== undefined && !drawingController?.ready;
   const drawings = drawingController?.symbol === symbol ? drawingController : null;
-  const editingAlert = drawings?.alerts.find((alert) => alert.id === editingDrawingId);
+  const editingAlert =
+    workspace.ready &&
+    drawingEditor?.projectId === workspace.projectId &&
+    drawingEditor.symbol === drawings?.symbol &&
+    drawingEditor.intervalKey === drawings?.intervalKey
+      ? drawings?.alerts.find((alert) => alert.id === drawingEditor.id)
+      : undefined;
   const editingDrawing = editingAlert ? drawings?.drawingForAlert(editingAlert.id) : null;
   function act(action: () => unknown, message: string) {
     try {
@@ -286,8 +300,8 @@ export function ChartAlerts({
       controller.alerts.some(
         (alert) => alert.id === editingPrice.alert.id && alert.symbol === symbol,
       ));
-  const openPriceEdit = (alert: ChartPriceAlert) => {
-    setEditingPrice({ alert, update: controller.update });
+  const openPriceEdit = (alert: ChartPriceAlert, duplicate = false) => {
+    setEditingPrice({ alert: structuredClone(alert), duplicate, update: controller.update });
     setEditorOpen(true);
   };
   const allAlerts = [
@@ -314,6 +328,7 @@ export function ChartAlerts({
               : "Paused",
       frequency: alert.repeat ? "Repeating" : "Once",
       edit: alert.symbol === symbol ? () => openPriceEdit(alert) : null,
+      duplicate: alert.symbol === symbol ? () => openPriceEdit(alert, true) : null,
       canEnable: alert.expiresAt == null || alert.expiresAt > expirationClock,
       actionLabel: `${alert.name ? `${alert.name} · ` : ""}${alert.symbol} alert at ${alert.price}`,
       toggle: () => {
@@ -349,7 +364,25 @@ export function ChartAlerts({
       frequency: drawingTriggerLabel[alert.trigger],
       edit:
         drawings?.ready && drawings.drawingForAlert(alert.id)
-          ? () => setEditingDrawingId(alert.id)
+          ? () =>
+              setDrawingEditor({
+                id: alert.id,
+                duplicate: false,
+                projectId: workspace.projectId,
+                symbol: drawings.symbol,
+                intervalKey: drawings.intervalKey,
+              })
+          : null,
+      duplicate:
+        drawings?.ready && drawings.drawingForAlert(alert.id)
+          ? () =>
+              setDrawingEditor({
+                id: alert.id,
+                duplicate: true,
+                projectId: workspace.projectId,
+                symbol: drawings.symbol,
+                intervalKey: drawings.intervalKey,
+              })
           : null,
       canEnable:
         !!drawings?.ready &&
@@ -676,6 +709,14 @@ export function ChartAlerts({
                         <ChartIcon name="adjustments-horizontal" size={18} />
                       </AlertAction>
                     ) : null}
+                    {alert.duplicate ? (
+                      <AlertAction
+                        label={`Duplicate ${alert.actionLabel}`}
+                        onClick={alert.duplicate}
+                      >
+                        <CopyIcon className="size-[18px]" />
+                      </AlertAction>
+                    ) : null}
                     <AlertAction
                       label={`${alert.enabled ? "Pause" : "Enable"} ${alert.actionLabel}`}
                       disabled={!alert.enabled && !alert.canEnable}
@@ -724,25 +765,32 @@ export function ChartAlerts({
       </Tabs.Root>
       {drawings?.ready && editingAlert && editingDrawing ? (
         <DrawingAlertDialog
-          key={`${drawings.symbol}:${drawings.intervalKey}:${editingAlert.id}`}
-          alert={editingAlert}
+          key={`${drawings.symbol}:${drawings.intervalKey}:${editingAlert.id}:${drawingEditor?.duplicate}`}
+          alert={drawingEditor?.duplicate ? undefined : editingAlert}
+          initialValues={drawingEditor?.duplicate ? editingAlert : undefined}
           drawing={editingDrawing}
           symbol={drawings.symbol}
           intervalLabel={drawings.intervalLabel}
-          onSubmit={(input) => drawings.update(editingAlert.id, input)}
-          onClose={() => setEditingDrawingId(null)}
+          onSubmit={(input) =>
+            drawingEditor?.duplicate
+              ? drawings.create(input)
+              : drawings.update(editingAlert.id, input)
+          }
+          onClose={() => setDrawingEditor(null)}
         />
       ) : null}
       {editorOpen ? (
         <PriceAlertDialog
-          key={editingPrice?.alert.id ?? "create"}
-          alert={editingPrice?.alert}
+          key={`${editingPrice?.alert.id ?? "create"}:${editingPrice?.duplicate ?? false}`}
+          alert={editingPrice?.duplicate ? undefined : editingPrice?.alert}
+          initialValues={editingPrice?.duplicate ? editingPrice.alert : undefined}
           symbol={editingPrice?.alert.symbol || symbol}
           initialPrice={createPrice}
           lastPrice={lastPrice}
           available={priceEditorAvailable && controller.ready}
           onClose={() => setEditorOpen(false)}
           onSubmit={async (input) => {
+            if (!priceEditorAvailable) return "This alert is no longer available.";
             const notificationError = await controller.prepareNotifications(
               input.notifications ?? { toast: true, sound: false, desktop: false },
             );
@@ -752,7 +800,7 @@ export function ChartAlerts({
               !currentController.current.ready
             )
               return "The workspace changed. Close this editor and try again.";
-            if (editingPrice) {
+            if (editingPrice && !editingPrice.duplicate) {
               if (!priceEditorAvailable || !controller.update(editingPrice.alert.id, input))
                 return "Could not save this alert. Check its settings and try again.";
             } else controller.add(input);

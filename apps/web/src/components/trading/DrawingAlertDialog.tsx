@@ -9,6 +9,7 @@ import { DrawingSelect, inputClass } from "./DrawingStyleControls";
 import type { ChartDrawing } from "./drawingGeometry";
 import type {
   DrawingAlert,
+  NewDrawingAlert,
   DrawingAlertCondition,
   DrawingAlertTrigger,
   DrawingAlertChannelBoundary,
@@ -84,45 +85,50 @@ function expirationLabel(timestamp: number | null) {
 export function DrawingAlertDialog({
   drawing,
   alert,
+  initialValues,
   symbol,
   intervalLabel,
   onClose,
   onSubmit,
 }: {
   drawing: ChartDrawing;
-  alert?: DrawingAlert;
+  alert?: DrawingAlert | undefined;
+  initialValues?: NewDrawingAlert | undefined;
   symbol: string;
   intervalLabel: string;
   onClose: () => void;
   onSubmit: (input: DrawingAlertDialogInput) => string | null | Promise<string | null>;
 }) {
+  const initial = alert ?? initialValues;
   const vertical = drawing.kind === "vertical";
   const messageInterval = /^\d+m$/.test(intervalLabel) ? intervalLabel.slice(0, -1) : intervalLabel;
   const [page, setPage] = useState<Page>("main");
-  const [condition, setCondition] = useState<DrawingAlertCondition>(alert?.condition ?? "crossing");
-  const [trigger, setTrigger] = useState<DrawingAlertTrigger>(alert?.trigger ?? "once");
+  const [condition, setCondition] = useState<DrawingAlertCondition>(
+    initial?.condition ?? "crossing",
+  );
+  const [trigger, setTrigger] = useState<DrawingAlertTrigger>(initial?.trigger ?? "once");
   const [expiresAt, setExpiresAt] = useState<number | null>(() =>
-    alert ? alert.expiresAt : monthAhead(),
+    initial ? initial.expiresAt : monthAhead(),
   );
   const channel = drawing.kind === "channel";
   const [channelBoundary, setChannelBoundary] = useState<DrawingAlertChannelBoundary>(
-    alert?.channelBoundary ?? "upper",
+    initial?.channelBoundary ?? "upper",
   );
   const baseLabel = drawing.name || drawingLabels[drawing.kind] || "Drawing";
   const label = channel ? `${baseLabel} ${channelBoundary} boundary` : baseLabel;
   const [message, setMessage] = useState<MessageDraft>(() => ({
-    name: alert?.name ?? "",
-    message: alert
-      ? (alert.message ?? "")
+    name: initial?.name ?? "",
+    message: initial
+      ? (initial.message ?? "")
       : `${symbol}, ${messageInterval} Crossing ${label.toLowerCase()}`,
   }));
   const [messageDraft, setMessageDraft] = useState(message);
   const [notifications, setNotifications] = useState(() =>
-    alert
+    initial
       ? {
-          toast: alert.notifications?.toast !== false,
-          sound: alert.notifications?.sound ?? false,
-          desktop: alert.notifications?.desktop ?? false,
+          toast: initial.notifications?.toast !== false,
+          sound: initial.notifications?.sound ?? false,
+          desktop: initial.notifications?.desktop ?? false,
         }
       : { toast: true, sound: true, desktop: true },
   );

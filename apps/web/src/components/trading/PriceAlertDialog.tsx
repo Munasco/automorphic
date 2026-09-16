@@ -32,6 +32,7 @@ function localDateTime(timestamp: number | null | undefined) {
 
 export function PriceAlertDialog({
   alert,
+  initialValues,
   symbol,
   initialPrice,
   lastPrice,
@@ -40,6 +41,7 @@ export function PriceAlertDialog({
   onClose,
 }: {
   alert?: ChartPriceAlert | undefined;
+  initialValues?: NewChartAlert | undefined;
   symbol: string;
   initialPrice?: number | undefined;
   lastPrice?: number | undefined;
@@ -47,25 +49,26 @@ export function PriceAlertDialog({
   onSubmit: (input: NewChartAlert) => string | null | Promise<string | null>;
   onClose: () => void;
 }) {
+  const initial = alert ?? initialValues;
   const id = useId();
   const [page, setPage] = useState<Page>("main");
   const [target, setTarget] = useState(() => {
-    const price = alert?.price ?? initialPrice;
+    const price = initial?.price ?? initialPrice;
     return price === undefined ? "" : String(price);
   });
-  const [condition, setCondition] = useState<AlertCondition>(alert?.condition ?? "crossing");
-  const [repeat, setRepeat] = useState(alert?.repeat ?? false);
-  const [cooldownMs, setCooldownMs] = useState(alert?.cooldownMs ?? 60_000);
+  const [condition, setCondition] = useState<AlertCondition>(initial?.condition ?? "crossing");
+  const [repeat, setRepeat] = useState(initial?.repeat ?? false);
+  const [cooldownMs, setCooldownMs] = useState(initial?.cooldownMs ?? 60_000);
   const [message, setMessage] = useState({
-    name: alert?.name ?? "",
-    message: alert?.message ?? "",
+    name: initial?.name ?? "",
+    message: initial?.message ?? "",
   });
   const [messageDraft, setMessageDraft] = useState(message);
   const [notifications, setNotifications] = useState(
-    alert?.notifications ?? { ...DEFAULT_CHART_ALERT_NOTIFICATIONS },
+    initial?.notifications ?? { ...DEFAULT_CHART_ALERT_NOTIFICATIONS },
   );
   const [notificationDraft, setNotificationDraft] = useState(notifications);
-  const [expiration, setExpiration] = useState(() => localDateTime(alert?.expiresAt));
+  const [expiration, setExpiration] = useState(() => localDateTime(initial?.expiresAt));
   const [expirationDraft, setExpirationDraft] = useState(expiration);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -121,6 +124,7 @@ export function PriceAlertDialog({
         cooldownMs,
         expiresAt,
         notifications,
+        ...(initial?.showLine === undefined ? {} : { showLine: initial.showLine }),
         ...message,
       });
       if (failure) setError(failure);
