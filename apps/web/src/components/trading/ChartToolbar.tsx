@@ -1,3 +1,4 @@
+import { ChartCanvasControls } from "./ChartCanvasControls";
 import { ChartMouseWheelControl } from "./ChartMouseWheelControl";
 import { ChartPreviousCloseControl } from "./ChartPreviousCloseControl";
 import { ChartPriceLineControls } from "./ChartPriceLineControls";
@@ -99,10 +100,6 @@ export type ChartToolbarProps = {
   onToggleBarCountdown: () => void;
   showPriceLabel: boolean;
   onTogglePriceLabel: () => void;
-  chartBackgroundColor: string;
-  chartTextColor: string;
-  onChartBackgroundColorChange: (color: string) => void;
-  onChartTextColorChange: (color: string) => void;
   lockVisibleTimeRangeOnResize: boolean;
   onLockVisibleTimeRangeOnResizeChange: (lock: boolean) => void;
   showSymbolWatermark: boolean;
@@ -218,10 +215,6 @@ export function ChartToolbar({
   onToggleBarCountdown,
   showPriceLabel,
   onTogglePriceLabel,
-  chartBackgroundColor,
-  chartTextColor,
-  onChartBackgroundColorChange,
-  onChartTextColorChange,
   lockVisibleTimeRangeOnResize,
   onLockVisibleTimeRangeOnResizeChange,
   showSymbolWatermark,
@@ -746,35 +739,7 @@ export function ChartToolbar({
             )}
             <fieldset className="space-y-2 border-t border-white/10 px-2 py-2.5">
               <legend className="text-xs text-zinc-400">Chart canvas</legend>
-              {[
-                {
-                  label: "Background",
-                  value: chartBackgroundColor,
-                  onChange: onChartBackgroundColorChange,
-                },
-                { label: "Text", value: chartTextColor, onChange: onChartTextColorChange },
-              ].map(({ label, value, onChange }) => (
-                <label key={label} className="flex items-center justify-between text-xs">
-                  {label}
-                  <input
-                    type="color"
-                    aria-label={`Chart ${label.toLowerCase()} color`}
-                    value={value}
-                    onChange={(event) => onChange(event.target.value)}
-                    className="h-7 w-8 shrink-0 cursor-pointer rounded border border-white/15 bg-transparent"
-                  />
-                </label>
-              ))}
-              <button
-                type="button"
-                className="text-xs text-zinc-400 hover:text-white"
-                onClick={() => {
-                  onChartBackgroundColorChange("#0b0d12");
-                  onChartTextColorChange("#9299a7");
-                }}
-              >
-                Reset canvas colors
-              </button>
+              <ChartCanvasControls />
               <ChartFontSizeControl />
             </fieldset>
             <fieldset className="space-y-2 border-t border-white/10 px-2 py-2.5">

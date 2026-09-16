@@ -1,3 +1,4 @@
+import type { ChartBackgroundMode } from "./chartCanvasBackground";
 import { validObjectTreeFilter, type ObjectTreeFilter } from "./drawingObjectSearch";
 import {
   DEFAULT_PRICE_LINE_APPEARANCE,
@@ -168,6 +169,8 @@ type SavedChartPreferences = {
   gridLineStyle: ChartGridLineStyle;
   gridColor: string;
   chartBackgroundColor: string;
+  chartBackgroundMode: ChartBackgroundMode;
+  chartBackgroundBottomColor: string;
   chartTextColor: string;
   chartFontSize: number;
   lineChartSource: PriceSource;
@@ -296,6 +299,10 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     chartBackgroundColor: validColor(saved.chartBackgroundColor)
       ? saved.chartBackgroundColor
       : "#0b0d12",
+    chartBackgroundMode: saved.chartBackgroundMode === "gradient" ? "gradient" : "solid",
+    chartBackgroundBottomColor: validColor(saved.chartBackgroundBottomColor)
+      ? saved.chartBackgroundBottomColor
+      : "#000000",
     chartTextColor: validColor(saved.chartTextColor) ? saved.chartTextColor : "#9299a7",
     chartFontSize: validChartFontSize(saved.chartFontSize) ? saved.chartFontSize : 12,
     lineChartSource: validLineChartSource(saved.lineChartSource) ? saved.lineChartSource : "close",
@@ -392,6 +399,8 @@ export const useChartPreferences = create<{
   gridLineStyle: ChartGridLineStyle;
   gridColor: string;
   chartBackgroundColor: string;
+  chartBackgroundMode: ChartBackgroundMode;
+  chartBackgroundBottomColor: string;
   chartTextColor: string;
   chartFontSize: number;
   lineChartSource: PriceSource;
@@ -484,6 +493,8 @@ export const useChartPreferences = create<{
   setObjectTreeFilter: (filter: ObjectTreeFilter) => void;
   setGridColor: (color: string) => void;
   setChartBackgroundColor: (color: string) => void;
+  setChartBackgroundMode: (mode: ChartBackgroundMode) => void;
+  setChartBackgroundBottomColor: (color: string) => void;
   setChartTextColor: (color: string) => void;
   setChartFontSize: (size: number) => boolean;
   setLineChartSource: (source: PriceSource) => void;
@@ -554,6 +565,8 @@ export const useChartPreferences = create<{
       gridLineStyle: "solid",
       gridColor: "#171a23",
       chartBackgroundColor: "#0b0d12",
+      chartBackgroundMode: "solid",
+      chartBackgroundBottomColor: "#000000",
       chartTextColor: "#9299a7",
       chartFontSize: 12,
       lineChartSource: "close",
@@ -1010,6 +1023,20 @@ export const useChartPreferences = create<{
       setLineChartShape: (lineChartShape) => {
         if (validLineChartShape(lineChartShape) && lineChartShape !== get().lineChartShape)
           set({ lineChartShape });
+      },
+      setChartBackgroundMode: (chartBackgroundMode) => {
+        if (
+          (chartBackgroundMode === "solid" || chartBackgroundMode === "gradient") &&
+          chartBackgroundMode !== get().chartBackgroundMode
+        )
+          set({ chartBackgroundMode });
+      },
+      setChartBackgroundBottomColor: (chartBackgroundBottomColor) => {
+        if (
+          validColor(chartBackgroundBottomColor) &&
+          chartBackgroundBottomColor !== get().chartBackgroundBottomColor
+        )
+          set({ chartBackgroundBottomColor });
       },
       setChartBackgroundColor: (chartBackgroundColor) => {
         if (validColor(chartBackgroundColor) && chartBackgroundColor !== get().chartBackgroundColor)

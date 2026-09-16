@@ -1,3 +1,4 @@
+import { chartCanvasBackground } from "./chartCanvasBackground";
 import { isIndicatorVisibleOnTimeframe } from "./indicatorTimeframeVisibility";
 import { previousCloseColors } from "./previousCloseColors";
 import { chartBarChange, formatChartBarChange } from "./chartBarChange";
@@ -49,7 +50,6 @@ import {
   LineSeries,
   AreaSeries,
   HistogramSeries,
-  ColorType,
   CrosshairMode,
   PriceScaleMode,
   LineStyle,
@@ -646,6 +646,8 @@ export function TradovateChart({
     );
     const {
       chartBackgroundColor,
+      chartBackgroundMode,
+      chartBackgroundBottomColor,
       chartTextColor,
       chartFontSize,
       lineChartColor,
@@ -661,7 +663,11 @@ export function TradovateChart({
       autoSize: true,
       handleScale: { mouseWheel: zoomWithMouseWheel },
       layout: {
-        background: { type: ColorType.Solid, color: chartBackgroundColor },
+        background: chartCanvasBackground(
+          chartBackgroundMode,
+          chartBackgroundColor,
+          chartBackgroundBottomColor,
+        ),
         textColor: chartTextColor,
         fontFamily: getComputedStyle(host.current).fontFamily,
         fontSize: chartFontSize,
@@ -1274,7 +1280,11 @@ export function TradovateChart({
         ticksVisible: settings.showPriceScaleTicks,
       },
       layout: {
-        background: { type: ColorType.Solid, color: settings.chartBackgroundColor },
+        background: chartCanvasBackground(
+          settings.chartBackgroundMode,
+          settings.chartBackgroundColor,
+          settings.chartBackgroundBottomColor,
+        ),
         textColor: settings.chartTextColor,
         fontSize: settings.chartFontSize,
       },
@@ -1328,6 +1338,8 @@ export function TradovateChart({
     settings.gridLineStyle,
     settings.gridColor,
     settings.chartBackgroundColor,
+    settings.chartBackgroundMode,
+    settings.chartBackgroundBottomColor,
     settings.chartTextColor,
     settings.chartFontSize,
     settings.priceScaleMode,
@@ -1569,10 +1581,6 @@ export function TradovateChart({
         onToggleBarCountdown={settings.toggleBarCountdown}
         showPriceLabel={settings.showPriceLabel}
         onTogglePriceLabel={settings.togglePriceLabel}
-        chartBackgroundColor={settings.chartBackgroundColor}
-        chartTextColor={settings.chartTextColor}
-        onChartBackgroundColorChange={settings.setChartBackgroundColor}
-        onChartTextColorChange={settings.setChartTextColor}
         lockVisibleTimeRangeOnResize={settings.lockVisibleTimeRangeOnResize}
         onLockVisibleTimeRangeOnResizeChange={settings.setLockVisibleTimeRangeOnResize}
         showSymbolWatermark={settings.showSymbolWatermark}

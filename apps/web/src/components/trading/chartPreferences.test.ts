@@ -5080,3 +5080,37 @@ it("persists wheel zoom and ignores invalid or unchanged updates", async () => {
   useChartPreferences.getState().setZoomWithMouseWheel(true);
   expect(useChartPreferences.getState().zoomWithMouseWheel).toBe(true);
 });
+
+it("preserves canvas gradient colors across solid mode, invalid edits and workspace reload", async () => {
+  const store = useChartPreferences.getState();
+  expect(normalizeChartPreferences({ chartBackgroundColor: "#123456" })).toMatchObject({
+    chartBackgroundMode: "solid",
+    chartBackgroundColor: "#123456",
+    chartBackgroundBottomColor: "#000000",
+  });
+  expect(
+    normalizeChartPreferences({ chartBackgroundMode: "other", chartBackgroundBottomColor: "red" }),
+  ).toMatchObject({
+    chartBackgroundMode: "solid",
+    chartBackgroundBottomColor: "#000000",
+  });
+  store.setChartBackgroundMode("gradient");
+  store.setChartBackgroundColor("#123456");
+  store.setChartBackgroundBottomColor("#654321");
+  for (const invalid of [undefined, null, "red", "#123", 1, {}, []])
+    store.setChartBackgroundBottomColor(invalid as never);
+  store.setChartBackgroundMode("invalid" as never);
+  expect(useChartPreferences.getState().chartBackgroundMode).toBe("gradient");
+  store.setChartBackgroundMode("solid");
+  expect(useChartPreferences.getState().chartBackgroundBottomColor).toBe("#654321");
+  store.setChartBackgroundMode("gradient");
+  const payload = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(payload);
+  await useChartPreferences.persist.rehydrate();
+  expect(useChartPreferences.getState()).toMatchObject({
+    chartBackgroundMode: "gradient",
+    chartBackgroundColor: "#123456",
+    chartBackgroundBottomColor: "#654321",
+  });
+});

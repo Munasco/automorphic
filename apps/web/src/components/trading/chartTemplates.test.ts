@@ -448,3 +448,24 @@ it("captures wheel zoom and restores enabled behavior for older templates", () =
   ]);
   expect(templates.map((template) => template.settings.zoomWithMouseWheel)).toEqual([false, true]);
 });
+
+it("captures gradient background endpoints and keeps legacy templates solid", () => {
+  const gradient = {
+    chartBackgroundMode: "gradient",
+    chartBackgroundColor: "#123456",
+    chartBackgroundBottomColor: "#654321",
+  };
+  expect(captureChartTemplateSettings(gradient)).toMatchObject(gradient);
+  expect(captureChartTemplateSettings({ chartBackgroundColor: "#123456" })).toMatchObject({
+    chartBackgroundMode: "solid",
+    chartBackgroundColor: "#123456",
+    chartBackgroundBottomColor: "#000000",
+  });
+  const templates = normalizeChartTemplates([
+    { id: "gradient", name: "Gradient", settings: gradient },
+  ]);
+  expect(templates[0]?.settings).toMatchObject(gradient);
+  expect(chartTemplateSettingsKey(gradient)).not.toBe(
+    chartTemplateSettingsKey({ ...gradient, chartBackgroundMode: "solid" }),
+  );
+});
