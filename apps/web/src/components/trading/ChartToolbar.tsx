@@ -1,5 +1,6 @@
 import { ResetChartPaneSizes } from "./ResetChartPaneSizes";
 import { ChartRightMarginControl } from "./ChartRightMarginControl";
+import { ChartWatermarkAppearance } from "./ChartWatermarkAppearance";
 import { PRICE_SOURCES, type PriceSource } from "./chartIndicators";
 import { TradingSelect } from "./TradingSelect";
 import type {
@@ -843,15 +844,21 @@ export function ChartToolbar({
                 Keep visible range on resize
               </label>
             </fieldset>
+            <fieldset className="space-y-1 border-t border-white/10 px-2 py-2.5">
+              <legend className="text-xs text-zinc-400">Watermark</legend>
+              <label htmlFor={`${id}-watermark`} className="flex items-center gap-3 py-2 text-xs">
+                <Checkbox
+                  id={`${id}-watermark`}
+                  checked={showSymbolWatermark}
+                  onCheckedChange={onShowSymbolWatermarkChange}
+                />
+                Symbol watermark
+              </label>
+              {showSymbolWatermark && <ChartWatermarkAppearance />}
+            </fieldset>
             <fieldset className="space-y-1 border-y border-white/10 px-2 py-2.5">
               <legend className="text-xs text-zinc-400">Legend</legend>
               {[
-                {
-                  key: "watermark",
-                  label: "Symbol watermark",
-                  checked: showSymbolWatermark,
-                  onChange: onShowSymbolWatermarkChange,
-                },
                 {
                   key: "title",
                   label: "Chart title",

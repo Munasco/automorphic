@@ -4609,3 +4609,58 @@ it("validates and persists the right margin without changing other chart prefere
   expect(useChartPreferences.getState().rightOffsetBars).toBe(12);
   expect(normalizeChartPreferences({}).rightOffsetBars).toBe(5);
 });
+
+describe("symbol watermark appearance", () => {
+  it("rejects invalid colors and opacity without writes, and accepts unchanged opacity", () => {
+    const store = useChartPreferences.getState();
+    expect(store).toMatchObject({ watermarkColor: "#9299a7", watermarkOpacity: 14 });
+    expect(normalizeChartPreferences({})).toMatchObject({
+      watermarkColor: "#9299a7",
+      watermarkOpacity: 14,
+    });
+    for (const value of ["red", "#fff", "#12345678", "", null, 12]) {
+      store.setWatermarkColor(value as string);
+      expect(normalizeChartPreferences({ watermarkColor: value }).watermarkColor).toBe("#9299a7");
+    }
+    for (const value of [-1, 101, 1.5, NaN, Infinity, "20", null]) {
+      expect(store.setWatermarkOpacity(value as number)).toBe(false);
+      expect(normalizeChartPreferences({ watermarkOpacity: value }).watermarkOpacity).toBe(14);
+    }
+    store.setWatermarkColor("#9299a7");
+    expect(store.setWatermarkOpacity(14)).toBe(true);
+    expect(useChartPreferences.getState()).toBe(store);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  });
+
+  it.each([0, 37, 100])(
+    "persists watermark color and %s%% opacity without changing other settings, then resets for a legacy workspace",
+    async (watermarkOpacity) => {
+      const before = configure();
+      before.setWatermarkColor("#Ab12Ef");
+      expect(before.setWatermarkOpacity(watermarkOpacity)).toBe(true);
+      expect(useChartPreferences.getState()).toEqual({
+        ...before,
+        watermarkColor: "#Ab12Ef",
+        watermarkOpacity,
+      });
+      const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(useChartPreferences.getState()).toMatchObject({
+        watermarkColor: "#Ab12Ef",
+        watermarkOpacity,
+        showSymbolWatermark: before.showSymbolWatermark,
+      });
+      const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+        JSON.stringify({ version: 0, state: {} }),
+      );
+      await hydrate();
+      expect(useChartPreferences.getState()).toMatchObject({
+        watermarkColor: "#9299a7",
+        watermarkOpacity: 14,
+      });
+    },
+  );
+});

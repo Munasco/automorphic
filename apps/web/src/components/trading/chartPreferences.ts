@@ -49,6 +49,8 @@ export type { IndicatorAppearance } from "./indicatorStyles";
 export type ChartAppearance = Partial<Record<IndicatorKey, IndicatorAppearance>>;
 export type ChartCrosshairMode = "normal" | "magnet" | "ohlc" | "hidden";
 export type ChartCrosshairLineStyle = "solid" | "dotted" | "dashed" | "largeDashed";
+const validWatermarkOpacity = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 100;
 export type ChartReplaySpeed = 0.5 | 1 | 2 | 5 | 10;
 const validReplaySpeed = (value: unknown): value is ChartReplaySpeed =>
   value === 0.5 || value === 1 || value === 2 || value === 5 || value === 10;
@@ -149,6 +151,8 @@ type SavedChartPreferences = {
   lineChartShape: ChartLineShape;
   showLineMarkers: boolean;
   showSymbolWatermark: boolean;
+  watermarkColor: string;
+  watermarkOpacity: number;
   lockVisibleTimeRangeOnResize: boolean;
   lineMarkerRadius: ChartLineMarkerRadius;
   thinBars: boolean;
@@ -261,6 +265,8 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     lineChartShape: validLineChartShape(saved.lineChartShape) ? saved.lineChartShape : "straight",
     showLineMarkers: saved.showLineMarkers === true,
     showSymbolWatermark: saved.showSymbolWatermark === true,
+    watermarkColor: validColor(saved.watermarkColor) ? saved.watermarkColor : "#9299a7",
+    watermarkOpacity: validWatermarkOpacity(saved.watermarkOpacity) ? saved.watermarkOpacity : 14,
     lockVisibleTimeRangeOnResize: saved.lockVisibleTimeRangeOnResize === true,
     lineMarkerRadius: validLineMarkerRadius(saved.lineMarkerRadius) ? saved.lineMarkerRadius : 3,
     thinBars: typeof saved.thinBars === "boolean" ? saved.thinBars : true,
@@ -337,6 +343,8 @@ export const useChartPreferences = create<{
   lineChartShape: ChartLineShape;
   showLineMarkers: boolean;
   showSymbolWatermark: boolean;
+  watermarkColor: string;
+  watermarkOpacity: number;
   lockVisibleTimeRangeOnResize: boolean;
   lineMarkerRadius: ChartLineMarkerRadius;
   thinBars: boolean;
@@ -414,6 +422,8 @@ export const useChartPreferences = create<{
   setLineChartShape: (shape: ChartLineShape) => void;
   toggleLineMarkers: () => void;
   setShowSymbolWatermark: (show: boolean) => void;
+  setWatermarkColor: (color: string) => void;
+  setWatermarkOpacity: (opacity: number) => boolean;
   setPaneStretchFactors: (sizes: ChartPaneSizes) => void;
   setLockVisibleTimeRangeOnResize: (lock: boolean) => void;
   setLineMarkerRadius: (radius: ChartLineMarkerRadius) => void;
@@ -471,6 +481,8 @@ export const useChartPreferences = create<{
       lineChartShape: "straight",
       showLineMarkers: false,
       showSymbolWatermark: false,
+      watermarkColor: "#9299a7",
+      watermarkOpacity: 14,
       lockVisibleTimeRangeOnResize: false,
       lineMarkerRadius: 3,
       thinBars: true,
@@ -900,6 +912,15 @@ export const useChartPreferences = create<{
           lockVisibleTimeRangeOnResize !== get().lockVisibleTimeRangeOnResize
         )
           set({ lockVisibleTimeRangeOnResize });
+      },
+      setWatermarkColor: (watermarkColor) => {
+        if (validColor(watermarkColor) && watermarkColor !== get().watermarkColor)
+          set({ watermarkColor });
+      },
+      setWatermarkOpacity: (watermarkOpacity) => {
+        if (!validWatermarkOpacity(watermarkOpacity)) return false;
+        if (watermarkOpacity !== get().watermarkOpacity) set({ watermarkOpacity });
+        return true;
       },
       setShowSymbolWatermark: (showSymbolWatermark) => {
         if (

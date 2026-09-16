@@ -1298,6 +1298,10 @@ export function TradovateChart({
       horzAlign: "center",
       vertAlign: "center",
     });
+    const rgb = [1, 3, 5].map((start) =>
+      parseInt(settings.watermarkColor.slice(start, start + 2), 16),
+    );
+    const color = `rgba(${rgb.join(", ")}, ${settings.watermarkOpacity / 100})`;
     let previousSize = -1;
     const resize = () => {
       if (engine.disposed) return;
@@ -1311,7 +1315,7 @@ export function TradovateChart({
         lines: [
           {
             text: symbol,
-            color: "rgba(146, 153, 167, 0.14)",
+            color,
             fontSize,
             fontStyle: "bold",
             fontFamily: engine.chart.options().layout.fontFamily,
@@ -1326,7 +1330,13 @@ export function TradovateChart({
       observer.disconnect();
       if (!engine.disposed) watermark.detach();
     };
-  }, [engine, settings.showSymbolWatermark, symbol]);
+  }, [
+    engine,
+    settings.showSymbolWatermark,
+    settings.watermarkColor,
+    settings.watermarkOpacity,
+    symbol,
+  ]);
 
   useEffect(() => {
     priceDisplay.current = {

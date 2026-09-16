@@ -39,6 +39,9 @@ const chart = () => ({
   replaySpeed: 5,
   lockVisibleTimeRangeOnResize: true,
   showPriceScaleTicks: true,
+  showSymbolWatermark: true,
+  watermarkColor: "#ff8800",
+  watermarkOpacity: 60,
   favoriteIndicators: ["rsi"],
   indicators: { rsi: true, ib: true },
   indicatorInputs: { rsi: { period: 7 } },
@@ -62,6 +65,9 @@ describe("chart template snapshots", () => {
       timeZone: "America/New_York",
       lockVisibleTimeRangeOnResize: true,
       showPriceScaleTicks: true,
+      showSymbolWatermark: true,
+      watermarkColor: "#ff8800",
+      watermarkOpacity: 60,
       indicatorInputs: { rsi: { period: 7 } },
     });
     for (const key of ["favoriteIndicators", "replaySpeed", "symbol", "drawings", "alerts"])
