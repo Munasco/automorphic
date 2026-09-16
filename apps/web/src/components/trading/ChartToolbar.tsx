@@ -110,6 +110,10 @@ export type ChartToolbarProps = {
   showBarChange: boolean;
   onShowBarChangeChange: (show: boolean) => void;
   indicatorLegendCollapsed: boolean;
+  showIndicatorInputs: boolean;
+  showIndicatorValues: boolean;
+  onShowIndicatorInputsChange: (show: boolean) => void;
+  onShowIndicatorValuesChange: (show: boolean) => void;
   onShowChartTitleChange: (show: boolean) => void;
   onShowCandleValuesChange: (show: boolean) => void;
   onIndicatorLegendCollapsedChange: (collapsed: boolean) => void;
@@ -225,6 +229,10 @@ export function ChartToolbar({
   showBarChange,
   onShowBarChangeChange,
   indicatorLegendCollapsed,
+  showIndicatorInputs,
+  showIndicatorValues,
+  onShowIndicatorInputsChange,
+  onShowIndicatorValuesChange,
   onShowChartTitleChange,
   onShowCandleValuesChange,
   onIndicatorLegendCollapsedChange,
@@ -816,6 +824,22 @@ export function ChartToolbar({
                   checked: !indicatorLegendCollapsed,
                   onChange: (show: boolean) => onIndicatorLegendCollapsedChange(!show),
                 },
+                ...(!indicatorLegendCollapsed
+                  ? [
+                      {
+                        key: "indicator-inputs",
+                        label: "Indicator inputs",
+                        checked: showIndicatorInputs,
+                        onChange: onShowIndicatorInputsChange,
+                      },
+                      {
+                        key: "indicator-values",
+                        label: "Indicator values",
+                        checked: showIndicatorValues,
+                        onChange: onShowIndicatorValuesChange,
+                      },
+                    ]
+                  : []),
               ].map(({ key, label, checked, onChange }) => (
                 <label
                   key={key}

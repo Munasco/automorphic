@@ -189,6 +189,8 @@ type SavedChartPreferences = {
   showCandleValues: boolean;
   showBarChange: boolean;
   indicatorLegendCollapsed: boolean;
+  showIndicatorInputs: boolean;
+  showIndicatorValues: boolean;
   priceLineAppearance: ChartPriceLineAppearance;
   showPriceLine: boolean;
   showPriceLabel: boolean;
@@ -314,6 +316,8 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     showBarChange: saved.showBarChange === true,
     showCandleValues: typeof saved.showCandleValues === "boolean" ? saved.showCandleValues : true,
     indicatorLegendCollapsed: saved.indicatorLegendCollapsed === true,
+    showIndicatorInputs: saved.showIndicatorInputs !== false,
+    showIndicatorValues: saved.showIndicatorValues !== false,
     priceLineAppearance: normalizePriceLineAppearance(saved.priceLineAppearance),
     showPriceLine: typeof saved.showPriceLine === "boolean" ? saved.showPriceLine : true,
     showPriceLabel: typeof saved.showPriceLabel === "boolean" ? saved.showPriceLabel : true,
@@ -395,6 +399,8 @@ export const useChartPreferences = create<{
   showCandleValues: boolean;
   showBarChange: boolean;
   indicatorLegendCollapsed: boolean;
+  showIndicatorInputs: boolean;
+  showIndicatorValues: boolean;
   priceLineAppearance: ChartPriceLineAppearance;
   showPriceLine: boolean;
   showPriceLabel: boolean;
@@ -410,6 +416,8 @@ export const useChartPreferences = create<{
   setShowChartTitle: (show: boolean) => void;
   setShowBarChange: (show: boolean) => void;
   setShowCandleValues: (show: boolean) => void;
+  setShowIndicatorInputs: (show: boolean) => void;
+  setShowIndicatorValues: (show: boolean) => void;
   setIndicatorLegendCollapsed: (collapsed: boolean) => void;
   setStyle: (style: ChartStyle) => void;
   setTimeZone: (timeZone: string) => void;
@@ -545,6 +553,8 @@ export const useChartPreferences = create<{
       showCandleValues: true,
       showBarChange: false,
       indicatorLegendCollapsed: false,
+      showIndicatorInputs: true,
+      showIndicatorValues: true,
       priceLineAppearance: { ...DEFAULT_PRICE_LINE_APPEARANCE },
       showPriceLine: true,
       showPriceLabel: true,
@@ -568,6 +578,20 @@ export const useChartPreferences = create<{
       setShowCandleValues: (showCandleValues) => {
         if (typeof showCandleValues === "boolean" && showCandleValues !== get().showCandleValues)
           set({ showCandleValues });
+      },
+      setShowIndicatorInputs: (showIndicatorInputs) => {
+        if (
+          typeof showIndicatorInputs === "boolean" &&
+          showIndicatorInputs !== get().showIndicatorInputs
+        )
+          set({ showIndicatorInputs });
+      },
+      setShowIndicatorValues: (showIndicatorValues) => {
+        if (
+          typeof showIndicatorValues === "boolean" &&
+          showIndicatorValues !== get().showIndicatorValues
+        )
+          set({ showIndicatorValues });
       },
       setIndicatorLegendCollapsed: (indicatorLegendCollapsed) => {
         if (

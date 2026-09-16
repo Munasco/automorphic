@@ -1386,3 +1386,15 @@ describe("OBV optional smoothing", () => {
     }
   });
 });
+
+it("can hide legend arguments without changing full labels or indicator inputs", () => {
+  const inputs = { sma: { period: 50 }, rsi: { period: 7 }, macd: { fast: 2, slow: 3, signal: 2 } };
+  expect(getIndicatorLabel("sma", inputs, false)).toBe("SMA");
+  expect(getIndicatorLabel("sma", inputs)).toBe("SMA 50");
+  expect(getIndicatorLabel("rsi", inputs, false)).toBe("RSI");
+  expect(getIndicatorLabel("rsi", inputs)).toBe("RSI 7");
+  expect(getIndicatorLabel("macd", inputs, false)).toBe("MACD");
+  expect(getIndicatorLabel("ib", {}, false)).toBe(getIndicatorLabel("ib"));
+  expect(getIndicatorLabel("volume", {}, false)).toBe(getIndicatorLabel("volume"));
+  expect(inputs.sma.period).toBe(50);
+});

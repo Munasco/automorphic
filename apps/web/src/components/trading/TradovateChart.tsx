@@ -1539,6 +1539,10 @@ export function TradovateChart({
         showBarChange={settings.showBarChange}
         onShowBarChangeChange={settings.setShowBarChange}
         indicatorLegendCollapsed={settings.indicatorLegendCollapsed}
+        showIndicatorInputs={settings.showIndicatorInputs}
+        showIndicatorValues={settings.showIndicatorValues}
+        onShowIndicatorInputsChange={settings.setShowIndicatorInputs}
+        onShowIndicatorValuesChange={settings.setShowIndicatorValues}
         onShowChartTitleChange={settings.setShowChartTitle}
         onShowCandleValuesChange={settings.setShowCandleValues}
         onIndicatorLegendCollapsedChange={settings.setIndicatorLegendCollapsed}

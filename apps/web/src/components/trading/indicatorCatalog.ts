@@ -83,13 +83,16 @@ export function updateIndicatorInputs(
 export function getIndicatorLabel(
   key: IndicatorKey,
   settings: IndicatorInputSettings = {},
+  includeInputs = true,
 ): string {
   const label = INDICATOR_CATALOG.find((item) => item.key === key)!.label;
   const inputs = getIndicatorInputs(key, settings);
   const values = INDICATOR_INPUTS[key]
     .filter((input) => input.legend !== false)
     .map((input) => inputs[input.key]);
-  return values.length ? `${label.replace(/ \d+$/, "")} ${values.join(" / ")}` : label;
+  if (!values.length) return label;
+  const title = label.replace(/ \d+$/, "");
+  return includeInputs ? `${title} ${values.join(" / ")}` : title;
 }
 
 export function findIndicators(query: string) {

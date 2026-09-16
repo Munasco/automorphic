@@ -4847,3 +4847,57 @@ describe("legend bar change", () => {
     expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
   });
 });
+
+describe("indicator legend contents", () => {
+  it.each([
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true],
+  ])(
+    "persists inputs %s and values %s without changing indicator calculations",
+    async (inputs, values) => {
+      const state = configure();
+      state.setShowIndicatorInputs(inputs);
+      state.setShowIndicatorValues(values);
+      state.setIndicatorLegendCollapsed(true);
+      const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+      await useChartPreferences.persist.rehydrate();
+      const restored = useChartPreferences.getState();
+      expect(restored).toMatchObject({
+        showIndicatorInputs: inputs,
+        showIndicatorValues: values,
+        indicatorLegendCollapsed: true,
+      });
+      expect(restored.indicators).toEqual(state.indicators);
+      expect(restored.indicatorInputs).toEqual(state.indicatorInputs);
+      expect(restored.appearance).toEqual(state.appearance);
+      restored.setIndicatorLegendCollapsed(false);
+      expect(useChartPreferences.getState()).toMatchObject({
+        showIndicatorInputs: inputs,
+        showIndicatorValues: values,
+      });
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      expect(useChartPreferences.getState()).toMatchObject({
+        showIndicatorInputs: true,
+        showIndicatorValues: true,
+      });
+    },
+  );
+  it("preserves legacy defaults and rejects invalid or unchanged edits without writes", () => {
+    const state = configure();
+    for (const value of [undefined, null, "false", 0]) {
+      expect(
+        normalizeChartPreferences({ showIndicatorInputs: value, showIndicatorValues: value }),
+      ).toMatchObject({ showIndicatorInputs: true, showIndicatorValues: true });
+      state.setShowIndicatorInputs(value as never);
+      state.setShowIndicatorValues(value as never);
+    }
+    state.setShowIndicatorInputs(true);
+    state.setShowIndicatorValues(true);
+    expect(useChartPreferences.getState()).toBe(state);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  });
+});

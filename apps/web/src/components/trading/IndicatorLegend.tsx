@@ -115,19 +115,28 @@ export function IndicatorLegend({
                     />
                   }
                 >
-                  {key === "volume" ? "Vol" : label}
+                  {key === "volume"
+                    ? "Vol"
+                    : getIndicatorLabel(key, { [key]: inputs }, settings.showIndicatorInputs)}
                 </TooltipTrigger>
                 <TooltipPopup>{description}</TooltipPopup>
               </Tooltip>
-              <div className="relative flex min-w-[6.25rem] items-center">
-                <span className={cn("tabular-nums", hidden && "invisible")} style={{ color }}>
-                  {readings[indicatorReadingKey(instance)]?.toLocaleString(
-                    "en-US",
-                    key === "volume" || key === "obv"
-                      ? { notation: "compact", maximumFractionDigits: 2 }
-                      : { minimumFractionDigits: 2, maximumFractionDigits: 2 },
-                  ) ?? "—"}
-                </span>
+              <div
+                className={cn(
+                  "relative flex min-h-6 items-center",
+                  settings.showIndicatorValues ? "min-w-[6.25rem]" : "min-w-[3.25rem]",
+                )}
+              >
+                {settings.showIndicatorValues && (
+                  <span className={cn("tabular-nums", hidden && "invisible")} style={{ color }}>
+                    {readings[indicatorReadingKey(instance)]?.toLocaleString(
+                      "en-US",
+                      key === "volume" || key === "obv"
+                        ? { notation: "compact", maximumFractionDigits: 2 }
+                        : { minimumFractionDigits: 2, maximumFractionDigits: 2 },
+                    ) ?? "—"}
+                  </span>
+                )}
                 <div className="absolute -right-1 z-10 inline-flex overflow-hidden rounded border border-white/15 bg-[#14171d] opacity-0 pointer-events-none group-hover/indicator:pointer-events-auto group-hover/indicator:opacity-100 group-focus-within/indicator:pointer-events-auto group-focus-within/indicator:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100">
                   <Tooltip>
                     <TooltipTrigger
