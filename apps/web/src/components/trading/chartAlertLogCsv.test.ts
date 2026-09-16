@@ -1,4 +1,5 @@
 import { expect, it } from "vite-plus/test";
+import type { UTCTimestamp } from "lightweight-charts";
 import { chartAlertLogCsv, type ChartAlertLogEntry } from "./chartAlertLogCsv";
 const price: ChartAlertLogEntry = {
   kind: "price",
@@ -55,14 +56,14 @@ it("preserves multiline quoted text and protects formula-like text without conve
 });
 it("keeps vertical chart-time targets out of numeric price columns", () => {
   const { target: _target, targetKind: _kind, ...base } = drawing;
-  const tick: ChartAlertLogEntry = {
+  const tick = {
     ...base,
     kind: "drawing",
     targetKind: "time",
-    targetTime: 1234.000001,
-    barTime: 1234.000002,
+    targetTime: 1234.000001 as UTCTimestamp,
+    barTime: 1234.000002 as UTCTimestamp,
     intervalKey: "tick:100",
-  };
+  } satisfies ChartAlertLogEntry;
   expect(chartAlertLogCsv([tick])).toContain('"Vertical line","",3500.25,"tick:100"');
   expect(chartAlertLogCsv([tick])).not.toContain("1234.000001");
   const day: ChartAlertLogEntry = {

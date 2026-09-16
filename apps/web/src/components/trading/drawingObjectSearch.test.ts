@@ -14,7 +14,9 @@ it("matches names, tool types and annotation text with case-insensitive multiwor
   expect(drawingMatchesSearch(drawing, "  SUPPORT nq ")).toBe(true);
   expect(drawingMatchesSearch(drawing, "trend support")).toBe(true);
   expect(drawingMatchesSearch(drawing, "trendline support")).toBe(true);
-  expect(drawingMatchesSearch({ ...drawing, name: undefined }, "Trendline")).toBe(true);
+  const unnamed = { ...drawing };
+  delete unnamed.name;
+  expect(drawingMatchesSearch(unnamed, "Trendline")).toBe(true);
   expect(
     drawingMatchesSearch({ ...drawing, kind: "text", text: "Wait for the retest" }, "retest"),
   ).toBe(true);
