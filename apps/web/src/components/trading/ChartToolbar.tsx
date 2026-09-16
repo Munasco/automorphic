@@ -1,4 +1,5 @@
 import { ResetChartPaneSizes } from "./ResetChartPaneSizes";
+import { ChartRightMarginControl } from "./ChartRightMarginControl";
 import { PRICE_SOURCES, type PriceSource } from "./chartIndicators";
 import { TradingSelect } from "./TradingSelect";
 import type {
@@ -1140,6 +1141,7 @@ export function ChartToolbar({
               />
               Show time scale
             </label>
+            <ChartRightMarginControl />
             <label
               htmlFor={`${id}-scale-visible`}
               className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"

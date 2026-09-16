@@ -519,6 +519,11 @@ export function TradovateChart({
   }, [engine, settings.priceScaleMargins, visibleIndicators.volume]);
 
   useEffect(() => {
+    if (engine && !engine.disposed)
+      engine.chart.timeScale().applyOptions({ rightOffset: settings.rightOffsetBars });
+  }, [engine, settings.rightOffsetBars]);
+
+  useEffect(() => {
     lineChartSource.current = settings.lineChartSource;
     if (engine && !engine.disposed) engine.refreshLineSource();
   }, [engine, settings.lineChartSource]);
@@ -597,6 +602,7 @@ export function TradovateChart({
       chartTextColor,
       lockVisibleTimeRangeOnResize,
       showTimeScale,
+      rightOffsetBars,
       showPriceScale,
       showPriceScaleTicks,
     } = useChartPreferences.getState();
@@ -617,7 +623,7 @@ export function TradovateChart({
         timeVisible: intraday,
         secondsVisible: interval.unit === "second" || interval.unit === "tick",
         borderColor: "#242730",
-        rightOffset: 5,
+        rightOffset: rightOffsetBars,
         lockVisibleTimeRangeOnResize,
       },
       rightPriceScale: {
@@ -1048,9 +1054,10 @@ export function TradovateChart({
       }
       state.refreshIndicators();
       if (!fitted && bars.size) {
-        chart
-          .timeScale()
-          .setVisibleLogicalRange({ from: Math.max(0, bars.size - 100), to: bars.size + 5 });
+        chart.timeScale().setVisibleLogicalRange({
+          from: Math.max(0, bars.size - 100),
+          to: bars.size - 1 + useChartPreferences.getState().rightOffsetBars,
+        });
         fitted = true;
       }
       if (pendingViewport) {

@@ -172,6 +172,7 @@ type SavedChartPreferences = {
   paneStretchFactors: ChartPaneSizes;
   invertScale: boolean;
   showTimeScale: boolean;
+  rightOffsetBars: number;
   showPriceScale: boolean;
   showPriceScaleTicks: boolean;
 };
@@ -292,6 +293,13 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
         : "normal",
     invertScale: typeof saved.invertScale === "boolean" ? saved.invertScale : false,
     showTimeScale: saved.showTimeScale !== false,
+    rightOffsetBars:
+      typeof saved.rightOffsetBars === "number" &&
+      Number.isInteger(saved.rightOffsetBars) &&
+      saved.rightOffsetBars >= 0 &&
+      saved.rightOffsetBars <= 100
+        ? saved.rightOffsetBars
+        : 5,
     showPriceScale: saved.showPriceScale !== false,
     showPriceScaleTicks: saved.showPriceScaleTicks === true,
   };
@@ -352,6 +360,7 @@ export const useChartPreferences = create<{
   paneStretchFactors: ChartPaneSizes;
   invertScale: boolean;
   showTimeScale: boolean;
+  rightOffsetBars: number;
   showPriceScale: boolean;
   showPriceScaleTicks: boolean;
   setShowChartTitle: (show: boolean) => void;
@@ -419,6 +428,7 @@ export const useChartPreferences = create<{
   setPriceScaleMargins: (value: ChartPriceScaleMargins | null) => void;
   toggleInvertScale: () => void;
   setShowTimeScale: (show: boolean) => void;
+  setRightOffsetBars: (bars: number) => boolean;
   setShowPriceScale: (show: boolean) => void;
   setShowPriceScaleTicks: (show: boolean) => void;
 }>()(
@@ -484,6 +494,7 @@ export const useChartPreferences = create<{
       paneStretchFactors: {},
       invertScale: false,
       showTimeScale: true,
+      rightOffsetBars: 5,
       showPriceScale: true,
       showPriceScaleTicks: false,
       setShowChartTitle: (showChartTitle) => {
@@ -931,6 +942,11 @@ export const useChartPreferences = create<{
       toggleInvertScale: () => set((state) => ({ invertScale: !state.invertScale })),
       setShowTimeScale: (show) => {
         if (typeof show === "boolean" && show !== get().showTimeScale) set({ showTimeScale: show });
+      },
+      setRightOffsetBars: (bars) => {
+        if (!Number.isInteger(bars) || bars < 0 || bars > 100) return false;
+        if (bars !== get().rightOffsetBars) set({ rightOffsetBars: bars });
+        return true;
       },
       setShowPriceScale: (show) => {
         if (typeof show === "boolean" && show !== get().showPriceScale)

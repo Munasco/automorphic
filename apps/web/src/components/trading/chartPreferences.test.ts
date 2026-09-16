@@ -4583,3 +4583,29 @@ it("does not reset absent indicators or recreate removed instances", () => {
   expect(useChartPreferences.getState()).toBe(before);
   expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
 });
+
+it("validates and persists the right margin without changing other chart preferences", async () => {
+  const store = useChartPreferences.getState();
+  expect(store.rightOffsetBars).toBe(5);
+  for (const value of [0, 20, 100]) {
+    store.setRightOffsetBars(value);
+    expect(useChartPreferences.getState().rightOffsetBars).toBe(value);
+    expect(normalizeChartPreferences({ rightOffsetBars: value }).rightOffsetBars).toBe(value);
+  }
+  const before = useChartPreferences.getState();
+  vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+  for (const value of [-1, 101, 1.5, NaN, Infinity, "20", null]) {
+    store.setRightOffsetBars(value as number);
+    expect(normalizeChartPreferences({ rightOffsetBars: value }).rightOffsetBars).toBe(5);
+  }
+  store.setRightOffsetBars(100);
+  expect(useChartPreferences.getState()).toBe(before);
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  store.setRightOffsetBars(12);
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  expect(useChartPreferences.getState().rightOffsetBars).toBe(12);
+  expect(normalizeChartPreferences({}).rightOffsetBars).toBe(5);
+});
