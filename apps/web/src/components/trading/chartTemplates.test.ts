@@ -251,3 +251,94 @@ it("detects chart and indicator changes while matching restored saved settings",
   useChartPreferences.setState(saved);
   expect(chartTemplateSettingsKey(useChartPreferences.getState())).toBe(key);
 });
+
+it("duplicates saved settings with new IDs, detached data and persistent unique names", async () => {
+  const store = useChartTemplates.getState();
+  const sourceId = store.saveTemplate("NQ setup", chart());
+  const source = useChartTemplates.getState().templates[0]!;
+  const preferences = useChartPreferences.getState();
+  const first = store.duplicateTemplate(sourceId)!;
+  const second = store.duplicateTemplate(sourceId)!;
+  const templates = useChartTemplates.getState().templates;
+  expect(new Set(templates.map((template) => template.id)).size).toBe(3);
+  expect(templates.map((template) => template.name)).toEqual([
+    "NQ setup",
+    "NQ setup copy",
+    "NQ setup copy 2",
+  ]);
+  expect(templates[1]!.settings).toEqual(source.settings);
+  expect(templates[1]!.settings.extraIndicators[1]!.initialBalance).not.toBe(
+    source.settings.extraIndicators[1]!.initialBalance,
+  );
+  expect(useChartPreferences.getState()).toBe(preferences);
+  store.updateTemplate(first, { style: "line" });
+  expect(useChartTemplates.getState().templates[0]).toEqual(source);
+  expect(useChartTemplates.getState().templates[2]!.settings).toEqual(source.settings);
+  const expected = useChartTemplates.getState().templates;
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+  useChartTemplates.setState(useChartTemplates.getInitialState(), true);
+  await useChartTemplates.persist.rehydrate();
+  expect(useChartTemplates.getState().templates).toEqual(expected);
+  store.deleteTemplate(second);
+  store.duplicateTemplate(sourceId);
+  expect(useChartTemplates.getState().templates.at(-1)!.name).toBe("NQ setup copy 2");
+});
+it("resolves case-insensitive copy collisions after truncating long names", () => {
+  const store = useChartTemplates.getState();
+  const source = store.saveTemplate("A".repeat(80), {});
+  store.saveTemplate(`${"a".repeat(75)} COPY`, {});
+  store.duplicateTemplate(source);
+  expect(useChartTemplates.getState().templates.at(-1)!.name).toBe(`${"A".repeat(73)} copy 2`);
+  const next = store.duplicateTemplate(source)!;
+  expect(useChartTemplates.getState().templates.at(-1)!.name).toBe(`${"A".repeat(73)} copy 3`);
+  store.duplicateTemplate(next);
+  expect(useChartTemplates.getState().templates.at(-1)!.name.length).toBeLessThanOrEqual(80);
+  const emoji = store.saveTemplate("😀".repeat(40), {});
+  store.duplicateTemplate(emoji);
+  expect(useChartTemplates.getState().templates.at(-1)!.name).toBe(`${"😀".repeat(37)} copy`);
+});
+it("rejects missing sources, loading workspaces and full storage without writes", () => {
+  const store = useChartTemplates.getState();
+  const source = store.saveTemplate("Source", {});
+  vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+  expect(store.duplicateTemplate("gone")).toBeNull();
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  vi.mocked(tradingWorkspaceStorage.getSnapshot).mockReturnValue({ ready: false } as ReturnType<
+    typeof tradingWorkspaceStorage.getSnapshot
+  >);
+  expect(() => store.duplicateTemplate(source)).toThrow("finish loading");
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  vi.mocked(tradingWorkspaceStorage.getSnapshot).mockReturnValue({ ready: true } as ReturnType<
+    typeof tradingWorkspaceStorage.getSnapshot
+  >);
+  for (let i = 1; i < MAX_CHART_TEMPLATES; i++) store.duplicateTemplate(source);
+  const previous = useChartTemplates.getState().templates;
+  vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+  expect(() => store.duplicateTemplate(source)).toThrow("20 per workspace");
+  expect(useChartTemplates.getState().templates).toBe(previous);
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+});
+it("rejects copies exceeding the payload limit without changing saved templates", () => {
+  const store = useChartTemplates.getState();
+  const source = store.saveTemplate("Large", {
+    extraIndicators: Array.from({ length: 100 }, (_, i) =>
+      createIndicatorInstance("ib", `ib-${i}`),
+    ),
+  });
+  let error: unknown;
+  for (let i = 1; i < MAX_CHART_TEMPLATES; i++) {
+    const previous = useChartTemplates.getState().templates;
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    try {
+      store.duplicateTemplate(source);
+    } catch (cause) {
+      error = cause;
+      expect(useChartTemplates.getState().templates).toBe(previous);
+      expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+      break;
+    }
+  }
+  expect(error).toBeInstanceOf(Error);
+  expect((error as Error).message).toContain("Chart templates are full");
+});

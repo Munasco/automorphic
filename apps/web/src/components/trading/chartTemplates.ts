@@ -100,6 +100,7 @@ function checkSize(templates: readonly ChartTemplate[]) {
 export const useChartTemplates = create<{
   templates: ChartTemplate[];
   saveTemplate: (name: string, settings: unknown) => string;
+  duplicateTemplate: (id: string) => string | null;
   renameTemplate: (id: string, name: string) => boolean;
   updateTemplate: (id: string, settings: unknown) => boolean;
   deleteTemplate: (id: string) => boolean;
@@ -107,6 +108,19 @@ export const useChartTemplates = create<{
   persist(
     (set, get) => ({
       templates: [],
+      duplicateTemplate: (id) => {
+        assertReady();
+        const templates = get().templates;
+        const source = templates.find((template) => template.id === id);
+        if (!source) return null;
+        const names = new Set(templates.map((template) => nameKey(template.name)));
+        for (let copy = 1; ; copy++) {
+          const suffix = copy === 1 ? " copy" : ` copy ${copy}`;
+          const stem = source.name.slice(0, 80 - suffix.length).replace(/[\uD800-\uDBFF]$/u, "");
+          const name = `${stem.trimEnd()}${suffix}`;
+          if (!names.has(nameKey(name))) return get().saveTemplate(name, source.settings);
+        }
+      },
       saveTemplate: (name, settings) => {
         assertReady();
         const current = get().templates;

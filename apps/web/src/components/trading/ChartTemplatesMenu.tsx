@@ -18,6 +18,7 @@ import { useChartPreferences } from "./chartPreferences";
 import {
   captureChartTemplateSettings,
   chartTemplateSettingsKey,
+  MAX_CHART_TEMPLATES,
   useChartTemplates,
   type ChartTemplate,
 } from "./chartTemplates";
@@ -382,6 +383,21 @@ export function ChartTemplatesDialog({
                           }}
                         >
                           Rename
+                        </MenuItem>
+                        <MenuItem
+                          disabled={
+                            !workspace.ready ||
+                            importing ||
+                            store.templates.length >= MAX_CHART_TEMPLATES
+                          }
+                          onClick={() =>
+                            run(() => {
+                              if (!store.duplicateTemplate(template.id))
+                                throw Error("This template is no longer available.");
+                            })
+                          }
+                        >
+                          Duplicate
                         </MenuItem>
                         <MenuItem onClick={() => run(() => exportTemplate(template))}>
                           Export…
