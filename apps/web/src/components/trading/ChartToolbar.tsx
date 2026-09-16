@@ -1,3 +1,4 @@
+import { ChartMouseWheelControl } from "./ChartMouseWheelControl";
 import { ChartPreviousCloseControl } from "./ChartPreviousCloseControl";
 import { ChartPriceLineControls } from "./ChartPriceLineControls";
 import { ChartAreaFillControls } from "./ChartAreaFillControls";
@@ -778,6 +779,7 @@ export function ChartToolbar({
             </fieldset>
             <fieldset className="space-y-2 border-t border-white/10 px-2 py-2.5">
               <legend className="text-xs text-zinc-400">Time scale</legend>
+              <ChartMouseWheelControl />
               <label htmlFor={`${id}-resize-range`} className="flex items-center gap-2 text-xs">
                 <Checkbox
                   id={`${id}-resize-range`}

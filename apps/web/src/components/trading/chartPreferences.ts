@@ -182,6 +182,7 @@ type SavedChartPreferences = {
   watermarkHorizontalAlignment: WatermarkHorizontalAlignment;
   watermarkVerticalAlignment: WatermarkVerticalAlignment;
   lockVisibleTimeRangeOnResize: boolean;
+  zoomWithMouseWheel: boolean;
   lineMarkerRadius: ChartLineMarkerRadius;
   thinBars: boolean;
   showBarOpen: boolean;
@@ -315,6 +316,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
       ? saved.watermarkVerticalAlignment
       : "center",
     lockVisibleTimeRangeOnResize: saved.lockVisibleTimeRangeOnResize === true,
+    zoomWithMouseWheel: saved.zoomWithMouseWheel !== false,
     lineMarkerRadius: validLineMarkerRadius(saved.lineMarkerRadius) ? saved.lineMarkerRadius : 3,
     thinBars: typeof saved.thinBars === "boolean" ? saved.thinBars : true,
     showBarOpen: typeof saved.showBarOpen === "boolean" ? saved.showBarOpen : true,
@@ -404,6 +406,7 @@ export const useChartPreferences = create<{
   watermarkHorizontalAlignment: WatermarkHorizontalAlignment;
   watermarkVerticalAlignment: WatermarkVerticalAlignment;
   lockVisibleTimeRangeOnResize: boolean;
+  zoomWithMouseWheel: boolean;
   lineMarkerRadius: ChartLineMarkerRadius;
   thinBars: boolean;
   showBarOpen: boolean;
@@ -499,6 +502,7 @@ export const useChartPreferences = create<{
   setWatermarkVerticalAlignment: (alignment: WatermarkVerticalAlignment) => void;
   setPaneStretchFactors: (sizes: ChartPaneSizes) => void;
   setLockVisibleTimeRangeOnResize: (lock: boolean) => void;
+  setZoomWithMouseWheel: (enabled: boolean) => void;
   setLineMarkerRadius: (radius: ChartLineMarkerRadius) => void;
   toggleThinBars: () => void;
   toggleBarOpen: () => void;
@@ -564,6 +568,7 @@ export const useChartPreferences = create<{
       watermarkHorizontalAlignment: "center",
       watermarkVerticalAlignment: "center",
       lockVisibleTimeRangeOnResize: false,
+      zoomWithMouseWheel: true,
       lineMarkerRadius: 3,
       thinBars: true,
       showBarOpen: true,
@@ -1036,6 +1041,13 @@ export const useChartPreferences = create<{
       setPaneStretchFactors: (sizes) => {
         const next = normalizeChartPaneSizes(sizes);
         if (!equalChartPaneSizes(get().paneStretchFactors, next)) set({ paneStretchFactors: next });
+      },
+      setZoomWithMouseWheel: (zoomWithMouseWheel) => {
+        if (
+          typeof zoomWithMouseWheel === "boolean" &&
+          zoomWithMouseWheel !== get().zoomWithMouseWheel
+        )
+          set({ zoomWithMouseWheel });
       },
       setLockVisibleTimeRangeOnResize: (lockVisibleTimeRangeOnResize) => {
         if (

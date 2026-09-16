@@ -5059,3 +5059,24 @@ describe("indicator quick timeframe presets", () => {
     },
   );
 });
+
+it("persists wheel zoom and ignores invalid or unchanged updates", async () => {
+  const store = useChartPreferences.getState();
+  expect(store.zoomWithMouseWheel).toBe(true);
+  for (const value of [undefined, null, 0, 1, "false", {}, []]) {
+    expect(normalizeChartPreferences({ zoomWithMouseWheel: value }).zoomWithMouseWheel).toBe(true);
+    store.setZoomWithMouseWheel(value as never);
+  }
+  store.setZoomWithMouseWheel(true);
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  store.setZoomWithMouseWheel(false);
+  expect(useChartPreferences.getState().zoomWithMouseWheel).toBe(false);
+  const payload = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(payload);
+  await useChartPreferences.persist.rehydrate();
+  expect(useChartPreferences.getState().zoomWithMouseWheel).toBe(false);
+  expect(useChartPreferences.getState().lockVisibleTimeRangeOnResize).toBe(false);
+  useChartPreferences.getState().setZoomWithMouseWheel(true);
+  expect(useChartPreferences.getState().zoomWithMouseWheel).toBe(true);
+});

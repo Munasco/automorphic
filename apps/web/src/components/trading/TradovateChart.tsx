@@ -513,6 +513,11 @@ export function TradovateChart({
   }, [engine, settings.lockVisibleTimeRangeOnResize, settings.showTimeScale]);
 
   useEffect(() => {
+    if (engine && !engine.disposed)
+      engine.chart.applyOptions({ handleScale: { mouseWheel: settings.zoomWithMouseWheel } });
+  }, [engine, settings.zoomWithMouseWheel]);
+
+  useEffect(() => {
     if (
       !activeEngine ||
       activeEngine.workspaceProjectId !== workspace.projectId ||
@@ -646,6 +651,7 @@ export function TradovateChart({
       lineChartColor,
       areaFill,
       lockVisibleTimeRangeOnResize,
+      zoomWithMouseWheel,
       showTimeScale,
       rightOffsetBars,
       showPriceScale,
@@ -653,6 +659,7 @@ export function TradovateChart({
     } = useChartPreferences.getState();
     const chart = createChart(host.current, {
       autoSize: true,
+      handleScale: { mouseWheel: zoomWithMouseWheel },
       layout: {
         background: { type: ColorType.Solid, color: chartBackgroundColor },
         textColor: chartTextColor,

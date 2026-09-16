@@ -433,3 +433,18 @@ it("round-trips independent base and extra indicator timeframe rules", () => {
   expect(saved.appearance.rsi?.timeframeVisibility?.minutes.enabled).toBe(false);
   expect(captureChartTemplateSettings(saved)).toEqual(saved);
 });
+
+it("captures wheel zoom and restores enabled behavior for older templates", () => {
+  expect(captureChartTemplateSettings({ zoomWithMouseWheel: false }).zoomWithMouseWheel).toBe(
+    false,
+  );
+  expect(captureChartTemplateSettings({}).zoomWithMouseWheel).toBe(true);
+  expect(chartTemplateSettingsKey({ zoomWithMouseWheel: false })).not.toBe(
+    chartTemplateSettingsKey({}),
+  );
+  const templates = normalizeChartTemplates([
+    { id: "wheel-off", name: "No wheel zoom", settings: { zoomWithMouseWheel: false } },
+    { id: "legacy", name: "Legacy", settings: {} },
+  ]);
+  expect(templates.map((template) => template.settings.zoomWithMouseWheel)).toEqual([false, true]);
+});
