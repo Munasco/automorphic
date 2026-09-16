@@ -1,3 +1,4 @@
+import { chartAreaFillColors } from "./chartAreaFill";
 import { trackChartPaneResize } from "./chartPaneResize";
 import { CalendarDaysIcon } from "lucide-react";
 import { ChartMeasureOverlay } from "./ChartMeasureOverlay";
@@ -601,6 +602,8 @@ export function TradovateChart({
       chartBackgroundColor,
       chartTextColor,
       chartFontSize,
+      lineChartColor,
+      areaFill,
       lockVisibleTimeRangeOnResize,
       showTimeScale,
       rightOffsetBars,
@@ -689,9 +692,8 @@ export function TradovateChart({
         priceFormat,
       }),
       area: chart.addSeries(AreaSeries, {
-        lineColor: "#6097ee",
-        topColor: "#6097ee55",
-        bottomColor: "#6097ee00",
+        lineColor: lineChartColor,
+        ...chartAreaFillColors(areaFill, lineChartColor),
         lineWidth: 2,
         visible: false,
         priceFormat,
@@ -1168,8 +1170,7 @@ export function TradovateChart({
     });
     engine.prices.area.applyOptions({
       lineColor: settings.lineChartColor,
-      topColor: `${settings.lineChartColor}55`,
-      bottomColor: `${settings.lineChartColor}00`,
+      ...chartAreaFillColors(settings.areaFill, settings.lineChartColor),
       lineWidth: settings.lineChartWidth,
       pointMarkersVisible: settings.showLineMarkers,
       pointMarkersRadius: settings.lineMarkerRadius,
@@ -1284,6 +1285,7 @@ export function TradovateChart({
     settings.showCandleWicks,
     settings.showCandleBorders,
     settings.lineChartColor,
+    settings.areaFill,
     settings.lineChartWidth,
     settings.lineChartShape,
     settings.showLineMarkers,

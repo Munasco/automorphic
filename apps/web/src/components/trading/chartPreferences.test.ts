@@ -4732,3 +4732,26 @@ describe("favorite chart intervals", () => {
     expect(useChartPreferences.getState().favoriteChartIntervals).toEqual([]);
   });
 });
+
+it("persists independent area fill without mutating other preferences, then resets for a legacy workspace", async () => {
+  const before = configure();
+  expect(before.setAreaFill({ topOpacity: 101 })).toBe(false);
+  expect(before.setAreaFill({ topOpacity: 33 })).toBe(true);
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  const areaFill = { topColor: "#ff8800", bottomColor: null, topOpacity: 75, bottomOpacity: 20 };
+  expect(before.setAreaFill(areaFill)).toBe(true);
+  expect(useChartPreferences.getState()).toEqual({ ...before, areaFill });
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  expect(useChartPreferences.getState().areaFill).toEqual(areaFill);
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(null);
+  await vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0]();
+  expect(useChartPreferences.getState().areaFill).toEqual({
+    topColor: null,
+    bottomColor: null,
+    topOpacity: 33,
+    bottomOpacity: 0,
+  });
+});

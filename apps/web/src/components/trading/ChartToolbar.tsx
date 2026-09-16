@@ -1,3 +1,4 @@
+import { ChartAreaFillControls } from "./ChartAreaFillControls";
 import { ResetChartPaneSizes } from "./ResetChartPaneSizes";
 import { ChartRightMarginControl } from "./ChartRightMarginControl";
 import { ChartWatermarkAppearance } from "./ChartWatermarkAppearance";
@@ -696,6 +697,7 @@ export function ChartToolbar({
                     className="h-7 w-8 shrink-0 cursor-pointer rounded border border-white/15 bg-transparent"
                   />
                 </div>
+                {style === "area" && <ChartAreaFillControls />}
                 <label
                   htmlFor={`${id}-line-markers`}
                   className="flex items-center gap-2 py-1 text-xs"

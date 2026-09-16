@@ -1,3 +1,9 @@
+import {
+  DEFAULT_CHART_AREA_FILL,
+  normalizeChartAreaFill,
+  updateChartAreaFill,
+  type ChartAreaFill,
+} from "./chartAreaFill";
 import { normalizeFavoriteChartIntervals } from "./tradingIntervals";
 import {
   normalizeChartPaneSizes,
@@ -152,6 +158,7 @@ type SavedChartPreferences = {
   chartFontSize: number;
   lineChartSource: PriceSource;
   lineChartColor: string;
+  areaFill: ChartAreaFill;
   lineChartWidth: ChartLineWidth;
   lineChartShape: ChartLineShape;
   showLineMarkers: boolean;
@@ -268,6 +275,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     chartFontSize: validChartFontSize(saved.chartFontSize) ? saved.chartFontSize : 12,
     lineChartSource: validLineChartSource(saved.lineChartSource) ? saved.lineChartSource : "close",
     lineChartColor: validColor(saved.lineChartColor) ? saved.lineChartColor : "#6097ee",
+    areaFill: normalizeChartAreaFill(saved.areaFill),
     lineChartWidth: validLineChartWidth(saved.lineChartWidth) ? saved.lineChartWidth : 2,
     lineChartShape: validLineChartShape(saved.lineChartShape) ? saved.lineChartShape : "straight",
     showLineMarkers: saved.showLineMarkers === true,
@@ -348,6 +356,7 @@ export const useChartPreferences = create<{
   chartFontSize: number;
   lineChartSource: PriceSource;
   lineChartColor: string;
+  areaFill: ChartAreaFill;
   lineChartWidth: ChartLineWidth;
   lineChartShape: ChartLineShape;
   showLineMarkers: boolean;
@@ -426,6 +435,7 @@ export const useChartPreferences = create<{
   setChartFontSize: (size: number) => boolean;
   setLineChartSource: (source: PriceSource) => void;
   setLineChartColor: (color: string) => void;
+  setAreaFill: (patch: Partial<ChartAreaFill>) => boolean;
   setCandleUpColor: (color: string) => void;
   setCandleDetailColor: (key: CandleDetailColorKey, value: string | null) => void;
   setCandleDownColor: (color: string) => void;
@@ -490,6 +500,7 @@ export const useChartPreferences = create<{
       chartFontSize: 12,
       lineChartSource: "close",
       lineChartColor: "#6097ee",
+      areaFill: { ...DEFAULT_CHART_AREA_FILL },
       lineChartWidth: 2,
       lineChartShape: "straight",
       showLineMarkers: false,
@@ -933,6 +944,18 @@ export const useChartPreferences = create<{
           lockVisibleTimeRangeOnResize !== get().lockVisibleTimeRangeOnResize
         )
           set({ lockVisibleTimeRangeOnResize });
+      },
+      setAreaFill: (patch) => {
+        const previous = get().areaFill;
+        const next = updateChartAreaFill(previous, patch);
+        if (!next) return false;
+        if (
+          Object.keys(next).some(
+            (key) => next[key as keyof ChartAreaFill] !== previous[key as keyof ChartAreaFill],
+          )
+        )
+          set({ areaFill: next });
+        return true;
       },
       setChartFontSize: (chartFontSize) => {
         if (!validChartFontSize(chartFontSize)) return false;

@@ -43,6 +43,7 @@ const chart = () => ({
   watermarkColor: "#ff8800",
   watermarkOpacity: 60,
   chartFontSize: 18,
+  areaFill: { topColor: "#ff8800", bottomColor: null, topOpacity: 75, bottomOpacity: 20 },
   favoriteIndicators: ["rsi"],
   favoriteChartIntervals: ["minute:5"],
   indicators: { rsi: true, ib: true },
@@ -71,6 +72,7 @@ describe("chart template snapshots", () => {
       watermarkColor: "#ff8800",
       watermarkOpacity: 60,
       chartFontSize: 18,
+      areaFill: { topColor: "#ff8800", bottomColor: null, topOpacity: 75, bottomOpacity: 20 },
       indicatorInputs: { rsi: { period: 7 } },
     });
     for (const key of [
