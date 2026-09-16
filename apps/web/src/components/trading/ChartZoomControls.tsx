@@ -16,7 +16,7 @@ export function ChartZoomControls() {
         Zoom with mouse wheel
       </label>
       <div className="flex items-center justify-between gap-2 text-xs">
-        <label htmlFor={`${id}-anchor`}>Zoom anchor</label>
+        <label htmlFor={`${id}-anchor`}>Anchor</label>
         <TradingSelect
           id={`${id}-anchor`}
           label="Zoom anchor"
@@ -28,7 +28,7 @@ export function ChartZoomControls() {
           onChange={(value) => {
             if (value === "pointer" || value === "right") setAnchor(value);
           }}
-          className="w-24 border-zinc-600 bg-zinc-900 text-xs"
+          className="w-28 shrink-0 border-zinc-600 bg-zinc-900 text-xs"
         />
       </div>
     </>
