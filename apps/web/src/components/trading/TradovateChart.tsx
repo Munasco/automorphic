@@ -854,6 +854,7 @@ export function TradovateChart({
             previousHistory?.length ?? bars.size,
             history.length,
             seek,
+            useChartPreferences.getState().rightOffsetBars,
           );
           applyChartBarBatch(
             bars,
