@@ -1,5 +1,5 @@
-import { useRef, useState, useSyncExternalStore } from "react";
-import { MoreHorizontalIcon } from "lucide-react";
+import { useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { CheckIcon, MoreHorizontalIcon } from "lucide-react";
 import {
   Menu,
   MenuTrigger,
@@ -17,6 +17,7 @@ import { ChartIcon } from "./ChartIcon";
 import { useChartPreferences } from "./chartPreferences";
 import {
   captureChartTemplateSettings,
+  chartTemplateSettingsKey,
   useChartTemplates,
   type ChartTemplate,
 } from "./chartTemplates";
@@ -43,8 +44,25 @@ function applyTemplate(template: ChartTemplate) {
   useChartPreferences.setState(captureChartTemplateSettings(template.settings));
 }
 const runTemplateAction = (action: () => void) => action();
+function useMatchingTemplates(templates: readonly ChartTemplate[]) {
+  const current = useChartPreferences(chartTemplateSettingsKey);
+  const saved = useMemo(
+    () =>
+      templates.map((template) => ({
+        id: template.id,
+        key: chartTemplateSettingsKey(template.settings),
+      })),
+    [templates],
+  );
+  return useMemo(
+    () =>
+      new Set(saved.filter((template) => template.key === current).map((template) => template.id)),
+    [saved, current],
+  );
+}
 function TemplateItems({ onSave, onManage, onAction = runTemplateAction }: TemplateActions) {
   const templates = useChartTemplates((state) => state.templates);
+  const matching = useMatchingTemplates(templates);
   const workspace = useSyncExternalStore(
     tradingWorkspaceStorage.subscribe,
     tradingWorkspaceStorage.getSnapshot,
@@ -54,6 +72,7 @@ function TemplateItems({ onSave, onManage, onAction = runTemplateAction }: Templ
       {templates.map((template) => (
         <MenuItem
           key={template.id}
+          aria-current={workspace.ready && matching.has(template.id) ? "true" : undefined}
           disabled={!workspace.ready}
           className={drawingContextMenuItemClass}
           onClick={() =>
@@ -70,6 +89,14 @@ function TemplateItems({ onSave, onManage, onAction = runTemplateAction }: Templ
             })
           }
         >
+          <CheckIcon
+            aria-hidden="true"
+            className={
+              workspace.ready && matching.has(template.id)
+                ? "size-4 shrink-0"
+                : "invisible size-4 shrink-0"
+            }
+          />
           {template.name}
         </MenuItem>
       ))}
@@ -132,6 +159,7 @@ export function ChartTemplatesDialog({
   onClose: () => void;
 }) {
   const store = useChartTemplates();
+  const matching = useMatchingTemplates(store.templates);
   const workspace = useSyncExternalStore(
     tradingWorkspaceStorage.subscribe,
     tradingWorkspaceStorage.getSnapshot,
@@ -298,6 +326,9 @@ export function ChartTemplatesDialog({
                   >
                     <button
                       type="button"
+                      aria-current={
+                        workspace.ready && matching.has(template.id) ? "true" : undefined
+                      }
                       disabled={!workspace.ready || importing}
                       className="min-w-0 flex-1 px-3 py-3 text-left"
                       onClick={() =>
@@ -307,7 +338,15 @@ export function ChartTemplatesDialog({
                         })
                       }
                     >
-                      <span className="block truncate text-sm">{template.name}</span>
+                      <span className="flex items-center gap-2 text-sm">
+                        <span className="truncate">{template.name}</span>
+                        {workspace.ready && matching.has(template.id) && (
+                          <CheckIcon
+                            aria-label="Matches current chart"
+                            className="size-4 shrink-0"
+                          />
+                        )}
+                      </span>
                       <span className="text-xs text-zinc-400">
                         {Object.values(template.settings.indicators).filter(Boolean).length +
                           template.settings.extraIndicators.length}{" "}

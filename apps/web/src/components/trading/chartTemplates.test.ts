@@ -10,6 +10,7 @@ vi.mock("./workspaceStorage", () => ({
 }));
 import {
   captureChartTemplateSettings,
+  chartTemplateSettingsKey,
   CHART_TEMPLATES_KEY,
   MAX_CHART_TEMPLATES,
   normalizeChartTemplates,
@@ -26,6 +27,7 @@ beforeEach(() => {
     typeof tradingWorkspaceStorage.getSnapshot
   >);
   useChartTemplates.setState(useChartTemplates.getInitialState(), true);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
   vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
 });
 const chart = () => ({
@@ -211,4 +213,41 @@ describe("saved chart template lifecycle", () => {
     );
     expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
   });
+});
+
+it("matches template settings regardless of object key order, favorites or replay speed", () => {
+  const a = {
+    paneStretchFactors: { $price: 3, "base:rsi": 1 },
+    appearance: { sma: { color: "#123456", lineWidth: 2 } },
+    replaySpeed: 1,
+    favoriteIndicators: ["rsi"],
+  };
+  const b = {
+    paneStretchFactors: { "base:rsi": 1, $price: 3 },
+    favoriteIndicators: ["macd"],
+    replaySpeed: 4,
+    appearance: { sma: { lineWidth: 2, color: "#123456" } },
+  };
+  expect(chartTemplateSettingsKey(a)).toBe(chartTemplateSettingsKey(b));
+  expect(chartTemplateSettingsKey({})).toBe(
+    chartTemplateSettingsKey(captureChartTemplateSettings({})),
+  );
+});
+it("detects chart and indicator changes while matching restored saved settings", () => {
+  const store = useChartPreferences.getState();
+  store.addIndicator("rsi");
+  const copy = store.duplicateIndicatorInstance("base:rsi")!;
+  const saved = captureChartTemplateSettings(useChartPreferences.getState());
+  const key = chartTemplateSettingsKey(saved);
+  store.setIndicatorInstanceInputs(copy, { period: 7 });
+  expect(chartTemplateSettingsKey(useChartPreferences.getState())).not.toBe(key);
+  useChartPreferences.setState(saved);
+  expect(chartTemplateSettingsKey(useChartPreferences.getState())).toBe(key);
+  store.moveIndicatorInstance(copy, "up");
+  expect(chartTemplateSettingsKey(useChartPreferences.getState())).not.toBe(key);
+  useChartPreferences.setState(saved);
+  store.setShowTimeScale(false);
+  expect(chartTemplateSettingsKey(useChartPreferences.getState())).not.toBe(key);
+  useChartPreferences.setState(saved);
+  expect(chartTemplateSettingsKey(useChartPreferences.getState())).toBe(key);
 });

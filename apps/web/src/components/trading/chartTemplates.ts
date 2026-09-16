@@ -4,6 +4,7 @@ import { randomUUID } from "../../lib/utils";
 import { normalizeChartPreferences } from "./chartPreferences";
 import { DEFAULT_INITIAL_BALANCE, type InitialBalanceSettings } from "./initialBalanceSettings";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
+import { hashKey } from "@tanstack/react-query";
 
 export const CHART_TEMPLATES_KEY = "automorphic:chart-templates:v1";
 export const MAX_CHART_TEMPLATES = 20;
@@ -44,6 +45,11 @@ export function captureChartTemplateSettings(value: unknown): ChartTemplateSetti
         : instance,
     ),
   });
+}
+
+/** Object key order is irrelevant; indicator arrays and their order remain significant. */
+export function chartTemplateSettingsKey(value: unknown): string {
+  return hashKey([captureChartTemplateSettings(value)]);
 }
 
 export function normalizeChartTemplates(value: unknown): ChartTemplate[] {
