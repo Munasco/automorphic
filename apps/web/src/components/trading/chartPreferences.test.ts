@@ -4818,3 +4818,32 @@ describe("object tree type filter", () => {
     expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
   });
 });
+
+describe("legend bar change", () => {
+  it("defaults off, persists independently of OHLC values, and resets between workspaces", async () => {
+    const store = configure();
+    expect(store.showBarChange).toBe(false);
+    store.setShowBarChange(true);
+    store.setShowCandleValues(false);
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    await useChartPreferences.persist.rehydrate();
+    expect(useChartPreferences.getState()).toMatchObject({
+      showBarChange: true,
+      showCandleValues: false,
+    });
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    expect(useChartPreferences.getState().showBarChange).toBe(false);
+  });
+  it("rejects invalid and unchanged choices without writing", () => {
+    const store = configure();
+    for (const value of [null, undefined, "true", 1]) {
+      expect(normalizeChartPreferences({ showBarChange: value }).showBarChange).toBe(false);
+      store.setShowBarChange(value as never);
+    }
+    store.setShowBarChange(false);
+    expect(useChartPreferences.getState()).toBe(store);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  });
+});

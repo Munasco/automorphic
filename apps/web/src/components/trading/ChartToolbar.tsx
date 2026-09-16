@@ -107,6 +107,8 @@ export type ChartToolbarProps = {
   onShowSymbolWatermarkChange: (show: boolean) => void;
   showChartTitle: boolean;
   showCandleValues: boolean;
+  showBarChange: boolean;
+  onShowBarChangeChange: (show: boolean) => void;
   indicatorLegendCollapsed: boolean;
   onShowChartTitleChange: (show: boolean) => void;
   onShowCandleValuesChange: (show: boolean) => void;
@@ -220,6 +222,8 @@ export function ChartToolbar({
   onShowSymbolWatermarkChange,
   showChartTitle,
   showCandleValues,
+  showBarChange,
+  onShowBarChangeChange,
   indicatorLegendCollapsed,
   onShowChartTitleChange,
   onShowCandleValuesChange,
@@ -799,6 +803,12 @@ export function ChartToolbar({
                   label: "OHLC values",
                   checked: showCandleValues,
                   onChange: onShowCandleValuesChange,
+                },
+                {
+                  key: "change",
+                  label: "Bar change",
+                  checked: showBarChange,
+                  onChange: onShowBarChangeChange,
                 },
                 {
                   key: "indicators",

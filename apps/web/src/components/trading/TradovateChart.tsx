@@ -1,3 +1,4 @@
+import { chartBarChange, formatChartBarChange } from "./chartBarChange";
 import { priceLineAppearanceOptions } from "./chartPriceLineAppearance";
 import { chartAreaFillColors } from "./chartAreaFill";
 import { trackChartPaneResize } from "./chartPaneResize";
@@ -39,6 +40,7 @@ import {
 } from "react";
 import {
   createChart,
+  MismatchDirection,
   createTextWatermark,
   CandlestickSeries,
   BarSeries,
@@ -471,6 +473,24 @@ export function TradovateChart({
     settings.style === "heikin-ashi" && rawShown
       ? (activeEngine?.heikinAshiBars.get(rawShown.time) ?? null)
       : rawShown;
+  const shownIndex =
+    settings.showBarChange && shown && activeEngine
+      ? activeEngine.chart.timeScale().timeToIndex(shown.time as UTCTimestamp)
+      : null;
+  const previousBar =
+    shownIndex !== null && activeEngine
+      ? activeEngine.prices[
+          settings.style === "heikin-ashi" ? "heikin-ashi" : "candles"
+        ].dataByIndex(shownIndex - 1, MismatchDirection.NearestLeft)
+      : null;
+  const barChange = shown
+    ? chartBarChange(
+        shown.close,
+        previousBar && "close" in previousBar && typeof previousBar.close === "number"
+          ? previousBar.close
+          : undefined,
+      )
+    : null;
 
   useEffect(() => {
     if (!activeEngine) return;
@@ -1516,6 +1536,8 @@ export function TradovateChart({
         onShowSymbolWatermarkChange={settings.setShowSymbolWatermark}
         showChartTitle={settings.showChartTitle}
         showCandleValues={settings.showCandleValues}
+        showBarChange={settings.showBarChange}
+        onShowBarChangeChange={settings.setShowBarChange}
         indicatorLegendCollapsed={settings.indicatorLegendCollapsed}
         onShowChartTitleChange={settings.setShowChartTitle}
         onShowCandleValuesChange={settings.setShowCandleValues}
@@ -1756,7 +1778,7 @@ export function TradovateChart({
                     </Tooltip>
                   </div>
                 )}
-                {settings.showCandleValues && shown ? (
+                {(settings.showCandleValues || settings.showBarChange) && shown ? (
                   <div
                     className={cn(
                       "mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs tabular-nums",
@@ -1764,10 +1786,28 @@ export function TradovateChart({
                     )}
                     aria-label="Candle values"
                   >
-                    <span>O {shown.open.toFixed(2)}</span>
-                    <span>H {shown.high.toFixed(2)}</span>
-                    <span>L {shown.low.toFixed(2)}</span>
-                    <span>C {shown.close.toFixed(2)}</span>
+                    {settings.showCandleValues && (
+                      <>
+                        <span>O {shown.open.toFixed(2)}</span>
+                        <span>H {shown.high.toFixed(2)}</span>
+                        <span>L {shown.low.toFixed(2)}</span>
+                        <span>C {shown.close.toFixed(2)}</span>
+                      </>
+                    )}
+                    {settings.showBarChange && (
+                      <span
+                        aria-label="Bar change from previous close"
+                        className={
+                          !barChange || barChange.points === 0
+                            ? "text-zinc-400"
+                            : barChange.points > 0
+                              ? "text-emerald-400"
+                              : "text-red-400"
+                        }
+                      >
+                        {formatChartBarChange(barChange)}
+                      </span>
+                    )}
                   </div>
                 ) : null}
                 <IndicatorLegend

@@ -187,6 +187,7 @@ type SavedChartPreferences = {
   candleDownColor: string;
   showChartTitle: boolean;
   showCandleValues: boolean;
+  showBarChange: boolean;
   indicatorLegendCollapsed: boolean;
   priceLineAppearance: ChartPriceLineAppearance;
   showPriceLine: boolean;
@@ -310,6 +311,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
       : null,
     candleDownColor: validColor(saved.candleDownColor) ? saved.candleDownColor : "#ef5350",
     showChartTitle: typeof saved.showChartTitle === "boolean" ? saved.showChartTitle : true,
+    showBarChange: saved.showBarChange === true,
     showCandleValues: typeof saved.showCandleValues === "boolean" ? saved.showCandleValues : true,
     indicatorLegendCollapsed: saved.indicatorLegendCollapsed === true,
     priceLineAppearance: normalizePriceLineAppearance(saved.priceLineAppearance),
@@ -391,6 +393,7 @@ export const useChartPreferences = create<{
   candleDownColor: string;
   showChartTitle: boolean;
   showCandleValues: boolean;
+  showBarChange: boolean;
   indicatorLegendCollapsed: boolean;
   priceLineAppearance: ChartPriceLineAppearance;
   showPriceLine: boolean;
@@ -405,6 +408,7 @@ export const useChartPreferences = create<{
   showPriceScale: boolean;
   showPriceScaleTicks: boolean;
   setShowChartTitle: (show: boolean) => void;
+  setShowBarChange: (show: boolean) => void;
   setShowCandleValues: (show: boolean) => void;
   setIndicatorLegendCollapsed: (collapsed: boolean) => void;
   setStyle: (style: ChartStyle) => void;
@@ -539,6 +543,7 @@ export const useChartPreferences = create<{
       candleDownColor: "#ef5350",
       showChartTitle: true,
       showCandleValues: true,
+      showBarChange: false,
       indicatorLegendCollapsed: false,
       priceLineAppearance: { ...DEFAULT_PRICE_LINE_APPEARANCE },
       showPriceLine: true,
@@ -555,6 +560,10 @@ export const useChartPreferences = create<{
       setShowChartTitle: (showChartTitle) => {
         if (typeof showChartTitle === "boolean" && showChartTitle !== get().showChartTitle)
           set({ showChartTitle });
+      },
+      setShowBarChange: (showBarChange) => {
+        if (typeof showBarChange === "boolean" && showBarChange !== get().showBarChange)
+          set({ showBarChange });
       },
       setShowCandleValues: (showCandleValues) => {
         if (typeof showCandleValues === "boolean" && showCandleValues !== get().showCandleValues)
