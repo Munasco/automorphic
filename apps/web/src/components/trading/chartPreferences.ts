@@ -121,6 +121,8 @@ type SavedChartPreferences = {
   style: ChartStyle;
   timeZone: string;
   crosshairMode: ChartCrosshairMode;
+  showCrosshairHorizontalLine: boolean;
+  showCrosshairVerticalLine: boolean;
   showCrosshairPriceLabel: boolean;
   showCrosshairTimeLabel: boolean;
   crosshairColor: string;
@@ -204,6 +206,8 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
       saved.style === "area"
         ? saved.style
         : "candles",
+    showCrosshairHorizontalLine: saved.showCrosshairHorizontalLine !== false,
+    showCrosshairVerticalLine: saved.showCrosshairVerticalLine !== false,
     showCrosshairPriceLabel: saved.showCrosshairPriceLabel !== false,
     showCrosshairTimeLabel: saved.showCrosshairTimeLabel !== false,
     crosshairMode: validCrosshairMode(saved.crosshairMode) ? saved.crosshairMode : "normal",
@@ -292,6 +296,8 @@ export const useChartPreferences = create<{
   style: ChartStyle;
   timeZone: string;
   crosshairMode: ChartCrosshairMode;
+  showCrosshairHorizontalLine: boolean;
+  showCrosshairVerticalLine: boolean;
   showCrosshairPriceLabel: boolean;
   showCrosshairTimeLabel: boolean;
   crosshairColor: string;
@@ -348,6 +354,8 @@ export const useChartPreferences = create<{
   setStyle: (style: ChartStyle) => void;
   setTimeZone: (timeZone: string) => void;
   setCrosshairMode: (mode: ChartCrosshairMode) => void;
+  setShowCrosshairHorizontalLine: (show: boolean) => void;
+  setShowCrosshairVerticalLine: (show: boolean) => void;
   setShowCrosshairPriceLabel: (show: boolean) => void;
   setShowCrosshairTimeLabel: (show: boolean) => void;
   setReplaySpeed: (speed: ChartReplaySpeed) => void;
@@ -410,6 +418,8 @@ export const useChartPreferences = create<{
       style: "candles",
       timeZone: "UTC",
       crosshairMode: "normal",
+      showCrosshairHorizontalLine: true,
+      showCrosshairVerticalLine: true,
       showCrosshairPriceLabel: true,
       showCrosshairTimeLabel: true,
       crosshairColor: "#9598A1",
@@ -483,6 +493,14 @@ export const useChartPreferences = create<{
       setStyle: (style) => set({ style }),
       setTimeZone: (timeZone) => {
         if (validTimeZone(timeZone) && timeZone !== get().timeZone) set({ timeZone });
+      },
+      setShowCrosshairHorizontalLine: (show) => {
+        if (typeof show === "boolean" && show !== get().showCrosshairHorizontalLine)
+          set({ showCrosshairHorizontalLine: show });
+      },
+      setShowCrosshairVerticalLine: (show) => {
+        if (typeof show === "boolean" && show !== get().showCrosshairVerticalLine)
+          set({ showCrosshairVerticalLine: show });
       },
       setShowCrosshairPriceLabel: (show) => {
         if (typeof show === "boolean" && show !== get().showCrosshairPriceLabel)

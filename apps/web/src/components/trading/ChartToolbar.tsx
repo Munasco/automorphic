@@ -121,6 +121,10 @@ export type ChartToolbarProps = {
   onShowCandleValuesChange: (show: boolean) => void;
   onIndicatorLegendCollapsedChange: (collapsed: boolean) => void;
   crosshairMode: ChartCrosshairMode;
+  showCrosshairHorizontalLine: boolean;
+  showCrosshairVerticalLine: boolean;
+  onShowCrosshairHorizontalLineChange: (show: boolean) => void;
+  onShowCrosshairVerticalLineChange: (show: boolean) => void;
   showCrosshairPriceLabel: boolean;
   showCrosshairTimeLabel: boolean;
   onShowCrosshairPriceLabelChange: (show: boolean) => void;
@@ -227,6 +231,10 @@ export function ChartToolbar({
   onIndicatorLegendCollapsedChange,
   crosshairMode,
   onCrosshairModeChange,
+  showCrosshairHorizontalLine,
+  showCrosshairVerticalLine,
+  onShowCrosshairHorizontalLineChange,
+  onShowCrosshairVerticalLineChange,
   showCrosshairPriceLabel,
   showCrosshairTimeLabel,
   onShowCrosshairPriceLabelChange,
@@ -890,6 +898,18 @@ export function ChartToolbar({
               <div className="space-y-2 px-2 pb-2.5">
                 {(
                   [
+                    [
+                      "horizontal",
+                      "Horizontal crosshair line",
+                      showCrosshairHorizontalLine,
+                      onShowCrosshairHorizontalLineChange,
+                    ],
+                    [
+                      "vertical",
+                      "Vertical crosshair line",
+                      showCrosshairVerticalLine,
+                      onShowCrosshairVerticalLineChange,
+                    ],
                     [
                       "price",
                       "Crosshair price label",

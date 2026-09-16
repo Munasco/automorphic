@@ -4382,3 +4382,57 @@ describe("crosshair axis labels", () => {
     },
   );
 });
+
+describe("crosshair line visibility", () => {
+  it("keeps legacy lines visible and ignores invalid/redundant writes", () => {
+    for (const value of [undefined, null, 0, "false", {}, []]) {
+      expect(
+        normalizeChartPreferences({
+          showCrosshairHorizontalLine: value,
+          showCrosshairVerticalLine: value,
+        }),
+      ).toMatchObject({ showCrosshairHorizontalLine: true, showCrosshairVerticalLine: true });
+    }
+    const store = useChartPreferences.getState();
+    const writes = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.length;
+    store.setShowCrosshairHorizontalLine(true);
+    store.setShowCrosshairVerticalLine(true);
+    store.setShowCrosshairHorizontalLine("false" as unknown as boolean);
+    store.setShowCrosshairVerticalLine(null as unknown as boolean);
+    expect(vi.mocked(tradingWorkspaceStorage.setItem)).toHaveBeenCalledTimes(writes);
+  });
+  it.each([
+    [true, true],
+    [false, true],
+    [true, false],
+    [false, false],
+  ])(
+    "persists horizontal=%s and vertical=%s independently through hidden mode and reload",
+    async (horizontal, vertical) => {
+      const store = useChartPreferences.getState();
+      store.setCrosshairMode("ohlc");
+      const before = normalizeChartPreferences(useChartPreferences.getState());
+      store.setShowCrosshairHorizontalLine(horizontal!);
+      store.setShowCrosshairVerticalLine(vertical!);
+      store.setCrosshairMode("hidden");
+      store.setCrosshairMode("ohlc");
+      const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+        ...before,
+        showCrosshairHorizontalLine: horizontal,
+        showCrosshairVerticalLine: vertical,
+      });
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+        JSON.stringify({ version: 0, state: {} }),
+      );
+      await useChartPreferences.persist.rehydrate();
+      expect(useChartPreferences.getState()).toMatchObject({
+        showCrosshairHorizontalLine: true,
+        showCrosshairVerticalLine: true,
+      });
+    },
+  );
+});

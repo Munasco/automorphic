@@ -1192,8 +1192,16 @@ export function TradovateChart({
         textColor: settings.chartTextColor,
       },
       crosshair: {
-        vertLine: { ...crosshairLine, labelVisible: settings.showCrosshairTimeLabel },
-        horzLine: { ...crosshairLine, labelVisible: settings.showCrosshairPriceLabel },
+        vertLine: {
+          ...crosshairLine,
+          visible: settings.showCrosshairVerticalLine,
+          labelVisible: settings.showCrosshairTimeLabel,
+        },
+        horzLine: {
+          ...crosshairLine,
+          visible: settings.showCrosshairHorizontalLine,
+          labelVisible: settings.showCrosshairPriceLabel,
+        },
         mode:
           settings.crosshairMode === "magnet"
             ? CrosshairMode.Magnet
@@ -1238,6 +1246,8 @@ export function TradovateChart({
     settings.invertScale,
     settings.showPriceScaleTicks,
     settings.crosshairMode,
+    settings.showCrosshairHorizontalLine,
+    settings.showCrosshairVerticalLine,
     settings.showCrosshairPriceLabel,
     settings.showCrosshairTimeLabel,
     settings.crosshairColor,
@@ -1468,6 +1478,10 @@ export function TradovateChart({
         onShowChartTitleChange={settings.setShowChartTitle}
         onShowCandleValuesChange={settings.setShowCandleValues}
         onIndicatorLegendCollapsedChange={settings.setIndicatorLegendCollapsed}
+        showCrosshairHorizontalLine={settings.showCrosshairHorizontalLine}
+        showCrosshairVerticalLine={settings.showCrosshairVerticalLine}
+        onShowCrosshairHorizontalLineChange={settings.setShowCrosshairHorizontalLine}
+        onShowCrosshairVerticalLineChange={settings.setShowCrosshairVerticalLine}
         showCrosshairPriceLabel={settings.showCrosshairPriceLabel}
         showCrosshairTimeLabel={settings.showCrosshairTimeLabel}
         onShowCrosshairPriceLabelChange={settings.setShowCrosshairPriceLabel}
