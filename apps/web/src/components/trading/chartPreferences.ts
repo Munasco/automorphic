@@ -62,6 +62,7 @@ export type {
 import { normalizeIndicatorAppearance, type IndicatorAppearance } from "./indicatorStyles";
 export type { IndicatorAppearance } from "./indicatorStyles";
 export type ChartAppearance = Partial<Record<IndicatorKey, IndicatorAppearance>>;
+export type ChartZoomAnchor = "pointer" | "right";
 export type ChartCrosshairMode = "normal" | "magnet" | "ohlc" | "hidden";
 export type ChartCrosshairLineStyle = "solid" | "dotted" | "dashed" | "largeDashed";
 const validChartFontSize = (value: unknown): value is number =>
@@ -186,6 +187,7 @@ type SavedChartPreferences = {
   watermarkVerticalAlignment: WatermarkVerticalAlignment;
   lockVisibleTimeRangeOnResize: boolean;
   zoomWithMouseWheel: boolean;
+  chartZoomAnchor: ChartZoomAnchor;
   lineMarkerRadius: ChartLineMarkerRadius;
   thinBars: boolean;
   showBarOpen: boolean;
@@ -324,6 +326,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
       : "center",
     lockVisibleTimeRangeOnResize: saved.lockVisibleTimeRangeOnResize === true,
     zoomWithMouseWheel: saved.zoomWithMouseWheel !== false,
+    chartZoomAnchor: saved.chartZoomAnchor === "right" ? "right" : "pointer",
     lineMarkerRadius: validLineMarkerRadius(saved.lineMarkerRadius) ? saved.lineMarkerRadius : 3,
     thinBars: typeof saved.thinBars === "boolean" ? saved.thinBars : true,
     showBarOpen: typeof saved.showBarOpen === "boolean" ? saved.showBarOpen : true,
@@ -416,6 +419,7 @@ export const useChartPreferences = create<{
   watermarkVerticalAlignment: WatermarkVerticalAlignment;
   lockVisibleTimeRangeOnResize: boolean;
   zoomWithMouseWheel: boolean;
+  chartZoomAnchor: ChartZoomAnchor;
   lineMarkerRadius: ChartLineMarkerRadius;
   thinBars: boolean;
   showBarOpen: boolean;
@@ -514,6 +518,7 @@ export const useChartPreferences = create<{
   setPaneStretchFactors: (sizes: ChartPaneSizes) => void;
   setLockVisibleTimeRangeOnResize: (lock: boolean) => void;
   setZoomWithMouseWheel: (enabled: boolean) => void;
+  setChartZoomAnchor: (anchor: ChartZoomAnchor) => void;
   setLineMarkerRadius: (radius: ChartLineMarkerRadius) => void;
   toggleThinBars: () => void;
   toggleBarOpen: () => void;
@@ -582,6 +587,7 @@ export const useChartPreferences = create<{
       watermarkVerticalAlignment: "center",
       lockVisibleTimeRangeOnResize: false,
       zoomWithMouseWheel: true,
+      chartZoomAnchor: "pointer",
       lineMarkerRadius: 3,
       thinBars: true,
       showBarOpen: true,
@@ -1068,6 +1074,13 @@ export const useChartPreferences = create<{
       setPaneStretchFactors: (sizes) => {
         const next = normalizeChartPaneSizes(sizes);
         if (!equalChartPaneSizes(get().paneStretchFactors, next)) set({ paneStretchFactors: next });
+      },
+      setChartZoomAnchor: (chartZoomAnchor) => {
+        if (
+          (chartZoomAnchor === "pointer" || chartZoomAnchor === "right") &&
+          chartZoomAnchor !== get().chartZoomAnchor
+        )
+          set({ chartZoomAnchor });
       },
       setZoomWithMouseWheel: (zoomWithMouseWheel) => {
         if (

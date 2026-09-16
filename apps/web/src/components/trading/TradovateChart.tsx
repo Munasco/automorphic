@@ -514,8 +514,11 @@ export function TradovateChart({
 
   useEffect(() => {
     if (engine && !engine.disposed)
-      engine.chart.applyOptions({ handleScale: { mouseWheel: settings.zoomWithMouseWheel } });
-  }, [engine, settings.zoomWithMouseWheel]);
+      engine.chart.applyOptions({
+        handleScale: { mouseWheel: settings.zoomWithMouseWheel },
+        timeScale: { rightBarStaysOnScroll: settings.chartZoomAnchor === "right" },
+      });
+  }, [engine, settings.zoomWithMouseWheel, settings.chartZoomAnchor]);
 
   useEffect(() => {
     if (
@@ -654,6 +657,7 @@ export function TradovateChart({
       areaFill,
       lockVisibleTimeRangeOnResize,
       zoomWithMouseWheel,
+      chartZoomAnchor,
       showTimeScale,
       rightOffsetBars,
       showPriceScale,
@@ -682,6 +686,7 @@ export function TradovateChart({
         secondsVisible: interval.unit === "second" || interval.unit === "tick",
         borderColor: "#242730",
         rightOffset: rightOffsetBars,
+        rightBarStaysOnScroll: chartZoomAnchor === "right",
         lockVisibleTimeRangeOnResize,
       },
       rightPriceScale: {

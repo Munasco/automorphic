@@ -5114,3 +5114,29 @@ it("preserves canvas gradient colors across solid mode, invalid edits and worksp
     chartBackgroundBottomColor: "#654321",
   });
 });
+
+it("persists the wheel zoom anchor independently of enabling wheel zoom", async () => {
+  const store = useChartPreferences.getState();
+  expect(store.chartZoomAnchor).toBe("pointer");
+  for (const value of [null, undefined, true, false, 1, "center", {}, []]) {
+    expect(normalizeChartPreferences({ chartZoomAnchor: value }).chartZoomAnchor).toBe("pointer");
+    store.setChartZoomAnchor(value as never);
+  }
+  store.setChartZoomAnchor("pointer");
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  store.setChartZoomAnchor("right");
+  store.setZoomWithMouseWheel(false);
+  expect(useChartPreferences.getState().chartZoomAnchor).toBe("right");
+  const payload = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(payload);
+  await useChartPreferences.persist.rehydrate();
+  expect(useChartPreferences.getState()).toMatchObject({
+    chartZoomAnchor: "right",
+    zoomWithMouseWheel: false,
+  });
+  useChartPreferences.getState().setZoomWithMouseWheel(true);
+  expect(useChartPreferences.getState().chartZoomAnchor).toBe("right");
+  useChartPreferences.getState().setChartZoomAnchor("pointer");
+  expect(useChartPreferences.getState().chartZoomAnchor).toBe("pointer");
+});

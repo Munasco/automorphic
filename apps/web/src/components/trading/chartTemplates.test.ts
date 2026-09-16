@@ -469,3 +469,22 @@ it("captures gradient background endpoints and keeps legacy templates solid", ()
     chartTemplateSettingsKey({ ...gradient, chartBackgroundMode: "solid" }),
   );
 });
+
+it("captures zoom anchoring and restores pointer anchoring for legacy templates", () => {
+  expect(captureChartTemplateSettings({ chartZoomAnchor: "right" }).chartZoomAnchor).toBe("right");
+  expect(captureChartTemplateSettings({}).chartZoomAnchor).toBe("pointer");
+  const templates = normalizeChartTemplates([
+    {
+      id: "right",
+      name: "Right edge",
+      settings: { chartZoomAnchor: "right", zoomWithMouseWheel: false },
+    },
+  ]);
+  expect(templates[0]?.settings).toMatchObject({
+    chartZoomAnchor: "right",
+    zoomWithMouseWheel: false,
+  });
+  expect(chartTemplateSettingsKey({ chartZoomAnchor: "right" })).not.toBe(
+    chartTemplateSettingsKey({}),
+  );
+});
