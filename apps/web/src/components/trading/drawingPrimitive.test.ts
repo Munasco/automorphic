@@ -10,6 +10,7 @@ import type { ChartDrawing } from "./drawingGeometry";
 
 function fixture() {
   const chart = {
+    paneSize: () => ({ width: chart.timeScale().width(), height: 500 }),
     options: () => ({ layout: { fontFamily: "system-ui" } }),
     timeScale: () => ({
       width: () => 1000,
@@ -30,6 +31,27 @@ function fixture() {
 }
 
 describe("native drawing primitive", () => {
+  it("keeps horizontal rays interactive across the plot when the time axis is hidden", () => {
+    const { chart, series } = fixture();
+    const scale = chart.timeScale();
+    chart.timeScale = () => ({ ...scale, width: () => 0 });
+    chart.paneSize = () => ({ width: 1000, height: 500 });
+    const drawing: ChartDrawing = {
+      id: "hidden-axis-ray",
+      kind: "horizontal-ray",
+      anchors: [{ time: 100 as Time, price: 300 }],
+      color: "#2962ff",
+      width: 2,
+    };
+    const plugin = createDrawingPrimitive(chart, series, () => ({
+      drawings: [drawing],
+      selected: null,
+    }));
+    expect(drawingProjection(chart, series).width).toBe(1000);
+    expect(plugin.hitTest({ x: 900, y: 200 })?.drawing.id).toBe(drawing.id);
+    expect(plugin.hitTest({ x: 50, y: 200 })).toBeNull();
+  });
+
   it("interpolates retained timestamps after the candle interval changes", () => {
     const { chart, series } = fixture();
     expect(drawingProjection(chart, series).project({ time: 150 as Time, price: 300 })).toEqual({

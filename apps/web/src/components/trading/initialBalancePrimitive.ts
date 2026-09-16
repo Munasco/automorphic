@@ -127,7 +127,8 @@ export function projectInitialBalanceTime(
   const x = scale.timeToCoordinate(nearest.time as UTCTimestamp);
   if (x === null) return null;
   // Irregular bars have no duration outside the loaded timeline. Keep boundaries offscreen.
-  if (intervalMinutes <= 0) return before ? Math.max(scale.width() + 1, x) : Math.min(-1, x);
+  if (intervalMinutes <= 0)
+    return before ? Math.max(chart.paneSize().width + 1, x) : Math.min(-1, x);
   const logical = scale.coordinateToLogical(x);
   return logical === null
     ? null
@@ -192,7 +193,7 @@ export function createInitialBalancePrimitive(chart: IChartApi, series: ISeriesA
       state.settings,
       (time) => projectInitialBalanceTime(chart, state!.bars, state!.interval, time),
       (price) => series.priceToCoordinate(price),
-      chart.timeScale().width(),
+      chart.paneSize().width,
       state.styles,
     );
   const renderer = (layer: "box" | "levels"): IPrimitivePaneRenderer => ({
@@ -200,7 +201,7 @@ export function createInitialBalancePrimitive(chart: IChartApi, series: ISeriesA
       if (!state) return;
       const shape = geometry();
       if (!shape) return;
-      const width = chart.timeScale().width();
+      const width = chart.paneSize().width;
       const height = series.getPane().getHeight();
       const settings = resolveInitialBalanceSettings(state.settings);
       const showLabels = settings.showLabels;

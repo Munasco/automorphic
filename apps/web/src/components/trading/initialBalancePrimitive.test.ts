@@ -23,6 +23,7 @@ const range: InitialBalanceRange = {
 
 function styleFixture() {
   const chart = {
+    paneSize: () => ({ width: chart.timeScale().width(), height: 500 }),
     timeScale: () => ({
       width: () => 500,
       timeToCoordinate: (time: number) => time / 60,
@@ -193,6 +194,7 @@ describe("initial balance visual geometry", () => {
       volume: 1,
     }));
     const chart = {
+      paneSize: () => ({ width: chart.timeScale().width(), height: 500 }),
       timeScale: () => ({
         timeToCoordinate: (time: number) => ({ 100: 10, 100.1: 20, 100.2: 30 })[time] ?? null,
         width: () => 400,
@@ -212,6 +214,7 @@ describe("initial balance visual geometry", () => {
       volume: 1,
     }));
     const chart = {
+      paneSize: () => ({ width: chart.timeScale().width(), height: 500 }),
       timeScale: () => ({
         timeToCoordinate: (time: number) => ({ 100: 10, 100.125: 20, 300: 30 })[time] ?? null,
         width: () => 400,
@@ -309,6 +312,7 @@ describe("initial balance visual geometry", () => {
 
   it("draws the shaded opening hour and attached labels, and honors all visibility switches", () => {
     const chart = {
+      paneSize: () => ({ width: chart.timeScale().width(), height: 500 }),
       timeScale: () => ({
         width: () => 1000,
         timeToCoordinate: (time: number) => time / 6,

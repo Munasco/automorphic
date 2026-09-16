@@ -142,6 +142,8 @@ export type ChartToolbarProps = {
   priceScaleMode: ChartPriceScaleMode;
   onPriceScaleModeChange: (value: ChartPriceScaleMode) => void;
   invertScale: boolean;
+  showTimeScale: boolean;
+  onShowTimeScaleChange: (show: boolean) => void;
   showPriceScale: boolean;
   onShowPriceScaleChange: (show: boolean) => void;
   showPriceScaleTicks: boolean;
@@ -253,6 +255,8 @@ export function ChartToolbar({
   priceScaleMode,
   onPriceScaleModeChange,
   invertScale,
+  showTimeScale,
+  onShowTimeScaleChange,
   showPriceScale,
   onShowPriceScaleChange,
   showPriceScaleTicks,
@@ -1125,6 +1129,17 @@ export function ChartToolbar({
                 className="w-full"
               />
             </div>
+            <label
+              htmlFor={`${id}-time-scale-visible`}
+              className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"
+            >
+              <Checkbox
+                id={`${id}-time-scale-visible`}
+                checked={showTimeScale}
+                onCheckedChange={onShowTimeScaleChange}
+              />
+              Show time scale
+            </label>
             <label
               htmlFor={`${id}-scale-visible`}
               className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"

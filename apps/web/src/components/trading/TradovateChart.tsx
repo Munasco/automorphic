@@ -478,9 +478,10 @@ export function TradovateChart({
   useEffect(() => {
     if (!engine || engine.disposed) return;
     engine.chart.timeScale().applyOptions({
+      visible: settings.showTimeScale,
       lockVisibleTimeRangeOnResize: settings.lockVisibleTimeRangeOnResize,
     });
-  }, [engine, settings.lockVisibleTimeRangeOnResize]);
+  }, [engine, settings.lockVisibleTimeRangeOnResize, settings.showTimeScale]);
 
   useEffect(() => {
     if (
@@ -595,6 +596,7 @@ export function TradovateChart({
       chartBackgroundColor,
       chartTextColor,
       lockVisibleTimeRangeOnResize,
+      showTimeScale,
       showPriceScale,
       showPriceScaleTicks,
     } = useChartPreferences.getState();
@@ -611,6 +613,7 @@ export function TradovateChart({
       localization: { timeFormatter: timeFormatters.timeFormatter },
       timeScale: {
         tickMarkFormatter: timeFormatters.tickMarkFormatter,
+        visible: showTimeScale,
         timeVisible: intraday,
         secondsVisible: interval.unit === "second" || interval.unit === "tick",
         borderColor: "#242730",
@@ -1508,6 +1511,8 @@ export function TradovateChart({
         priceScaleMode={settings.priceScaleMode}
         onPriceScaleModeChange={settings.setPriceScaleMode}
         invertScale={settings.invertScale}
+        showTimeScale={settings.showTimeScale}
+        onShowTimeScaleChange={settings.setShowTimeScale}
         showPriceScale={settings.showPriceScale}
         onShowPriceScaleChange={settings.setShowPriceScale}
         showPriceScaleTicks={settings.showPriceScaleTicks}

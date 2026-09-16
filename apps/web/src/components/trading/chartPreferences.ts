@@ -171,6 +171,7 @@ type SavedChartPreferences = {
   priceScaleMargins: ChartPriceScaleMargins | null;
   paneStretchFactors: ChartPaneSizes;
   invertScale: boolean;
+  showTimeScale: boolean;
   showPriceScale: boolean;
   showPriceScaleTicks: boolean;
 };
@@ -290,6 +291,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
         ? "logarithmic"
         : "normal",
     invertScale: typeof saved.invertScale === "boolean" ? saved.invertScale : false,
+    showTimeScale: saved.showTimeScale !== false,
     showPriceScale: saved.showPriceScale !== false,
     showPriceScaleTicks: saved.showPriceScaleTicks === true,
   };
@@ -349,6 +351,7 @@ export const useChartPreferences = create<{
   priceScaleMargins: ChartPriceScaleMargins | null;
   paneStretchFactors: ChartPaneSizes;
   invertScale: boolean;
+  showTimeScale: boolean;
   showPriceScale: boolean;
   showPriceScaleTicks: boolean;
   setShowChartTitle: (show: boolean) => void;
@@ -414,6 +417,7 @@ export const useChartPreferences = create<{
   setPriceScaleMode: (mode: ChartPriceScaleMode) => void;
   setPriceScaleMargins: (value: ChartPriceScaleMargins | null) => void;
   toggleInvertScale: () => void;
+  setShowTimeScale: (show: boolean) => void;
   setShowPriceScale: (show: boolean) => void;
   setShowPriceScaleTicks: (show: boolean) => void;
 }>()(
@@ -478,6 +482,7 @@ export const useChartPreferences = create<{
       priceScaleMargins: null,
       paneStretchFactors: {},
       invertScale: false,
+      showTimeScale: true,
       showPriceScale: true,
       showPriceScaleTicks: false,
       setShowChartTitle: (showChartTitle) => {
@@ -896,6 +901,9 @@ export const useChartPreferences = create<{
           set({ priceScaleMode });
       },
       toggleInvertScale: () => set((state) => ({ invertScale: !state.invertScale })),
+      setShowTimeScale: (show) => {
+        if (typeof show === "boolean" && show !== get().showTimeScale) set({ showTimeScale: show });
+      },
       setShowPriceScale: (show) => {
         if (typeof show === "boolean" && show !== get().showPriceScale)
           set({ showPriceScale: show });

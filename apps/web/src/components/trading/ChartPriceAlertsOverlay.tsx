@@ -69,7 +69,7 @@ export function ChartPriceAlertsOverlay({
       alerts,
       symbol,
       (price) => series.priceToCoordinate(price),
-      chart.timeScale().width(),
+      chart.paneSize().width,
       pane.getHeight(),
     ).map(({ alert, x, y }) => ({ id: alert.id, x: left + x, y: top + y }));
     setPositions((previous) =>

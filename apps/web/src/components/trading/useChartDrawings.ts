@@ -2146,7 +2146,7 @@ export function createChartDrawingSession(
         Number.isFinite(point.x) &&
         Number.isFinite(point.y) &&
         point.x >= 0 &&
-        point.x <= chart.timeScale().width() &&
+        point.x <= chart.paneSize().width &&
         point.y >= 0 &&
         point.y <= series.getPane().getHeight()
           ? point
@@ -2590,7 +2590,7 @@ export function useChartDrawings(
       if (
         !point ||
         point.x < 0 ||
-        point.x > chart.timeScale().width() ||
+        point.x > chart.paneSize().width ||
         point.y < 0 ||
         point.y > point.pane.getHeight()
       )
@@ -2648,7 +2648,7 @@ export function useChartDrawings(
       if (
         !point ||
         point.x < 0 ||
-        point.x > chart.timeScale().width() ||
+        point.x > chart.paneSize().width ||
         point.y < 0 ||
         point.y > point.pane.getHeight() ||
         point.pane !== series.getPane()

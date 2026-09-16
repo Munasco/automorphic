@@ -154,7 +154,7 @@ export function DrawingInlineTextEditor({
     if (!element) return;
     const paneRect = element.getBoundingClientRect();
     const bounds = overlay.current.getBoundingClientRect();
-    const paneWidth = chart.timeScale().width();
+    const paneWidth = chart.paneSize().width;
     const paneHeight = pane.getHeight();
     const fontFamily = chart.options().layout.fontFamily;
     const context = document.createElement("canvas").getContext("2d");

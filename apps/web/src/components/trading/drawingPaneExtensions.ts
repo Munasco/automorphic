@@ -143,7 +143,7 @@ export function createDrawingPaneExtensions(
   sync();
   return {
     hitTest(x: number, paneIndex: number): ChartDrawing | null {
-      if (disposed || !Number.isFinite(x) || x < 0 || x > chart.timeScale().width()) return null;
+      if (disposed || !Number.isFinite(x) || x < 0 || x > chart.paneSize().width) return null;
       const pane = chart.panes?.()[paneIndex];
       if (!pane || pane === series.getPane() || !entries.has(pane)) return null;
       for (const drawing of drawings().toReversed()) {

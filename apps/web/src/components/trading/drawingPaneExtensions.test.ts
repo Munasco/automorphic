@@ -56,6 +56,7 @@ function fixture() {
   ];
   const scale = { timeToCoordinate: (time: Time) => Number(time), width: () => 800 };
   const chart = {
+    paneSize: () => ({ width: chart.timeScale().width(), height: 150 }),
     chartElement: () => ({}),
     panes: () => panes,
     timeScale: () => scale,

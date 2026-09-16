@@ -51,6 +51,7 @@ function fixture(symbol: string, initial: string | null = null, candles: Candles
     },
   } as unknown as ISeriesApi<SeriesType>;
   const chart = {
+    paneSize: () => ({ width: chart.timeScale().width(), height: 500 }),
     options: () => ({ layout: { fontFamily: "sans-serif" } }),
     timeScale: () => ({
       width: () => 1000,

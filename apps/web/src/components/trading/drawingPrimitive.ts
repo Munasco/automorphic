@@ -82,7 +82,7 @@ export function drawingTimeCoordinate(
 
 export function drawingProjection(chart: IChartApi, series: ISeriesApi<SeriesType>) {
   const scale = chart.timeScale();
-  const width = scale.width();
+  const width = chart.paneSize().width;
   const height = series.getPane().getHeight();
   const priceY = (price: number) => series.priceToCoordinate(price);
   const project = (anchor: DrawingAnchor) => {
@@ -920,8 +920,7 @@ export function createDrawingPrimitive(
             axis === "price"
               ? series.priceToCoordinate(anchor.price)
               : drawingTimeCoordinate(chart, series, anchor.time);
-          const extent =
-            axis === "price" ? series.getPane().getHeight() : chart.timeScale().width();
+          const extent = axis === "price" ? series.getPane().getHeight() : chart.paneSize().width;
           return (
             coordinate !== null &&
             Number.isFinite(coordinate) &&
