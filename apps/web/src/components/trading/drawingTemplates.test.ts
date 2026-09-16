@@ -581,3 +581,89 @@ describe("renaming saved drawing templates", () => {
     expect(templates.filter((item) => item.name === "Retest")).toHaveLength(2);
   });
 });
+
+describe("duplicating drawing templates", () => {
+  it("copies saved settings independently and persists copies across reload, rename and deletion", async () => {
+    const store = useDrawingTemplates.getState();
+    store.saveTemplate(drawing, "Setup");
+    expect(store.duplicateTemplate("fib", "Setup")).toBe("Setup copy");
+    const [source, copy] = useDrawingTemplates.getState().templates;
+    expect(copy!.settings).toEqual(source!.settings);
+    expect(copy!.settings).not.toBe(source!.settings);
+    expect(copy!.settings.levels).not.toBe(source!.settings.levels);
+    expect(copy!.settings.levels![0]).not.toBe(source!.settings.levels![0]);
+    expect(copy!.settings).not.toHaveProperty("anchors");
+    expect(copy!.settings).not.toHaveProperty("locked");
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    useDrawingTemplates.setState({ templates: [] });
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    await useDrawingTemplates.persist.rehydrate();
+    expect(useDrawingTemplates.getState().templates).toEqual([source, copy]);
+    store.renameTemplate("fib", "Setup copy", "Variant");
+    store.deleteTemplate("fib", "Setup");
+    const remaining = useDrawingTemplates.getState().templates;
+    expect(remaining).toEqual([{ ...copy, name: "Variant" }]);
+    expect(applyDrawingTemplate(drawing, remaining[0]!.settings)).toEqual(drawing);
+  });
+
+  it("uses unique names per tool without replacing existing copies or changing other tools", () => {
+    const store = useDrawingTemplates.getState();
+    store.saveTemplate(drawing, "Setup");
+    store.saveTemplate({ ...drawing, kind: "trend" }, "Setup copy");
+    expect(store.duplicateTemplate("fib", "Setup")).toBe("Setup copy");
+    expect(store.duplicateTemplate("fib", "Setup")).toBe("Setup copy 2");
+    expect(useDrawingTemplates.getState().templates.map((item) => [item.kind, item.name])).toEqual([
+      ["fib", "Setup"],
+      ["trend", "Setup copy"],
+      ["fib", "Setup copy"],
+      ["fib", "Setup copy 2"],
+    ]);
+  });
+
+  it("keeps long Unicode copy names within the storage limit and preserves sparse settings", () => {
+    const name = `${"a".repeat(74)}😀abcd`;
+    const sparse = {
+      kind: "trend" as const,
+      name,
+      settings: { color: "#123456", width: 2, lineStyle: "solid" as const },
+    };
+    useDrawingTemplates.setState({ templates: [sparse] });
+    const copyName = useDrawingTemplates.getState().duplicateTemplate("trend", name);
+    expect(copyName).toBe(`${"a".repeat(74)} copy`);
+    expect(copyName.length).toBeLessThanOrEqual(80);
+    expect(useDrawingTemplates.getState().templates[1]!.settings).toEqual(sparse.settings);
+  });
+
+  it("rejects stale sources and full per-tool capacity without persisting partial changes", () => {
+    const store = useDrawingTemplates.getState();
+    for (let index = 0; index < 20; index++) store.saveTemplate(drawing, `Setup ${index}`);
+    const before = useDrawingTemplates.getState().templates;
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    expect(() => store.duplicateTemplate("trend", "Setup 0")).toThrow("no longer available");
+    expect(() => store.duplicateTemplate("fib", "Setup 0")).toThrow("limit reached");
+    expect(useDrawingTemplates.getState().templates).toBe(before);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+    store.saveTemplate({ ...drawing, kind: "trend" }, "Trend");
+    expect(store.duplicateTemplate("trend", "Trend")).toBe("Trend copy");
+  });
+
+  it("rejects copies that exceed total storage without losing the saved original", () => {
+    const template = {
+      kind: "text" as const,
+      name: "Large",
+      settings: {
+        color: "#123456",
+        width: 2,
+        lineStyle: "solid" as const,
+        text: "x".repeat(130_000),
+      },
+    };
+    useDrawingTemplates.setState({ templates: [template] });
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    expect(() => useDrawingTemplates.getState().duplicateTemplate("text", "Large")).toThrow(
+      "storage is full",
+    );
+    expect(useDrawingTemplates.getState().templates).toEqual([template]);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  });
+});

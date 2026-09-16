@@ -1,5 +1,6 @@
-import { PencilIcon } from "lucide-react";
+import { CopyIcon, PencilIcon } from "lucide-react";
 import { useState } from "react";
+import { toastManager } from "../ui/toast";
 import { cn } from "../../lib/utils";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
@@ -17,6 +18,18 @@ import {
   MAX_TEMPLATES_PER_KIND,
   useDrawingTemplates,
 } from "./drawingTemplates";
+
+function duplicateTemplate(kind: ChartDrawing["kind"], name: string) {
+  try {
+    useDrawingTemplates.getState().duplicateTemplate(kind, name);
+  } catch (error) {
+    toastManager.add({
+      type: "error",
+      title: "Couldn't duplicate template",
+      description: error instanceof Error ? error.message : "Try again.",
+    });
+  }
+}
 
 export function DrawingTemplateMenu({
   drawing,
@@ -101,6 +114,15 @@ export function DrawingTemplateMenu({
                     }}
                   >
                     {template.name}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Duplicate template ${template.name}`}
+                    disabled={templates.length >= MAX_TEMPLATES_PER_KIND}
+                    className="flex size-8 shrink-0 items-center justify-center rounded text-zinc-400 hover:text-white disabled:opacity-40"
+                    onClick={() => duplicateTemplate(template.kind, template.name)}
+                  >
+                    <CopyIcon className="size-3.5" />
                   </button>
                   <button
                     type="button"
@@ -290,6 +312,15 @@ export function DrawingTemplateSubmenu({
               onClick={() => onApply(template.settings)}
             >
               <span className="truncate">{template.name}</span>
+            </MenuItem>
+            <MenuItem
+              aria-label={`Duplicate template ${template.name}`}
+              disabled={templates.length >= MAX_TEMPLATES_PER_KIND}
+              closeOnClick={false}
+              className="size-8 min-h-8 shrink-0 justify-center px-0 py-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 data-highlighted:opacity-100 sm:min-h-8 [@media(hover:none)]:opacity-100"
+              onClick={() => duplicateTemplate(template.kind, template.name)}
+            >
+              <CopyIcon className="size-4" />
             </MenuItem>
             <MenuItem
               aria-label={`Rename template ${template.name}`}
