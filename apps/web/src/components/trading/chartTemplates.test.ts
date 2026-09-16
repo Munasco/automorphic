@@ -397,3 +397,14 @@ it("captures previous-close bar coloring independently from its source", () => {
   expect(settings.colorBarsByPreviousClose).toBe(true);
   expect(captureChartTemplateSettings({}).colorBarsByPreviousClose).toBe(false);
 });
+
+it("captures watermark position and defaults old templates to center", () => {
+  const source = { watermarkHorizontalAlignment: "right", watermarkVerticalAlignment: "bottom" };
+  const saved = captureChartTemplateSettings(source);
+  source.watermarkHorizontalAlignment = "left";
+  expect(saved.watermarkHorizontalAlignment).toBe("right");
+  expect(saved.watermarkVerticalAlignment).toBe("bottom");
+  const legacy = captureChartTemplateSettings({ showSymbolWatermark: true });
+  expect(legacy.watermarkHorizontalAlignment).toBe("center");
+  expect(legacy.watermarkVerticalAlignment).toBe("center");
+});

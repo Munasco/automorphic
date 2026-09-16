@@ -4926,3 +4926,54 @@ describe("previous close coloring preference", () => {
     expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(writes);
   });
 });
+
+describe("watermark position", () => {
+  it.each(["left", "center", "right"] as const)(
+    "persists %s alignment with every vertical position",
+    async (horizontal) => {
+      for (const vertical of ["top", "center", "bottom"] as const) {
+        const store = useChartPreferences.getState();
+        store.setWatermarkHorizontalAlignment(horizontal);
+        store.setWatermarkVerticalAlignment(vertical);
+        const settings = useChartPreferences.getState();
+        expect(settings.watermarkHorizontalAlignment).toBe(horizontal);
+        expect(settings.watermarkVerticalAlignment).toBe(vertical);
+        const normalized = normalizeChartPreferences(settings);
+        expect(normalized.watermarkHorizontalAlignment).toBe(horizontal);
+        expect(normalized.watermarkVerticalAlignment).toBe(vertical);
+        const payload = JSON.stringify({ state: normalized, version: 0 });
+        useChartPreferences.setState({
+          watermarkHorizontalAlignment: "center",
+          watermarkVerticalAlignment: "center",
+        });
+        vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(payload);
+        await useChartPreferences.persist.rehydrate();
+        expect(useChartPreferences.getState().watermarkHorizontalAlignment).toBe(horizontal);
+        expect(useChartPreferences.getState().watermarkVerticalAlignment).toBe(vertical);
+        const writes = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.length;
+        useChartPreferences.getState().setWatermarkHorizontalAlignment(horizontal);
+        useChartPreferences.getState().setWatermarkVerticalAlignment(vertical);
+        expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(writes);
+      }
+    },
+  );
+  it("defaults legacy positions to center and validates axes independently", () => {
+    const defaults = normalizeChartPreferences({});
+    expect(defaults.watermarkHorizontalAlignment).toBe("center");
+    expect(defaults.watermarkVerticalAlignment).toBe("center");
+    const normalized = normalizeChartPreferences({
+      watermarkHorizontalAlignment: "right",
+      watermarkVerticalAlignment: "left",
+    });
+    expect(normalized.watermarkHorizontalAlignment).toBe("right");
+    expect(normalized.watermarkVerticalAlignment).toBe("center");
+    const store = useChartPreferences.getState();
+    for (const value of [null, true, 3, "LEFT", "middle", {}, []]) {
+      store.setWatermarkHorizontalAlignment(value as never);
+      store.setWatermarkVerticalAlignment(value as never);
+    }
+    store.setWatermarkHorizontalAlignment("top" as never);
+    store.setWatermarkVerticalAlignment("right" as never);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  });
+});

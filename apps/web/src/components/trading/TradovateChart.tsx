@@ -1357,8 +1357,8 @@ export function TradovateChart({
     const element = pane?.getHTMLElement();
     if (!pane || !element) return;
     const watermark = createTextWatermark(pane, {
-      horzAlign: "center",
-      vertAlign: "center",
+      horzAlign: settings.watermarkHorizontalAlignment,
+      vertAlign: settings.watermarkVerticalAlignment,
     });
     const rgb = [1, 3, 5].map((start) =>
       parseInt(settings.watermarkColor.slice(start, start + 2), 16),
@@ -1397,6 +1397,8 @@ export function TradovateChart({
     settings.showSymbolWatermark,
     settings.watermarkColor,
     settings.watermarkOpacity,
+    settings.watermarkHorizontalAlignment,
+    settings.watermarkVerticalAlignment,
     symbol,
   ]);
 

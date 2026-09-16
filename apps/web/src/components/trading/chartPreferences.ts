@@ -65,6 +65,12 @@ export type ChartCrosshairMode = "normal" | "magnet" | "ohlc" | "hidden";
 export type ChartCrosshairLineStyle = "solid" | "dotted" | "dashed" | "largeDashed";
 const validChartFontSize = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value) && value >= 8 && value <= 24;
+export type WatermarkHorizontalAlignment = "left" | "center" | "right";
+export type WatermarkVerticalAlignment = "top" | "center" | "bottom";
+const validWatermarkHorizontalAlignment = (value: unknown): value is WatermarkHorizontalAlignment =>
+  value === "left" || value === "center" || value === "right";
+const validWatermarkVerticalAlignment = (value: unknown): value is WatermarkVerticalAlignment =>
+  value === "top" || value === "center" || value === "bottom";
 const validWatermarkOpacity = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 100;
 export type ChartReplaySpeed = 0.5 | 1 | 2 | 5 | 10;
@@ -173,6 +179,8 @@ type SavedChartPreferences = {
   showSymbolWatermark: boolean;
   watermarkColor: string;
   watermarkOpacity: number;
+  watermarkHorizontalAlignment: WatermarkHorizontalAlignment;
+  watermarkVerticalAlignment: WatermarkVerticalAlignment;
   lockVisibleTimeRangeOnResize: boolean;
   lineMarkerRadius: ChartLineMarkerRadius;
   thinBars: boolean;
@@ -298,6 +306,14 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     showSymbolWatermark: saved.showSymbolWatermark === true,
     watermarkColor: validColor(saved.watermarkColor) ? saved.watermarkColor : "#9299a7",
     watermarkOpacity: validWatermarkOpacity(saved.watermarkOpacity) ? saved.watermarkOpacity : 14,
+    watermarkHorizontalAlignment: validWatermarkHorizontalAlignment(
+      saved.watermarkHorizontalAlignment,
+    )
+      ? saved.watermarkHorizontalAlignment
+      : "center",
+    watermarkVerticalAlignment: validWatermarkVerticalAlignment(saved.watermarkVerticalAlignment)
+      ? saved.watermarkVerticalAlignment
+      : "center",
     lockVisibleTimeRangeOnResize: saved.lockVisibleTimeRangeOnResize === true,
     lineMarkerRadius: validLineMarkerRadius(saved.lineMarkerRadius) ? saved.lineMarkerRadius : 3,
     thinBars: typeof saved.thinBars === "boolean" ? saved.thinBars : true,
@@ -385,6 +401,8 @@ export const useChartPreferences = create<{
   showSymbolWatermark: boolean;
   watermarkColor: string;
   watermarkOpacity: number;
+  watermarkHorizontalAlignment: WatermarkHorizontalAlignment;
+  watermarkVerticalAlignment: WatermarkVerticalAlignment;
   lockVisibleTimeRangeOnResize: boolean;
   lineMarkerRadius: ChartLineMarkerRadius;
   thinBars: boolean;
@@ -477,6 +495,8 @@ export const useChartPreferences = create<{
   setShowSymbolWatermark: (show: boolean) => void;
   setWatermarkColor: (color: string) => void;
   setWatermarkOpacity: (opacity: number) => boolean;
+  setWatermarkHorizontalAlignment: (alignment: WatermarkHorizontalAlignment) => void;
+  setWatermarkVerticalAlignment: (alignment: WatermarkVerticalAlignment) => void;
   setPaneStretchFactors: (sizes: ChartPaneSizes) => void;
   setLockVisibleTimeRangeOnResize: (lock: boolean) => void;
   setLineMarkerRadius: (radius: ChartLineMarkerRadius) => void;
@@ -541,6 +561,8 @@ export const useChartPreferences = create<{
       showSymbolWatermark: false,
       watermarkColor: "#9299a7",
       watermarkOpacity: 14,
+      watermarkHorizontalAlignment: "center",
+      watermarkVerticalAlignment: "center",
       lockVisibleTimeRangeOnResize: false,
       lineMarkerRadius: 3,
       thinBars: true,
@@ -1038,6 +1060,20 @@ export const useChartPreferences = create<{
       setWatermarkColor: (watermarkColor) => {
         if (validColor(watermarkColor) && watermarkColor !== get().watermarkColor)
           set({ watermarkColor });
+      },
+      setWatermarkHorizontalAlignment: (alignment) => {
+        if (
+          validWatermarkHorizontalAlignment(alignment) &&
+          alignment !== get().watermarkHorizontalAlignment
+        )
+          set({ watermarkHorizontalAlignment: alignment });
+      },
+      setWatermarkVerticalAlignment: (alignment) => {
+        if (
+          validWatermarkVerticalAlignment(alignment) &&
+          alignment !== get().watermarkVerticalAlignment
+        )
+          set({ watermarkVerticalAlignment: alignment });
       },
       setWatermarkOpacity: (watermarkOpacity) => {
         if (!validWatermarkOpacity(watermarkOpacity)) return false;

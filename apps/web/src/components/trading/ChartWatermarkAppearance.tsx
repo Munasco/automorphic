@@ -1,8 +1,18 @@
-import { useState } from "react";
-import { useChartPreferences } from "./chartPreferences";
+import { useId, useState } from "react";
+import {
+  useChartPreferences,
+  type WatermarkHorizontalAlignment,
+  type WatermarkVerticalAlignment,
+} from "./chartPreferences";
+import { TradingSelect } from "./TradingSelect";
 import { IndicatorNumberField } from "./IndicatorNumberField";
 
 export function ChartWatermarkAppearance() {
+  const id = useId();
+  const horizontal = useChartPreferences((state) => state.watermarkHorizontalAlignment);
+  const vertical = useChartPreferences((state) => state.watermarkVerticalAlignment);
+  const setHorizontal = useChartPreferences((state) => state.setWatermarkHorizontalAlignment);
+  const setVertical = useChartPreferences((state) => state.setWatermarkVerticalAlignment);
   const color = useChartPreferences((state) => state.watermarkColor);
   const opacity = useChartPreferences((state) => state.watermarkOpacity);
   const setColor = useChartPreferences((state) => state.setWatermarkColor);
@@ -33,12 +43,44 @@ export function ChartWatermarkAppearance() {
           className="h-8 w-20 rounded border border-zinc-600 bg-zinc-900 px-2 text-xs text-zinc-200 outline-none focus:border-blue-400"
         />
       </div>
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <label htmlFor={`${id}-horizontal`}>Horizontal</label>
+        <TradingSelect
+          id={`${id}-horizontal`}
+          label="Watermark horizontal alignment"
+          value={horizontal}
+          options={[
+            ["left", "Left"],
+            ["center", "Center"],
+            ["right", "Right"],
+          ]}
+          onChange={(value) => setHorizontal(value as WatermarkHorizontalAlignment)}
+          className="w-24 border-zinc-600 bg-zinc-900 text-xs"
+        />
+      </div>
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <label htmlFor={`${id}-vertical`}>Vertical</label>
+        <TradingSelect
+          id={`${id}-vertical`}
+          label="Watermark vertical alignment"
+          value={vertical}
+          options={[
+            ["top", "Top"],
+            ["center", "Center"],
+            ["bottom", "Bottom"],
+          ]}
+          onChange={(value) => setVertical(value as WatermarkVerticalAlignment)}
+          className="w-24 border-zinc-600 bg-zinc-900 text-xs"
+        />
+      </div>
       <button
         type="button"
         className="text-xs text-zinc-400 hover:text-white"
         onClick={() => {
           setColor("#9299a7");
           setOpacity(14);
+          setHorizontal("center");
+          setVertical("center");
           setResetKey((value) => value + 1);
         }}
       >
