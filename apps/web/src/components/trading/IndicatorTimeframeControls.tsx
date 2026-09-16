@@ -1,16 +1,21 @@
 import { useState } from "react";
+import { ChevronDownIcon } from "lucide-react";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import type { ChartInterval } from "./tradingIntervals";
 import { IndicatorNumberField } from "./IndicatorNumberField";
 import {
   DEFAULT_DRAWING_VISIBILITY,
-  sanitizeDrawingVisibility,
+  createDrawingVisibilityPreset,
   type DrawingVisibility,
 } from "./drawingVisibility";
 
 export function IndicatorTimeframeControls({
+  interval,
   value,
   onChange,
   accessible,
 }: {
+  interval: ChartInterval;
   value: DrawingVisibility | undefined;
   onChange: (value: DrawingVisibility) => void;
   accessible: (label: string) => string;
@@ -21,6 +26,40 @@ export function IndicatorTimeframeControls({
     <details className="border-y border-white/10 py-2">
       <summary className="cursor-pointer font-medium">Timeframe visibility</summary>
       <div className="mt-3 space-y-2">
+        <Menu>
+          <MenuTrigger
+            aria-label={accessible("Apply timeframe preset")}
+            className="flex w-full items-center justify-between gap-2 rounded border border-zinc-600 bg-zinc-900 px-2 py-1.5 text-xs hover:bg-zinc-800"
+          >
+            Apply preset
+            <ChevronDownIcon className="size-3.5" />
+          </MenuTrigger>
+          <MenuPopup align="start" className="min-w-0 text-xs">
+            {(
+              [
+                ["only", "Current interval only"],
+                ["above", "Current interval and above"],
+                ["below", "Current interval and below"],
+                ["all", "All intervals"],
+              ] as const
+            ).map(([preset, label]) => {
+              const next = createDrawingVisibilityPreset(interval, preset);
+              return (
+                <MenuItem
+                  key={preset}
+                  disabled={!next}
+                  onClick={() => {
+                    if (!next) return;
+                    onChange(next);
+                    setResetKey((key) => key + 1);
+                  }}
+                >
+                  {label}
+                </MenuItem>
+              );
+            })}
+          </MenuPopup>
+        </Menu>
         <label className="flex items-center gap-2">
           <input
             type="checkbox"
@@ -87,16 +126,6 @@ export function IndicatorTimeframeControls({
             </div>
           );
         })}
-        <button
-          type="button"
-          onClick={() => {
-            onChange(sanitizeDrawingVisibility(undefined));
-            setResetKey((key) => key + 1);
-          }}
-          className="text-zinc-400 hover:text-white"
-        >
-          Show on all timeframes
-        </button>
       </div>
     </details>
   );

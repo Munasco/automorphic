@@ -1,3 +1,5 @@
+import { createDrawingVisibilityPreset } from "./drawingVisibility";
+import { isIndicatorVisibleOnTimeframe } from "./indicatorTimeframeVisibility";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 vi.mock("./workspaceStorage", () => ({
@@ -5019,4 +5021,41 @@ describe("indicator timeframe persistence", () => {
     expect(instance(base).hidden).toBe(true);
     expect(instance(copied).appearance.timeframeVisibility?.minutes.enabled).toBe(false);
   });
+});
+
+describe("indicator quick timeframe presets", () => {
+  it.each(["only", "above", "below", "all"] as const)(
+    "%s persists only the selected instance's range without changing its style or manual visibility",
+    async (preset) => {
+      const store = useChartPreferences.getState();
+      const base = store.addIndicator("rsi")!;
+      const extra = store.addIndicator("rsi")!;
+      store.setIndicatorInstanceAppearance(extra, { color: "#123456", lineWidth: 3 });
+      store.toggleIndicatorInstanceVisibility(extra);
+      store.setIndicatorInstanceAppearance(extra, {
+        timeframeVisibility: createDrawingVisibilityPreset({ unit: "minute", value: 5 }, preset)!,
+      });
+      const payload = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(payload);
+      await useChartPreferences.persist.rehydrate();
+      const instances = getChartIndicatorInstances(useChartPreferences.getState());
+      const saved = instances.find((item) => item.id === extra)!;
+      expect(saved.hidden).toBe(true);
+      expect(saved.appearance.color).toBe("#123456");
+      expect(saved.appearance.lineWidth).toBe(3);
+      expect(
+        instances.find((item) => item.id === base)!.appearance.timeframeVisibility,
+      ).toBeUndefined();
+      expect(isIndicatorVisibleOnTimeframe(saved.appearance, { unit: "minute", value: 5 })).toBe(
+        true,
+      );
+      expect(isIndicatorVisibleOnTimeframe(saved.appearance, { unit: "minute", value: 1 })).toBe(
+        preset === "below" || preset === "all",
+      );
+      expect(isIndicatorVisibleOnTimeframe(saved.appearance, { unit: "minute", value: 15 })).toBe(
+        preset === "above" || preset === "all",
+      );
+    },
+  );
 });

@@ -1,3 +1,4 @@
+import type { ChartInterval } from "./tradingIntervals";
 import { IndicatorTimeframeControls } from "./IndicatorTimeframeControls";
 import { useState } from "react";
 import { ColorPicker, DrawingSelect } from "./DrawingStyleControls";
@@ -26,12 +27,14 @@ type Preferences = ReturnType<typeof useChartPreferences.getState>;
 const inputClass = "rounded border border-white/15 bg-zinc-900 px-2 py-1 text-xs text-zinc-200";
 
 export function IndicatorSettingsContent({
+  interval,
   instance,
   settings,
   accessible,
   description,
   hiddenOnTimeframe = false,
 }: {
+  interval: ChartInterval;
   instance: ChartIndicatorInstance;
   settings: Preferences;
   accessible: (text: string) => string;
@@ -65,6 +68,7 @@ export function IndicatorSettingsContent({
           </p>
         )}
         <IndicatorTimeframeControls
+          interval={interval}
           value={appearance.timeframeVisibility}
           accessible={accessible}
           onChange={(timeframeVisibility) =>

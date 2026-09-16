@@ -188,6 +188,7 @@ export function IndicatorLegend({
                       className="max-h-[min(70vh,36rem)] w-72 overflow-y-auto"
                     >
                       <IndicatorSettingsContent
+                        interval={interval}
                         hiddenOnTimeframe={hiddenOnTimeframe}
                         instance={instance}
                         settings={settings}

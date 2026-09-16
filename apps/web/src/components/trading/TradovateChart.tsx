@@ -1904,6 +1904,7 @@ export function TradovateChart({
                 onDuplicate: () => settings.duplicateIndicatorInstance(instance.id),
                 settingsContent: (
                   <IndicatorSettingsContent
+                    interval={interval}
                     hiddenOnTimeframe={
                       !isIndicatorVisibleOnTimeframe(instance.appearance, interval)
                     }
