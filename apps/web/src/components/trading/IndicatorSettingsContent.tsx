@@ -404,6 +404,15 @@ export function IndicatorSettingsContent({
             Remove
           </button>
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            if (settings.resetIndicatorInstance(id)) setInputResetVersion((version) => version + 1);
+          }}
+          className="w-full rounded border border-white/15 px-2 py-1.5 hover:bg-white/10"
+        >
+          Restore defaults
+        </button>
         <p className="border-t border-white/10 pt-3 leading-relaxed text-zinc-500">{description}</p>
       </div>
     </>

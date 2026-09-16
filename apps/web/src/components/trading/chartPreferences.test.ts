@@ -4510,3 +4510,76 @@ describe("time scale visibility", () => {
     },
   );
 });
+
+it.each(["ib", "volume", "rsi"] as const)(
+  "restores %s defaults atomically per instance while retaining visibility and layout",
+  async (key) => {
+    const store = useChartPreferences.getState();
+    store.removeAllIndicators();
+    const base = store.addIndicator(key)!;
+    if (key === "ib")
+      store.setIndicatorInstanceInitialBalance(base, {
+        ...DEFAULT_INITIAL_BALANCE,
+        startTime: "10:00",
+        durationMinutes: 45,
+        backgroundColor: "#ff0000",
+        backgroundOpacity: 0.5,
+        showDashboard: false,
+      });
+    if (key === "volume")
+      store.setIndicatorInstanceVolumeColors(base, { up: "#123456", down: "#654321" });
+    if (key === "rsi") store.setIndicatorInstanceInputs(base, { period: 7 });
+    store.setIndicatorInstanceAppearance(base, { color: "#123456", lineWidth: 3 });
+    const copy = store.duplicateIndicatorInstance(base)!;
+    store.toggleIndicatorInstanceVisibility(copy);
+    store.moveIndicatorInstance(copy, "up");
+    const before = useChartPreferences.getState();
+    const instances = getChartIndicatorInstances(before);
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    const changed = vi.fn();
+    const unsubscribe = useChartPreferences.subscribe(changed);
+    expect(store.resetIndicatorInstance(copy)).toBe(true);
+    unsubscribe();
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(tradingWorkspaceStorage.setItem).toHaveBeenCalledTimes(1);
+    const after = useChartPreferences.getState();
+    const reset = getChartIndicatorInstances(after).find((i) => i.id === copy)!;
+    expect(reset).toMatchObject({
+      id: copy,
+      key,
+      hidden: true,
+      inputs: getIndicatorInputs(key),
+      appearance: {},
+    });
+    if (key === "ib") expect(reset.initialBalance).toEqual(DEFAULT_INITIAL_BALANCE);
+    if (key === "volume") expect(reset.volumeColors).toEqual(DEFAULT_VOLUME_COLORS);
+    expect(getChartIndicatorInstances(after).find((i) => i.id === base)).toEqual(
+      instances.find((i) => i.id === base),
+    );
+    expect(after.indicatorOrder).toBe(before.indicatorOrder);
+    expect(after.paneStretchFactors).toBe(before.paneStretchFactors);
+    expect(store.resetIndicatorInstance(base)).toBe(true);
+    const baseReset = getChartIndicatorInstances(useChartPreferences.getState()).find(
+      (i) => i.id === base,
+    )!;
+    expect(baseReset).toMatchObject({ inputs: getIndicatorInputs(key), appearance: {} });
+    if (key === "ib") expect(baseReset.initialBalance).toEqual(DEFAULT_INITIAL_BALANCE);
+    if (key === "volume") expect(baseReset.volumeColors).toEqual(DEFAULT_VOLUME_COLORS);
+    const expected = getChartIndicatorInstances(useChartPreferences.getState());
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    await useChartPreferences.persist.rehydrate();
+    expect(getChartIndicatorInstances(useChartPreferences.getState())).toEqual(expected);
+  },
+);
+it("does not reset absent indicators or recreate removed instances", () => {
+  const store = useChartPreferences.getState();
+  store.removeAllIndicators();
+  const before = useChartPreferences.getState();
+  vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+  expect(store.resetIndicatorInstance("base:rsi")).toBe(false);
+  expect(store.resetIndicatorInstance("deleted")).toBe(false);
+  expect(useChartPreferences.getState()).toBe(before);
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+});

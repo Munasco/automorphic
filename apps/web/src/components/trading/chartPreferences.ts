@@ -386,6 +386,7 @@ export const useChartPreferences = create<{
   toggleIndicatorInstanceVisibility: (id: string) => void;
   setIndicatorInstanceInputs: (id: string, patch: IndicatorInputValues) => boolean;
   resetIndicatorInstanceInputs: (id: string) => void;
+  resetIndicatorInstance: (id: string) => boolean;
   setIndicatorInstanceAppearance: (id: string, patch: IndicatorAppearance) => void;
   resetIndicatorInstanceAppearance: (id: string) => void;
   setIndicatorInstanceInitialBalance: (id: string, settings: InitialBalanceSettings) => boolean;
@@ -714,6 +715,33 @@ export const useChartPreferences = create<{
               item.id === id ? { ...item, inputs: inputs[instance.key]! } : item,
             ),
           });
+        return true;
+      },
+      resetIndicatorInstance: (id) => {
+        const state = get();
+        const instance = getChartIndicatorInstances(state).find((item) => item.id === id);
+        if (!instance) return false;
+        const key = baseIndicatorKey(id);
+        if (key) {
+          const indicatorInputs = { ...state.indicatorInputs };
+          const appearance = { ...state.appearance };
+          delete indicatorInputs[key];
+          delete appearance[key];
+          set({
+            indicatorInputs,
+            appearance,
+            ...(key === "ib" ? { initialBalance: { ...DEFAULT_INITIAL_BALANCE } } : {}),
+            ...(key === "volume" ? { volumeColors: { ...DEFAULT_VOLUME_COLORS } } : {}),
+          });
+        } else {
+          set({
+            extraIndicators: state.extraIndicators.map((item) =>
+              item.id === id
+                ? { ...createIndicatorInstance(item.key, id), hidden: item.hidden }
+                : item,
+            ),
+          });
+        }
         return true;
       },
       resetIndicatorInstanceInputs: (id) => {
