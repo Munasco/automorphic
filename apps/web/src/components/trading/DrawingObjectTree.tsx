@@ -126,10 +126,36 @@ function IndicatorTreeRow({
 }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
+  const menuTrigger = useRef<HTMLButtonElement>(null);
+  const removalFocus = useRef<HTMLElement | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPoint, setMenuPoint] = useState<{ x: number; y: number } | null>(null);
   const [dropEdge, setDropEdge] = useState<"before" | "after" | null>(null);
   return (
     <li
       data-indicator-object={indicator.key}
+      onContextMenu={(event) => {
+        if (!event.currentTarget.contains(event.target as Node)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        menuTrigger.current?.focus({ preventScroll: true });
+        setMenuPoint({ x: event.clientX, y: event.clientY });
+        setMenuOpen(true);
+      }}
+      onKeyDown={(event) => {
+        if (
+          event.nativeEvent.isComposing ||
+          !event.currentTarget.contains(event.target as Node) ||
+          (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey))
+        )
+          return;
+        event.preventDefault();
+        event.stopPropagation();
+        const rect = event.currentTarget.getBoundingClientRect();
+        menuTrigger.current?.focus({ preventScroll: true });
+        setMenuPoint({ x: rect.left, y: rect.bottom });
+        setMenuOpen(true);
+      }}
       draggable={!reorderDisabled && !!indicator.onDrop}
       onDragStart={(event) => {
         if (reorderDisabled || !indicator.onDrop) return;
@@ -216,44 +242,90 @@ function IndicatorTreeRow({
       >
         <DrawingToolIcon name={indicator.hidden ? "eye-off" : "eye"} className="size-4" />
       </RowAction>
-      {indicator.onMove || indicator.onDuplicate ? (
-        <Menu>
-          <MenuTrigger
-            aria-label={indicator.actionsLabel ?? `${indicator.label} actions`}
-            className="flex size-7 shrink-0 items-center justify-center rounded text-zinc-400 opacity-0 hover:bg-white/10 group-hover/object:opacity-100 group-focus-within/object:opacity-100 data-popup-open:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
-          >
-            <MoreHorizontalIcon className="size-4" />
-          </MenuTrigger>
-          <MenuPopup align="end">
-            {indicator.onDuplicate && (
-              <MenuItem disabled={!indicator.canDuplicate} onClick={indicator.onDuplicate}>
-                Duplicate
+      <Menu open={menuOpen} onOpenChange={setMenuOpen}>
+        <MenuTrigger
+          ref={menuTrigger}
+          onClick={() => setMenuPoint(null)}
+          onKeyDown={(event) => {
+            if (["Enter", " ", "ArrowDown", "ArrowUp"].includes(event.key)) setMenuPoint(null);
+          }}
+          aria-label={indicator.actionsLabel ?? `${indicator.label} actions`}
+          className="flex size-7 shrink-0 items-center justify-center rounded text-zinc-400 opacity-0 hover:bg-white/10 group-hover/object:opacity-100 group-focus-within/object:opacity-100 data-popup-open:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
+        >
+          <MoreHorizontalIcon className="size-4" />
+        </MenuTrigger>
+        <MenuPopup
+          aria-label={`${indicator.label} actions`}
+          align={menuPoint ? "start" : "end"}
+          sideOffset={menuPoint ? 0 : 4}
+          anchor={
+            menuPoint
+              ? { getBoundingClientRect: () => new DOMRect(menuPoint.x, menuPoint.y, 0, 0) }
+              : undefined
+          }
+          finalFocus={() => (open ? false : (removalFocus.current ?? menuTrigger.current))}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onMouseUpCapture={(event) => {
+            if (
+              menuPoint &&
+              event.button === 2 &&
+              Math.abs(event.clientX - menuPoint.x) <= 1 &&
+              Math.abs(event.clientY - menuPoint.y) <= 1
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          }}
+        >
+          {indicator.settingsContent && <MenuItem onClick={() => setOpen(true)}>Settings</MenuItem>}
+          <MenuItem onClick={indicator.onToggleHidden}>
+            {indicator.hidden ? "Show" : "Hide"}
+          </MenuItem>
+          {indicator.onDuplicate && (
+            <MenuItem disabled={!indicator.canDuplicate} onClick={indicator.onDuplicate}>
+              Duplicate
+            </MenuItem>
+          )}
+          {indicator.onDuplicate && indicator.onMove && <MenuSeparator />}
+          {indicator.onMove && (
+            <>
+              <MenuItem
+                disabled={reorderDisabled || !indicator.canMoveUp}
+                onClick={() => {
+                  if (!reorderDisabled) indicator.onMove?.("up");
+                }}
+              >
+                Move up
               </MenuItem>
-            )}
-            {indicator.onDuplicate && indicator.onMove && <MenuSeparator />}
-            {indicator.onMove && (
-              <>
-                <MenuItem
-                  disabled={reorderDisabled || !indicator.canMoveUp}
-                  onClick={() => {
-                    if (!reorderDisabled) indicator.onMove?.("up");
-                  }}
-                >
-                  Move up
-                </MenuItem>
-                <MenuItem
-                  disabled={reorderDisabled || !indicator.canMoveDown}
-                  onClick={() => {
-                    if (!reorderDisabled) indicator.onMove?.("down");
-                  }}
-                >
-                  Move down
-                </MenuItem>
-              </>
-            )}
-          </MenuPopup>
-        </Menu>
-      ) : null}
+              <MenuItem
+                disabled={reorderDisabled || !indicator.canMoveDown}
+                onClick={() => {
+                  if (!reorderDisabled) indicator.onMove?.("down");
+                }}
+              >
+                Move down
+              </MenuItem>
+            </>
+          )}
+          <MenuSeparator />
+          <MenuItem
+            variant="destructive"
+            onClick={() => {
+              removalFocus.current =
+                menuTrigger.current
+                  ?.closest('[aria-label="Object tree"]')
+                  ?.querySelector<HTMLInputElement>('input[type="search"]') ?? null;
+              removalFocus.current?.focus({ preventScroll: true });
+              indicator.onRemove();
+            }}
+          >
+            Remove
+          </MenuItem>
+        </MenuPopup>
+      </Menu>
       <RowAction label={`Remove ${indicator.label}`} onClick={indicator.onRemove}>
         <ChartIcon name="trash" className="size-4" />
       </RowAction>
