@@ -1,3 +1,10 @@
+import {
+  CHART_ALERT_LOG_FILTER_OPTIONS,
+  isChartAlertLogFilter,
+  readChartAlertLogFilter,
+  writeChartAlertLogFilter,
+  filterChartAlertLog,
+} from "./chartAlertLogFilter";
 import { CopyIcon } from "lucide-react";
 import { chartAlertLogCsv } from "./chartAlertLogCsv";
 import { TradingSelect } from "./TradingSelect";
@@ -42,6 +49,7 @@ import { PriceAlertDialog } from "./PriceAlertDialog";
 import { drawingAlertTargetLabel } from "./drawingAlertPresentation";
 
 const getAlertSortSnapshot = () => readChartAlertSort(tradingWorkspaceStorage);
+const getAlertLogFilterSnapshot = () => readChartAlertLogFilter(tradingWorkspaceStorage);
 const getAlertFilterSnapshot = () => readChartAlertFilter(tradingWorkspaceStorage);
 
 const EMPTY: ChartAlertState = { alerts: [], history: [] };
@@ -237,6 +245,10 @@ export function ChartAlerts({
   const [searching, setSearching] = useState(false);
   const [search, setSearch] = useState("");
   const sort = useSyncExternalStore(tradingWorkspaceStorage.subscribe, getAlertSortSnapshot);
+  const logFilter = useSyncExternalStore(
+    tradingWorkspaceStorage.subscribe,
+    getAlertLogFilterSnapshot,
+  );
   const statusFilter = useSyncExternalStore(
     tradingWorkspaceStorage.subscribe,
     getAlertFilterSnapshot,
@@ -271,6 +283,7 @@ export function ChartAlerts({
   }, [controller.alerts, expirationClock]);
   const query = search.trim().toLowerCase();
   const drawingLoading = drawingController !== undefined && !drawingController?.ready;
+  const waitingForDrawings = drawingLoading && (tab !== "log" || logFilter !== "price");
   const drawings = drawingController?.symbol === symbol ? drawingController : null;
   const editingAlert =
     workspace.ready &&
@@ -417,9 +430,9 @@ export function ChartAlerts({
       searchText: `${event.symbol} drawing ${event.name ?? ""} ${event.message ?? ""} ${drawingConditionLabel[event.condition]} ${drawingAlertTargetLabel(event)}`,
     })),
   ];
-  const history = allHistory
-    .filter((event) => event.searchText.toLowerCase().includes(query))
-    .toSorted((a, b) => compareChartAlerts(a, b, sort));
+  const history = filterChartAlertLog(allHistory, logFilter, query).toSorted((a, b) =>
+    compareChartAlerts(a, b, sort),
+  );
   const openCreate = () => {
     setEditingPrice(null);
     setCreatePrice(Number.isFinite(lastPrice) ? lastPrice : undefined);
@@ -600,7 +613,7 @@ export function ChartAlerts({
                         }, "Some alert history could not be cleared. Try again.")
                       }
                     >
-                      Clear log
+                      Clear entire log
                     </MenuItem>
                   </>
                 )}
@@ -626,6 +639,24 @@ export function ChartAlerts({
               />
             </div>
           ) : null}
+          {tab === "log" ? (
+            <div className="px-4 pb-3">
+              <TradingSelect
+                label="Filter log by event type"
+                value={logFilter}
+                options={CHART_ALERT_LOG_FILTER_OPTIONS}
+                disabled={!workspace.ready}
+                className="w-full"
+                onChange={(value) => {
+                  if (isChartAlertLogFilter(value))
+                    act(() => {
+                      writeChartAlertLogFilter(tradingWorkspaceStorage, value);
+                      refreshPreferences();
+                    }, "Could not save the log filter. Try again.");
+                }}
+              />
+            </div>
+          ) : null}
           {searching ? (
             <div className="px-4 pb-3">
               <input
@@ -645,7 +676,7 @@ export function ChartAlerts({
             {actionError}
           </p>
         ) : null}
-        {drawingLoading ? (
+        {waitingForDrawings ? (
           <p role="status" className="shrink-0 px-4 py-2 text-xs text-zinc-400">
             Drawing alerts are loading…
           </p>
@@ -661,9 +692,9 @@ export function ChartAlerts({
               className="shrink-0 text-zinc-400"
             />
             <p className="max-w-64 text-[15px] leading-6 text-zinc-300">
-              {drawingLoading && !query && (tab !== "alerts" || statusFilter === "all")
+              {waitingForDrawings && !query && (tab !== "alerts" || statusFilter === "all")
                 ? "Waiting for chart alerts…"
-                : query || (tab === "alerts" && statusFilter !== "all")
+                : query || (tab === "alerts" ? statusFilter !== "all" : logFilter !== "all")
                   ? "No matching alerts."
                   : tab === "alerts"
                     ? "Get notified when your conditions are met. Create an alert to get started."

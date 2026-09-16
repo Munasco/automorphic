@@ -8,6 +8,7 @@ const SETTINGS_KEYS = new Set([
   "automorphic:chart-alerts:v1",
   "automorphic:chart-alert-sort:v1",
   "automorphic:chart-alert-filter:v1",
+  "automorphic:chart-alert-log-filter:v1",
   "automorphic:chart-data-table-sort:v1",
   "automorphic:chart-data-table-scope:v1",
   "automorphic:chart-templates:v1",

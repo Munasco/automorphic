@@ -1,3 +1,8 @@
+import {
+  CHART_ALERT_LOG_FILTER_KEY,
+  readChartAlertLogFilter,
+  writeChartAlertLogFilter,
+} from "./chartAlertLogFilter";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -328,6 +333,35 @@ describe("trading workspace persistence", () => {
 });
 
 describe("project-scoped trading storage", () => {
+  it("persists alert log type filters through the router and restores each workspace after reload", async () => {
+    const values: Record<string, Record<string, string>> = { first: {}, second: {} };
+    const request = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+      const projectId = new URL(String(input), "http://localhost").searchParams.get("projectId")!;
+      if (init?.method === "PUT") {
+        const body = JSON.parse(init.body as string) as { key: string; value: string };
+        values[projectId]![body.key] = body.value;
+        return json({});
+      }
+      return json({ ...payload(values[projectId]), projectId });
+    });
+    const router = createTradingWorkspaceRouter(request);
+    await router.selectProject("first");
+    expect(readChartAlertLogFilter(router)).toBe("all");
+    writeChartAlertLogFilter(router, "price");
+    await router.capture().flush();
+    expect(values.first).toEqual({ [CHART_ALERT_LOG_FILTER_KEY]: '{"kind":"price"}' });
+    await router.selectProject("second");
+    expect(readChartAlertLogFilter(router)).toBe("all");
+    writeChartAlertLogFilter(router, "drawing");
+    await router.capture().flush();
+    const reloaded = createTradingWorkspaceRouter(request);
+    await reloaded.selectProject("first");
+    expect(readChartAlertLogFilter(reloaded)).toBe("price");
+    await reloaded.selectProject("second");
+    expect(readChartAlertLogFilter(reloaded)).toBe("drawing");
+    const writes = request.mock.calls.filter((call) => call[1]?.method === "PUT");
+    expect(writes).toHaveLength(2);
+  });
   it("persists alert sorting through the router and restores each workspace after reload", async () => {
     const values: Record<string, Record<string, string>> = { first: {}, second: {} };
     const request = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {

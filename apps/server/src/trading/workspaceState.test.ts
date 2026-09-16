@@ -5,6 +5,13 @@ import { makeWorkspaceState, parseWorkspaceValue } from "./workspaceState.ts";
 
 it("rejects unrelated keys, malformed JSON and oversized settings", () => {
   assert.deepEqual(
+    parseWorkspaceValue({
+      key: "automorphic:chart-alert-log-filter:v1",
+      value: '{"kind":"drawing"}',
+    }),
+    { key: "automorphic:chart-alert-log-filter:v1", value: '{"kind":"drawing"}' },
+  );
+  assert.deepEqual(
     parseWorkspaceValue({ key: "automorphic:chart-alert-filter:v1", value: '{"status":"Paused"}' }),
     { key: "automorphic:chart-alert-filter:v1", value: '{"status":"Paused"}' },
   );
