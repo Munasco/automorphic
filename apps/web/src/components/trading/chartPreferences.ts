@@ -1,3 +1,4 @@
+import { validObjectTreeFilter, type ObjectTreeFilter } from "./drawingObjectSearch";
 import {
   DEFAULT_PRICE_LINE_APPEARANCE,
   normalizePriceLineAppearance,
@@ -154,6 +155,7 @@ type SavedChartPreferences = {
   indicatorOrder: string[];
   favoriteIndicators: IndicatorKey[];
   favoriteChartIntervals: string[];
+  objectTreeFilter: ObjectTreeFilter;
   volumeColors: typeof DEFAULT_VOLUME_COLORS;
   initialBalance: InitialBalanceSettings;
   gridMode: ChartGridMode;
@@ -268,6 +270,9 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     crosshairLineWidth: validCrosshairLineWidth(saved.crosshairLineWidth)
       ? saved.crosshairLineWidth
       : 1,
+    objectTreeFilter: validObjectTreeFilter(saved.objectTreeFilter)
+      ? saved.objectTreeFilter
+      : "all",
     gridMode: validGridMode(saved.gridMode)
       ? saved.gridMode
       : saved.showGrid === false
@@ -353,6 +358,7 @@ export const useChartPreferences = create<{
   indicatorOrder: string[];
   favoriteIndicators: IndicatorKey[];
   favoriteChartIntervals: string[];
+  objectTreeFilter: ObjectTreeFilter;
   volumeColors: typeof DEFAULT_VOLUME_COLORS;
   initialBalance: InitialBalanceSettings;
   setInitialBalance: (settings: InitialBalanceSettings) => void;
@@ -439,6 +445,7 @@ export const useChartPreferences = create<{
   setGridMode: (mode: ChartGridMode) => void;
   setGridLineStyle: (style: ChartGridLineStyle) => void;
   setPriceLineAppearance: (patch: Partial<ChartPriceLineAppearance>) => boolean;
+  setObjectTreeFilter: (filter: ObjectTreeFilter) => void;
   setGridColor: (color: string) => void;
   setChartBackgroundColor: (color: string) => void;
   setChartTextColor: (color: string) => void;
@@ -502,6 +509,7 @@ export const useChartPreferences = create<{
         if (isValidInitialBalanceSettings(settings))
           set({ initialBalance: resolveInitialBalanceSettings(settings) });
       },
+      objectTreeFilter: "all",
       gridMode: "both",
       gridLineStyle: "solid",
       gridColor: "#171a23",
@@ -953,6 +961,10 @@ export const useChartPreferences = create<{
         )
           set({ priceLineAppearance: next });
         return true;
+      },
+      setObjectTreeFilter: (objectTreeFilter) => {
+        if (validObjectTreeFilter(objectTreeFilter) && objectTreeFilter !== get().objectTreeFilter)
+          set({ objectTreeFilter });
       },
       setGridColor: (gridColor) => {
         if (validColor(gridColor) && gridColor !== get().gridColor) set({ gridColor });

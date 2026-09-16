@@ -40,3 +40,25 @@ export function drawingMatchesSearch(drawing: ChartDrawing, query: string): bool
     drawing.text,
   );
 }
+
+export type ObjectTreeFilter = "all" | "drawings" | "indicators";
+export const validObjectTreeFilter = (value: unknown): value is ObjectTreeFilter =>
+  value === "all" || value === "drawings" || value === "indicators";
+
+export function filterChartObjects<T extends { label: string }>(
+  drawings: readonly ChartDrawing[],
+  indicators: readonly T[],
+  query: string,
+  type: ObjectTreeFilter,
+) {
+  return {
+    drawings:
+      type === "indicators"
+        ? []
+        : drawings.filter((drawing) => drawingMatchesSearch(drawing, query)),
+    indicators:
+      type === "drawings"
+        ? []
+        : indicators.filter((indicator) => objectTreeMatches(query, indicator.label)),
+  };
+}

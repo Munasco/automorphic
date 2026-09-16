@@ -4789,3 +4789,32 @@ describe("last price line appearance", () => {
     });
   });
 });
+
+describe("object tree type filter", () => {
+  it.each(["all", "drawings", "indicators"] as const)(
+    "persists %s and resets when switching workspaces",
+    async (filter) => {
+      const store = configure();
+      store.setObjectTreeFilter("indicators");
+      store.setObjectTreeFilter(filter);
+      const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+      await useChartPreferences.persist.rehydrate();
+      expect(useChartPreferences.getState().objectTreeFilter).toBe(filter);
+      expect(useChartPreferences.getState().indicators).toEqual(store.indicators);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      expect(useChartPreferences.getState().objectTreeFilter).toBe("all");
+    },
+  );
+  it("rejects invalid and unchanged filters and normalizes old preferences", () => {
+    const state = configure();
+    for (const filter of [null, undefined, "", "hidden", 0]) {
+      state.setObjectTreeFilter(filter as never);
+      expect(normalizeChartPreferences({ objectTreeFilter: filter }).objectTreeFilter).toBe("all");
+    }
+    state.setObjectTreeFilter("all");
+    expect(useChartPreferences.getState()).toBe(state);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  });
+});

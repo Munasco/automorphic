@@ -32,3 +32,33 @@ it("finds indicator periods and preserves hidden/locked objects without changing
   expect(drawingMatchesSearch(object, "support")).toBe(true);
   expect(object).toEqual(before);
 });
+
+it("combines type filters with search without excluding hidden objects or changing order", async () => {
+  const { filterChartObjects } = await import("./drawingObjectSearch");
+  const hidden = { ...drawing, id: "hidden", hidden: true, name: "NQ support two" };
+  const objects = [drawing, hidden];
+  const indicators = [
+    { label: "RSI 14", hidden: true },
+    { label: "SMA 20", hidden: false },
+  ];
+  expect(filterChartObjects(objects, indicators, "", "all")).toEqual({
+    drawings: objects,
+    indicators,
+  });
+  expect(filterChartObjects(objects, indicators, "support", "drawings")).toEqual({
+    drawings: objects,
+    indicators: [],
+  });
+  expect(filterChartObjects(objects, indicators, "rsi 14", "drawings")).toEqual({
+    drawings: [],
+    indicators: [],
+  });
+  expect(filterChartObjects(objects, indicators, "rsi 14", "indicators")).toEqual({
+    drawings: [],
+    indicators: [indicators[0]],
+  });
+  const result = filterChartObjects(objects, indicators, "two", "all");
+  expect(result.drawings).toEqual([hidden]);
+  expect(result.drawings[0]).toBe(hidden);
+  expect(objects).toEqual([drawing, hidden]);
+});

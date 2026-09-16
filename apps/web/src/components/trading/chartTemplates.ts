@@ -10,7 +10,7 @@ export const CHART_TEMPLATES_KEY = "automorphic:chart-templates:v1";
 export const MAX_CHART_TEMPLATES = 20;
 export type ChartTemplateSettings = Omit<
   ReturnType<typeof normalizeChartPreferences>,
-  "favoriteIndicators" | "favoriteChartIntervals" | "replaySpeed"
+  "favoriteIndicators" | "favoriteChartIntervals" | "replaySpeed" | "objectTreeFilter"
 >;
 export type ChartTemplate = { id: string; name: string; settings: ChartTemplateSettings };
 const MAX_PAYLOAD_SIZE = 250_000;
@@ -35,6 +35,7 @@ export function captureChartTemplateSettings(value: unknown): ChartTemplateSetti
     favoriteIndicators: _favorites,
     favoriteChartIntervals: _intervalFavorites,
     replaySpeed: _replaySpeed,
+    objectTreeFilter: _objectTreeFilter,
     ...settings
   } = normalizeChartPreferences(value);
   return structuredClone({

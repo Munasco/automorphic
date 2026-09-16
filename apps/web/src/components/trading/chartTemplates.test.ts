@@ -371,3 +371,15 @@ it("keeps personal favorite intervals when a saved chart template is applied", (
   useChartPreferences.setState(captured);
   expect(useChartPreferences.getState().favoriteChartIntervals).toEqual(["minute:60"]);
 });
+
+it("keeps the personal object tree filter when capturing and applying chart templates", () => {
+  const store = useChartPreferences.getState();
+  store.setObjectTreeFilter("indicators");
+  const captured = captureChartTemplateSettings({ ...chart(), objectTreeFilter: "drawings" });
+  expect(captured).not.toHaveProperty("objectTreeFilter");
+  expect(chartTemplateSettingsKey({ ...chart(), objectTreeFilter: "drawings" })).toBe(
+    chartTemplateSettingsKey({ ...chart(), objectTreeFilter: "all" }),
+  );
+  useChartPreferences.setState(captured);
+  expect(useChartPreferences.getState().objectTreeFilter).toBe("indicators");
+});

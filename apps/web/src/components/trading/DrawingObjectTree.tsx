@@ -1,4 +1,6 @@
-import { drawingLabel, drawingMatchesSearch, objectTreeMatches } from "./drawingObjectSearch";
+import { useChartPreferences } from "./chartPreferences";
+import { TradingSelect } from "./TradingSelect";
+import { drawingLabel, filterChartObjects, type ObjectTreeFilter } from "./drawingObjectSearch";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { MoreHorizontalIcon, XIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
@@ -358,10 +360,14 @@ export function DrawingObjectTree({
 }) {
   const [search, setSearch] = useState({ symbol, text: "" });
   const query = search.symbol === symbol ? search.text : "";
-  const filtering = query.trim().length > 0;
-  const visibleObjects = drawings.objects.filter((drawing) => drawingMatchesSearch(drawing, query));
-  const visibleIndicators = indicators.filter((indicator) =>
-    objectTreeMatches(query, indicator.label),
+  const typeFilter = useChartPreferences((state) => state.objectTreeFilter);
+  const setTypeFilter = useChartPreferences((state) => state.setObjectTreeFilter);
+  const filtering = query.trim().length > 0 || typeFilter !== "all";
+  const { drawings: visibleObjects, indicators: visibleIndicators } = filterChartObjects(
+    drawings.objects,
+    indicators,
+    query,
+    typeFilter,
   );
   const selectionVisible = drawings.selectedIds.every((id) =>
     visibleObjects.some((drawing) => drawing.id === id),
@@ -435,7 +441,9 @@ export function DrawingObjectTree({
                 <MenuItem
                   key={direction}
                   disabled={selectedIndex < 0 || boundary || filtering}
-                  onClick={() => drawings.reorderSelected(direction)}
+                  onClick={() => {
+                    if (!filtering) drawings.reorderSelected(direction);
+                  }}
                 >
                   {label}
                 </MenuItem>
@@ -494,6 +502,19 @@ export function DrawingObjectTree({
           </button>
         )}
       </div>
+      <div className="shrink-0 border-b border-white/10 px-2 pb-2">
+        <TradingSelect
+          label="Object type"
+          value={typeFilter}
+          options={[
+            ["all", "All objects"],
+            ["drawings", "Drawings"],
+            ["indicators", "Indicators"],
+          ]}
+          onChange={(value) => setTypeFilter(value as ObjectTreeFilter)}
+          className="w-full text-xs"
+        />
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {visibleIndicators.length > 0 ? (
           <ul aria-label="Indicators">
@@ -506,7 +527,7 @@ export function DrawingObjectTree({
             ))}
           </ul>
         ) : null}
-        {drawings.hidden && drawings.count > 0 ? (
+        {typeFilter !== "indicators" && drawings.hidden && drawings.count > 0 ? (
           <button
             type="button"
             onClick={drawings.toggleHidden}
@@ -524,7 +545,7 @@ export function DrawingObjectTree({
                 key={object.id}
                 ref={selected?.id === object.id ? selectedRow : undefined}
                 onDragOver={(event) => {
-                  if (!dragging.current || drawings.selectedIds.includes(object.id)) {
+                  if (filtering || !dragging.current || drawings.selectedIds.includes(object.id)) {
                     setDropTarget(null);
                     return;
                   }
@@ -548,7 +569,7 @@ export function DrawingObjectTree({
                   setDropTarget((current) => (current?.id === object.id ? null : current));
                 }}
                 onDrop={(event) => {
-                  if (!dragging.current) return;
+                  if (filtering || !dragging.current) return;
                   event.preventDefault();
                   event.stopPropagation();
                   const rect = event.currentTarget.getBoundingClientRect();
@@ -573,9 +594,11 @@ export function DrawingObjectTree({
                 }}
                 className={cn(
                   "group/object relative flex h-[38px] items-center gap-0.5 pl-3 pr-1 hover:bg-white/5 focus-within:bg-white/5",
-                  dropTarget?.id === object.id &&
+                  !filtering &&
+                    dropTarget?.id === object.id &&
                     "after:pointer-events-none after:absolute after:inset-x-0 after:z-10 after:h-0.5 after:bg-[#2962ff]",
-                  dropTarget?.id === object.id &&
+                  !filtering &&
+                    dropTarget?.id === object.id &&
                     (dropTarget.position === "above" ? "after:top-0" : "after:bottom-0"),
                   isSelected && "bg-[#1e3260] hover:bg-[#1e3260] focus-within:bg-[#1e3260]",
                 )}
@@ -607,6 +630,10 @@ export function DrawingObjectTree({
                     data-drawing-select
                     draggable={!filtering}
                     onDragStart={(event) => {
+                      if (filtering) {
+                        event.preventDefault();
+                        return;
+                      }
                       drawings.selectDrawing(object.id, { includeHidden: true });
                       dragging.current = object.id;
                       setDropTarget(null);
