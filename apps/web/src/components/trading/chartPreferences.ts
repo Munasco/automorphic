@@ -1,4 +1,10 @@
 import {
+  DEFAULT_PRICE_LINE_APPEARANCE,
+  normalizePriceLineAppearance,
+  updatePriceLineAppearance,
+  type ChartPriceLineAppearance,
+} from "./chartPriceLineAppearance";
+import {
   DEFAULT_CHART_AREA_FILL,
   normalizeChartAreaFill,
   updateChartAreaFill,
@@ -180,6 +186,7 @@ type SavedChartPreferences = {
   showChartTitle: boolean;
   showCandleValues: boolean;
   indicatorLegendCollapsed: boolean;
+  priceLineAppearance: ChartPriceLineAppearance;
   showPriceLine: boolean;
   showPriceLabel: boolean;
   showBarCountdown: boolean;
@@ -300,6 +307,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     showChartTitle: typeof saved.showChartTitle === "boolean" ? saved.showChartTitle : true,
     showCandleValues: typeof saved.showCandleValues === "boolean" ? saved.showCandleValues : true,
     indicatorLegendCollapsed: saved.indicatorLegendCollapsed === true,
+    priceLineAppearance: normalizePriceLineAppearance(saved.priceLineAppearance),
     showPriceLine: typeof saved.showPriceLine === "boolean" ? saved.showPriceLine : true,
     showPriceLabel: typeof saved.showPriceLabel === "boolean" ? saved.showPriceLabel : true,
     showBarCountdown: saved.showBarCountdown === true,
@@ -378,6 +386,7 @@ export const useChartPreferences = create<{
   showChartTitle: boolean;
   showCandleValues: boolean;
   indicatorLegendCollapsed: boolean;
+  priceLineAppearance: ChartPriceLineAppearance;
   showPriceLine: boolean;
   showPriceLabel: boolean;
   showBarCountdown: boolean;
@@ -429,6 +438,7 @@ export const useChartPreferences = create<{
   setIndicatorInstanceVolumeColors: (id: string, colors: typeof DEFAULT_VOLUME_COLORS) => void;
   setGridMode: (mode: ChartGridMode) => void;
   setGridLineStyle: (style: ChartGridLineStyle) => void;
+  setPriceLineAppearance: (patch: Partial<ChartPriceLineAppearance>) => boolean;
   setGridColor: (color: string) => void;
   setChartBackgroundColor: (color: string) => void;
   setChartTextColor: (color: string) => void;
@@ -522,6 +532,7 @@ export const useChartPreferences = create<{
       showChartTitle: true,
       showCandleValues: true,
       indicatorLegendCollapsed: false,
+      priceLineAppearance: { ...DEFAULT_PRICE_LINE_APPEARANCE },
       showPriceLine: true,
       showPriceLabel: true,
       showBarCountdown: false,
@@ -930,6 +941,18 @@ export const useChartPreferences = create<{
       setChartTextColor: (chartTextColor) => {
         if (validColor(chartTextColor) && chartTextColor !== get().chartTextColor)
           set({ chartTextColor });
+      },
+      setPriceLineAppearance: (patch) => {
+        const current = get().priceLineAppearance;
+        const next = updatePriceLineAppearance(current, patch);
+        if (!next) return false;
+        if (
+          next.color !== current.color ||
+          next.width !== current.width ||
+          next.style !== current.style
+        )
+          set({ priceLineAppearance: next });
+        return true;
       },
       setGridColor: (gridColor) => {
         if (validColor(gridColor) && gridColor !== get().gridColor) set({ gridColor });

@@ -1,3 +1,4 @@
+import { priceLineAppearanceOptions } from "./chartPriceLineAppearance";
 import { chartAreaFillColors } from "./chartAreaFill";
 import { trackChartPaneResize } from "./chartPaneResize";
 import { CalendarDaysIcon } from "lucide-react";
@@ -356,6 +357,7 @@ export function TradovateChart({
   });
   const priceDisplay = useRef({
     style: settings.style,
+    appearance: settings.priceLineAppearance,
     line: settings.showPriceLine,
     label: settings.showPriceLabel,
     countdown: settings.showBarCountdown,
@@ -548,12 +550,6 @@ export function TradovateChart({
         ...hollowCandleColors(bar, bars[index - 1], candleColors.current),
       })),
     );
-    const latest = bars.at(-1);
-    engine.prices.hollow.applyOptions({
-      priceLineColor: latest
-        ? hollowCandleColors(latest, bars.at(-2), candleColors.current).borderColor
-        : "",
-    });
     engine.refreshTradePrice();
   }, [
     engine,
@@ -781,29 +777,48 @@ export function TradovateChart({
           const showGuide =
             style === display.style && !!latest && (trade !== null || style === "heikin-ashi");
           const native = prices[style].options();
+          const appearance = priceLineAppearanceOptions(
+            display.appearance,
+            style === "hollow" && hollowLatest
+              ? hollowCandleColors(hollowLatest, hollowPrevious, candleColors.current).borderColor
+              : "",
+          );
           const priceLineVisible = display.line && !useTrade;
           const lastValueVisible = display.label && !useTrade;
           if (
             native.priceLineVisible !== priceLineVisible ||
-            native.lastValueVisible !== lastValueVisible
+            native.lastValueVisible !== lastValueVisible ||
+            native.priceLineColor !== appearance.color ||
+            native.priceLineWidth !== appearance.lineWidth ||
+            native.priceLineStyle !== appearance.lineStyle
           )
-            prices[style].applyOptions({ priceLineVisible, lastValueVisible });
+            prices[style].applyOptions({
+              priceLineVisible,
+              lastValueVisible,
+              priceLineColor: appearance.color,
+              priceLineWidth: appearance.lineWidth,
+              priceLineStyle: appearance.lineStyle,
+            });
           const guide = tradePriceLines[style].options();
           if (!showGuide && !guide.lineVisible && !guide.axisLabelVisible) continue;
           const next = {
             price: trade ?? latest?.close ?? 0,
-            color:
+            ...priceLineAppearanceOptions(
+              display.appearance,
               style === "heikin-ashi"
                 ? "#9299a7"
                 : (trade ?? latest?.close ?? 0) >= (latest?.open ?? 0)
                   ? candleColors.current.up
                   : candleColors.current.down,
+            ),
             lineVisible: showGuide && display.line,
             axisLabelVisible: showGuide && display.label,
           };
           if (
             guide.price !== next.price ||
             guide.color !== next.color ||
+            guide.lineWidth !== next.lineWidth ||
+            guide.lineStyle !== next.lineStyle ||
             guide.lineVisible !== next.lineVisible ||
             guide.axisLabelVisible !== next.axisLabelVisible
           )
@@ -1048,13 +1063,6 @@ export function TradovateChart({
           volume.update(volumePoint(bar));
           renderedTime = bar.time;
         }
-      }
-      const directionColor = hollowLatest
-        ? hollowCandleColors(hollowLatest, hollowPrevious, candleColors.current).borderColor
-        : "";
-      if (directionColor !== prices.hollow.options().priceLineColor) {
-        // Hollow bodies are transparent; their price label and line still use the direction color.
-        prices.hollow.applyOptions({ priceLineColor: directionColor });
       }
       state.refreshIndicators();
       if (!fitted && bars.size) {
@@ -1346,6 +1354,7 @@ export function TradovateChart({
   useEffect(() => {
     priceDisplay.current = {
       style: settings.style,
+      appearance: settings.priceLineAppearance,
       line: settings.showPriceLine,
       label: settings.showPriceLabel,
       countdown: settings.showBarCountdown,
@@ -1357,6 +1366,7 @@ export function TradovateChart({
     settings.showPriceLine,
     settings.showPriceLabel,
     settings.showBarCountdown,
+    settings.priceLineAppearance,
   ]);
 
   const measuring =

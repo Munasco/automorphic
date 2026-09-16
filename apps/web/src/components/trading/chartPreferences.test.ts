@@ -4755,3 +4755,37 @@ it("persists independent area fill without mutating other preferences, then rese
     bottomOpacity: 0,
   });
 });
+
+describe("last price line appearance", () => {
+  it("persists appearance independently of visibility and clears it on workspace reset", async () => {
+    const store = useChartPreferences.getState();
+    store.setPriceLineAppearance({ color: "#ff8800", width: 3, style: "solid" });
+    store.togglePriceLine();
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    await useChartPreferences.persist.rehydrate();
+    expect(useChartPreferences.getState()).toMatchObject({
+      showPriceLine: false,
+      showPriceLabel: true,
+      priceLineAppearance: { color: "#ff8800", width: 3, style: "solid" },
+    });
+    useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+    expect(useChartPreferences.getState().priceLineAppearance).toEqual({
+      color: null,
+      width: 1,
+      style: "dashed",
+    });
+  });
+  it("rejects invalid and unchanged edits without writing and preserves sibling settings", () => {
+    const store = configure();
+    expect(store.setPriceLineAppearance({ width: 5 } as never)).toBe(false);
+    expect(store.setPriceLineAppearance({ color: null })).toBe(true);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+    expect(store.setPriceLineAppearance({ width: 4 })).toBe(true);
+    expect(normalizeChartPreferences(useChartPreferences.getState())).toEqual({
+      ...normalizeChartPreferences(store),
+      priceLineAppearance: { color: null, width: 4, style: "dashed" },
+    });
+  });
+});
