@@ -4664,3 +4664,37 @@ describe("symbol watermark appearance", () => {
     },
   );
 });
+
+describe("chart scale text size", () => {
+  it("rejects invalid sizes without writing or changing the current preference", () => {
+    const store = useChartPreferences.getState();
+    expect(store.chartFontSize).toBe(12);
+    for (const value of [undefined, null, "18", 7, 25, 12.5, NaN, Infinity]) {
+      expect(store.setChartFontSize(value as number)).toBe(false);
+      expect(normalizeChartPreferences({ chartFontSize: value }).chartFontSize).toBe(12);
+    }
+    expect(store.setChartFontSize(12)).toBe(true);
+    expect(useChartPreferences.getState()).toBe(store);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  });
+
+  it.each([8, 18, 24])(
+    "persists %spx and restores defaults when switching to a legacy workspace",
+    async (chartFontSize) => {
+      const before = configure();
+      expect(before.setChartFontSize(chartFontSize)).toBe(true);
+      expect(useChartPreferences.getState()).toEqual({ ...before, chartFontSize });
+      const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(useChartPreferences.getState().chartFontSize).toBe(chartFontSize);
+      const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+        JSON.stringify({ version: 0, state: {} }),
+      );
+      await hydrate();
+      expect(useChartPreferences.getState().chartFontSize).toBe(12);
+    },
+  );
+});

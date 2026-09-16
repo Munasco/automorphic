@@ -600,6 +600,7 @@ export function TradovateChart({
     const {
       chartBackgroundColor,
       chartTextColor,
+      chartFontSize,
       lockVisibleTimeRangeOnResize,
       showTimeScale,
       rightOffsetBars,
@@ -612,7 +613,7 @@ export function TradovateChart({
         background: { type: ColorType.Solid, color: chartBackgroundColor },
         textColor: chartTextColor,
         fontFamily: getComputedStyle(host.current).fontFamily,
-        fontSize: 12,
+        fontSize: chartFontSize,
         panes: { separatorColor: "#242730", separatorHoverColor: "#454b59", enableResize: true },
       },
       grid: { vertLines: { color: "#171a23" }, horzLines: { color: "#171a23" } },
@@ -1206,6 +1207,7 @@ export function TradovateChart({
       layout: {
         background: { type: ColorType.Solid, color: settings.chartBackgroundColor },
         textColor: settings.chartTextColor,
+        fontSize: settings.chartFontSize,
       },
       crosshair: {
         vertLine: {
@@ -1258,6 +1260,7 @@ export function TradovateChart({
     settings.gridColor,
     settings.chartBackgroundColor,
     settings.chartTextColor,
+    settings.chartFontSize,
     settings.priceScaleMode,
     settings.invertScale,
     settings.showPriceScale,

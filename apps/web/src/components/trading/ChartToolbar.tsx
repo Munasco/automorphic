@@ -1,6 +1,7 @@
 import { ResetChartPaneSizes } from "./ResetChartPaneSizes";
 import { ChartRightMarginControl } from "./ChartRightMarginControl";
 import { ChartWatermarkAppearance } from "./ChartWatermarkAppearance";
+import { ChartFontSizeControl } from "./ChartFontSizeControl";
 import { PRICE_SOURCES, type PriceSource } from "./chartIndicators";
 import { TradingSelect } from "./TradingSelect";
 import type {
@@ -832,6 +833,7 @@ export function ChartToolbar({
               >
                 Reset canvas colors
               </button>
+              <ChartFontSizeControl />
             </fieldset>
             <fieldset className="space-y-2 border-t border-white/10 px-2 py-2.5">
               <legend className="text-xs text-zinc-400">Time scale</legend>

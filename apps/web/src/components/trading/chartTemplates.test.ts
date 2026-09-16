@@ -42,6 +42,7 @@ const chart = () => ({
   showSymbolWatermark: true,
   watermarkColor: "#ff8800",
   watermarkOpacity: 60,
+  chartFontSize: 18,
   favoriteIndicators: ["rsi"],
   indicators: { rsi: true, ib: true },
   indicatorInputs: { rsi: { period: 7 } },
@@ -68,6 +69,7 @@ describe("chart template snapshots", () => {
       showSymbolWatermark: true,
       watermarkColor: "#ff8800",
       watermarkOpacity: 60,
+      chartFontSize: 18,
       indicatorInputs: { rsi: { period: 7 } },
     });
     for (const key of ["favoriteIndicators", "replaySpeed", "symbol", "drawings", "alerts"])

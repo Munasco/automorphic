@@ -49,6 +49,8 @@ export type { IndicatorAppearance } from "./indicatorStyles";
 export type ChartAppearance = Partial<Record<IndicatorKey, IndicatorAppearance>>;
 export type ChartCrosshairMode = "normal" | "magnet" | "ohlc" | "hidden";
 export type ChartCrosshairLineStyle = "solid" | "dotted" | "dashed" | "largeDashed";
+const validChartFontSize = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 8 && value <= 24;
 const validWatermarkOpacity = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 100;
 export type ChartReplaySpeed = 0.5 | 1 | 2 | 5 | 10;
@@ -145,6 +147,7 @@ type SavedChartPreferences = {
   gridColor: string;
   chartBackgroundColor: string;
   chartTextColor: string;
+  chartFontSize: number;
   lineChartSource: PriceSource;
   lineChartColor: string;
   lineChartWidth: ChartLineWidth;
@@ -259,6 +262,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
       ? saved.chartBackgroundColor
       : "#0b0d12",
     chartTextColor: validColor(saved.chartTextColor) ? saved.chartTextColor : "#9299a7",
+    chartFontSize: validChartFontSize(saved.chartFontSize) ? saved.chartFontSize : 12,
     lineChartSource: validLineChartSource(saved.lineChartSource) ? saved.lineChartSource : "close",
     lineChartColor: validColor(saved.lineChartColor) ? saved.lineChartColor : "#6097ee",
     lineChartWidth: validLineChartWidth(saved.lineChartWidth) ? saved.lineChartWidth : 2,
@@ -337,6 +341,7 @@ export const useChartPreferences = create<{
   gridColor: string;
   chartBackgroundColor: string;
   chartTextColor: string;
+  chartFontSize: number;
   lineChartSource: PriceSource;
   lineChartColor: string;
   lineChartWidth: ChartLineWidth;
@@ -413,6 +418,7 @@ export const useChartPreferences = create<{
   setGridColor: (color: string) => void;
   setChartBackgroundColor: (color: string) => void;
   setChartTextColor: (color: string) => void;
+  setChartFontSize: (size: number) => boolean;
   setLineChartSource: (source: PriceSource) => void;
   setLineChartColor: (color: string) => void;
   setCandleUpColor: (color: string) => void;
@@ -475,6 +481,7 @@ export const useChartPreferences = create<{
       gridColor: "#171a23",
       chartBackgroundColor: "#0b0d12",
       chartTextColor: "#9299a7",
+      chartFontSize: 12,
       lineChartSource: "close",
       lineChartColor: "#6097ee",
       lineChartWidth: 2,
@@ -912,6 +919,11 @@ export const useChartPreferences = create<{
           lockVisibleTimeRangeOnResize !== get().lockVisibleTimeRangeOnResize
         )
           set({ lockVisibleTimeRangeOnResize });
+      },
+      setChartFontSize: (chartFontSize) => {
+        if (!validChartFontSize(chartFontSize)) return false;
+        if (chartFontSize !== get().chartFontSize) set({ chartFontSize });
+        return true;
       },
       setWatermarkColor: (watermarkColor) => {
         if (validColor(watermarkColor) && watermarkColor !== get().watermarkColor)
