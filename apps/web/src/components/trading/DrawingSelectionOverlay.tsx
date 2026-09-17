@@ -1,4 +1,5 @@
 import { isPositionDrawing, positionDrawingAnchors } from "./projectionDrawingGeometry";
+import { positionDrawingTicks, positionAnchorsAtTicks } from "./positionDrawingTicks";
 import { BAR_PATTERN_MODES, type BarPatternMode } from "./drawingBarPattern";
 import { ANCHORED_VWAP_SOURCES, type AnchoredVwapSource } from "./anchoredVwapSource";
 import { clampDrawingToolbarOffset } from "./drawingToolbarBounds";
@@ -862,6 +863,40 @@ function DrawingSettings({
                     </div>
                   </div>
                 ))}
+              {isPositionDrawing(draft.kind) ? (
+                <div className="mt-2 border-t border-white/10 pt-2">
+                  {([1, 2] as const).map((endpoint) => {
+                    const label = endpoint === 1 ? "Target ticks" : "Stop ticks";
+                    const tickSize = drawings.coordinatePriceStep();
+                    const ticks = positionDrawingTicks(coordinateDisplay, endpoint, tickSize);
+                    return (
+                      <label key={endpoint} className="flex h-[50px] items-center text-sm">
+                        <span className="w-[113px] shrink-0 pr-5">{label}</span>
+                        <DrawingNumberField
+                          label={label}
+                          value={ticks}
+                          disabled={ticks === null}
+                          min={1}
+                          step={1}
+                          integerOnly
+                          onValueChange={(value) => {
+                            const anchors = positionAnchorsAtTicks(
+                              draft,
+                              endpoint,
+                              value,
+                              tickSize,
+                            );
+                            if (anchors) update({ anchors });
+                          }}
+                        />
+                      </label>
+                    );
+                  })}
+                  <p className="pt-1 text-xs text-zinc-400">
+                    1 tick = {drawings.coordinatePriceStep()}
+                  </p>
+                </div>
+              ) : null}
               {draft.kind === "trend-angle" ? (
                 <label className="flex h-[50px] items-center text-sm">
                   <span className="w-[113px] shrink-0 pr-5 text-zinc-400">Angle</span>

@@ -7948,3 +7948,47 @@ it.each(["long-position", "short-position"] as const)(
     restored.dispose();
   },
 );
+
+it.each(["long-position", "short-position"] as const)(
+  "persists %s tick-distance edits as prices with cancellable preview and undo",
+  async (kind) => {
+    const { positionAnchorsAtTicks, positionDrawingTicks } = await import("./positionDrawingTicks");
+    const original: ChartDrawing = {
+      id: "tick-position",
+      kind,
+      color: "#2962ff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 100 },
+        { time: 200 as Time, price: kind === "long-position" ? 120 : 80 },
+        { time: 200 as Time, price: kind === "long-position" ? 90 : 110 },
+      ],
+    };
+    const f = fixture("tick-position", JSON.stringify([original]));
+    const session = f.open();
+    session.selectDrawing(original.id);
+    const target = { ...original, anchors: positionAnchorsAtTicks(original, 1, 40, 0.25)! };
+    const saved = { ...target, anchors: positionAnchorsAtTicks(target, 2, 20, 0.25)! };
+    session.openSettings();
+    session.previewSettings({ anchors: saved.anchors });
+    expect(session.getCommittedDrawings()).toEqual([original]);
+    expect(f.writes()).toBe(0);
+    session.closeSettings();
+    expect(session.getCommittedDrawings()).toEqual([original]);
+    session.openSettings();
+    session.previewSettings({ anchors: saved.anchors });
+    session.applySettings({});
+    expect(session.getCommittedDrawings()).toEqual([saved]);
+    session.undo();
+    expect(session.getCommittedDrawings()).toEqual([original]);
+    session.redo();
+    expect(session.getCommittedDrawings()).toEqual([saved]);
+    session.dispose();
+    const restored = fixture("tick-position", f.saved()).open();
+    const drawing = restored.getCommittedDrawings()![0]!;
+    expect(drawing).toEqual(saved);
+    expect(positionDrawingTicks(drawing, 1, 0.25)).toBe(40);
+    expect(positionDrawingTicks(drawing, 2, 0.25)).toBe(20);
+    restored.dispose();
+  },
+);
