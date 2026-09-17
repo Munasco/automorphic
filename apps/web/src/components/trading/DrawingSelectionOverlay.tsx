@@ -592,6 +592,34 @@ function DrawingSettings({
               {isSpecialChannelDrawing(draft.kind) ? (
                 <ChannelAppearance drawing={draft} onChange={update} />
               ) : null}
+              {draft.kind === "ghost-feed" ? (
+                <div className="space-y-3">
+                  {(
+                    [
+                      ["ghostRange", "Candle range (price)", 10],
+                      ["ghostVariance", "Variance (price)", 3],
+                      ["ghostBars", "Candles per segment", 12],
+                    ] as const
+                  ).map(([key, label, fallback]) => (
+                    <label key={key} className="flex items-center justify-between gap-3 text-sm">
+                      {label}
+                      <DrawingNumberField
+                        label={label}
+                        value={draft[key] ?? fallback}
+                        integerOnly={key === "ghostBars"}
+                        step={key === "ghostBars" ? 1 : drawings.coordinatePriceStep()}
+                        onValueChange={(value) => {
+                          if (
+                            value >= (key === "ghostBars" ? 2 : 0) &&
+                            value <= (key === "ghostBars" ? 100 : 1_000_000)
+                          )
+                            update({ [key]: value });
+                        }}
+                      />
+                    </label>
+                  ))}
+                </div>
+              ) : null}
               {supportsShapeBackground(draft.kind) ? (
                 <div className="flex items-center justify-between gap-3">
                   <Check
@@ -711,7 +739,10 @@ function DrawingSettings({
                 .map((anchor, index) => (
                   <div key={anchorKeys[index]} className="flex h-[50px] items-center">
                     <span className="w-[113px] shrink-0 pr-5 text-sm leading-[18px] text-[#dbdbdb]">
-                      #{index + 1} ({coordinateLabel})
+                      {draft.kind === "long-position" || draft.kind === "short-position"
+                        ? ["Entry", "Target", "Stop"][index]
+                        : `#${index + 1}`}{" "}
+                      ({coordinateLabel})
                     </span>
                     <div className="flex gap-2">
                       {coordinateHasPrice ? (

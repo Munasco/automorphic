@@ -104,6 +104,7 @@ function fixture(symbol: string, initial: string | null = null, candles: Candles
     intervalMinutes = 1,
     directPlacement = false,
     sessionStorage: Pick<Storage, "getItem" | "setItem"> = storage,
+    dataSource?: import("./drawingMarketGeometry").DrawingDataSource,
   ) =>
     createChartDrawingSession(
       chart,
@@ -114,6 +115,7 @@ function fixture(symbol: string, initial: string | null = null, candles: Candles
       intervalMinutes,
       undefined,
       directPlacement,
+      dataSource,
     );
   const click = (time: number | undefined, y = 100, paneIndex = 0, x = 50) =>
     listener?.({
@@ -7096,4 +7098,69 @@ it("resets future drawings without changing existing objects, selection or undo 
   expect(drawings[1]).toMatchObject(defaultDrawingTemplateSettings("trend"));
   expect(drawings[1].visibility).toBeUndefined();
   restored.dispose();
+});
+
+it("creates, edits, reloads and atomically undoes position drawings with explicit entry/target/stop", () => {
+  const f = fixture("NQU6");
+  const session = f.open();
+  session.setTool("long-position");
+  f.click(100, 100);
+  f.click(300, 60);
+  f.click(300, 120);
+  const original = session.getCommittedDrawings()![0]!;
+  expect(original.kind).toBe("long-position");
+  expect(original.anchors.map((anchor) => anchor.price)).toEqual([4900, 4940, 4880]);
+  expect(session.getCommittedDrawings()).toHaveLength(1);
+  session.updateDrawing(original.id, {
+    anchors: [
+      original.anchors[0]!,
+      { time: 300 as UTCTimestamp, price: 4960 },
+      original.anchors[2]!,
+    ],
+  });
+  expect(session.getCommittedDrawings()![0]!.anchors[1]!.price).toBe(4960);
+  session.undo();
+  expect(session.getCommittedDrawings()![0]).toEqual(original);
+  session.redo();
+  expect(session.getCommittedDrawings()![0]!.anchors[1]!.price).toBe(4960);
+  const saved = f.saved();
+  session.dispose();
+  const reopened = fixture("NQU6", saved).open();
+  expect(reopened.getCommittedDrawings()![0]!.anchors[1]!.price).toBe(4960);
+  reopened.dispose();
+});
+
+it("captures bounded bar patterns into drawing storage and keeps them frozen after live revisions", () => {
+  const f = fixture("NQU6");
+  const bars = new Map(
+    [100, 200, 300].map((time, index) => [
+      time,
+      {
+        time,
+        open: 4900 + index,
+        high: 4904 + index,
+        low: 4898 + index,
+        close: 4902 + index,
+        volume: 1,
+      },
+    ]),
+  );
+  const session = f.open(1, false, f.storage, { bars, subscribeBars: () => () => {} });
+  session.setTool("bars-pattern");
+  f.click(100, 100);
+  f.click(300, 90);
+  const drawing = session.getCommittedDrawings()![0]!;
+  expect(drawing.pattern).toEqual([
+    [4900, 4904, 4898, 4902],
+    [4901, 4905, 4899, 4903],
+    [4902, 4906, 4900, 4904],
+  ]);
+  bars.set(200, { ...bars.get(200)!, close: 4905 });
+  session.duplicateDrawing(drawing.id);
+  expect(session.getCommittedDrawings()![1]!.pattern).toEqual(drawing.pattern);
+  const saved = f.saved();
+  session.dispose();
+  const reopened = fixture("NQU6", saved).open();
+  expect(reopened.getCommittedDrawings()![0]!.pattern).toEqual(drawing.pattern);
+  reopened.dispose();
 });

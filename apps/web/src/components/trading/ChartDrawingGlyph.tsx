@@ -14,6 +14,68 @@ export function ChartDrawingGlyph({ tool }: { tool: ChartDrawingTool }) {
       strokeLinejoin="round"
     >
       {tool === "cursor" ? <path d="M12 2v7m0 6v7M2 12h7m6 0h7" /> : null}
+      {tool === "position-forecast" ? (
+        <>
+          <circle cx="18" cy="6" r="4" />
+          <path d="m3 20 5-8 4 3 6-9m-4 1 4-1v4" />
+        </>
+      ) : null}
+      {tool === "bars-pattern" ? (
+        <>
+          <path d="M5 8v12m-3-7h3m0 3h3M11 4v13m-3-8h3m0 3h3M17 7v13m-3-8h3m0 4h3" />
+          <path d="M15 2h7v16" strokeDasharray="2 2" opacity=".5" />
+        </>
+      ) : null}
+      {tool === "ghost-feed" ? (
+        <>
+          <path d="M5 12v9M12 7v12M19 2v12" strokeDasharray="2 2" />
+          <rect x="3" y="14" width="4" height="5" strokeDasharray="2 2" />
+          <rect x="10" y="10" width="4" height="6" strokeDasharray="2 2" />
+          <rect x="17" y="5" width="4" height="4" strokeDasharray="2 2" />
+        </>
+      ) : null}
+      {tool === "anchored-vwap" ? (
+        <>
+          <circle cx="4" cy="17" r="2" />
+          <path d="M6 17c3 0 3-8 7-8s4 3 8-4" />
+          <path d="M4 13V4" strokeDasharray="2 2" opacity=".5" />
+        </>
+      ) : null}
+      {tool === "sector" ? (
+        <>
+          <path d="M5 19V4a15 15 0 0 1 15 15Z" fill="currentColor" fillOpacity=".12" />
+          <circle cx="5" cy="19" r="1.5" />
+        </>
+      ) : null}
+      {tool === "long-position" || tool === "short-position" ? (
+        <>
+          <rect x="5" y="3" width="14" height="18" rx="1" />
+          <path d="M5 12h14" />
+          <path
+            d={tool === "long-position" ? "M12 10V5m-2 2 2-2 2 2" : "M12 14v5m-2-2 2 2 2-2"}
+            strokeWidth="1.6"
+          />
+          <path d={tool === "long-position" ? "M8 16h8M8 18h8" : "M8 6h8M8 8h8"} opacity=".5" />
+        </>
+      ) : null}
+      {tool === "price-range" ? (
+        <>
+          <path d="M4 4h16M4 20h16M12 5v14m-3-3 3 3 3-3M9 8l3-3 3 3" />
+          <path d="M5 8v8M19 8v8" strokeDasharray="1 3" opacity=".5" />
+        </>
+      ) : null}
+      {tool === "date-range" ? (
+        <>
+          <path d="M4 4v16M20 4v16M5 12h14m-3-3 3 3-3 3M8 9l-3 3 3 3" />
+          <path d="M8 5h8M8 19h8" strokeDasharray="1 3" opacity=".5" />
+        </>
+      ) : null}
+      {tool === "date-price-range" ? (
+        <>
+          <rect x="4" y="4" width="16" height="16" strokeDasharray="2 2" />
+          <path d="M7 17 17 7M7 12v5h5M12 7h5v5" />
+        </>
+      ) : null}
       {tool === "regression-trend" ? (
         <>
           <path d="m3 16 18-8M3 21 21 13M3 11 21 3" />

@@ -1,3 +1,5 @@
+import { captureBarPattern } from "./drawingBarPattern";
+import type { DrawingDataSource } from "./drawingMarketGeometry";
 import { snapDrawingAnchor } from "./drawingMagnet";
 import { drawingCopyName } from "./drawingNames";
 import { applyDrawingChanges, mergeDrawingChanges } from "./drawingChanges";
@@ -172,6 +174,7 @@ export function createChartDrawingSession(
   intervalMinutes: number | ChartInterval = 1,
   regressionSeries: ISeriesApi<SeriesType> = series,
   directPlacement = false,
+  dataSource?: DrawingDataSource,
 ) {
   const key = `automorphic:chart-drawings:v1:${encodeURIComponent(symbol)}`;
   const defaults = createDrawingDefaults(storage);
@@ -364,6 +367,7 @@ export function createChartDrawingSession(
       hidden,
     }),
     regressionSeries,
+    dataSource,
   );
   series.attachPrimitive(primitive.primitive);
   const paneExtensions = createDrawingPaneExtensions(chart, series, () =>
@@ -405,15 +409,19 @@ export function createChartDrawingSession(
               ? "Drawing locked"
               : "Drag to move · Drag handles to resize"
             : ""
-        : isFreehandDrawingTool(tool)
-          ? "Drag to draw · Release to finish · Esc to cancel"
-          : isVariableDrawingTool(tool)
-            ? "Click to add points · Double-click or Enter to finish · Esc to cancel"
-            : remaining === 1
-              ? tool === "channel"
-                ? "Set channel width · Esc to cancel"
-                : "Place point · Esc to cancel"
-              : `Place ${anchors.length ? "next" : "first"} point · Esc to cancel`;
+        : tool === "bars-pattern"
+          ? "Select 2–100 loaded bars · Esc to cancel"
+          : tool === "long-position" || tool === "short-position"
+            ? `${anchors.length === 0 ? "Place entry" : anchors.length === 1 ? "Place target" : "Place stop"} · Esc to cancel`
+            : isFreehandDrawingTool(tool)
+              ? "Drag to draw · Release to finish · Esc to cancel"
+              : isVariableDrawingTool(tool)
+                ? "Click to add points · Double-click or Enter to finish · Esc to cancel"
+                : remaining === 1
+                  ? tool === "channel"
+                    ? "Set channel width · Esc to cancel"
+                    : "Place point · Esc to cancel"
+                  : `Place ${anchors.length ? "next" : "first"} point · Esc to cancel`;
     onChange({
       tool,
       count: drawings.length,
@@ -1079,6 +1087,7 @@ export function createChartDrawingSession(
         locked: false,
         hidden: false,
       };
+      if (!drag.cloneId && JSON.stringify([...drawings, copy]).length > 240_000) return;
       drawings = drag.cloneId
         ? drawings.map((item) => (item.id === cloneId ? copy : item))
         : [...drawings, copy];
@@ -1145,6 +1154,31 @@ export function createChartDrawingSession(
       anchors,
       ...(tool === "text" ? { text: previous?.text ?? "" } : {}),
     };
+    if (tool === "bars-pattern") {
+      const sourceBars = [...(dataSource?.bars.values() ?? [])].sort((a, b) => a.time - b.time);
+      const pattern = captureBarPattern(
+        sourceBars,
+        drawingTimeValue(anchors[0]!.time)!,
+        drawingTimeValue(anchors[1]!.time)!,
+      );
+      if (!pattern) {
+        anchors = [];
+        preview = null;
+        emit();
+        return false;
+      }
+      drawing.pattern = pattern;
+      drawing.anchors = [
+        { ...anchors[0]!, price: pattern[0]![3] },
+        { ...anchors[1]!, price: pattern.at(-1)![3] },
+      ];
+      if (JSON.stringify([...drawings, drawing]).length > 240_000) {
+        anchors = [];
+        preview = null;
+        emit();
+        return false;
+      }
+    }
     if (creatingText) {
       selectedId = drawing.id;
       anchors = [];
@@ -1734,6 +1768,7 @@ export function createChartDrawingSession(
       name: drawingCopyName(drawing),
       locked: false,
     }));
+    if (JSON.stringify([...drawings, ...copies]).length > 240_000) return;
     remember();
     drawings = [...drawings, ...copies];
     copies.forEach((drawing, index) => {
@@ -1783,6 +1818,7 @@ export function createChartDrawingSession(
     } catch {
       return false;
     }
+    if (JSON.stringify([...drawings, ...copies]).length > 240_000) return false;
     setTool("cursor");
     remember();
     drawings = [...drawings, ...copies];
@@ -2448,14 +2484,15 @@ export function createChartDrawingSession(
       setTool("cursor");
       const original = drawings.find((drawing) => drawing.id === id);
       if (!original) return;
-      remember();
       const copy = {
-        ...original,
+        ...structuredClone(original),
         id: randomUUID(),
         name: drawingCopyName(original),
         anchors: original.anchors.map((anchor) => ({ ...anchor })),
         locked: false,
       };
+      if (JSON.stringify([...drawings, copy]).length > 240_000) return;
+      remember();
       drawings = [...drawings, copy];
       selectedId = copy.id;
       changed();
@@ -2543,6 +2580,7 @@ export function useChartDrawings(
   symbol: string,
   intervalMinutes: number | ChartInterval = 1,
   regressionSeries?: ISeriesApi<SeriesType>,
+  dataSource?: DrawingDataSource,
 ) {
   const [state, setState] = useState<DrawingState>(EMPTY);
   const session = useRef<ReturnType<typeof createChartDrawingSession> | null>(null);
@@ -2559,6 +2597,7 @@ export function useChartDrawings(
       intervalMinutes,
       regressionSeries ?? series,
       true,
+      dataSource,
     );
     session.current = current;
     const element = chart.chartElement();
@@ -2817,7 +2856,7 @@ export function useChartDrawings(
         contextMenuRenameAction.current = null;
       }
     };
-  }, [chart, series, symbol, intervalMinutes, regressionSeries]);
+  }, [chart, series, symbol, intervalMinutes, regressionSeries, dataSource]);
   const getCommittedDrawings = useCallback(
     () => session.current?.getCommittedDrawings() ?? null,
     [],

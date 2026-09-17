@@ -66,13 +66,13 @@ export function ChartIntervalMenu({
       <MenuPopup
         align="end"
         sideOffset={0}
-        className="w-56 max-h-[min(var(--available-height),32rem)] overflow-y-auto rounded-none"
+        className="w-40 min-w-0 max-h-[min(var(--available-height),32rem)] overflow-y-auto rounded-none"
       >
         {[favoritesGroup, ...groups]
           .filter((group) => group.items.length)
           .map(({ group, items }) => (
             <MenuGroup key={group} aria-label={group}>
-              <MenuGroupLabel>{group}</MenuGroupLabel>
+              <MenuGroupLabel className="px-2 py-1 text-[10px]">{group}</MenuGroupLabel>
               {items.map((item) => {
                 const favorite = favorites.includes(item.key);
                 const selected = chartIntervalKey(interval) === item.key;
@@ -81,7 +81,7 @@ export function ChartIntervalMenu({
                     <MenuItem
                       aria-label={item.label}
                       aria-current={selected ? "true" : undefined}
-                      className="min-w-0 flex-1 rounded-none"
+                      className="h-7 min-h-7 min-w-0 flex-1 gap-2 rounded-none px-2 py-0 text-xs sm:min-h-7"
                       onClick={() => onChange(item.interval)}
                     >
                       <CheckIcon className={selected ? "size-3.5" : "invisible size-3.5"} />
@@ -97,7 +97,7 @@ export function ChartIntervalMenu({
                       aria-label={`${favorite ? "Unfavorite" : "Favorite"} ${item.label}`}
                       disabled={!workspace.ready}
                       closeOnClick={false}
-                      className="w-8 shrink-0 justify-center rounded-none px-0 opacity-0 group-hover/interval:opacity-100 group-focus-within/interval:opacity-100 data-highlighted:opacity-100 [@media(hover:none)]:opacity-100"
+                      className="h-7 min-h-7 w-6 shrink-0 justify-center sm:min-h-7 rounded-none px-0 opacity-0 group-hover/interval:opacity-100 group-focus-within/interval:opacity-100 data-highlighted:opacity-100 [@media(hover:none)]:opacity-100"
                       style={favorite ? { opacity: 1 } : undefined}
                       onClick={() => {
                         toggleFavorite(item.key);

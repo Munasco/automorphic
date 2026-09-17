@@ -1,3 +1,6 @@
+import { lockedChartCrosshair } from "./lockedChartCursor";
+import { ChartOrderTicket } from "./ChartOrderTicket";
+import type { ChartOrderDraft } from "./chartOrderEntry";
 import { chartHistoryLimit } from "./tradingIntervals";
 import { indicatorInstanceLabels } from "./chartIndicatorInstances";
 import { chartCanvasBackground } from "./chartCanvasBackground";
@@ -103,7 +106,7 @@ import { ChartTemplatesControl, ChartTemplatesDialog } from "./ChartTemplatesMen
 import { ChartContextMenu } from "./ChartContextMenu";
 import { DrawingObjectTree } from "./DrawingObjectTree";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
-import { cn } from "../../lib/utils";
+import { cn, randomUUID } from "../../lib/utils";
 import { ChartReplayControls, useChartReplay } from "./ChartReplay";
 import { chartLastTrade } from "./chartLastTrade";
 import { barCountdown } from "./barCountdown";
@@ -394,6 +397,16 @@ export function TradovateChart({
   const setObjectTreeOpen = objectTreeState?.onOpenChange ?? setLocalObjectTreeOpen;
   const [measureEngine, setMeasureEngine] = useState<ChartEngine | null>(null);
   const [goToDateOpen, setGoToDateOpen] = useState(false);
+  const [orderDraft, setOrderDraft] = useState<
+    | (ChartOrderDraft & {
+        symbol: string;
+        engine: ChartEngine;
+        requestId: string;
+        phase: "editing" | "submitted";
+        priceStep: number;
+      })
+    | null
+  >(null);
   const [templateDialog, setTemplateDialog] = useState<"save" | "manage" | null>(null);
   const [alertDrawing, setAlertDrawing] = useState<ChartDrawing | null>(null);
   const [readings, setReadings] = useState<IndicatorReadings>({});
@@ -424,6 +437,7 @@ export function TradovateChart({
     symbol,
     interval,
     activeEngine?.prices.candles,
+    activeEngine ?? undefined,
   );
   const drawingAlerts = useDrawingAlerts({
     chart: activeEngine?.chart ?? null,
@@ -1035,7 +1049,8 @@ export function TradovateChart({
       attributes: true,
       attributeFilter: ["style", "class"],
     });
-    chart.subscribeCrosshairMove((event) => {
+    chart.subscribeCrosshairMove((rawEvent) => {
+      const event = lockedChartCrosshair(chart, rawEvent);
       setHovered(typeof event.time === "number" ? (bars.get(event.time) ?? null) : null);
       if (event.time === undefined) {
         setHoverReadings(null);
@@ -1468,6 +1483,11 @@ export function TradovateChart({
   const measuring =
     !!activeEngine && measureEngine === activeEngine && drawings.tool === "cursor" && !technicals;
   if (measureEngine && drawings.tool !== "cursor") setMeasureEngine(null);
+  if (
+    orderDraft?.phase === "editing" &&
+    (orderDraft.engine !== activeEngine || orderDraft.symbol !== symbol || replay.session)
+  )
+    setOrderDraft(null);
 
   const zoom = (factor: number) => {
     const scale = engine?.chart.timeScale();
@@ -1512,6 +1532,21 @@ export function TradovateChart({
       onCopy={drawings.onCopy}
       onPaste={drawings.onPaste}
     >
+      {orderDraft &&
+      (orderDraft.phase === "submitted" ||
+        (orderDraft.engine === activeEngine && orderDraft.symbol === symbol && !replay.session)) ? (
+        <ChartOrderTicket
+          key={orderDraft.requestId}
+          symbol={orderDraft.symbol}
+          draft={orderDraft}
+          requestId={orderDraft.requestId}
+          priceStep={orderDraft.priceStep}
+          onSubmitStart={() =>
+            setOrderDraft((current) => (current ? { ...current, phase: "submitted" } : null))
+          }
+          onClose={() => setOrderDraft(null)}
+        />
+      ) : null}
       {goToDateOpen && activeEngine ? (
         <ChartGoToDateDialog
           key={`go-to-date:${symbol}:${chartIntervalKey(interval)}:${intraday ? settings.timeZone : "UTC"}`}
@@ -1801,7 +1836,30 @@ export function TradovateChart({
               <ChartContextMenu
                 symbol={symbol}
                 priceStep={activeEngine?.prices.candles.options().priceFormat.minMove ?? 0.01}
+                getMarketPrice={() => {
+                  const snapshot = queryClient.getQueryData<ChartMarketSnapshot>(
+                    marketOptions.queryKey,
+                  );
+                  const latest = snapshot?.bars.at(-1);
+                  return (
+                    chartLastTrade(snapshot?.quote ?? null, latest, symbol) ?? latest?.close ?? null
+                  );
+                }}
                 onAddAlert={onAddPriceAlert}
+                onAddOrder={
+                  !replay.session && activeEngine
+                    ? (draft) =>
+                        setOrderDraft({
+                          ...draft,
+                          symbol,
+                          engine: activeEngine,
+                          requestId: randomUUID(),
+                          phase: "editing",
+                          priceStep:
+                            activeEngine.prices.candles.options().priceFormat.minMove ?? 0.01,
+                        })
+                    : undefined
+                }
                 onOpenSettings={() => setDisplaySettingsOpen(true)}
                 onOpenObjectTree={() => setObjectTreeOpen(true)}
                 onGoToDate={() => setGoToDateOpen(true)}

@@ -1,3 +1,4 @@
+import { placeTradingOrder } from "./trading/orderEntry.ts";
 import { McpIntegrationDocument, AuthAccessWriteScope } from "@t3tools/contracts";
 import { readMcpIntegrations, writeMcpIntegrations } from "./mcp/McpIntegrations.ts";
 import { contracts, chartStream } from "./trading/marketData.ts";
@@ -515,13 +516,53 @@ const tradingReadHandler = Effect.gen(function* () {
   }),
 );
 
+const tradingOrderHandler = Effect.gen(function* () {
+  yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+  const request = yield* HttpServerRequest.HttpServerRequest;
+  const config = yield* ServerConfig.ServerConfig;
+  if (
+    request.headers["content-type"]?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json"
+  )
+    return HttpServerResponse.jsonUnsafe(
+      { error: "Order requests require JSON." },
+      { status: 415 },
+    );
+  const body = yield* request.json.pipe(Effect.orElseSucceed(() => null));
+  return yield* Effect.tryPromise(async () => {
+    try {
+      return HttpServerResponse.jsonUnsafe(await placeTradingOrder(config.stateDir, body), {
+        headers: { "Cache-Control": "no-store" },
+      });
+    } catch (error) {
+      return HttpServerResponse.jsonUnsafe(
+        {
+          error:
+            error instanceof TradingAccountError
+              ? error.message
+              : "Could not verify order status. Check Tradovate before submitting another order.",
+        },
+        { status: error instanceof TradingAccountError ? error.status : 502 },
+      );
+    }
+  });
+}).pipe(
+  Effect.catchTags({
+    EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+    EnvironmentInternalError: HttpServerRespondable.toResponse,
+    EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+  }),
+);
+
 export const tradingRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
     const workspace = yield* TradingWorkspace;
-    return HttpRouter.add(
-      "GET",
-      "/api/trading/*",
-      tradingReadHandler.pipe(Effect.provideService(TradingWorkspace, workspace)),
+    return Layer.mergeAll(
+      HttpRouter.add(
+        "GET",
+        "/api/trading/*",
+        tradingReadHandler.pipe(Effect.provideService(TradingWorkspace, workspace)),
+      ),
+      HttpRouter.add("POST", "/api/trading/orders", tradingOrderHandler),
     );
   }),
 );

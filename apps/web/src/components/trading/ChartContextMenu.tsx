@@ -1,11 +1,14 @@
+import { ChartOrderIcon } from "./ChartOrderIcon";
+import { chartOrderType, type ChartOrderDraft } from "./chartOrderEntry";
+import { attachLockedChartCursor } from "./lockedChartCursor";
 import { ResetChartPaneSizes } from "./ResetChartPaneSizes";
 import { ChartPriceScaleMenu } from "./ChartPriceScaleMenu";
 import { chartContextTarget } from "./chartContextTarget";
 import { EyeIcon, EyeOffIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ContextMenu } from "@base-ui/react/context-menu";
-import type { IChartApi, ISeriesApi, SeriesType } from "lightweight-charts";
-import { MenuItem, MenuPopup, MenuSeparator, MenuShortcut } from "../ui/menu";
+import type { IChartApi, ISeriesApi, SeriesType, Time } from "lightweight-charts";
+import { MenuCheckboxItem, MenuItem, MenuPopup, MenuSeparator, MenuShortcut } from "../ui/menu";
 import { toastManager } from "../ui/toast";
 import { isMacPlatform } from "../../lib/utils";
 import {
@@ -24,6 +27,8 @@ type MenuPoint = {
   price: number | null;
   priceLabel: string | null;
   target: "price-axis" | "chart";
+  time: Time | null;
+  market: number | null;
 };
 
 /** Drawing hits own their context menu; this handles the rest of the chart and axes. */
@@ -35,6 +40,8 @@ export function ChartContextMenu({
   drawings,
   indicators,
   onAddAlert,
+  onAddOrder,
+  getMarketPrice,
   onOpenSettings,
   onOpenObjectTree,
   onGoToDate,
@@ -53,6 +60,8 @@ export function ChartContextMenu({
     remove: () => void;
   };
   onAddAlert?: ((price: number) => void) | undefined;
+  onAddOrder?: ((draft: ChartOrderDraft) => void) | undefined;
+  getMarketPrice?: (() => number | null) | undefined;
   onOpenSettings: () => void;
   onOpenObjectTree: () => void;
   onGoToDate?: (() => void) | undefined;
@@ -60,6 +69,16 @@ export function ChartContextMenu({
   onManageTemplates?: (() => void) | undefined;
 }) {
   const [point, setPoint] = useState<MenuPoint | null>(null);
+  const [lockedCursor, setLockedCursor] = useState<{
+    chart: IChartApi;
+    time: Time;
+    price: number;
+  } | null>(null);
+  useEffect(() => {
+    if (!chart || !series || lockedCursor?.chart !== chart) return;
+    return attachLockedChartCursor(chart, series, lockedCursor.time, lockedCursor.price);
+  }, [chart, series, lockedCursor]);
+  const orderHover = useRef<{ chart: IChartApi; price: number } | null>(null);
   const { setTool } = drawings;
   useEffect(() => {
     if (!chart || !series) return;
@@ -83,6 +102,8 @@ export function ChartContextMenu({
           : null;
       setPoint({
         chart,
+        time: chart.timeScale().coordinateToTime(event.clientX - rect.left),
+        market: getMarketPrice?.() ?? latestPrice(series),
         target: chartContextTarget(event.clientX, event.clientY, rect, series.priceScale().width()),
         x: event.clientX,
         y: event.clientY,
@@ -94,7 +115,48 @@ export function ChartContextMenu({
     // useChartDrawings stops a drawing hit in capture before this listener runs.
     element.addEventListener("contextmenu", open);
     return () => element.removeEventListener("contextmenu", open);
-  }, [chart, series, priceStep, setTool]);
+  }, [chart, series, priceStep, setTool, getMarketPrice]);
+  useEffect(() => {
+    if (!chart || !series || !onAddOrder) return;
+    const move = (event: import("lightweight-charts").MouseEventParams) => {
+      const price =
+        event.point && (event.paneIndex ?? 0) === series.getPane().paneIndex()
+          ? series.coordinateToPrice(event.point.y)
+          : null;
+      orderHover.current = price !== null && Number.isFinite(price) ? { chart, price } : null;
+    };
+    const keydown = (event: KeyboardEvent) => {
+      const price = orderHover.current?.chart === chart ? orderHover.current.price : null;
+      if (
+        event.repeat ||
+        !event.shiftKey ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.code !== "KeyT" ||
+        price === null
+      )
+        return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest('input,textarea,select,[contenteditable="true"],[role="textbox"]')
+      )
+        return;
+      event.preventDefault();
+      const rounded = Number((Math.round(price / priceStep) * priceStep).toFixed(8));
+      onAddOrder({
+        side: "Buy",
+        type: chartOrderType("Buy", rounded, getMarketPrice?.() ?? latestPrice(series) ?? rounded),
+        price: rounded,
+      });
+    };
+    chart.subscribeCrosshairMove(move);
+    chart.chartElement().addEventListener("keydown", keydown);
+    return () => {
+      chart.unsubscribeCrosshairMove(move);
+      chart.chartElement().removeEventListener("keydown", keydown);
+    };
+  }, [chart, series, priceStep, onAddOrder, getMarketPrice]);
   if (!chart || !series || point?.chart !== chart) return null;
   const close = () => setPoint(null);
   const paste = async () => {
@@ -202,13 +264,6 @@ export function ChartContextMenu({
               </MenuItem>
             ) : null}
             <MenuSeparator />
-            {point.price !== null && onAddAlert ? (
-              <MenuItem className={itemClass} onClick={() => run(() => onAddAlert(point.price!))}>
-                <ChartIcon name="bell" />
-                Add alert{symbol ? ` on ${symbol}` : ""} at {point.priceLabel}…
-                <MenuShortcut className="tracking-normal">{mac ? "⌥" : "Alt"} A</MenuShortcut>
-              </MenuItem>
-            ) : null}
             {point.price !== null ? (
               <MenuItem className={itemClass} onClick={() => void copyPrice()}>
                 <span aria-hidden="true" className="size-4.5 shrink-0" />
@@ -220,6 +275,66 @@ export function ChartContextMenu({
               Paste
               <MenuShortcut className="tracking-normal">{mac ? "⌘" : "Ctrl"} V</MenuShortcut>
             </MenuItem>
+            <MenuSeparator />
+            {point.price !== null && onAddAlert ? (
+              <MenuItem className={itemClass} onClick={() => run(() => onAddAlert(point.price!))}>
+                <ChartIcon name="bell" />
+                Add alert{symbol ? ` on ${symbol}` : ""} at {point.priceLabel}…
+                <MenuShortcut className="tracking-normal">{mac ? "⌥" : "Alt"} A</MenuShortcut>
+              </MenuItem>
+            ) : null}
+            {point.price !== null && onAddOrder ? (
+              <>
+                {(point.market !== null && point.price < point.market
+                  ? (["Buy", "Sell"] as const)
+                  : (["Sell", "Buy"] as const)
+                ).map((side) => {
+                  const type = chartOrderType(side, point.price!, point.market ?? point.price!);
+                  return (
+                    <MenuItem
+                      key={side}
+                      className={itemClass}
+                      onClick={() => run(() => onAddOrder({ side, type, price: point.price! }))}
+                    >
+                      <ChartOrderIcon side={side} />
+                      {side} 1 {symbol} @ {point.priceLabel} {type.toLowerCase()}
+                    </MenuItem>
+                  );
+                })}
+                <MenuItem
+                  className={itemClass}
+                  onClick={() =>
+                    run(() =>
+                      onAddOrder({
+                        side: "Buy",
+                        type: chartOrderType("Buy", point.price!, point.market ?? point.price!),
+                        price: point.price!,
+                      }),
+                    )
+                  }
+                >
+                  <ChartOrderIcon /> Add order{symbol ? ` on ${symbol}` : ""} at {point.priceLabel}…
+                  <MenuShortcut className="tracking-normal">⇧ T</MenuShortcut>
+                </MenuItem>
+              </>
+            ) : null}
+            <MenuSeparator />
+            <MenuCheckboxItem
+              className={itemClass}
+              checked={lockedCursor?.chart === chart}
+              disabled={!lockedCursor && (point.time === null || point.price === null)}
+              onCheckedChange={(checked) =>
+                run(() =>
+                  setLockedCursor(
+                    checked && point.time !== null && point.price !== null
+                      ? { chart, time: point.time, price: point.price }
+                      : null,
+                  ),
+                )
+              }
+            >
+              Lock vertical cursor line by time
+            </MenuCheckboxItem>
             <MenuSeparator />
             <MenuItem className={itemClass} onClick={() => run(onOpenObjectTree)}>
               <ChartIcon name="stack" />
@@ -255,7 +370,7 @@ export function ChartContextMenu({
               onClick={() => run(() => drawings.removeDrawings())}
             >
               <ChartIcon name="trash" />
-              Remove drawings
+              Remove {drawings.count} {drawings.count === 1 ? "drawing" : "drawings"}
             </MenuItem>
             <MenuItem
               className={itemClass}
@@ -263,7 +378,7 @@ export function ChartContextMenu({
               onClick={() => run(indicators.remove)}
             >
               <ChartIcon name="trash" />
-              Remove indicators
+              Remove {indicators.count} {indicators.count === 1 ? "indicator" : "indicators"}
             </MenuItem>
             <MenuSeparator />
             <MenuItem className={itemClass} onClick={() => run(onOpenSettings)}>
@@ -275,4 +390,10 @@ export function ChartContextMenu({
       </MenuPopup>
     </ContextMenu.Root>
   );
+}
+
+function latestPrice(series: ISeriesApi<SeriesType>): number | null {
+  const bar = series.data().at(-1);
+  const price = bar && ("close" in bar ? bar.close : "value" in bar ? bar.value : null);
+  return typeof price === "number" && Number.isFinite(price) ? price : null;
 }

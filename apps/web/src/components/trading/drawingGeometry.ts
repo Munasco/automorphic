@@ -1,3 +1,16 @@
+import { ghostFeedGeometry } from "./ghostFeedGeometry";
+import {
+  normalizeBarPattern,
+  barPatternGeometry,
+  type DrawingBarPattern,
+} from "./drawingBarPattern";
+import { anchoredVwapGeometry, positionForecastGeometry } from "./drawingMarketGeometry";
+import type { Candle } from "./chartIndicators";
+import {
+  isPositionDrawing,
+  isRangeDrawing,
+  projectionDrawingGeometry,
+} from "./projectionDrawingGeometry";
 import {
   measureDrawingText,
   DEFAULT_DRAWING_TEXT_BACKGROUND_COLOR,
@@ -11,6 +24,16 @@ import type { ChartRegression, RegressionSource } from "./chartRegression";
 import { sanitizeDrawingVisibility, type DrawingVisibility } from "./drawingVisibility";
 import type { Time } from "lightweight-charts";
 export type DrawingKind =
+  | "ghost-feed"
+  | "bars-pattern"
+  | "position-forecast"
+  | "anchored-vwap"
+  | "sector"
+  | "long-position"
+  | "short-position"
+  | "price-range"
+  | "date-range"
+  | "date-price-range"
   | "horizontal"
   | "trend"
   | "info-line"
@@ -73,6 +96,9 @@ export type DrawingLineAppearance = Pick<
 >;
 export type DrawingRegressionFit = { result: ChartRegression; start: Time; end: Time };
 export type DrawingSettings = {
+  ghostRange?: number;
+  ghostVariance?: number;
+  ghostBars?: number;
   lineOpacity?: number;
   textOpacity?: number;
   trendLine?: DrawingLineAppearance;
@@ -130,6 +156,7 @@ export type DrawingSettings = {
   textOrientation?: "horizontal" | "vertical";
 };
 export type ChartDrawing = DrawingSettings & {
+  pattern?: DrawingBarPattern;
   id: string;
   kind: DrawingKind;
   anchors: DrawingAnchor[];
@@ -179,6 +206,16 @@ export type DrawingGeometry = {
   opacity?: number;
 };
 export const DRAWING_ANCHORS: Record<DrawingKind, number> = {
+  "ghost-feed": 2,
+  "bars-pattern": 2,
+  "position-forecast": 2,
+  "anchored-vwap": 1,
+  sector: 3,
+  "long-position": 3,
+  "short-position": 3,
+  "price-range": 2,
+  "date-range": 2,
+  "date-price-range": 2,
   horizontal: 1,
   trend: 2,
   "info-line": 2,
@@ -220,13 +257,17 @@ export const DRAWING_ANCHORS: Record<DrawingKind, number> = {
   "double-curve": 4,
 };
 export const isVariableDrawingTool = (kind: DrawingKind) =>
-  kind === "brush" || kind === "highlighter" || kind === "path" || kind === "polyline";
+  kind === "brush" ||
+  kind === "highlighter" ||
+  kind === "path" ||
+  kind === "polyline" ||
+  kind === "ghost-feed";
 export const isVariableDrawingKind = isVariableDrawingTool;
 export const isFreehandDrawingTool = (kind: DrawingKind) =>
   kind === "brush" || kind === "highlighter";
 export const minimumDrawingAnchors = (kind: DrawingKind) => DRAWING_ANCHORS[kind];
 export const maximumDrawingAnchors = (kind: DrawingKind) =>
-  isVariableDrawingTool(kind) ? 1000 : DRAWING_ANCHORS[kind];
+  kind === "ghost-feed" ? 20 : isVariableDrawingTool(kind) ? 1000 : DRAWING_ANCHORS[kind];
 export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
 export const isPitchforkDrawingTool = (kind: DrawingKind) =>
   ["pitchfork", "schiff-pitchfork", "modified-schiff-pitchfork", "inside-pitchfork"].includes(kind);
@@ -484,7 +525,15 @@ export function defaultRegressionDrawingSettings(kind?: DrawingKind): DrawingSet
 }
 export const DEFAULT_SHAPE_BACKGROUND_OPACITY = 0.12;
 export const supportsShapeBackground = (kind: DrawingKind) =>
-  ["rectangle", "circle", "ellipse", "triangle", "rotated-rectangle"].includes(kind);
+  [
+    "rectangle",
+    "circle",
+    "ellipse",
+    "triangle",
+    "rotated-rectangle",
+    "sector",
+    "date-price-range",
+  ].includes(kind);
 
 export const isSpecialChannelDrawing = (kind: DrawingKind) =>
   kind === "flat-channel" || kind === "disjoint-channel";
@@ -595,6 +644,22 @@ export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
   if (!value || typeof value !== "object") return {};
   const source = value as DrawingSettings;
   const result: DrawingSettings = {};
+  for (const key of ["ghostRange", "ghostVariance"] as const)
+    if (
+      typeof source[key] === "number" &&
+      Number.isFinite(source[key]) &&
+      source[key] >= 0 &&
+      source[key] <= 1_000_000
+    )
+      result[key] = source[key];
+  if (
+    typeof source.ghostBars === "number" &&
+    Number.isInteger(source.ghostBars) &&
+    source.ghostBars >= 2 &&
+    source.ghostBars <= 100
+  )
+    result.ghostBars = source.ghostBars;
+
   for (const key of ["lineOpacity", "textOpacity"] as const)
     if (
       typeof source[key] === "number" &&
@@ -828,8 +893,11 @@ export function parseChartDrawings(value: string | null): ChartDrawing[] {
               ? [record.from, record.to]
               : []);
         if (!Array.isArray(anchors) || !validDrawingAnchors(kind, anchors)) return [];
+        const pattern = kind === "bars-pattern" ? normalizeBarPattern(record.pattern) : null;
+        if (kind === "bars-pattern" && !pattern) return [];
         return [
           {
+            ...(pattern ? { pattern } : {}),
             id: typeof record.id === "string" ? record.id.slice(0, 100) : `legacy-${index}`,
             kind,
             anchors,
@@ -1645,6 +1713,7 @@ export function buildDrawingGeometry(
   coordinatePrice?: (coordinate: number) => number | null,
   regressionFit?: DrawingRegressionFit,
   textMetrics?: DrawingTextMetrics,
+  dataBars: readonly Candle[] = [],
 ): DrawingGeometry {
   drawing = { ...defaultVerticalLineSettings(drawing.kind), ...drawing };
   if (isFibTimeDrawing(drawing.kind))
@@ -1653,17 +1722,30 @@ export function buildDrawingGeometry(
     return buildRegressionDrawingGeometry(drawing, regressionFit, project, width, height);
   if (isSpecialChannelDrawing(drawing.kind))
     drawing = { ...defaultChannelDrawingSettings(drawing.kind), ...drawing };
-  const result = supportsDrawingLevels(drawing.kind)
-    ? buildLevelDrawingGeometry(
-        drawing,
-        project,
-        priceY,
-        width,
-        height,
-        formatPrice,
-        coordinatePrice,
-      )
-    : buildBaseDrawingGeometry(drawing, project, priceY, width, height);
+  const result =
+    drawing.kind === "ghost-feed"
+      ? ghostFeedGeometry(drawing, project)
+      : drawing.kind === "bars-pattern"
+        ? barPatternGeometry(drawing, project)
+        : drawing.kind === "position-forecast"
+          ? positionForecastGeometry(drawing, dataBars, project, drawingTimeValue, formatPrice)
+          : drawing.kind === "anchored-vwap"
+            ? anchoredVwapGeometry(drawing, dataBars, project, drawingTimeValue)
+            : isPositionDrawing(drawing.kind) ||
+                isRangeDrawing(drawing.kind) ||
+                drawing.kind === "sector"
+              ? projectionDrawingGeometry(drawing, project, formatPrice, drawingTimeValue)
+              : supportsDrawingLevels(drawing.kind)
+                ? buildLevelDrawingGeometry(
+                    drawing,
+                    project,
+                    priceY,
+                    width,
+                    height,
+                    formatPrice,
+                    coordinatePrice,
+                  )
+                : buildBaseDrawingGeometry(drawing, project, priceY, width, height);
   if (drawing.hidden || !result.handles.length) return result;
   // Markers belong to the original body endpoints, not its viewport-clipped extensions.
   // Rays already extend in their base geometry, so retain their two real anchors here.
@@ -2038,6 +2120,26 @@ export function validDrawingAnchors(kind: DrawingKind, anchors: DrawingAnchor[])
   if (!first || !second) return true;
   const same = (a: DrawingAnchor, b: DrawingAnchor) =>
     drawingTimeValue(a.time) === drawingTimeValue(b.time) && a.price === b.price;
+  if (kind === "bars-pattern")
+    return drawingTimeValue(first.time)! < drawingTimeValue(second.time)!;
+  if (kind === "position-forecast")
+    return (
+      drawingTimeValue(first.time)! < drawingTimeValue(second.time)! && first.price !== second.price
+    );
+  if (kind === "sector") return !!third && !same(first, second) && !same(first, third);
+  if (isPositionDrawing(kind)) {
+    const direction = kind === "long-position" ? 1 : -1;
+    return (
+      !!third &&
+      (second.price - first.price) * direction > 0 &&
+      (first.price - third.price) * direction > 0 &&
+      drawingTimeValue(first.time) !== drawingTimeValue(second.time) &&
+      drawingTimeValue(first.time) !== drawingTimeValue(third.time)
+    );
+  }
+  if (kind === "price-range") return first.price !== second.price;
+  if (kind === "date-range" || kind === "date-price-range")
+    return drawingTimeValue(first.time) !== drawingTimeValue(second.time);
   if (isFibTimeDrawing(kind)) return drawingTimeValue(first.time) !== drawingTimeValue(second.time);
   if (kind === "fib-extension")
     return !!third && first.price !== second.price && !same(second, third);

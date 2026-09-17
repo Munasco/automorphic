@@ -1,3 +1,4 @@
+import type { DrawingDataSource } from "./drawingMarketGeometry";
 import { measureDrawingText } from "./drawingTextLayout";
 import { drawingIntersectsRect } from "./drawingSelectionGeometry";
 import type {
@@ -168,8 +169,13 @@ export function createDrawingPrimitive(
     interactive?: boolean;
   },
   regressionSeries: ISeriesApi<SeriesType> = series,
+  dataSource?: DrawingDataSource,
 ) {
   let requestUpdate = () => {};
+  let unsubscribeBars: (() => void) | undefined;
+  let marketBars: Array<import("./chartIndicators").Candle> | undefined;
+  const dataBars = () =>
+    (marketBars ??= [...(dataSource?.bars.values() ?? [])].sort((a, b) => a.time - b.time));
   let textMeasureContext: CanvasRenderingContext2D | null | undefined;
   const textMetrics = () => ({
     fontFamily: chart.options().layout.fontFamily,
@@ -187,6 +193,7 @@ export function createDrawingPrimitive(
   let regressionData: ReturnType<typeof regressionSeries.data> | undefined;
   const regressionCache = new Map<string, { key: string; fit: DrawingRegressionFit | undefined }>();
   const invalidateRegression = () => {
+    marketBars = undefined;
     regressionData = undefined;
     regressionCache.clear();
     requestUpdate();
@@ -264,6 +271,7 @@ export function createDrawingPrimitive(
         undefined,
         regressionFit(drawing),
         textMetrics(),
+        dataBars(),
       );
       if (
         drawing.kind === "text" &&
@@ -349,6 +357,7 @@ export function createDrawingPrimitive(
         (coordinate) => series.coordinateToPrice(coordinate),
         regressionFit(drawing),
         textMetrics(),
+        dataBars(),
       );
       const lineOpacity =
         drawing.kind === "regression-trend" || isFibTimeDrawing(drawing.kind)
@@ -399,6 +408,7 @@ export function createDrawingPrimitive(
                 return ctx.measureText?.(text).width ?? NaN;
               },
             },
+            dataBars(),
           );
           const textLayout = geometry.text
             ? (geometry.text.layout ??
@@ -938,9 +948,13 @@ export function createDrawingPrimitive(
     attached: (parameters) => {
       requestUpdate = parameters.requestUpdate;
       regressionSeries.subscribeDataChanged?.(invalidateRegression);
+      unsubscribeBars = dataSource?.subscribeBars(invalidateRegression);
     },
     detached: () => {
       regressionSeries.unsubscribeDataChanged?.(invalidateRegression);
+      unsubscribeBars?.();
+      unsubscribeBars = undefined;
+      marketBars = undefined;
       regressionData = undefined;
       regressionCache.clear();
       requestUpdate = () => {};

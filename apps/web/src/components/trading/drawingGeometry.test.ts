@@ -2290,3 +2290,75 @@ describe("standalone text box geometry", () => {
     ).toEqual({ textWrap: false, textBorder: false, textWrapWidth: 40, textBorderOpacity: 0 });
   });
 });
+
+describe("position and range drawings", () => {
+  it.each(["long-position", "short-position"] as const)(
+    "renders independent target and stop zones with source-price risk/reward for %s",
+    (kind) => {
+      const direction = kind === "long-position" ? 1 : -1;
+      const shape = drawing(kind, [
+        [100, 100],
+        [300, 100 + direction * 20],
+        [300, 100 - direction * 10],
+      ]);
+      expect(validDrawingAnchors(kind, shape.anchors)).toBe(true);
+      const result = geometry(shape);
+      expect(result.polygons).toHaveLength(2);
+      expect(result.handles).toHaveLength(3);
+      expect(result.polygons?.map((polygon) => polygon.color)).toEqual(["#26a69a", "#ef5350"]);
+      expect(result.lines.some((line) => line.label === "Risk/reward 2.00")).toBe(true);
+      expect(result.lines.some((line) => line.label?.startsWith("Entry 100"))).toBe(true);
+      expect(hitDrawingGeometry(result, { x: 200, y: 400 - direction * 10 })).toBe(true);
+      expect(hitDrawingHandle(result, result.handles[2]!)).toBe(2);
+      expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+      expect(
+        validDrawingAnchors(kind, [shape.anchors[0]!, shape.anchors[2]!, shape.anchors[1]!]),
+      ).toBe(false);
+      expect(
+        validDrawingAnchors(kind, [shape.anchors[0]!, shape.anchors[1]!, shape.anchors[0]!]),
+      ).toBe(false);
+    },
+  );
+
+  it("reports actual signed prices and elapsed time without inventing bar counts", () => {
+    const price = geometry(
+      drawing("price-range", [
+        [100, 100],
+        [400, 90],
+      ]),
+    );
+    expect(price.lines.map((line) => line.label).filter(Boolean)).toEqual(["-10 (-10.00%)"]);
+    const date = geometry(
+      drawing("date-range", [
+        [100, 100],
+        [400, 90],
+      ]),
+    );
+    expect(date.lines.map((line) => line.label).filter(Boolean)).toEqual(["5m"]);
+    const combined = geometry(
+      drawing("date-price-range", [
+        [100, 0],
+        [400, 10],
+      ]),
+    );
+    expect(combined.lines.map((line) => line.label).filter(Boolean)).toEqual(["+10", "5m"]);
+    expect(combined.polygons).toHaveLength(1);
+    expect(hitDrawingGeometry(combined, { x: 250, y: 495 })).toBe(true);
+  });
+});
+
+it("renders a true circular sector with radial edges, a curved boundary and hit-testable fill", () => {
+  const shape = drawing("sector", [
+    [100, 400],
+    [200, 400],
+    [100, 300],
+  ]);
+  const result = geometry(shape);
+  expect(result.handles).toHaveLength(3);
+  expect(result.polygons).toHaveLength(1);
+  expect(result.lines).toHaveLength(66);
+  expect(result.lines[1]!.to.x).toBeGreaterThan(100);
+  expect(result.lines[1]!.to.y).toBeGreaterThan(100);
+  expect(hitDrawingGeometry(result, { x: 130, y: 130 })).toBe(true);
+  expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+});

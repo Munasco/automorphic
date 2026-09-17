@@ -2479,3 +2479,53 @@ describe("drawing area selection", () => {
     expect(ctx.strokeRect).not.toHaveBeenCalled();
   });
 });
+
+it("uses raw volume for anchored VWAP hit geometry and invalidates on live source revisions", () => {
+  const { chart, series } = fixture();
+  const candles = new Map(
+    [100, 200].map((time, index) => [
+      time,
+      {
+        time,
+        open: 100 + index * 100,
+        high: 100 + index * 100,
+        low: 100 + index * 100,
+        close: 100 + index * 100,
+        volume: 1,
+      },
+    ]),
+  );
+  let update: (() => void) | undefined;
+  const unsubscribe = vi.fn();
+  const source = {
+    bars: candles,
+    subscribeBars: (listener: () => void) => {
+      update = listener;
+      return unsubscribe;
+    },
+  };
+  const drawing: ChartDrawing = {
+    id: "avwap",
+    kind: "anchored-vwap",
+    anchors: [{ time: 100 as Time, price: 100 }],
+    color: "#123456",
+    width: 2,
+  };
+  const plugin = createDrawingPrimitive(
+    chart,
+    series,
+    () => ({ drawings: [drawing], selected: null }),
+    series,
+    source,
+  );
+  plugin.primitive.attached?.({ chart, series, requestUpdate: vi.fn() } as unknown as Parameters<
+    NonNullable<typeof plugin.primitive.attached>
+  >[0]);
+  expect(plugin.hitTest({ x: 200, y: 350 })?.drawing.id).toBe("avwap");
+  candles.set(200, { ...candles.get(200)!, volume: 3 });
+  update?.();
+  expect(plugin.hitTest({ x: 200, y: 325 })?.drawing.id).toBe("avwap");
+  expect(plugin.hitTest({ x: 200, y: 350 })).toBeNull();
+  plugin.primitive.detached?.();
+  expect(unsubscribe).toHaveBeenCalledOnce();
+});
