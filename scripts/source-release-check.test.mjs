@@ -81,6 +81,20 @@ NodeTest.test(
       NodeAssert.deepEqual(checkSource(root).errors, []);
       NodeChildProcess.execFileSync("git", ["add", "-f", ".env"], { cwd: root });
       NodeAssert.deepEqual(checkSource(root).errors, ["Private/runtime file is tracked: .env"]);
+      NodeChildProcess.execFileSync("git", ["rm", "--cached", "-f", ".env"], { cwd: root });
+      NodeChildProcess.execFileSync(
+        "git",
+        ["update-index", "--add", "--cacheinfo", `160000,${"1".repeat(40)},references/example`],
+        { cwd: root },
+      );
+      NodeAssert.deepEqual(checkSource(root).errors, [
+        "Tracked submodule references need valid root .gitmodules mappings.",
+      ]);
+      NodeFS.writeFileSync(
+        NodePath.join(root, ".gitmodules"),
+        '[submodule "example"]\npath = references/example\nurl = https://example.invalid/reference.git\nupdate = none\n',
+      );
+      NodeAssert.deepEqual(checkSource(root).errors, []);
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }

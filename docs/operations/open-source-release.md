@@ -10,7 +10,7 @@ procedure when publishing a new source snapshot or changing repository visibilit
    Include Git history, releases, attachments, screenshots, workflow logs, and issue/PR
    content in the review. A source scanner cannot inspect image contents or remote settings.
 2. Run `node scripts/source-release-check.mjs`. This checks tracked private/runtime
-   paths and absolute local dependency references, not secret values.
+   paths, external local dependency references, and submodule mappings, not secret values.
 3. Install [Gitleaks](https://github.com/gitleaks/gitleaks) and scan the reachable history:
 
    ```sh

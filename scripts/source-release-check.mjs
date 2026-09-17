@@ -53,6 +53,16 @@ export function checkSource(root) {
     .split("\0")
     .filter(Boolean);
   const errors = privatePaths(files).map((file) => `Private/runtime file is tracked: ${file}`);
+  try {
+    NodeChildProcess.execFileSync("git", ["submodule", "status"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: "pipe",
+      maxBuffer: 32 * 1024 * 1024,
+    });
+  } catch {
+    errors.push("Tracked submodule references need valid root .gitmodules mappings.");
+  }
   for (const file of files.filter(
     (file) => file.endsWith("package.json") && !file.startsWith(".repos/"),
   )) {
