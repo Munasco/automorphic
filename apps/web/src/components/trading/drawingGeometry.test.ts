@@ -2362,3 +2362,32 @@ it("renders a true circular sector with radial edges, a curved boundary and hit-
   expect(hitDrawingGeometry(result, { x: 130, y: 130 })).toBe(true);
   expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
 });
+
+describe("shared position width", () => {
+  it.each(["long-position", "short-position"] as const)(
+    "canonicalizes legacy %s stop times and renders a single right edge",
+    (kind) => {
+      const direction = kind === "long-position" ? 1 : -1;
+      for (const stopTime of [100, 500]) {
+        const stored = drawing(kind, [
+          [100, 100],
+          [300, 100 + direction * 20],
+          [stopTime, 100 - direction * 10],
+        ]);
+        const result = geometry(stored);
+        expect(result.handles.map((point) => point.x)).toEqual([100, 300, 300]);
+        expect(
+          result.polygons?.map((polygon) => Math.max(...polygon.points.map((point) => point.x))),
+        ).toEqual([300, 300]);
+        const restored = parseChartDrawings(JSON.stringify([stored]));
+        expect(restored).toHaveLength(1);
+        expect(restored[0]!.anchors.map((anchor) => Number(anchor.time))).toEqual([100, 300, 300]);
+        expect(restored[0]!.anchors.map((anchor) => anchor.price)).toEqual(
+          stored.anchors.map((anchor) => anchor.price),
+        );
+        expect(restored[0]!.color).toBe(stored.color);
+        expect(stored.anchors[2]!.time).toBe(stopTime);
+      }
+    },
+  );
+});

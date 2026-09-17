@@ -7164,3 +7164,112 @@ it("captures bounded bar patterns into drawing storage and keeps them frozen aft
   expect(reopened.getCommittedDrawings()![0]!.pattern).toEqual(drawing.pattern);
   reopened.dispose();
 });
+
+describe("position right-edge editing", () => {
+  const original = (kind: "long-position" | "short-position"): ChartDrawing => ({
+    id: "position",
+    kind,
+    color: "#123456",
+    width: 2,
+    anchors: [
+      { time: 100 as Time, price: 4900 },
+      { time: 300 as Time, price: kind === "long-position" ? 4940 : 4860 },
+      { time: 300 as Time, price: kind === "long-position" ? 4880 : 4920 },
+    ],
+  });
+  it.each(["long-position", "short-position"] as const)(
+    "pins the third placement to the target time for %s",
+    (kind) => {
+      const f = fixture("NQU6"),
+        session = f.open();
+      session.setTool(kind);
+      f.click(100, 100);
+      f.click(300, kind === "long-position" ? 60 : 140);
+      // Stop price remains independent even when the third click is over the entry bar.
+      f.click(100, kind === "long-position" ? 120 : 80);
+      const committed = session.getCommittedDrawings()!;
+      expect(committed).toHaveLength(1);
+      expect(committed[0]!.anchors).toEqual(original(kind).anchors);
+      session.dispose();
+    },
+  );
+
+  it.each([1, 2] as const)(
+    "dragging right handle %s moves both end times but only that handle's price",
+    (handle) => {
+      const source = original("long-position");
+      const f = fixture("NQU6", JSON.stringify([source])),
+        session = f.open();
+      session.selectDrawing(source.id);
+      const from = { x: 300, y: 5000 - source.anchors[handle]!.price };
+      expect(session.beginDrag(from)).toBe(true);
+      session.dragTo({ x: 400, y: from.y + 10 });
+      session.endDrag();
+      const edited = session.getCommittedDrawings()![0]!;
+      expect(edited.anchors.map((anchor) => Number(anchor.time))).toEqual([100, 400, 400]);
+      expect(edited.anchors.map((anchor) => anchor.price)).toEqual(
+        source.anchors.map((anchor, index) => anchor.price - (index === handle ? 10 : 0)),
+      );
+      expect(f.writes()).toBe(1);
+      session.undo();
+      expect(session.getCommittedDrawings()).toEqual([source]);
+      session.redo();
+      expect(session.getCommittedDrawings()).toEqual([edited]);
+      const saved = f.saved();
+      session.dispose();
+      const reopened = fixture("NQU6", saved).open();
+      expect(reopened.getCommittedDrawings()).toEqual([edited]);
+      reopened.dispose();
+    },
+  );
+
+  it("synchronizes sequential numeric target and stop previews without committing until Save", () => {
+    const source = original("short-position");
+    const f = fixture("NQU6", JSON.stringify([source])),
+      session = f.open();
+    const state = (): { selected: ChartDrawing | null } => f.change.mock.lastCall![0];
+    session.selectDrawing(source.id);
+    expect(session.openSettings()).toBe(true);
+    const targetEdit = source.anchors.map((anchor, index) =>
+      index === 1 ? { ...anchor, time: 400 as Time, price: 4850 } : anchor,
+    );
+    expect(session.previewSettings({ anchors: targetEdit })).toBe(true);
+    expect(state().selected!.anchors.map((anchor) => Number(anchor.time))).toEqual([100, 400, 400]);
+    const stopEdit = state().selected!.anchors.map((anchor, index) =>
+      index === 2 ? { ...anchor, time: 500 as Time, price: 4930 } : anchor,
+    );
+    expect(session.previewSettings({ anchors: stopEdit })).toBe(true);
+    const expected = state().selected!;
+    expect(expected.anchors.map((anchor) => Number(anchor.time))).toEqual([100, 500, 500]);
+    expect(expected.anchors.map((anchor) => anchor.price)).toEqual([4900, 4850, 4930]);
+    expect(session.getCommittedDrawings()).toEqual([source]);
+    expect(f.writes()).toBe(0);
+    session.applySettings({});
+    expect(session.getCommittedDrawings()).toEqual([expected]);
+    expect(f.writes()).toBe(1);
+    session.undo();
+    expect(session.getCommittedDrawings()).toEqual([source]);
+    session.dispose();
+  });
+
+  it("repairs mismatched saved endpoints, then supports direct stop-time edits without changing target price", () => {
+    const source = original("long-position");
+    source.anchors[2] = { ...source.anchors[2]!, time: 600 as Time };
+    const f = fixture("NQU6", JSON.stringify([source])),
+      session = f.open();
+    const loaded = session.getCommittedDrawings()![0]!;
+    expect(loaded.anchors.map((anchor) => Number(anchor.time))).toEqual([100, 300, 300]);
+    session.updateDrawing(source.id, {
+      anchors: loaded.anchors.map((anchor, index) =>
+        index === 2 ? { ...anchor, time: 450 as Time } : anchor,
+      ),
+    });
+    expect(
+      session.getCommittedDrawings()![0]!.anchors.map((anchor) => Number(anchor.time)),
+    ).toEqual([100, 450, 450]);
+    expect(session.getCommittedDrawings()![0]!.anchors.map((anchor) => anchor.price)).toEqual([
+      4900, 4940, 4880,
+    ]);
+    session.dispose();
+  });
+});

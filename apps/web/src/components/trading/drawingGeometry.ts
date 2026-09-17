@@ -8,6 +8,7 @@ import { anchoredVwapGeometry, positionForecastGeometry } from "./drawingMarketG
 import type { Candle } from "./chartIndicators";
 import {
   isPositionDrawing,
+  positionDrawingAnchors,
   isRangeDrawing,
   projectionDrawingGeometry,
 } from "./projectionDrawingGeometry";
@@ -885,14 +886,16 @@ export function parseChartDrawings(value: string | null): ChartDrawing[] {
         if (!record || typeof record !== "object" || !Object.hasOwn(DRAWING_ANCHORS, record.kind))
           return [];
         const kind = record.kind as DrawingKind;
-        const anchors: unknown =
+        const rawAnchors: unknown =
           record.anchors ??
           (kind === "horizontal"
             ? [{ time: 0, price: record.price }]
             : kind === "trend"
               ? [record.from, record.to]
               : []);
-        if (!Array.isArray(anchors) || !validDrawingAnchors(kind, anchors)) return [];
+        if (!Array.isArray(rawAnchors) || !rawAnchors.every(isAnchor)) return [];
+        const anchors = positionDrawingAnchors(kind, rawAnchors);
+        if (!validDrawingAnchors(kind, anchors)) return [];
         const pattern = kind === "bars-pattern" ? normalizeBarPattern(record.pattern) : null;
         if (kind === "bars-pattern" && !pattern) return [];
         return [
@@ -2134,7 +2137,7 @@ export function validDrawingAnchors(kind: DrawingKind, anchors: DrawingAnchor[])
       (second.price - first.price) * direction > 0 &&
       (first.price - third.price) * direction > 0 &&
       drawingTimeValue(first.time) !== drawingTimeValue(second.time) &&
-      drawingTimeValue(first.time) !== drawingTimeValue(third.time)
+      drawingTimeValue(second.time) === drawingTimeValue(third.time)
     );
   }
   if (kind === "price-range") return first.price !== second.price;

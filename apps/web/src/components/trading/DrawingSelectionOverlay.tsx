@@ -1,3 +1,4 @@
+import { positionDrawingAnchors } from "./projectionDrawingGeometry";
 import { clampDrawingToolbarOffset } from "./drawingToolbarBounds";
 import { DrawingRenameDialog } from "./DrawingRenameDialog";
 import { mergeDrawingChanges } from "./drawingChanges";
@@ -763,7 +764,11 @@ function DrawingSettings({
                                 ? drawings.anchorsAtOrigin(draft, next)
                                 : draft.kind === "channel" && (index === 0 || index === 1)
                                   ? drawings.channelAnchorsAtEndpoint(draft, index, next)
-                                  : draft.anchors.map((point, i) => (i === index ? next : point));
+                                  : positionDrawingAnchors(
+                                      draft.kind,
+                                      draft.anchors.map((point, i) => (i === index ? next : point)),
+                                      index,
+                                    );
                             if (anchors) update({ anchors });
                           }}
                         />
@@ -785,7 +790,13 @@ function DrawingSettings({
                                   ? drawings.anchorsAtOrigin(draft, next)
                                   : draft.kind === "channel" && (index === 0 || index === 1)
                                     ? drawings.channelAnchorsAtEndpoint(draft, index, next)
-                                    : draft.anchors.map((point, i) => (i === index ? next : point));
+                                    : positionDrawingAnchors(
+                                        draft.kind,
+                                        draft.anchors.map((point, i) =>
+                                          i === index ? next : point,
+                                        ),
+                                        index,
+                                      );
                               if (anchors) update({ anchors });
                             }
                           }}

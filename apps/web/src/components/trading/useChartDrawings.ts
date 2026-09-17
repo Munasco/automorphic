@@ -1,4 +1,5 @@
 import { captureBarPattern } from "./drawingBarPattern";
+import { positionDrawingAnchors } from "./projectionDrawingGeometry";
 import type { DrawingDataSource } from "./drawingMarketGeometry";
 import { snapDrawingAnchor } from "./drawingMagnet";
 import { drawingCopyName } from "./drawingNames";
@@ -986,7 +987,7 @@ export function createChartDrawingSession(
         channelPoints[2]!.y = a.y + ((b.y - a.y) * (third.x - a.x)) / (b.x - a.x) + offset;
       }
     }
-    const moved = activeDrag.drawing.anchors
+    let moved = activeDrag.drawing.anchors
       .map((anchor, index) => {
         if (axis)
           return translateLockedAnchor(anchor, activeDrag.points[index]!, activeDrag.drawing.kind);
@@ -1066,6 +1067,12 @@ export function createChartDrawingSession(
         anchor !== activeDrag.drawing.anchors[index]
           ? quantizePointerAnchor(anchor)
           : anchor,
+      );
+    if (!moved.some((anchor) => anchor === null))
+      moved = positionDrawingAnchors(
+        drag.drawing.kind,
+        moved as DrawingAnchor[],
+        activeDrag.handle,
       );
     if (
       moved.some((anchor) => anchor === null) ||
@@ -1281,7 +1288,7 @@ export function createChartDrawingSession(
     )
       return;
     if (sameAnchor(anchors.at(-1), anchor) || anchors.length >= maximumDrawingAnchors(tool)) return;
-    const next = [...anchors, anchor];
+    const next = positionDrawingAnchors(tool, [...anchors, anchor]);
     const variable = isVariableDrawingTool(tool);
     if (!variable && next.length === DRAWING_ANCHORS[tool] && !validDrawingAnchors(tool, next))
       return;
@@ -1294,6 +1301,26 @@ export function createChartDrawingSession(
     }
   };
   const normalizePatch = (target: ChartDrawing, patch: DrawingPatch): DrawingPatch | null => {
+    if (Array.isArray(patch.anchors)) {
+      const next = patch.anchors;
+      if (
+        next.some(
+          (anchor) =>
+            !anchor || !Number.isFinite(anchor.price) || drawingTimeValue(anchor.time) === null,
+        )
+      )
+        return null;
+      const editedEndpoint =
+        next[1] &&
+        next[2] &&
+        target.anchors[1] &&
+        target.anchors[2] &&
+        drawingTimeValue(next[1].time) === drawingTimeValue(target.anchors[1].time) &&
+        drawingTimeValue(next[2].time) !== drawingTimeValue(target.anchors[2].time)
+          ? 2
+          : 1;
+      patch = { ...patch, anchors: positionDrawingAnchors(target.kind, next, editedEndpoint) };
+    }
     if (
       patch.anchors !== undefined &&
       (!Array.isArray(patch.anchors) || !validDrawingAnchors(target.kind, patch.anchors))
@@ -1449,7 +1476,7 @@ export function createChartDrawingSession(
       const next = applyDrawingTemplate(settingsDraft.drawing, patch);
       return next === settingsDraft.drawing ? null : next;
     }
-    const normalized = normalizePatch(settingsDraft.original, patch);
+    const normalized = normalizePatch(settingsDraft.drawing, patch);
     return normalized ? { ...settingsDraft.drawing, ...normalized } : null;
   };
   const commonGroupPatch = (patch: DrawingPatch) => {

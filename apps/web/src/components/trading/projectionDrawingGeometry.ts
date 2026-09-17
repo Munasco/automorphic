@@ -2,6 +2,19 @@ import type { ChartDrawing, DrawingGeometry, DrawingAnchor, DrawingPoint } from 
 
 export const isPositionDrawing = (kind: string) =>
   kind === "long-position" || kind === "short-position";
+/** Target and stop share a duration; resizing either endpoint preserves the other price. */
+export function positionDrawingAnchors(
+  kind: string,
+  anchors: DrawingAnchor[],
+  editedEndpoint = 1,
+): DrawingAnchor[] {
+  if (!isPositionDrawing(kind) || anchors.length !== 3) return anchors;
+  const target = anchors[1],
+    stop = anchors[2];
+  if (!target || !stop) return anchors;
+  const time = editedEndpoint === 2 ? stop.time : target.time;
+  return [anchors[0]!, { ...target, time }, { ...stop, time }];
+}
 export const isRangeDrawing = (kind: string) =>
   ["price-range", "date-range", "date-price-range"].includes(kind);
 
@@ -14,7 +27,7 @@ export function projectionDrawingGeometry(
 ): DrawingGeometry {
   const result: DrawingGeometry = { lines: [], handles: [] };
   if (drawing.hidden) return result;
-  const [a, b, c] = drawing.anchors;
+  const [a, b, c] = positionDrawingAnchors(drawing.kind, drawing.anchors);
   if (!a) return result;
   const first = project(a);
   if (!first) return result;
