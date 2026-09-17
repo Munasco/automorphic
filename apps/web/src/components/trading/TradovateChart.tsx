@@ -396,6 +396,8 @@ export function TradovateChart({
   const objectTreeOpen = objectTreeState?.open ?? localObjectTreeOpen;
   const setObjectTreeOpen = objectTreeState?.onOpenChange ?? setLocalObjectTreeOpen;
   const [measureEngine, setMeasureEngine] = useState<ChartEngine | null>(null);
+  const [measureComplete, setMeasureComplete] = useState(false);
+  const [measureRun, setMeasureRun] = useState(0);
   const [goToDateOpen, setGoToDateOpen] = useState(false);
   const [orderDraft, setOrderDraft] = useState<
     | (ChartOrderDraft & {
@@ -1766,11 +1768,13 @@ export function TradovateChart({
           <DrawingTools
             drawings={drawings}
             measure={{
-              active: measuring,
+              active: measuring && !measureComplete,
               disabled: !activeEngine || !last || technicals,
               toggle: () => {
                 drawings.setTool("cursor");
-                setMeasureEngine(measuring ? null : activeEngine);
+                setMeasureEngine(measuring && !measureComplete ? null : activeEngine);
+                setMeasureComplete(false);
+                setMeasureRun((run) => run + 1);
               },
               close: () => setMeasureEngine(null),
             }}
@@ -1810,12 +1814,13 @@ export function TradovateChart({
               <div ref={host} className="absolute inset-0" />
               {measuring && activeEngine && (
                 <ChartMeasureOverlay
-                  key={`${settings.style}:${!!replay.session}`}
+                  key={`${settings.style}:${!!replay.session}:${measureRun}`}
                   chart={activeEngine.chart}
                   series={activeEngine.prices[settings.style]}
                   source={activeEngine}
                   magnetMode={drawings.magnetMode}
                   onClose={() => setMeasureEngine(null)}
+                  onComplete={() => setMeasureComplete(true)}
                 />
               )}
 

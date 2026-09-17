@@ -27,12 +27,14 @@ export function ChartMeasureOverlay({
   source,
   onClose,
   magnetMode,
+  onComplete,
 }: {
   chart: IChartApi;
   series: ISeriesApi<SeriesType>;
   source: ChartTableSource;
   onClose: () => void;
   magnetMode: DrawingMagnetMode;
+  onComplete: () => void;
 }) {
   const overlay = useRef<HTMLDivElement>(null);
   const measurement = useRef<Measurement | null>(null);
@@ -40,8 +42,15 @@ export function ChartMeasureOverlay({
   const pointer = useRef<number | null>(null);
   const refresh = useRef<() => void>(() => {});
   const [view, setView] = useState<View | null>(null);
+  const [complete, setComplete] = useState(false);
   const [snapPoint, setSnapPoint] = useState<{ x: number; y: number } | null>(null);
   const { scale } = useChartOverlayLayout();
+  useEffect(() => {
+    if (!complete) return;
+    const element = chart.chartElement();
+    element.addEventListener("pointerdown", onClose);
+    return () => element.removeEventListener("pointerdown", onClose);
+  }, [chart, complete, onClose]);
   useEffect(() => {
     let frame: number | undefined;
     let signature = "";
@@ -153,13 +162,17 @@ export function ChartMeasureOverlay({
   const color = view?.up ? "#3b82f6" : "#ef4444";
   const labelWidth = view ? Math.min(280 * scale, Math.max(0, view.width - 8)) : 0;
   const labelHeight = 48 * scale;
+  const midX = view ? (view.x1 + view.x2) / 2 : 0;
+  const midY = view ? (view.y1 + view.y2) / 2 : 0;
+  const arrowX = view ? Math.min(5 * scale, Math.abs(view.x2 - view.x1) / 3) : 0;
+  const arrowY = view ? Math.min(5 * scale, Math.abs(view.y2 - view.y1) / 3) : 0;
   return (
     <div
       ref={overlay}
       tabIndex={0}
       aria-label="Measure chart"
       className="absolute left-0 top-0 z-30 touch-none overflow-hidden outline-none"
-      style={{ cursor: "crosshair" }}
+      style={{ cursor: "crosshair", pointerEvents: complete ? "none" : "auto" }}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.preventDefault();
@@ -179,6 +192,14 @@ export function ChartMeasureOverlay({
         event.preventDefault();
         event.stopPropagation();
         event.currentTarget.focus({ preventScroll: true });
+        if (measurement.current) {
+          measurement.current.end = start;
+          snappedEndpoint.current = null;
+          setComplete(true);
+          onComplete();
+          refresh.current();
+          return;
+        }
         event.currentTarget.setPointerCapture(event.pointerId);
         pointer.current = event.pointerId;
         measurement.current = { start, end: start };
@@ -186,7 +207,7 @@ export function ChartMeasureOverlay({
       }}
       onPointerMove={(event) => {
         const end = anchorAt(event);
-        if (pointer.current !== event.pointerId || !measurement.current) return;
+        if (!measurement.current || complete) return;
         if (end) {
           measurement.current.end = end;
           refresh.current();
@@ -232,16 +253,17 @@ export function ChartMeasureOverlay({
               height={Math.abs(view.y2 - view.y1)}
               fill={color}
               fillOpacity={0.15}
+            />
+            <path
+              d={`M ${view.x1} ${midY} H ${view.x2} M ${midX} ${view.y1} V ${view.y2}`}
+              fill="none"
               stroke={color}
             />
             <path
-              d={`M ${view.x1} ${view.y1} H ${view.x2} V ${view.y2}`}
+              d={`M ${view.x2 - Math.sign(view.x2 - view.x1) * arrowX} ${midY - arrowX} L ${view.x2} ${midY} L ${view.x2 - Math.sign(view.x2 - view.x1) * arrowX} ${midY + arrowX} M ${midX - arrowY} ${view.y2 - Math.sign(view.y2 - view.y1) * arrowY} L ${midX} ${view.y2} L ${midX + arrowY} ${view.y2 - Math.sign(view.y2 - view.y1) * arrowY}`}
               fill="none"
               stroke={color}
-              strokeDasharray="4 3"
             />
-            <circle cx={view.x1} cy={view.y1} r={3} fill={color} />
-            <circle cx={view.x2} cy={view.y2} r={3} fill={color} />
           </svg>
           <output
             aria-label="Measurement result"
@@ -260,7 +282,9 @@ export function ChartMeasureOverlay({
                 4,
                 Math.min(
                   view.height - labelHeight - 4,
-                  Math.min(view.y1, view.y2) - labelHeight - 8,
+                  view.y2 < view.y1
+                    ? Math.min(view.y1, view.y2) - labelHeight - 8
+                    : Math.max(view.y1, view.y2) + 8,
                 ),
               ),
             }}
@@ -271,7 +295,7 @@ export function ChartMeasureOverlay({
         </>
       ) : (
         <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 whitespace-nowrap rounded border border-white/15 bg-zinc-900/95 px-3 py-1.5 text-xs text-zinc-200">
-          Drag to measure · Esc to exit
+          Click a start point, then an end point · Esc to exit
         </div>
       )}
     </div>
