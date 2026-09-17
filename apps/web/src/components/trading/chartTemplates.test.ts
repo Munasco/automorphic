@@ -488,3 +488,15 @@ it("captures zoom anchoring and restores pointer anchoring for legacy templates"
     chartTemplateSettingsKey({}),
   );
 });
+
+it("captures label alignment and keeps older templates avoiding overlaps", () => {
+  expect(captureChartTemplateSettings({ alignPriceLabels: false }).alignPriceLabels).toBe(false);
+  expect(captureChartTemplateSettings({}).alignPriceLabels).toBe(true);
+  const templates = normalizeChartTemplates([
+    { id: "labels", name: "Exact price positions", settings: { alignPriceLabels: false } },
+  ]);
+  expect(templates[0]?.settings.alignPriceLabels).toBe(false);
+  expect(chartTemplateSettingsKey({ alignPriceLabels: false })).not.toBe(
+    chartTemplateSettingsKey({}),
+  );
+});

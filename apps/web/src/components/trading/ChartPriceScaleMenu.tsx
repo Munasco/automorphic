@@ -87,6 +87,13 @@ export function ChartPriceScaleMenu({
       </MenuCheckboxItem>
       <MenuCheckboxItem
         className={drawingContextMenuItemClass}
+        checked={settings.alignPriceLabels}
+        onCheckedChange={(align) => run(() => settings.setAlignPriceLabels(align))}
+      >
+        Avoid price label overlap
+      </MenuCheckboxItem>
+      <MenuCheckboxItem
+        className={drawingContextMenuItemClass}
         checked={settings.invertScale}
         onCheckedChange={() => run(settings.toggleInvertScale)}
       >

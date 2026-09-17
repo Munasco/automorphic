@@ -1,3 +1,4 @@
+import { ChartPriceLabelControl } from "./ChartPriceLabelControl";
 import { ChartCanvasControls } from "./ChartCanvasControls";
 import { ChartZoomControls } from "./ChartZoomControls";
 import { ChartPreviousCloseControl } from "./ChartPreviousCloseControl";
@@ -1104,6 +1105,7 @@ export function ChartToolbar({
               />
               Price scale ticks
             </label>
+            <ChartPriceLabelControl />
             <label
               htmlFor={`${id}-invert`}
               className="flex cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-xs hover:bg-white/5"

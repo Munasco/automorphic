@@ -5140,3 +5140,22 @@ it("persists the wheel zoom anchor independently of enabling wheel zoom", async 
   useChartPreferences.getState().setChartZoomAnchor("pointer");
   expect(useChartPreferences.getState().chartZoomAnchor).toBe("pointer");
 });
+
+it("persists label alignment and ignores invalid or unchanged updates", async () => {
+  const store = useChartPreferences.getState();
+  expect(store.alignPriceLabels).toBe(true);
+  for (const value of [undefined, null, 0, 1, "false", {}, []]) {
+    expect(normalizeChartPreferences({ alignPriceLabels: value }).alignPriceLabels).toBe(true);
+    store.setAlignPriceLabels(value as never);
+  }
+  store.setAlignPriceLabels(true);
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  store.setAlignPriceLabels(false);
+  const payload = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(payload);
+  await useChartPreferences.persist.rehydrate();
+  expect(useChartPreferences.getState().alignPriceLabels).toBe(false);
+  useChartPreferences.getState().setAlignPriceLabels(true);
+  expect(useChartPreferences.getState().alignPriceLabels).toBe(true);
+});

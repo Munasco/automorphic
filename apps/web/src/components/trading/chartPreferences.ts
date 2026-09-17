@@ -218,6 +218,7 @@ type SavedChartPreferences = {
   rightOffsetBars: number;
   showPriceScale: boolean;
   showPriceScaleTicks: boolean;
+  alignPriceLabels: boolean;
 };
 
 /** Old saved charts keep their choices while newly introduced indicators stay disabled. */
@@ -372,6 +373,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
         : 5,
     showPriceScale: saved.showPriceScale !== false,
     showPriceScaleTicks: saved.showPriceScaleTicks === true,
+    alignPriceLabels: saved.alignPriceLabels !== false,
   };
 }
 export const useChartPreferences = create<{
@@ -450,6 +452,7 @@ export const useChartPreferences = create<{
   rightOffsetBars: number;
   showPriceScale: boolean;
   showPriceScaleTicks: boolean;
+  alignPriceLabels: boolean;
   setShowChartTitle: (show: boolean) => void;
   setShowBarChange: (show: boolean) => void;
   setShowCandleValues: (show: boolean) => void;
@@ -535,6 +538,7 @@ export const useChartPreferences = create<{
   setRightOffsetBars: (bars: number) => boolean;
   setShowPriceScale: (show: boolean) => void;
   setShowPriceScaleTicks: (show: boolean) => void;
+  setAlignPriceLabels: (align: boolean) => void;
 }>()(
   persist(
     (set, get) => ({
@@ -618,6 +622,7 @@ export const useChartPreferences = create<{
       rightOffsetBars: 5,
       showPriceScale: true,
       showPriceScaleTicks: false,
+      alignPriceLabels: true,
       setShowChartTitle: (showChartTitle) => {
         if (typeof showChartTitle === "boolean" && showChartTitle !== get().showChartTitle)
           set({ showChartTitle });
@@ -1190,6 +1195,10 @@ export const useChartPreferences = create<{
       setShowPriceScale: (show) => {
         if (typeof show === "boolean" && show !== get().showPriceScale)
           set({ showPriceScale: show });
+      },
+      setAlignPriceLabels: (alignPriceLabels) => {
+        if (typeof alignPriceLabels === "boolean" && alignPriceLabels !== get().alignPriceLabels)
+          set({ alignPriceLabels });
       },
       setShowPriceScaleTicks: (showPriceScaleTicks) => {
         if (

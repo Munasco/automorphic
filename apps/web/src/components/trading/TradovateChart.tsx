@@ -662,6 +662,7 @@ export function TradovateChart({
       rightOffsetBars,
       showPriceScale,
       showPriceScaleTicks,
+      alignPriceLabels,
     } = useChartPreferences.getState();
     const chart = createChart(host.current, {
       autoSize: true,
@@ -692,6 +693,7 @@ export function TradovateChart({
       rightPriceScale: {
         visible: showPriceScale,
         ticksVisible: showPriceScaleTicks,
+        alignLabels: alignPriceLabels,
         borderColor: "#242730",
         scaleMargins: priceScaleMargins.current ?? {
           top: 0.08,
@@ -1283,6 +1285,7 @@ export function TradovateChart({
       rightPriceScale: {
         visible: settings.showPriceScale,
         ticksVisible: settings.showPriceScaleTicks,
+        alignLabels: settings.alignPriceLabels,
       },
       layout: {
         background: chartCanvasBackground(
@@ -1351,6 +1354,7 @@ export function TradovateChart({
     settings.invertScale,
     settings.showPriceScale,
     settings.showPriceScaleTicks,
+    settings.alignPriceLabels,
     settings.crosshairMode,
     settings.showCrosshairHorizontalLine,
     settings.showCrosshairVerticalLine,
