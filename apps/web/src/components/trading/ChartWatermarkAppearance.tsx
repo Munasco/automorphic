@@ -14,6 +14,8 @@ export function ChartWatermarkAppearance() {
   const setHorizontal = useChartPreferences((state) => state.setWatermarkHorizontalAlignment);
   const setVertical = useChartPreferences((state) => state.setWatermarkVerticalAlignment);
   const color = useChartPreferences((state) => state.watermarkColor);
+  const scale = useChartPreferences((state) => state.watermarkScale);
+  const setScale = useChartPreferences((state) => state.setWatermarkScale);
   const opacity = useChartPreferences((state) => state.watermarkOpacity);
   const setColor = useChartPreferences((state) => state.setWatermarkColor);
   const setOpacity = useChartPreferences((state) => state.setWatermarkOpacity);
@@ -40,6 +42,19 @@ export function ChartWatermarkAppearance() {
           max={100}
           step={1}
           onCommit={setOpacity}
+          className="h-8 w-20 rounded border border-zinc-600 bg-zinc-900 px-2 text-xs text-zinc-200 outline-none focus:border-blue-400"
+        />
+      </div>
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <span>Size (%)</span>
+        <IndicatorNumberField
+          label="Watermark size (%)"
+          value={scale}
+          resetKey={resetKey}
+          min={25}
+          max={200}
+          step={1}
+          onCommit={setScale}
           className="h-8 w-20 rounded border border-zinc-600 bg-zinc-900 px-2 text-xs text-zinc-200 outline-none focus:border-blue-400"
         />
       </div>
@@ -79,6 +94,7 @@ export function ChartWatermarkAppearance() {
         onClick={() => {
           setColor("#9299a7");
           setOpacity(14);
+          setScale(100);
           setHorizontal("center");
           setVertical("center");
           setResetKey((value) => value + 1);

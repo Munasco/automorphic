@@ -5256,3 +5256,35 @@ it("persists independent plot patterns through duplication and reload and resets
   expect(find(base).appearance).toEqual({ displayName: "Momentum" });
   expect(find(copy).appearance.plots?.main?.linePattern).toBe("default");
 });
+
+describe("watermark size", () => {
+  it("rejects invalid scale values and skips unchanged writes", () => {
+    const state = useChartPreferences.getState();
+    for (const value of [0, 24, 201, 50.5, NaN, Infinity, "100", null]) {
+      expect(state.setWatermarkScale(value as number)).toBe(false);
+      expect(normalizeChartPreferences({ watermarkScale: value }).watermarkScale).toBe(100);
+    }
+    expect(state.setWatermarkScale(100)).toBe(true);
+    expect(useChartPreferences.getState()).toBe(state);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  });
+  it.each([25, 75, 150, 200])(
+    "persists %s%% size and restores legacy defaults on workspace change",
+    async (scale) => {
+      const before = configure();
+      expect(before.setWatermarkScale(scale)).toBe(true);
+      expect(useChartPreferences.getState()).toEqual({ ...before, watermarkScale: scale });
+      const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+      useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+      await useChartPreferences.persist.rehydrate();
+      expect(useChartPreferences.getState().watermarkScale).toBe(scale);
+      const hydrate = vi.mocked(tradingWorkspaceStorage.registerHydrator).mock.calls[0]![0];
+      vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(
+        JSON.stringify({ version: 0, state: {} }),
+      );
+      await hydrate();
+      expect(useChartPreferences.getState().watermarkScale).toBe(100);
+    },
+  );
+});

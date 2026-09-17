@@ -73,6 +73,8 @@ const validWatermarkHorizontalAlignment = (value: unknown): value is WatermarkHo
   value === "left" || value === "center" || value === "right";
 const validWatermarkVerticalAlignment = (value: unknown): value is WatermarkVerticalAlignment =>
   value === "top" || value === "center" || value === "bottom";
+const validWatermarkScale = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 25 && value <= 200;
 const validWatermarkOpacity = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 100;
 export type ChartReplaySpeed = 0.5 | 1 | 2 | 5 | 10;
@@ -183,6 +185,7 @@ type SavedChartPreferences = {
   showSymbolWatermark: boolean;
   watermarkColor: string;
   watermarkOpacity: number;
+  watermarkScale: number;
   watermarkHorizontalAlignment: WatermarkHorizontalAlignment;
   watermarkVerticalAlignment: WatermarkVerticalAlignment;
   lockVisibleTimeRangeOnResize: boolean;
@@ -318,6 +321,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     showSymbolWatermark: saved.showSymbolWatermark === true,
     watermarkColor: validColor(saved.watermarkColor) ? saved.watermarkColor : "#9299a7",
     watermarkOpacity: validWatermarkOpacity(saved.watermarkOpacity) ? saved.watermarkOpacity : 14,
+    watermarkScale: validWatermarkScale(saved.watermarkScale) ? saved.watermarkScale : 100,
     watermarkHorizontalAlignment: validWatermarkHorizontalAlignment(
       saved.watermarkHorizontalAlignment,
     )
@@ -419,6 +423,7 @@ export const useChartPreferences = create<{
   showSymbolWatermark: boolean;
   watermarkColor: string;
   watermarkOpacity: number;
+  watermarkScale: number;
   watermarkHorizontalAlignment: WatermarkHorizontalAlignment;
   watermarkVerticalAlignment: WatermarkVerticalAlignment;
   lockVisibleTimeRangeOnResize: boolean;
@@ -519,6 +524,7 @@ export const useChartPreferences = create<{
   setShowSymbolWatermark: (show: boolean) => void;
   setWatermarkColor: (color: string) => void;
   setWatermarkOpacity: (opacity: number) => boolean;
+  setWatermarkScale: (scale: number) => boolean;
   setWatermarkHorizontalAlignment: (alignment: WatermarkHorizontalAlignment) => void;
   setWatermarkVerticalAlignment: (alignment: WatermarkVerticalAlignment) => void;
   setPaneStretchFactors: (sizes: ChartPaneSizes) => void;
@@ -591,6 +597,7 @@ export const useChartPreferences = create<{
       showSymbolWatermark: false,
       watermarkColor: "#9299a7",
       watermarkOpacity: 14,
+      watermarkScale: 100,
       watermarkHorizontalAlignment: "center",
       watermarkVerticalAlignment: "center",
       lockVisibleTimeRangeOnResize: false,
@@ -1162,6 +1169,11 @@ export const useChartPreferences = create<{
           alignment !== get().watermarkVerticalAlignment
         )
           set({ watermarkVerticalAlignment: alignment });
+      },
+      setWatermarkScale: (watermarkScale) => {
+        if (!validWatermarkScale(watermarkScale)) return false;
+        if (watermarkScale !== get().watermarkScale) set({ watermarkScale });
+        return true;
       },
       setWatermarkOpacity: (watermarkOpacity) => {
         if (!validWatermarkOpacity(watermarkOpacity)) return false;

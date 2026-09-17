@@ -1403,7 +1403,11 @@ export function TradovateChart({
       if (engine.disposed) return;
       const fontSize = Math.max(
         12,
-        Math.floor(Math.min(element.clientWidth / 7, element.clientHeight / 3, 120)),
+        Math.floor(
+          (Math.min(element.clientWidth / 7, element.clientHeight / 3, 120) *
+            settings.watermarkScale) /
+            100,
+        ),
       );
       if (fontSize === previousSize) return;
       previousSize = fontSize;
@@ -1431,6 +1435,7 @@ export function TradovateChart({
     settings.showSymbolWatermark,
     settings.watermarkColor,
     settings.watermarkOpacity,
+    settings.watermarkScale,
     settings.watermarkHorizontalAlignment,
     settings.watermarkVerticalAlignment,
     symbol,

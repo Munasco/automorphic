@@ -46,6 +46,7 @@ const chart = () => ({
   priceLineAppearance: { color: "#ff8800", width: 3, style: "solid" },
   watermarkColor: "#ff8800",
   watermarkOpacity: 60,
+  watermarkScale: 150,
   chartFontSize: 18,
   areaFill: { topColor: "#ff8800", bottomColor: null, topOpacity: 75, bottomOpacity: 20 },
   favoriteIndicators: ["rsi"],
@@ -561,4 +562,13 @@ it("captures indicator line patterns in templates", () => {
   expect(saved.appearance.rsi?.plots?.main?.linePattern).toBe("dotted");
   expect(captureChartTemplateSettings(saved)).toEqual(saved);
   expect(chartTemplateSettingsKey(saved)).not.toBe(chartTemplateSettingsKey({}));
+});
+
+it("captures watermark scale independently and normalizes invalid or legacy templates", () => {
+  expect(captureChartTemplateSettings({ watermarkScale: 175 }).watermarkScale).toBe(175);
+  expect(captureChartTemplateSettings({ watermarkScale: -1 }).watermarkScale).toBe(100);
+  expect(captureChartTemplateSettings({}).watermarkScale).toBe(100);
+  expect(chartTemplateSettingsKey({ watermarkScale: 150 })).not.toBe(
+    chartTemplateSettingsKey({ watermarkScale: 100 }),
+  );
 });
