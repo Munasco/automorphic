@@ -2,6 +2,8 @@ import type { Candle } from "./chartIndicators";
 import type { ChartDrawing, DrawingAnchor, DrawingGeometry, DrawingPoint } from "./drawingGeometry";
 /** Snapshot OHLC tuples are independent of the live series after capture. */
 export type DrawingBarPattern = Array<[number, number, number, number]>;
+export const BAR_PATTERN_MODES = ["bars", "open", "high", "low", "close"] as const;
+export type BarPatternMode = (typeof BAR_PATTERN_MODES)[number];
 export const MAX_PATTERN_BARS = 100;
 export function normalizeBarPattern(value: unknown): DrawingBarPattern | null {
   if (!Array.isArray(value) || value.length < 2 || value.length > MAX_PATTERN_BARS) return null;
@@ -65,6 +67,8 @@ export function barPatternGeometry(
     change = samples.at(-1)![3] - origin;
   const factor = change === 0 ? 1 : (b.price - a.price) / change;
   const half = Math.min(5, (Math.abs(last.x - first.x) / (samples.length - 1)) * 0.3);
+  const mode = drawing.patternMode ?? "bars";
+  let previous: DrawingPoint | null = null;
   samples.forEach(([open, high, low, close], index) => {
     const x = first.x + ((last.x - first.x) * index) / (samples.length - 1);
     const point = (value: number) =>
@@ -75,6 +79,14 @@ export function barPatternGeometry(
           (value - origin) * factor +
           (change === 0 ? ((b.price - a.price) * index) / (samples.length - 1) : 0),
       });
+    if (mode !== "bars") {
+      const value = { open, high, low, close }[mode];
+      const projected = point(value);
+      const current = projected ? { x, y: projected.y } : null;
+      if (previous && current) result.lines.push({ from: previous, to: current });
+      previous = current;
+      return;
+    }
     const o = point(open),
       h = point(high),
       l = point(low),

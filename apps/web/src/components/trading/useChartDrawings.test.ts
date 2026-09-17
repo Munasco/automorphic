@@ -7384,3 +7384,129 @@ describe("anchored VWAP source settings", () => {
     session.dispose();
   });
 });
+
+describe("bars pattern display settings", () => {
+  const original: ChartDrawing = {
+    id: "frozen-source",
+    kind: "bars-pattern",
+    anchors: [
+      { time: 100 as Time, price: 4914 },
+      { time: 300 as Time, price: 4918 },
+    ],
+    pattern: [
+      [4910, 4918, 4906, 4914],
+      [4920, 4932, 4912, 4924],
+      [4916, 4930, 4908, 4918],
+    ],
+    color: "#123456",
+    width: 2,
+  };
+
+  it("previews mode changes without replacing frozen OHLC and saves one undoable persisted edit", () => {
+    const f = fixture("pattern-display-edit", JSON.stringify([original]));
+    const session = f.open();
+    const state = (): DrawingState => f.change.mock.lastCall![0];
+    session.selectDrawing(original.id);
+    session.openSettings();
+    expect(session.previewSettings({ patternMode: "high" })).toBe(true);
+    expect(state().selected).toEqual({ ...original, patternMode: "high" });
+    expect(session.getCommittedDrawings()).toEqual([original]);
+    expect(f.writes()).toBe(0);
+    session.closeSettings();
+    expect(state().selected).toEqual(original);
+    expect(f.controls.get(DRAWING_DEFAULTS_KEY)).toBeUndefined();
+    session.openSettings();
+    session.previewSettings({ patternMode: "open" });
+    expect(session.applySettings({})).toBe(true);
+    const edited = { ...original, patternMode: "open" };
+    expect(session.getCommittedDrawings()).toEqual([edited]);
+    expect(f.writes()).toBe(1);
+    session.undo();
+    expect(session.getCommittedDrawings()).toEqual([original]);
+    session.redo();
+    expect(session.getCommittedDrawings()).toEqual([edited]);
+    session.dispose();
+    const reloaded = f.open();
+    expect(reloaded.getCommittedDrawings()).toEqual([edited]);
+    reloaded.dispose();
+  });
+
+  it("preserves frozen data through templates and resets while newly captured drawings inherit only display settings", () => {
+    const f = fixture("pattern-display-defaults", JSON.stringify([original]));
+    const session = f.open();
+    session.selectDrawing(original.id);
+    expect(session.applySelectedTemplate({ color: "#ff0000", width: 3, patternMode: "low" })).toBe(
+      true,
+    );
+    expect(session.getCommittedDrawings()![0]).toMatchObject({
+      ...original,
+      color: "#ff0000",
+      width: 3,
+      patternMode: "low",
+    });
+    const defaults = JSON.parse(f.controls.get(DRAWING_DEFAULTS_KEY)!)["bars-pattern"];
+    expect(defaults.patternMode).toBe("low");
+    expect(defaults.pattern).toBeUndefined();
+    session.dispose();
+
+    const rawBars = new Map(
+      [400, 500, 600].map((time, index) => [
+        time,
+        {
+          time,
+          open: 4800 + index,
+          high: 4810 + index,
+          low: 4790 + index,
+          close: 4805 + index,
+          volume: 2,
+        },
+      ]),
+    );
+    const restored = f.open(1, false, f.storage, { bars: rawBars, subscribeBars: () => () => {} });
+    restored.setTool("bars-pattern");
+    f.click(400, 100);
+    f.click(600, 90);
+    const captured = restored.getCommittedDrawings()!.at(-1)!;
+    const expectedPattern = [
+      [4800, 4810, 4790, 4805],
+      [4801, 4811, 4791, 4806],
+      [4802, 4812, 4792, 4807],
+    ];
+    expect(captured.patternMode).toBe("low");
+    expect(captured.pattern).toEqual(expectedPattern);
+    expect(captured.pattern).not.toEqual(original.pattern);
+    expect(captured.id).not.toBe(original.id);
+    expect(captured.anchors).toEqual([
+      { time: 400, price: 4805 },
+      { time: 600, price: 4807 },
+    ]);
+    rawBars.set(500, { ...rawBars.get(500)!, close: 4809 });
+    restored.openSettings();
+    restored.previewSettings(defaultDrawingTemplateSettings("bars-pattern"), { replace: true });
+    expect((f.change.mock.lastCall![0] as DrawingState).selected!.pattern).toEqual(expectedPattern);
+    restored.closeSettings();
+    expect(restored.getCommittedDrawings()!.at(-1)).toEqual(captured);
+    restored.openSettings();
+    restored.applySettings(defaultDrawingTemplateSettings("bars-pattern"), { replace: true });
+    const reset = restored.getCommittedDrawings()!.at(-1)!;
+    expect(reset.patternMode ?? "bars").toBe("bars");
+    expect(reset.pattern).toEqual(expectedPattern);
+    expect(reset.anchors).toEqual(captured.anchors);
+    restored.dispose();
+    const reloaded = f.open();
+    expect(reloaded.getCommittedDrawings()![0]!.pattern).toEqual(original.pattern);
+    expect(reloaded.getCommittedDrawings()!.at(-1)!.pattern).toEqual(expectedPattern);
+    reloaded.dispose();
+  });
+
+  it("falls back to bars for malformed saved modes without discarding the snapshot", () => {
+    const f = fixture(
+      "pattern-display-invalid",
+      JSON.stringify([{ ...original, patternMode: "volume" }]),
+    );
+    const session = f.open();
+    expect(session.getCommittedDrawings()).toEqual([original]);
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+});

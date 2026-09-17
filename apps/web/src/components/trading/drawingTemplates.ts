@@ -111,6 +111,7 @@ export function applyDrawingTemplate(
     id: drawing.id,
     kind: drawing.kind,
     anchors: drawing.anchors,
+    ...(drawing.kind === "bars-pattern" && drawing.pattern ? { pattern: drawing.pattern } : {}),
     ...(drawing.name !== undefined ? { name: drawing.name } : {}),
     ...(drawing.locked !== undefined ? { locked: drawing.locked } : {}),
     ...(drawing.hidden !== undefined ? { hidden: drawing.hidden } : {}),

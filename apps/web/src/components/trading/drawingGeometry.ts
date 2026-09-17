@@ -3,6 +3,8 @@ import { ANCHORED_VWAP_SOURCES, type AnchoredVwapSource } from "./anchoredVwapSo
 import {
   normalizeBarPattern,
   barPatternGeometry,
+  BAR_PATTERN_MODES,
+  type BarPatternMode,
   type DrawingBarPattern,
 } from "./drawingBarPattern";
 import { anchoredVwapGeometry, positionForecastGeometry } from "./drawingMarketGeometry";
@@ -102,6 +104,7 @@ export type DrawingSettings = {
   ghostVariance?: number;
   ghostBars?: number;
   vwapSource?: AnchoredVwapSource;
+  patternMode?: BarPatternMode;
   lineOpacity?: number;
   textOpacity?: number;
   trendLine?: DrawingLineAppearance;
@@ -647,6 +650,8 @@ export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
   if (!value || typeof value !== "object") return {};
   const source = value as DrawingSettings;
   const result: DrawingSettings = {};
+  if (source.patternMode && BAR_PATTERN_MODES.includes(source.patternMode))
+    result.patternMode = source.patternMode;
   if (source.vwapSource && ANCHORED_VWAP_SOURCES.includes(source.vwapSource))
     result.vwapSource = source.vwapSource;
   for (const key of ["ghostRange", "ghostVariance"] as const)
