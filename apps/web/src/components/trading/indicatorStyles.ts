@@ -14,6 +14,9 @@ function normalizeStyle(value: unknown): IndicatorStyle {
   if (!value || typeof value !== "object") return {};
   const input = value as IndicatorStyle;
   return {
+    ...(["default", "solid", "dotted", "dashed"].includes(input.linePattern ?? "")
+      ? { linePattern: input.linePattern }
+      : {}),
     ...(validColor(input.color) ? { color: input.color } : {}),
     ...(typeof input.visible === "boolean" ? { visible: input.visible } : {}),
     ...(typeof input.showPriceLabel === "boolean" ? { showPriceLabel: input.showPriceLabel } : {}),
@@ -74,6 +77,7 @@ export function resolveIndicatorStyle(
       (defaults?.primary || defaults?.legacyColor ? appearance.color : undefined) ??
       defaults?.color ??
       "#9299a7",
+    linePattern: saved?.linePattern ?? appearance.linePattern ?? "default",
     lineWidth: saved?.lineWidth ?? appearance.lineWidth ?? defaults?.lineWidth ?? 1,
   };
 }

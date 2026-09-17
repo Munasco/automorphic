@@ -1619,3 +1619,26 @@ it("resets hidden pane sizes without disturbing plotted indicator data", () => {
   update([obv, rsi]);
   expect(harness.chart.panes().map((pane) => pane.getStretchFactor())).toEqual([3, 1, 1]);
 });
+
+it("updates independent indicator line patterns without changing data or re-creating series", () => {
+  const harness = chartHarness();
+  const renderer = createIndicatorRenderer(harness.chart, 0.25);
+  const a = createIndicatorInstance("rsi", "base:rsi");
+  const b = createIndicatorInstance("rsi", "second-rsi");
+  a.appearance = { plots: { main: { linePattern: "dotted" } } };
+  b.appearance = { plots: { main: { linePattern: "dashed" } } };
+  const update = () =>
+    renderer.update(inputBars(), disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [a, b]);
+  const before = update();
+  const series = [...harness.series];
+  const data = structuredClone(series.map((item) => item.data));
+  expect(series.find((item) => item.pane === 1)?.options.lineStyle).toBe(1);
+  expect(series.find((item) => item.pane === 2)?.options.lineStyle).toBe(2);
+  a.appearance = { plots: { main: { linePattern: "solid" } } };
+  b.appearance = { plots: { main: { linePattern: "default" } } };
+  expect(update()).toEqual(before);
+  expect(harness.series).toEqual(series);
+  expect(harness.series.map((item) => item.data)).toEqual(data);
+  expect(series.find((item) => item.pane === 1)?.options.lineStyle).toBe(0);
+  expect(series.find((item) => item.pane === 2)?.options.lineStyle).toBe(0);
+});

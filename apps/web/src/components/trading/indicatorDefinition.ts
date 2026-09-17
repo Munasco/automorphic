@@ -18,7 +18,10 @@ export type IndicatorInputDescriptor = {
 };
 export type IndicatorInputValues = Partial<Record<IndicatorInputKey, number>>;
 
+export type IndicatorLinePattern = "default" | "solid" | "dotted" | "dashed";
+
 export type IndicatorStyle = {
+  linePattern?: IndicatorLinePattern;
   showPriceLabel?: boolean;
   color?: string;
   lineWidth?: number;

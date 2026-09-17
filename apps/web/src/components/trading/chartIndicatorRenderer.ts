@@ -9,6 +9,7 @@ import {
   HistogramSeries,
   LineSeries,
   LineType,
+  LineStyle,
   type IChartApi,
   type ISeriesApi,
   type IPriceLine,
@@ -198,6 +199,12 @@ export function createIndicatorRenderer(
         options.styleKey ?? "main",
         instance.appearance,
       );
+      const lineStyle =
+        style.linePattern === "dotted"
+          ? LineStyle.Dotted
+          : style.linePattern === "dashed"
+            ? LineStyle.Dashed
+            : LineStyle.Solid;
       // A disabled volume average must not change the volume scale or leave a pane behind.
       if (indicator === "volume" && options.styleKey === "average" && !style.visible) return;
       desired.add(id);
@@ -231,6 +238,7 @@ export function createIndicatorRenderer(
                 ...common,
                 color: style.color,
                 lineWidth: 1,
+                lineStyle,
                 lineType: options.steps ? LineType.WithSteps : LineType.Simple,
                 ...(options.invisible ? { lineVisible: false, crosshairMarkerVisible: false } : {}),
                 ...(indicator === "ib" && options.invisible
@@ -305,6 +313,7 @@ export function createIndicatorRenderer(
           lastValueVisible: showPriceLabel,
           title,
           lineWidth: style.lineWidth as 1 | 2 | 3 | 4,
+          lineStyle,
           ...(options.breakOnGaps
             ? { crosshairMarkerBackgroundColor: indicatorStyleColor(style) }
             : {}),

@@ -554,3 +554,11 @@ it("captures named indicator instances independently in templates", () => {
   expect(captureChartTemplateSettings(saved)).toEqual(saved);
   expect(chartTemplateSettingsKey(saved)).not.toBe(chartTemplateSettingsKey(source));
 });
+
+it("captures indicator line patterns in templates", () => {
+  const settings = { appearance: { rsi: { plots: { main: { linePattern: "dotted" } } } } };
+  const saved = captureChartTemplateSettings(settings);
+  expect(saved.appearance.rsi?.plots?.main?.linePattern).toBe("dotted");
+  expect(captureChartTemplateSettings(saved)).toEqual(saved);
+  expect(chartTemplateSettingsKey(saved)).not.toBe(chartTemplateSettingsKey({}));
+});

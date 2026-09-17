@@ -37,6 +37,8 @@ function styleFixture() {
     getPane: () => ({ getHeight: () => 500 }),
   } as unknown as ISeriesApi<"Line">;
   const strokes: Array<{ color: string; opacity: number; width: number }> = [];
+  const dashes: number[][] = [];
+  let dash: number[] = [];
   const labels: Array<{ text: string; opacity: number }> = [];
   const fills: Array<{ color: string; opacity: number }> = [];
   const ctx = {
@@ -59,13 +61,17 @@ function styleFixture() {
     fill: vi.fn(),
     measureText: (label: string) => ({ width: label.length * 6 }),
   };
-  ctx.stroke.mockImplementation(() =>
+  ctx.setLineDash.mockImplementation((value: number[]) => {
+    dash = [...value];
+  });
+  ctx.stroke.mockImplementation(() => {
+    dashes.push([...dash]);
     strokes.push({
       color: ctx.strokeStyle,
       opacity: ctx.globalAlpha,
       width: ctx.lineWidth,
-    }),
-  );
+    });
+  });
   ctx.fillText.mockImplementation((text: string) =>
     labels.push({ text, opacity: ctx.globalAlpha }),
   );
@@ -76,6 +82,7 @@ function styleFixture() {
   return {
     ...plugin,
     strokes,
+    dashes,
     labels,
     fills,
     autoscale: (start = 0, end = 500) =>
@@ -430,4 +437,31 @@ describe("initial balance visual geometry", () => {
       maxValue: 110,
     });
   });
+});
+
+it("draws explicit IB line patterns and restores mixed default strokes without changing levels", () => {
+  const fixture = styleFixture();
+  const styles = {
+    high: { linePattern: "dotted" as const, lineWidth: 3 },
+    internal: { linePattern: "solid" as const },
+  };
+  fixture.update(range, DEFAULT_INITIAL_BALANCE, [], 5, styles);
+  fixture.draw();
+  expect(fixture.dashes.slice(0, 5)).toEqual([[3, 3], [], [], [], []]);
+  expect(fixture.dashes[5]).toEqual([3, 3]);
+  expect(fixture.dashes[6]).toEqual([5, 4]);
+  const prices = initialBalanceLevels(range, DEFAULT_INITIAL_BALANCE, styles).map(
+    (level) => level.price,
+  );
+  fixture.dashes.length = 0;
+  fixture.update(range, DEFAULT_INITIAL_BALANCE, [], 5, {
+    high: { linePattern: "default", lineWidth: 3 },
+    internal: { linePattern: "default" },
+  });
+  fixture.draw();
+  expect(fixture.dashes.slice(0, 3)).toEqual([[], [], [5, 4]]);
+  expect(fixture.dashes.slice(2).every((dash) => JSON.stringify(dash) === "[5,4]")).toBe(true);
+  expect(initialBalanceLevels(range, DEFAULT_INITIAL_BALANCE).map((level) => level.price)).toEqual(
+    prices,
+  );
 });

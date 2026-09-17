@@ -23,6 +23,7 @@ type InitialBalanceLevel = {
   label: string;
   color: string;
   dashed: boolean;
+  linePattern?: IndicatorStyle["linePattern"];
   width: number;
   opacity: number;
 };
@@ -83,6 +84,7 @@ export function initialBalanceLevels(
         ...level,
         color: style?.color ?? level.color,
         width: style?.lineWidth ?? level.width,
+        linePattern: style?.linePattern,
         opacity,
       },
     ];
@@ -226,7 +228,19 @@ export function createInitialBalancePrimitive(chart: IChartApi, series: ISeriesA
             ctx.globalAlpha = level.opacity;
             ctx.strokeStyle = level.color;
             ctx.lineWidth = level.width;
-            ctx.setLineDash(level.dashed ? [5, 4] : []);
+            const pattern =
+              !level.linePattern || level.linePattern === "default"
+                ? level.dashed
+                  ? "dashed"
+                  : "solid"
+                : level.linePattern;
+            ctx.setLineDash(
+              pattern === "dotted"
+                ? [level.width, level.width]
+                : pattern === "dashed"
+                  ? [5, 4]
+                  : [],
+            );
             ctx.beginPath();
             ctx.moveTo(shape.left, level.y);
             ctx.lineTo(shape.right, level.y);

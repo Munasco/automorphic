@@ -193,3 +193,18 @@ it("normalizes optional instance names without changing unrelated style patches"
   for (const displayName of [undefined, null, 7, {}, "x".repeat(81)])
     expect(normalizeIndicatorAppearance("rsi", { displayName })).toEqual({});
 });
+
+it("normalizes line patterns and resolves plot overrides independently of other appearance", () => {
+  expect(resolveIndicatorStyle("rsi", "main").linePattern).toBe("default");
+  const appearance = normalizeIndicatorAppearance("bollinger", {
+    linePattern: "dashed",
+    plots: { upper: { linePattern: "dotted" }, lower: { linePattern: "default" } },
+  });
+  expect(resolveIndicatorStyle("bollinger", "main", appearance).linePattern).toBe("dashed");
+  expect(resolveIndicatorStyle("bollinger", "upper", appearance).linePattern).toBe("dotted");
+  expect(resolveIndicatorStyle("bollinger", "lower", appearance).linePattern).toBe("default");
+  for (const linePattern of [null, 2, "invalid", {}, []])
+    expect(
+      normalizeIndicatorAppearance("rsi", { linePattern, plots: { main: { linePattern } } }),
+    ).toEqual({});
+});

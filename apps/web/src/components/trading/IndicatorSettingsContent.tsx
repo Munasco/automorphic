@@ -20,7 +20,7 @@ import {
   MAX_CHART_INDICATORS,
   type ChartIndicatorInstance,
 } from "./chartIndicatorInstances";
-import type { IndicatorStyle } from "./indicatorDefinition";
+import type { IndicatorStyle, IndicatorLinePattern } from "./indicatorDefinition";
 import { PopoverTitle } from "../ui/popover";
 import { cn } from "../../lib/utils";
 
@@ -244,6 +244,23 @@ export function IndicatorSettingsContent({
                       onChange={(value) => update({ lineWidth: Number(value) })}
                       options={[1, 2, 3, 4].map((width) => [String(width), `${width} px`] as const)}
                       className="w-20"
+                    />
+                  </label>
+                )}
+                {plotStyle.kind !== "fill" && plotStyle.kind !== "markers" && (
+                  <label className="flex items-center justify-between">
+                    Line pattern
+                    <DrawingSelect
+                      label={accessible(`${label} ${plotStyle.label} pattern`)}
+                      value={style.linePattern}
+                      onChange={(value) => update({ linePattern: value as IndicatorLinePattern })}
+                      options={[
+                        ["default", "Default"],
+                        ["solid", "Solid"],
+                        ["dotted", "Dotted"],
+                        ["dashed", "Dashed"],
+                      ]}
+                      className="w-28"
                     />
                   </label>
                 )}

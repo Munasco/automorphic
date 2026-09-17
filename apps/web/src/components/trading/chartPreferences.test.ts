@@ -5230,3 +5230,29 @@ it("keeps custom indicator names independent across copies, resets, and workspac
   expect(find(copy).appearance.displayName).toBe("");
   expect(find(base).appearance.displayName).toBe("Entry momentum");
 });
+
+it("persists independent plot patterns through duplication and reload and resets only appearance", async () => {
+  const store = useChartPreferences.getState();
+  const base = store.addIndicator("rsi")!;
+  store.setIndicatorInstanceAppearance(base, {
+    displayName: "Momentum",
+    plots: { main: { linePattern: "dotted", color: "#123456" } },
+  });
+  const copy = store.duplicateIndicatorInstance(base)!;
+  store.setIndicatorInstanceAppearance(copy, { plots: { main: { linePattern: "dashed" } } });
+  const find = (id: string) =>
+    getChartIndicatorInstances(useChartPreferences.getState()).find((item) => item.id === id)!;
+  const payload = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(payload);
+  await useChartPreferences.persist.rehydrate();
+  expect(find(base).appearance.plots?.main?.linePattern).toBe("dotted");
+  expect(find(copy).appearance.plots?.main).toEqual({ linePattern: "dashed", color: "#123456" });
+  useChartPreferences
+    .getState()
+    .setIndicatorInstanceAppearance(copy, { plots: { main: { linePattern: "default" } } });
+  expect(find(copy).appearance.plots?.main).toEqual({ linePattern: "default", color: "#123456" });
+  useChartPreferences.getState().resetIndicatorInstanceAppearance(base);
+  expect(find(base).appearance).toEqual({ displayName: "Momentum" });
+  expect(find(copy).appearance.plots?.main?.linePattern).toBe("default");
+});
