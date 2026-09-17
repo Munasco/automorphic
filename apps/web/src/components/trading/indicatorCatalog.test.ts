@@ -108,6 +108,7 @@ describe("indicator catalog and saved preferences", () => {
     expect(findIndicators(" MOVING average ").map((entry) => entry.key)).toEqual([
       "sma",
       "ema",
+      "dema",
       "wma",
       "vwma",
       "hma",
@@ -126,6 +127,7 @@ describe("indicator catalog and saved preferences", () => {
       "supertrend",
       "sma",
       "ema",
+      "dema",
       "wma",
       "vwma",
       "hma",

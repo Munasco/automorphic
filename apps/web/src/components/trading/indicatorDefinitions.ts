@@ -42,6 +42,7 @@ import { calculateSupertrend } from "./supertrend";
 import { calculateMoneyFlowIndex } from "./moneyFlowIndex";
 import { calculateHullMovingAverage } from "./hullMovingAverage";
 import { calculateWeightedMovingAverage } from "./weightedMovingAverage";
+import { calculateDoubleExponentialMovingAverage } from "./doubleExponentialMovingAverage";
 import {
   calculateBollingerBandwidth,
   calculateBollingerBandwidthExtremes,
@@ -338,6 +339,24 @@ export const INDICATOR_DEFINITIONS = [
     styles: [style("main", "Line", "#67a6ef", true)],
     calculate: ({ bars, inputs }) =>
       single(calculateEMA(bars, inputs.period ?? 20, PRICE_SOURCES[inputs.source ?? 0])),
+  }),
+  defineIndicator({
+    key: "dema",
+    label: "DEMA 9",
+    detail: "Double exponential moving average",
+    category: "Overlays",
+    placement: "overlay",
+    inputs: [length(9), priceSource],
+    styles: [style("main", "Line", "#38bdf8", true, 2)],
+    calculate: ({ bars, inputs }) =>
+      single(
+        calculateDoubleExponentialMovingAverage(
+          bars,
+          inputs.period,
+          PRICE_SOURCES[inputs.source ?? 0],
+        ),
+        { title: "DEMA", breakOnGaps: true },
+      ),
   }),
   defineIndicator({
     key: "wma",
