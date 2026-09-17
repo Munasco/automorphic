@@ -7,7 +7,7 @@ import { DrawingAlertExpiration } from "./DrawingAlertExpiration";
 import { AlertIcon } from "./AlertIcon";
 import { DrawingSelect, inputClass } from "./DrawingStyleControls";
 import type { ChartDrawing } from "./drawingGeometry";
-import { isChannelRegionCondition } from "./drawingAlerts";
+import { isChannelRegionCondition, isRectangleRegionCondition } from "./drawingAlerts";
 import type {
   DrawingAlert,
   NewDrawingAlert,
@@ -39,6 +39,10 @@ const conditions: readonly (readonly [DrawingAlertCondition, string])[] = [
   ["exiting-channel", "Exiting channel"],
   ["inside-channel", "Inside channel"],
   ["outside-channel", "Outside channel"],
+  ["entering-rectangle", "Entering rectangle"],
+  ["exiting-rectangle", "Exiting rectangle"],
+  ["inside-rectangle", "Inside rectangle"],
+  ["outside-rectangle", "Outside rectangle"],
 ];
 const triggers: readonly (readonly [DrawingAlertTrigger, string])[] = [
   ["once", "Once only"],
@@ -61,6 +65,7 @@ const drawingLabels: Partial<Record<ChartDrawing["kind"], string>> = {
   "horizontal-ray": "Horizontal ray",
   vertical: "Vertical line",
   channel: "Parallel channel",
+  rectangle: "Rectangle",
 };
 
 function monthAhead(now = Date.now()) {
@@ -106,10 +111,11 @@ export function DrawingAlertDialog({
 }) {
   const initial = alert ?? initialValues;
   const vertical = drawing.kind === "vertical";
+  const rectangle = drawing.kind === "rectangle";
   const messageInterval = /^\d+m$/.test(intervalLabel) ? intervalLabel.slice(0, -1) : intervalLabel;
   const [page, setPage] = useState<Page>("main");
   const [condition, setCondition] = useState<DrawingAlertCondition>(
-    initial?.condition ?? "crossing",
+    initial?.condition ?? (rectangle ? "entering-rectangle" : "crossing"),
   );
   const [trigger, setTrigger] = useState<DrawingAlertTrigger>(initial?.trigger ?? "once");
   const [expiresAt, setExpiresAt] = useState<number | null>(() =>
@@ -120,16 +126,17 @@ export function DrawingAlertDialog({
     initial?.channelBoundary ?? "upper",
   );
   const baseLabel = drawing.name || drawingLabels[drawing.kind] || "Drawing";
-  const targetLabel = (value: DrawingAlertCondition) =>
-    channel && !isChannelRegionCondition(value)
-      ? `${baseLabel} ${channelBoundary} boundary`
-      : baseLabel;
-  const label = targetLabel(condition);
+  const targetLabel = (value: DrawingAlertCondition, boundary = channelBoundary) =>
+    channel && !isChannelRegionCondition(value) ? `${baseLabel} ${boundary} boundary` : baseLabel;
+  const defaultMessage = (value: DrawingAlertCondition, boundary = channelBoundary) => {
+    const conditionLabel = conditions.find(([key]) => key === value)![1];
+    const region = isChannelRegionCondition(value) || isRectangleRegionCondition(value);
+    const suffix = region && !drawing.name ? "" : ` ${targetLabel(value, boundary).toLowerCase()}`;
+    return `${symbol}, ${messageInterval} ${conditionLabel}${suffix}`;
+  };
   const [message, setMessage] = useState<MessageDraft>(() => ({
     name: initial?.name ?? "",
-    message: initial
-      ? (initial.message ?? "")
-      : `${symbol}, ${messageInterval} Crossing ${label.toLowerCase()}`,
+    message: initial ? (initial.message ?? "") : defaultMessage(condition),
   }));
   const [messageDraft, setMessageDraft] = useState(message);
   const [notifications, setNotifications] = useState(() =>
@@ -158,14 +165,12 @@ export function DrawingAlertDialog({
       .join(", ") || "None";
 
   function changeCondition(next: DrawingAlertCondition) {
-    const previousLabel = conditions.find(([key]) => key === condition)![1];
-    const nextLabel = conditions.find(([key]) => key === next)![1];
-    const previousDefault = `${symbol}, ${messageInterval} ${previousLabel} ${label.toLowerCase()}`;
+    const previousDefault = defaultMessage(condition);
     setMessage((current) =>
       current.message === previousDefault
         ? {
             ...current,
-            message: `${symbol}, ${messageInterval} ${nextLabel} ${targetLabel(next).toLowerCase()}`,
+            message: defaultMessage(next),
           }
         : current,
     );
@@ -286,8 +291,11 @@ export function DrawingAlertDialog({
                   <DrawingSelect
                     label="Alert condition"
                     value={condition}
-                    options={conditions.filter(
-                      ([value]) => channel || !isChannelRegionCondition(value),
+                    options={conditions.filter(([value]) =>
+                      rectangle
+                        ? isRectangleRegionCondition(value)
+                        : !isRectangleRegionCondition(value) &&
+                          (channel || !isChannelRegionCondition(value)),
                     )}
                     className="h-[34px] w-full"
                     onChange={(value) => {
@@ -316,13 +324,12 @@ export function DrawingAlertDialog({
                       className="h-[34px] w-full"
                       onChange={(value) => {
                         if (value !== "upper" && value !== "lower") return;
-                        const conditionLabel = conditions.find(([key]) => key === condition)![1];
-                        const previousDefault = `${symbol}, ${messageInterval} ${conditionLabel} ${label.toLowerCase()}`;
+                        const previousDefault = defaultMessage(condition);
                         setMessage((current) =>
                           current.message === previousDefault
                             ? {
                                 ...current,
-                                message: `${symbol}, ${messageInterval} ${conditionLabel} ${baseLabel.toLowerCase()} ${value} boundary`,
+                                message: defaultMessage(condition, value),
                               }
                             : current,
                         );

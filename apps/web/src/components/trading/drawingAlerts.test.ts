@@ -8,6 +8,7 @@ import {
   supportsDrawingAlert,
   DRAWING_ALERTS_KEY,
   type DrawingAlertCondition,
+  type DrawingAlertExtent,
   type DrawingAlertProjection,
   type DrawingAlertSample,
   type DrawingAlertTrigger,
@@ -478,7 +479,10 @@ const projection: DrawingAlertProjection = {
   priceToCoordinate: (price) => -price,
   coordinateToPrice: (y) => -y,
 };
-function harness(alertProjection: DrawingAlertProjection = projection) {
+function harness(
+  alertProjection: DrawingAlertProjection = projection,
+  extent: DrawingAlertExtent = "visible",
+) {
   let time = EPOCH,
     nextId = 0;
   const values = new Map<string, string>();
@@ -492,6 +496,7 @@ function harness(alertProjection: DrawingAlertProjection = projection) {
   const open = (symbol = "GCZ6", intervalKey = "minute:5") =>
     createDrawingAlertSession({ symbol, intervalKey }, storage, {
       projection: alertProjection,
+      extent,
       now: () => time,
       id: () => `id-${++nextId}`,
       onTrigger,
@@ -1576,6 +1581,265 @@ describe("channel region alert operators", () => {
       for (const channelBoundary of ["upper", "lower"] as const) {
         expect(h.session.add({ ...rule(condition), channelBoundary })).toBeNull();
       }
+    }
+    expect(h.storage.setItem).not.toHaveBeenCalled();
+    h.session.dispose();
+  });
+});
+
+describe("rectangle zone alerts", () => {
+  const rectangle = (patch: Partial<ChartDrawing> = {}): ChartDrawing =>
+    line({
+      kind: "rectangle",
+      anchors: [
+        { time: 0 as Time, price: 100 },
+        { time: 10 as Time, price: 120 },
+      ],
+      ...patch,
+    });
+  const conditions = [
+    "entering-rectangle",
+    "exiting-rectangle",
+    "inside-rectangle",
+    "outside-rectangle",
+  ] as const;
+  const rule = (
+    condition: (typeof conditions)[number],
+    trigger: DrawingAlertTrigger = "once",
+  ): NewDrawingAlert => ({
+    drawingId: "line",
+    condition,
+    trigger,
+    expiresAt: null,
+  });
+
+  it.each([
+    ["entering-rectangle", 99, 100],
+    ["entering-rectangle", 121, 120],
+    ["exiting-rectangle", 100, 99],
+    ["exiting-rectangle", 120, 121],
+  ] as const)(
+    "%s detects %s to %s only after a continuous baseline",
+    (condition, before, after) => {
+      const h = harness();
+      h.session.syncDrawings([rectangle()]);
+      expect(supportsDrawingAlert(rectangle())).toBe(true);
+      const alert = h.session.add(rule(condition))!;
+      expect(alert).not.toBeNull();
+      h.session.observe(h.sample(before));
+      expect(h.onTrigger).not.toHaveBeenCalled();
+      h.session.observe(h.sample(after));
+      expect(h.onTrigger).toHaveBeenCalledTimes(1);
+      expect(h.onTrigger.mock.lastCall![0]).toMatchObject({
+        alertId: alert.id,
+        condition,
+        channelRange: { lower: 100, upper: 120 },
+        target: after <= 100 ? 100 : 120,
+      });
+      expect(h.onTrigger.mock.lastCall![0]).not.toHaveProperty("channelBoundary");
+      h.session.dispose();
+    },
+  );
+
+  it.each([
+    ["inside-rectangle", 100, true],
+    ["inside-rectangle", 120, true],
+    ["inside-rectangle", 99, false],
+    ["outside-rectangle", 99, true],
+    ["outside-rectangle", 121, true],
+    ["outside-rectangle", 100, false],
+    ["outside-rectangle", 120, false],
+  ] as const)(
+    "%s treats first sample %s as %s with inclusive edges",
+    (condition, price, matches) => {
+      const h = harness();
+      h.session.syncDrawings([rectangle()]);
+      h.session.add(rule(condition));
+      h.session.observe(h.sample(price));
+      expect(h.onTrigger).toHaveBeenCalledTimes(matches ? 1 : 0);
+      h.session.dispose();
+    },
+  );
+
+  it.each([false, true])(
+    "uses constant price bounds for reversed=%s anchors on nonlinear scales",
+    (reversed) => {
+      const h = harness({
+        ...projection,
+        priceToCoordinate: Math.log,
+        coordinateToPrice: Math.exp,
+      });
+      const anchors = [
+        { time: 0 as Time, price: 100 },
+        { time: 10 as Time, price: 400 },
+      ];
+      h.session.syncDrawings([rectangle({ anchors: reversed ? anchors.toReversed() : anchors })]);
+      h.session.add(rule("inside-rectangle", "once-per-bar"));
+      // A diagonal interpolation would produce 200 at the midpoint, incorrectly rejecting this price.
+      h.session.observe(h.sample(110, { logical: 5 }));
+      h.session.observe(h.sample(390, { logical: 9, barId: "bar-2" }));
+      expect(h.onTrigger).toHaveBeenCalledTimes(2);
+      const event = h.onTrigger.mock.lastCall![0];
+      expect(event).toMatchObject({ channelRange: { lower: 100, upper: 400 }, target: 400 });
+      h.session.dispose();
+    },
+  );
+
+  it("keeps the visible rectangle finite despite extension flags, while explicit infinite extent remains available", () => {
+    const h = harness();
+    h.session.syncDrawings([rectangle({ extendLeft: true, extendRight: true })]);
+    h.session.add(rule("inside-rectangle", "once-per-bar"));
+    h.session.observe(h.sample(110, { logical: -1 }));
+    h.session.observe(h.sample(110, { logical: 11, barId: "beyond" }));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    h.session.observe(h.sample(110, { logical: 0, barId: "left-edge" }));
+    h.session.observe(h.sample(110, { logical: 10, barId: "right-edge" }));
+    expect(h.onTrigger).toHaveBeenCalledTimes(2);
+    h.session.dispose();
+    const infinite = harness(projection, "infinite");
+    infinite.session.syncDrawings([rectangle()]);
+    infinite.session.add(rule("inside-rectangle"));
+    infinite.session.observe(infinite.sample(110, { logical: 11 }));
+    expect(infinite.onTrigger).toHaveBeenCalledTimes(1);
+    infinite.session.dispose();
+  });
+
+  it.each(["time-domain", "projection"] as const)(
+    "clears transition state across a missing %s without inventing a re-entry",
+    (gap) => {
+      let available = true;
+      const h = harness({
+        ...projection,
+        priceToCoordinate: (price) => (available ? -price : null),
+      });
+      h.session.syncDrawings([rectangle()]);
+      h.session.add(rule("entering-rectangle"));
+      h.session.observe(h.sample(99));
+      if (gap === "projection") available = false;
+      h.session.observe(h.sample(110, { logical: gap === "time-domain" ? 11 : 5 }));
+      available = true;
+      h.session.observe(h.sample(110));
+      expect(h.onTrigger).not.toHaveBeenCalled();
+      h.session.observe(h.sample(99));
+      h.session.observe(h.sample(110));
+      expect(h.onTrigger).toHaveBeenCalledTimes(1);
+      h.session.dispose();
+    },
+  );
+
+  it("rearms after resizing and preserves old range snapshots through save and reload", () => {
+    const h = harness();
+    h.session.syncDrawings([rectangle()]);
+    const alert = h.session.add(rule("entering-rectangle", "once-per-bar"))!;
+    h.session.observe(h.sample(99));
+    const resized = rectangle({
+      anchors: [
+        { time: 0 as Time, price: 90 },
+        { time: 10 as Time, price: 130 },
+      ],
+    });
+    h.session.syncDrawings([resized]);
+    h.session.observe(h.sample(99));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    h.session.observe(h.sample(89));
+    h.session.observe(h.sample(99));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    const history = h.session.getSnapshot().history;
+    expect(history[0]).toMatchObject({
+      alertId: alert.id,
+      condition: "entering-rectangle",
+      channelRange: { lower: 90, upper: 130 },
+      target: 90,
+    });
+    h.session.syncDrawings([rectangle()]);
+    expect(h.session.getSnapshot().history).toEqual(history);
+    const saved = parseDrawingAlerts(h.values.get(DRAWING_ALERTS_KEY)!);
+    expect(saved).toEqual(h.session.getSnapshot());
+    h.session.dispose();
+    const reloaded = h.open();
+    reloaded.syncDrawings([rectangle()]);
+    expect(reloaded.getSnapshot()).toEqual(saved);
+    reloaded.dispose();
+  });
+
+  it("retains an established entry baseline when irrelevant rectangle extension metadata changes", () => {
+    const h = harness();
+    h.session.syncDrawings([rectangle()]);
+    const alert = h.session.add(rule("entering-rectangle"))!;
+    h.session.observe(h.sample(99));
+    const armedAt = h.session.getSnapshot().alerts[0]!.armedAt;
+    h.storage.setItem.mockClear();
+    h.session.syncDrawings([rectangle({ extendLeft: true, extendRight: true })]);
+    expect(h.session.getSnapshot().alerts[0]!.armedAt).toBe(armedAt);
+    expect(h.storage.setItem).not.toHaveBeenCalled();
+    h.session.observe(h.sample(100));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    expect(h.onTrigger.mock.lastCall![0]).toMatchObject({
+      alertId: alert.id,
+      condition: "entering-rectangle",
+      channelRange: { lower: 100, upper: 120 },
+      target: 100,
+    });
+    h.session.dispose();
+  });
+
+  it("keeps a deleted zone disabled after restoration and requires a fresh baseline after explicit enable", () => {
+    const h = harness();
+    h.session.syncDrawings([rectangle()]);
+    const alert = h.session.add(rule("entering-rectangle"))!;
+    h.session.observe(h.sample(99));
+    h.session.syncDrawings([]);
+    expect(h.session.getSnapshot().alerts[0]).toMatchObject({
+      enabled: false,
+      disabledReason: "deleted",
+    });
+    expect(h.session.setEnabled(alert.id, true)).toBe(false);
+    h.session.syncDrawings([rectangle()]);
+    h.session.observe(h.sample(110));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    expect(h.session.setEnabled(alert.id, true)).toBe(true);
+    h.session.observe(h.sample(110));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    h.session.observe(h.sample(99));
+    h.session.observe(h.sample(110));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    h.session.dispose();
+  });
+
+  it("rejects mismatched drawing operators and boundary selectors without writing invalid rules", () => {
+    const h = harness();
+    for (const drawing of [
+      line(),
+      line({ kind: "vertical", anchors: [{ time: 5 as Time, price: 100 }] }),
+      line({
+        kind: "channel",
+        anchors: [
+          { time: 0 as Time, price: 100 },
+          { time: 10 as Time, price: 110 },
+          { time: 3 as Time, price: 123 },
+        ],
+      }),
+    ]) {
+      h.session.syncDrawings([drawing]);
+      for (const condition of conditions) expect(h.session.add(rule(condition))).toBeNull();
+    }
+    h.session.syncDrawings([rectangle()]);
+    h.storage.setItem.mockClear();
+    for (const condition of [
+      "above",
+      "below",
+      "crossing",
+      "crossing-up",
+      "crossing-down",
+      "entering-channel",
+      "exiting-channel",
+      "inside-channel",
+      "outside-channel",
+    ] as const) {
+      expect(h.session.add({ ...rule("inside-rectangle"), condition })).toBeNull();
+    }
+    for (const condition of conditions) {
+      expect(h.session.add({ ...rule(condition), channelBoundary: "upper" })).toBeNull();
     }
     expect(h.storage.setItem).not.toHaveBeenCalled();
     h.session.dispose();

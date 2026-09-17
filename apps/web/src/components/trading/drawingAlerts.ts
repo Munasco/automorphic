@@ -18,6 +18,10 @@ export const DRAWING_ALERT_CONDITIONS = [
   "exiting-channel",
   "inside-channel",
   "outside-channel",
+  "entering-rectangle",
+  "exiting-rectangle",
+  "inside-rectangle",
+  "outside-rectangle",
 ] as const;
 export const DRAWING_ALERT_TRIGGERS = [
   "once",
@@ -37,12 +41,25 @@ export const isChannelRegionCondition = (value: unknown) =>
   value === "exiting-channel" ||
   value === "inside-channel" ||
   value === "outside-channel";
+export const isRectangleRegionCondition = (value: unknown) =>
+  value === "entering-rectangle" ||
+  value === "exiting-rectangle" ||
+  value === "inside-rectangle" ||
+  value === "outside-rectangle";
+const isDrawingRegionCondition = (value: unknown) =>
+  isChannelRegionCondition(value) || isRectangleRegionCondition(value);
 const validChannelBoundary = (drawing: ChartDrawing, value: unknown) =>
-  drawing.kind === "channel" ? isChannelBoundary(value) : value === undefined;
+  drawing.kind === "channel" || drawing.kind === "rectangle"
+    ? isChannelBoundary(value)
+    : value === undefined;
 const validDrawingRule = (drawing: ChartDrawing, condition: unknown, boundary: unknown) =>
-  isChannelRegionCondition(condition)
-    ? drawing.kind === "channel" && boundary === undefined
-    : validChannelBoundary(drawing, boundary);
+  drawing.kind === "rectangle" || isRectangleRegionCondition(condition)
+    ? drawing.kind === "rectangle" &&
+      isRectangleRegionCondition(condition) &&
+      boundary === undefined
+    : isChannelRegionCondition(condition)
+      ? drawing.kind === "channel" && boundary === undefined
+      : validChannelBoundary(drawing, boundary);
 export type DrawingAlertProjection = {
   /** Use actual chart bar positions, including the drawing renderer's interpolation between bars. */
   logicalAt: (time: Time) => number | null;
@@ -60,6 +77,7 @@ const KINDS = new Set([
   "horizontal-ray",
   "vertical",
   "channel",
+  "rectangle",
 ]);
 export const supportsDrawingAlert = (drawing: ChartDrawing) =>
   KINDS.has(drawing.kind) && validDrawingAnchors(drawing.kind, drawing.anchors);
@@ -116,6 +134,16 @@ export function drawingAlertTarget(
     const b = drawing.anchors[1]!;
     const bx = projection.logicalAt(b.time);
     if (!finite(bx) || ax === bx) return null;
+    if (drawing.kind === "rectangle") {
+      if (extent === "visible" && (logical < Math.min(ax, bx) || logical > Math.max(ax, bx)))
+        return null;
+      if (
+        !finite(projection.priceToCoordinate(a.price)) ||
+        !finite(projection.priceToCoordinate(b.price))
+      )
+        return null;
+      return channelBoundary === "upper" ? Math.max(a.price, b.price) : Math.min(a.price, b.price);
+    }
     const extension = drawingLineExtensions(drawing);
     if (
       extent === "visible" &&
@@ -149,7 +177,7 @@ function fingerprint(drawing: ChartDrawing) {
   return JSON.stringify([
     drawing.kind,
     drawing.anchors.map((anchor) => [drawingTimeValue(anchor.time), anchor.price]),
-    drawingLineExtensions(drawing),
+    drawing.kind === "rectangle" ? null : drawingLineExtensions(drawing),
   ]);
 }
 export type DrawingAlertNotifications = { toast: boolean; sound: boolean; desktop: boolean };
@@ -261,7 +289,7 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
         (a.channelBoundary !== undefined &&
           (!isChannelBoundary(a.channelBoundary) ||
             a.targetKind === "time" ||
-            isChannelRegionCondition(a.condition))) ||
+            isDrawingRegionCondition(a.condition))) ||
         !(a.expiresAt === null || stamp(a.expiresAt)) ||
         typeof a.enabled !== "boolean" ||
         ![null, "user", "deleted", "expired", "triggered"].includes(a.disabledReason as null) ||
@@ -312,8 +340,8 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
         (e.channelBoundary !== undefined &&
           (!isChannelBoundary(e.channelBoundary) ||
             e.targetKind === "time" ||
-            isChannelRegionCondition(e.condition))) ||
-        (isChannelRegionCondition(e.condition) &&
+            isDrawingRegionCondition(e.condition))) ||
+        (isDrawingRegionCondition(e.condition) &&
           (!record(e.channelRange) ||
             !finite(e.channelRange.lower) ||
             !finite(e.channelRange.upper) ||
@@ -353,7 +381,7 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
           : {
               targetKind: "price" as const,
               target: e.target as number,
-              ...(isChannelRegionCondition(e.condition) && record(e.channelRange)
+              ...(isDrawingRegionCondition(e.condition) && record(e.channelRange)
                 ? {
                     channelRange: {
                       lower: e.channelRange.lower as number,
@@ -775,7 +803,7 @@ export function createDrawingAlertSession(
           const barTime = drawingTimeValue(sample.barTime);
           let target: number | null = null;
           let channelRange: { lower: number; upper: number } | undefined;
-          const regionRule = isChannelRegionCondition(a.condition);
+          const regionRule = isDrawingRegionCondition(a.condition);
           if (drawing && targetKindFor(drawing) === a.targetKind) {
             if (timeRule) {
               try {
@@ -783,7 +811,7 @@ export function createDrawingAlertSession(
               } catch {
                 /* A detached chart cannot supply a time-boundary projection. */
               }
-            } else if (regionRule && drawing.kind === "channel") {
+            } else if (regionRule && (drawing.kind === "channel" || drawing.kind === "rectangle")) {
               const lower = drawingAlertTarget(
                 drawing,
                 sample.logical,
@@ -860,13 +888,13 @@ export function createDrawingAlertSession(
               before.barTime !== null &&
               barTime !== null &&
               barTime > before.barTime
-            : a.condition === "entering-channel"
+            : a.condition === "entering-channel" || a.condition === "entering-rectangle"
               ? continuous && before.difference < 0 && difference >= 0
-              : a.condition === "exiting-channel"
+              : a.condition === "exiting-channel" || a.condition === "exiting-rectangle"
                 ? continuous && before.difference >= 0 && difference < 0
-                : a.condition === "inside-channel"
+                : a.condition === "inside-channel" || a.condition === "inside-rectangle"
                   ? difference >= 0
-                  : a.condition === "outside-channel"
+                  : a.condition === "outside-channel" || a.condition === "outside-rectangle"
                     ? difference < 0
                     : a.condition === "above"
                       ? difference > 0

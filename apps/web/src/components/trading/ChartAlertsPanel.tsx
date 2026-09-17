@@ -87,6 +87,10 @@ const drawingConditionLabel: Record<DrawingAlertCondition, string> = {
   "exiting-channel": "Exiting channel",
   "inside-channel": "Inside channel",
   "outside-channel": "Outside channel",
+  "entering-rectangle": "Entering rectangle",
+  "exiting-rectangle": "Exiting rectangle",
+  "inside-rectangle": "Inside rectangle",
+  "outside-rectangle": "Outside rectangle",
 };
 const drawingTriggerLabel: Record<DrawingAlertTrigger, string> = {
   once: "Once",

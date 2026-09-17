@@ -57,6 +57,17 @@ describe("drawing alert target labels", () => {
       }),
     ).toBe("Channel 24,000 – 24,301.25");
   });
+  it("identifies rectangle zones in alert history and exports", () => {
+    expect(
+      drawingAlertTargetLabel({
+        ...common,
+        condition: "exiting-rectangle",
+        targetKind: "price",
+        target: 24301.25,
+        channelRange: { lower: 24000, upper: 24301.25 },
+      }),
+    ).toBe("Rectangle 24,000 – 24,301.25");
+  });
   it("shows a vertical boundary as a UTC date and time, never as a price", () => {
     expect(drawingAlertTargetLabel(timeEvent((Date.UTC(2026, 8, 12, 14, 30) / 1000) as Time))).toBe(
       "Vertical line · Sep 12, 2026, 02:30 PM UTC",
