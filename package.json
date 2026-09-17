@@ -1,8 +1,10 @@
 {
   "name": "@t3tools/monorepo",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
+    "check:source-release": "node scripts/source-release-check.mjs",
     "prepare": "effect-tsgo patch && vp config --no-agent",
     "dev": "node scripts/with-tradovate.mjs node scripts/dev-runner.ts dev",
     "dev:share": "node scripts/with-tradovate.mjs node scripts/dev-runner.ts dev --share",
