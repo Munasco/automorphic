@@ -705,3 +705,28 @@ describe.each(["long-position", "short-position"] as const)("%s zone color templ
     expect(parseChartDrawings(JSON.stringify([reset]))).toEqual([reset]);
   });
 });
+
+it.each(["long-position", "short-position"] as const)(
+  "preserves %s compact tags in templates and removes the override on factory reset",
+  (kind) => {
+    const source: ChartDrawing = {
+      ...drawing,
+      kind,
+      positionCompactStats: true,
+      alwaysShowStats: true,
+      anchors: [
+        { time: 100 as Time, price: 100 },
+        { time: 200 as Time, price: kind === "long-position" ? 120 : 80 },
+        { time: 200 as Time, price: kind === "long-position" ? 90 : 110 },
+      ],
+    };
+    const template = normalizeDrawingTemplates(
+      JSON.parse(JSON.stringify(saveDrawingTemplate([], source, "Compact position"))),
+    )[0]!;
+    expect(template.settings.positionCompactStats).toBe(true);
+    const reset = applyDrawingTemplate(source, defaultDrawingTemplateSettings(kind));
+    expect(reset.positionCompactStats).toBeUndefined();
+    expect(reset.anchors).toEqual(source.anchors);
+    expect(applyDrawingTemplate(reset, template.settings)).toEqual(source);
+  },
+);

@@ -1682,6 +1682,11 @@ function PositionAppearance({
       {!toolbar && (
         <>
           <Check
+            label="Compact stats mode"
+            checked={drawing.positionCompactStats ?? false}
+            onChange={(positionCompactStats) => onChange({ positionCompactStats })}
+          />
+          <Check
             label="Always show stats"
             checked={drawing.alwaysShowStats ?? true}
             onChange={(alwaysShowStats) => onChange({ alwaysShowStats })}

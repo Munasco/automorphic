@@ -7862,3 +7862,48 @@ describe.each(["long-position", "short-position"] as const)(
     });
   },
 );
+
+it.each(["long-position", "short-position"] as const)(
+  "previews, cancels, saves and restores %s compact tags independently of stats visibility",
+  (kind) => {
+    const original: ChartDrawing = {
+      id: "compact-position",
+      kind,
+      color: "#123456",
+      width: 2,
+      alwaysShowStats: false,
+      anchors: [
+        { time: 100 as Time, price: 4900 },
+        { time: 300 as Time, price: kind === "long-position" ? 4940 : 4860 },
+        { time: 300 as Time, price: kind === "long-position" ? 4880 : 4920 },
+      ],
+    };
+    const f = fixture("position-compact-tags", JSON.stringify([original]));
+    const session = f.open();
+    const state = (): DrawingState => f.change.mock.lastCall![0];
+    session.selectDrawing(original.id);
+    expect(session.openSettings()).toBe(true);
+    expect(session.previewSettings({ positionCompactStats: true })).toBe(true);
+    expect(state().selected).toEqual({ ...original, positionCompactStats: true });
+    expect(session.getCommittedDrawings()).toEqual([original]);
+    expect(f.writes()).toBe(0);
+    session.closeSettings();
+    expect(state().selected).toEqual(original);
+    expect(session.openSettings()).toBe(true);
+    expect(session.previewSettings({ positionCompactStats: true })).toBe(true);
+    expect(session.applySettings({})).toBe(true);
+    const saved = { ...original, positionCompactStats: true };
+    expect(session.getCommittedDrawings()).toEqual([saved]);
+    expect(f.writes()).toBe(1);
+    session.undo();
+    expect(session.getCommittedDrawings()).toEqual([original]);
+    session.redo();
+    expect(session.getCommittedDrawings()).toEqual([saved]);
+    session.dispose();
+    const restored = fixture("position-compact-tags", f.saved()).open();
+    expect(restored.getCommittedDrawings()).toEqual([saved]);
+    restored.updateDrawing(original.id, { positionCompactStats: false });
+    expect(restored.getCommittedDrawings()).toEqual([{ ...saved, positionCompactStats: false }]);
+    restored.dispose();
+  },
+);

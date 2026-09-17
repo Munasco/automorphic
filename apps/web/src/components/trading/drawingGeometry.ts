@@ -129,6 +129,7 @@ export type DrawingSettings = {
   backgroundColor?: string;
   positionTargetColor?: string;
   positionStopColor?: string;
+  positionCompactStats?: boolean;
   showPrices?: boolean;
   showLevels?: boolean;
   showTrendLine?: boolean;
@@ -822,6 +823,7 @@ export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
     "showTrendLine",
     "showMiddlePoint",
     "alwaysShowStats",
+    "positionCompactStats",
     "extendLeft",
     "extendRight",
     "showPriceLabel",

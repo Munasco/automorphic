@@ -91,15 +91,18 @@ export function projectionDrawingGeometry(
   }
   if (isPositionDrawing(drawing.kind)) {
     const targetColor = drawing.positionTargetColor ?? "#26a69a",
-      stopColor = drawing.positionStopColor ?? "#ef5350";
+      stopColor = drawing.positionStopColor ?? "#ef5350",
+      compact = drawing.positionCompactStats === true;
     box(first.x, second.x, first.y, second.y, targetColor);
     label(
       { x: first.x, y: second.y },
       second,
-      `Target ${formatPrice(b.price)} · ${formatPrice(Math.abs(b.price - a.price))}`,
+      compact
+        ? `T ${formatPrice(b.price)}`
+        : `Target ${formatPrice(b.price)} · ${formatPrice(Math.abs(b.price - a.price))}`,
       targetColor,
     );
-    label(first, { x: second.x, y: first.y }, `Entry ${formatPrice(a.price)}`);
+    label(first, { x: second.x, y: first.y }, `${compact ? "E" : "Entry"} ${formatPrice(a.price)}`);
     if (!c) return result;
     const third = project(c);
     if (!third) return result;
@@ -108,16 +111,21 @@ export function projectionDrawingGeometry(
     label(
       { x: first.x, y: third.y },
       third,
-      `Stop ${formatPrice(c.price)} · ${formatPrice(Math.abs(c.price - a.price))}`,
+      compact
+        ? `S ${formatPrice(c.price)}`
+        : `Stop ${formatPrice(c.price)} · ${formatPrice(Math.abs(c.price - a.price))}`,
       stopColor,
     );
     const risk = Math.abs(c.price - a.price),
       reward = Math.abs(b.price - a.price);
-    if (risk > 0 && Number.isFinite(reward / risk))
-      label(first, { x: second.x, y: first.y }, `Risk/reward ${(reward / risk).toFixed(2)}`);
-    const ratioLabel = result.lines.at(-1);
-    if (ratioLabel?.label?.startsWith("Risk/reward"))
-      ratioLabel.labelPoint = { x: (first.x + second.x) / 2, y: first.y + 18 };
+    if (risk > 0 && Number.isFinite(reward / risk)) {
+      label(
+        first,
+        { x: second.x, y: first.y },
+        `${compact ? "R/R" : "Risk/reward"} ${(reward / risk).toFixed(2)}`,
+      );
+      result.lines.at(-1)!.labelPoint = { x: (first.x + second.x) / 2, y: first.y + 18 };
+    }
     return result;
   }
   const delta = b.price - a.price;

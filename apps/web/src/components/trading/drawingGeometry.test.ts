@@ -2429,3 +2429,44 @@ describe("position zone palette storage", () => {
     },
   );
 });
+
+describe.each(["long-position", "short-position"] as const)("%s compact statistics", (kind) => {
+  const source = drawing(kind, [
+    [100, 300],
+    [200, kind === "long-position" ? 400 : 200],
+    [200, kind === "long-position" ? 250 : 350],
+  ]);
+  it("shortens labels without changing zone geometry, handles, colors or the ratio position", () => {
+    const full = geometry(source);
+    const compact = geometry({ ...source, positionCompactStats: true });
+    expect(full.lines.filter((line) => line.label).map((line) => line.label)).toEqual([
+      `Target ${kind === "long-position" ? 400 : 200} · 100`,
+      "Entry 300",
+      `Stop ${kind === "long-position" ? 250 : 350} · 50`,
+      "Risk/reward 2.00",
+    ]);
+    expect(compact.lines.filter((line) => line.label).map((line) => line.label)).toEqual([
+      `T ${kind === "long-position" ? 400 : 200}`,
+      "E 300",
+      `S ${kind === "long-position" ? 250 : 350}`,
+      "R/R 2.00",
+    ]);
+    expect(compact.polygons).toEqual(full.polygons);
+    expect(compact.handles).toEqual(full.handles);
+    const withoutLabels = (lines: typeof compact.lines) =>
+      lines.map(({ label: _label, ...rest }) => rest);
+    expect(withoutLabels(compact.lines)).toEqual(withoutLabels(full.lines));
+    expect(compact.lines.at(-1)!.labelPoint).toEqual({ x: 150, y: 218 });
+    expect(geometry({ ...source, positionCompactStats: false })).toEqual(full);
+  });
+  it("round trips true and false and ignores malformed compact preferences", () => {
+    for (const positionCompactStats of [true, false]) {
+      const saved = { ...source, positionCompactStats };
+      expect(parseChartDrawings(JSON.stringify([saved]))).toEqual([saved]);
+    }
+    for (const positionCompactStats of ["true", 1, null])
+      expect(parseChartDrawings(JSON.stringify([{ ...source, positionCompactStats }]))).toEqual([
+        source,
+      ]);
+  });
+});
