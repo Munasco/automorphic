@@ -98,7 +98,7 @@ import { DrawingInlineTextEditor } from "./DrawingInlineTextEditor";
 import { ChartPriceAlertsOverlay } from "./ChartPriceAlertsOverlay";
 import type { ChartAlertsController } from "./ChartAlertsPanel";
 import type { ChartPriceAlert } from "./chartAlerts";
-import { ChartDataTableDialog, type ChartTableSource } from "./ChartDataTableDialog";
+import type { ChartTableSource } from "./ChartDataTableDialog";
 import { ChartTemplatesControl, ChartTemplatesDialog } from "./ChartTemplatesMenu";
 import { ChartContextMenu } from "./ChartContextMenu";
 import { DrawingObjectTree } from "./DrawingObjectTree";
@@ -392,7 +392,6 @@ export function TradovateChart({
   const [localObjectTreeOpen, setLocalObjectTreeOpen] = useState(false);
   const objectTreeOpen = objectTreeState?.open ?? localObjectTreeOpen;
   const setObjectTreeOpen = objectTreeState?.onOpenChange ?? setLocalObjectTreeOpen;
-  const [tableOpen, setTableOpen] = useState(false);
   const [measureEngine, setMeasureEngine] = useState<ChartEngine | null>(null);
   const [goToDateOpen, setGoToDateOpen] = useState(false);
   const [templateDialog, setTemplateDialog] = useState<"save" | "manage" | null>(null);
@@ -1523,18 +1522,6 @@ export function TradovateChart({
           onClose={() => setGoToDateOpen(false)}
         />
       ) : null}
-      {tableOpen && activeEngine ? (
-        <ChartDataTableDialog
-          key={`${symbol}:${chartIntervalKey(interval)}`}
-          source={activeEngine}
-          chart={activeEngine.chart}
-          symbol={symbol}
-          intervalLabel={formatChartInterval(interval)}
-          timeZone={intraday ? settings.timeZone : "UTC"}
-          formatPrice={(price) => activeEngine.prices.candles.priceFormatter().format(price)}
-          onClose={() => setTableOpen(false)}
-        />
-      ) : null}
       {templateDialog ? (
         <ChartTemplatesDialog
           initialMode={templateDialog}
@@ -1817,7 +1804,6 @@ export function TradovateChart({
                 onAddAlert={onAddPriceAlert}
                 onOpenSettings={() => setDisplaySettingsOpen(true)}
                 onOpenObjectTree={() => setObjectTreeOpen(true)}
-                onOpenTable={() => setTableOpen(true)}
                 onGoToDate={() => setGoToDateOpen(true)}
                 onSaveTemplate={() => setTemplateDialog("save")}
                 onManageTemplates={() => setTemplateDialog("manage")}
