@@ -616,20 +616,34 @@ function DrawingSettings({
                 <ChannelAppearance drawing={draft} onChange={update} />
               ) : null}
               {draft.kind === "bars-pattern" ? (
-                <div className="flex items-center justify-between gap-4 text-sm">
-                  <span>Mode</span>
-                  <DrawingSelect
-                    label="Bars pattern mode"
-                    value={draft.patternMode ?? "bars"}
-                    options={BAR_PATTERN_MODES.map((mode) => [
-                      mode,
-                      mode === "bars" ? "Bars" : `Line (${mode[0]!.toUpperCase()}${mode.slice(1)})`,
-                    ])}
-                    onChange={(patternMode) =>
-                      update({ patternMode: patternMode as BarPatternMode })
-                    }
-                    className="w-40"
+                <div className="space-y-3">
+                  <Check
+                    label="Mirrored (vertical)"
+                    checked={draft.patternMirrored ?? false}
+                    onChange={(patternMirrored) => update({ patternMirrored })}
                   />
+                  <Check
+                    label="Flipped (horizontal)"
+                    checked={draft.patternFlipped ?? false}
+                    onChange={(patternFlipped) => update({ patternFlipped })}
+                  />
+                  <div className="flex items-center justify-between gap-4 text-sm">
+                    <span>Mode</span>
+                    <DrawingSelect
+                      label="Bars pattern mode"
+                      value={draft.patternMode ?? "bars"}
+                      options={BAR_PATTERN_MODES.map((mode) => [
+                        mode,
+                        mode === "bars"
+                          ? "Bars"
+                          : `Line (${mode[0]!.toUpperCase()}${mode.slice(1)})`,
+                      ])}
+                      onChange={(patternMode) =>
+                        update({ patternMode: patternMode as BarPatternMode })
+                      }
+                      className="w-40"
+                    />
+                  </div>
                 </div>
               ) : null}
               {draft.kind === "ghost-feed" ? (

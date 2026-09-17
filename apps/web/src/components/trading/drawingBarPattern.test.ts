@@ -128,3 +128,137 @@ describe("frozen bars pattern display sources", () => {
     },
   );
 });
+
+describe("bars pattern reflections", () => {
+  const asymmetric = (): ChartDrawing => ({
+    ...shape(),
+    anchors: [
+      { time: 100 as DrawingAnchor["time"], price: 14 },
+      { time: 300 as DrawingAnchor["time"], price: 18 },
+    ],
+    pattern: [
+      [10, 18, 6, 14],
+      [20, 32, 12, 24],
+      [16, 30, 8, 18],
+    ],
+  });
+
+  it.each([
+    [true, false, { x: 100, y: 486 }, { x: 100, y: 474 }],
+    [false, true, { x: 300, y: 482 }, { x: 300, y: 494 }],
+    [true, true, { x: 300, y: 486 }, { x: 300, y: 474 }],
+  ] as const)(
+    "reflects complete OHLC sticks with mirrored=%s flipped=%s",
+    (patternMirrored, patternFlipped, from, to) => {
+      const drawing = { ...asymmetric(), patternMirrored, patternFlipped };
+      const before = structuredClone(drawing);
+      const result = barPatternGeometry(drawing, project);
+      const baseline = barPatternGeometry(asymmetric(), project);
+      expect(result.lines).toHaveLength(9);
+      expect(result.lines[0]).toEqual({ from, to });
+      // Open/close ticks must reflect too, including their left/right orientation.
+      expect(result.lines).toEqual(
+        baseline.lines.map((line) => ({
+          ...line,
+          from: {
+            x: patternFlipped ? 400 - line.from.x : line.from.x,
+            y: patternMirrored ? 968 - line.from.y : line.from.y,
+          },
+          to: {
+            x: patternFlipped ? 400 - line.to.x : line.to.x,
+            y: patternMirrored ? 968 - line.to.y : line.to.y,
+          },
+        })),
+      );
+      expect(result.handles).toEqual(baseline.handles);
+      expect(drawing).toEqual(before);
+    },
+  );
+
+  it.each([
+    ["open", [10, 20, 16]],
+    ["high", [18, 32, 30]],
+    ["low", [6, 12, 8]],
+    ["close", [14, 24, 18]],
+  ] as const)(
+    "combines both reflections for the %s curve without modifying frozen samples",
+    (patternMode, values) => {
+      const drawing = { ...asymmetric(), patternMode, patternMirrored: true, patternFlipped: true };
+      const before = structuredClone(drawing);
+      const geometry = barPatternGeometry(drawing, project);
+      expect(geometry.lines).toEqual([
+        { from: { x: 300, y: 468 + values[0] }, to: { x: 200, y: 468 + values[1] } },
+        { from: { x: 200, y: 468 + values[1] }, to: { x: 100, y: 468 + values[2] } },
+      ]);
+      expect(geometry.handles).toEqual([
+        { x: 100, y: 486 },
+        { x: 300, y: 482 },
+      ]);
+      expect(drawing).toEqual(before);
+      expect(parseChartDrawings(JSON.stringify([drawing]))).toEqual([drawing]);
+    },
+  );
+
+  it.each([-1, 1])(
+    "reflects final nonlinear projected coordinates with axis direction %s",
+    (direction) => {
+      const drawing = { ...asymmetric(), patternMirrored: true, patternFlipped: true };
+      const nonlinear = ({ time, price }: DrawingAnchor) => ({
+        x: Number(time) * 2 + 7,
+        y: 200 + direction * 20 * Math.log(price),
+      });
+      const geometry = barPatternGeometry(drawing, nonlinear);
+      // The middle high of 32 reflects to geometric counterpart 14*18/32, not arithmetic price 0.
+      expect(geometry.lines[3]!.from.x).toBe(407);
+      expect(geometry.lines[3]!.from.y).toBeCloseTo(
+        200 + direction * 20 * Math.log((14 * 18) / 32),
+      );
+      expect(geometry.handles).toEqual(drawing.anchors.map(nonlinear));
+      expect(geometry.lines[1]!.from.x).toBe(612); // first open tick reflects to the right of x607
+    },
+  );
+
+  it("reflects a flat-ended source around flat destination anchors without dividing by its zero change", () => {
+    const drawing: ChartDrawing = {
+      ...asymmetric(),
+      anchors: [
+        { time: 100 as DrawingAnchor["time"], price: 20 },
+        { time: 300 as DrawingAnchor["time"], price: 20 },
+      ],
+      pattern: [
+        [10, 18, 6, 14],
+        [20, 32, 12, 24],
+        [16, 30, 8, 14],
+      ],
+      patternMode: "close",
+      patternMirrored: true,
+      patternFlipped: true,
+    };
+    const result = barPatternGeometry(drawing, project);
+    expect(result.lines).toEqual([
+      { from: { x: 300, y: 480 }, to: { x: 200, y: 490 } },
+      { from: { x: 200, y: 490 }, to: { x: 100, y: 480 } },
+    ]);
+    expect(result.handles).toEqual([
+      { x: 100, y: 480 },
+      { x: 300, y: 480 },
+    ]);
+  });
+
+  it("keeps omitted and false flags equivalent and roundtrips explicit false values", () => {
+    const drawing = asymmetric();
+    const explicit = { ...drawing, patternMirrored: false, patternFlipped: false };
+    expect(barPatternGeometry(explicit, project)).toEqual(barPatternGeometry(drawing, project));
+    expect(parseChartDrawings(JSON.stringify([explicit]))).toEqual([explicit]);
+    expect(parseChartDrawings(JSON.stringify([drawing]))).toEqual([drawing]);
+  });
+
+  it("rejects nonboolean saved reflection metadata without discarding valid frozen geometry", () => {
+    const drawing = asymmetric();
+    const restored = parseChartDrawings(
+      JSON.stringify([{ ...drawing, patternMirrored: "true", patternFlipped: 1 }]),
+    );
+    expect(restored).toEqual([drawing]);
+    expect(restored[0]!.pattern).toEqual(drawing.pattern);
+  });
+});

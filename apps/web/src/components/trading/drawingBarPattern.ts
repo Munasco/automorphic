@@ -98,5 +98,17 @@ export function barPatternGeometry(
       { from: { x, y: c.y }, to: { x: x + half, y: c.y } },
     );
   });
+  if (drawing.patternMirrored || drawing.patternFlipped) {
+    // Reflect the finished geometry so line sources and OHLC ticks behave alike on every axis scale.
+    const reflect = (point: DrawingPoint): DrawingPoint => ({
+      x: drawing.patternFlipped ? first.x + last.x - point.x : point.x,
+      y: drawing.patternMirrored ? first.y + last.y - point.y : point.y,
+    });
+    result.lines = result.lines.map((line) => ({
+      ...line,
+      from: reflect(line.from),
+      to: reflect(line.to),
+    }));
+  }
   return result;
 }

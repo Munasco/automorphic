@@ -105,6 +105,8 @@ export type DrawingSettings = {
   ghostBars?: number;
   vwapSource?: AnchoredVwapSource;
   patternMode?: BarPatternMode;
+  patternMirrored?: boolean;
+  patternFlipped?: boolean;
   lineOpacity?: number;
   textOpacity?: number;
   trendLine?: DrawingLineAppearance;
@@ -810,6 +812,8 @@ export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
     "regressionUseLowerDeviation",
     "regressionShowPearson",
     "reverse",
+    "patternMirrored",
+    "patternFlipped",
     "background",
     "showPrices",
     "showLevels",
