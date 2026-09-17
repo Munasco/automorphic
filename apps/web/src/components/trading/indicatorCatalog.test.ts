@@ -1520,3 +1520,63 @@ describe("TRIX oscillator", () => {
       expect(updateIndicatorInputs("trix", current, patch)).toBeNull();
   });
 });
+
+describe("Momentum oscillator", () => {
+  it("discovers Momentum with source and length inputs, disabled in existing workspaces", () => {
+    expect(findIndicators("MOM Price change").map((i) => i.key)).toEqual(["momentum"]);
+    expect(getIndicatorInputs("momentum")).toEqual({ period: 10, source: 0 });
+    expect(getIndicatorLabel("momentum", { momentum: { period: 3, source: 1 } })).toBe(
+      "Momentum 3",
+    );
+    expect(normalizeChartPreferences({ indicators: { ema: true } }).indicators).toMatchObject({
+      ema: true,
+      momentum: false,
+    });
+    for (const patch of [
+      { period: 0 },
+      { period: 1.5 },
+      { period: 501 },
+      { source: 7 },
+      { source: -1 },
+    ])
+      expect(updateIndicatorInputs("momentum", {}, patch)).toBeNull();
+  });
+  it("plots source differences in price units with a zero reference and explicit gaps", () => {
+    const definition = INDICATOR_CATALOG.find((i) => i.key === "momentum")!;
+    const bars = [0, 10, 25, -5, 30].map((open, i) => ({
+      time: i + 1,
+      open,
+      close: 100,
+      high: 110,
+      low: -10,
+      volume: 1,
+    }));
+    const result = definition.calculate({
+      bars,
+      inputs: { period: 2, source: 1 },
+      interval: 5,
+      session: DEFAULT_INITIAL_BALANCE,
+    });
+    expect(definition.placement).toBe("pane");
+    expect(result.plots).toHaveLength(1);
+    expect(result.plots[0]).toMatchObject({
+      id: "main",
+      styleKey: "main",
+      title: "Momentum",
+      levels: [0],
+      breakOnGaps: true,
+      points: [
+        { time: 3, value: 25 },
+        { time: 4, value: -15 },
+        { time: 5, value: 5 },
+      ],
+    });
+    const flat = definition.calculate({
+      bars,
+      inputs: { period: 2, source: 0 },
+      interval: 5,
+      session: DEFAULT_INITIAL_BALANCE,
+    });
+    expect(flat.plots[0]!.points.every((p) => p.value === 0)).toBe(true);
+  });
+});

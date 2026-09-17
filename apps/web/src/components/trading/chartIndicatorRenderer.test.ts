@@ -1016,7 +1016,7 @@ describe("native indicator renderer", () => {
     const result = renderer.update([], all, DEFAULT_INITIAL_BALANCE, 15);
     expect(result.readings).toEqual({});
     expect(result.initialBalanceStatus).toContain("waiting");
-    expect(harness.paneCount()).toBe(17);
+    expect(harness.paneCount()).toBe(18);
     expect(harness.series.every((series) => series.data.length === 0)).toBe(true);
     expect(() => renderer.update([], disabled, DEFAULT_INITIAL_BALANCE, 15)).not.toThrow();
     expect(harness.series).toHaveLength(0);

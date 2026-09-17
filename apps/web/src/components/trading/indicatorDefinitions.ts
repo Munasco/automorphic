@@ -45,6 +45,7 @@ import { calculateWeightedMovingAverage } from "./weightedMovingAverage";
 import { calculateDoubleExponentialMovingAverage } from "./doubleExponentialMovingAverage";
 import { calculateTripleExponentialMovingAverage } from "./tripleExponentialMovingAverage";
 import { calculateTRIX } from "./trix";
+import { calculateMomentum } from "./momentum";
 import {
   calculateBollingerBandwidth,
   calculateBollingerBandwidthExtremes,
@@ -1008,6 +1009,21 @@ export const INDICATOR_DEFINITIONS = [
     calculate: ({ bars, inputs }) =>
       single(calculateROC(bars, inputs.period, PRICE_SOURCES[inputs.source ?? 0]), {
         title: "ROC",
+        levels: [0],
+        breakOnGaps: true,
+      }),
+  }),
+  defineIndicator({
+    key: "momentum",
+    label: "Momentum 10",
+    detail: "MOM · Price change over a chosen lookback",
+    category: "Oscillators",
+    placement: "pane",
+    inputs: [length(10), priceSource],
+    styles: [style("main", "Momentum", "#67a6ef", true, 2)],
+    calculate: ({ bars, inputs }) =>
+      single(calculateMomentum(bars, inputs.period, PRICE_SOURCES[inputs.source ?? 0]), {
+        title: "Momentum",
         levels: [0],
         breakOnGaps: true,
       }),
