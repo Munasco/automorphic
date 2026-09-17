@@ -5192,3 +5192,41 @@ it("persists pinch zoom independently of wheel zoom and ignores invalid or uncha
     chartZoomAnchor: "right",
   });
 });
+
+it("keeps custom indicator names independent across copies, resets, and workspace reload", async () => {
+  const store = useChartPreferences.getState();
+  const base = store.addIndicator("rsi")!;
+  store.setIndicatorInstanceAppearance(base, {
+    displayName: "  Entry momentum  ",
+    color: "#123456",
+  });
+  const copy = store.duplicateIndicatorInstance(base)!;
+  const instances = () => getChartIndicatorInstances(useChartPreferences.getState());
+  const find = (id: string) => instances().find((item) => item.id === id)!;
+  expect(find(copy).appearance.displayName).toBe("Entry momentum");
+  store.setIndicatorInstanceAppearance(copy, { displayName: "Exit momentum" });
+  store.setIndicatorInstanceInputs(copy, { period: 21 });
+  store.setIndicatorInstanceAppearance(base, { lineWidth: 3 });
+  for (const displayName of [null, {}, 42, "x".repeat(81)])
+    store.setIndicatorInstanceAppearance(base, { displayName: displayName as never });
+  expect(find(base).appearance.displayName).toBe("Entry momentum");
+  expect(find(copy).appearance.displayName).toBe("Exit momentum");
+  const order = instances().map((item) => item.id);
+  for (const id of [base, copy]) {
+    store.resetIndicatorInstanceInputs(id);
+    store.resetIndicatorInstanceAppearance(id);
+    store.resetIndicatorInstance(id);
+  }
+  expect(find(base).appearance).toEqual({ displayName: "Entry momentum" });
+  expect(find(copy).appearance).toEqual({ displayName: "Exit momentum" });
+  expect(instances().map((item) => item.id)).toEqual(order);
+  const payload = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(payload);
+  await useChartPreferences.persist.rehydrate();
+  expect(find(base).appearance.displayName).toBe("Entry momentum");
+  expect(find(copy).appearance.displayName).toBe("Exit momentum");
+  useChartPreferences.getState().setIndicatorInstanceAppearance(copy, { displayName: "  " });
+  expect(find(copy).appearance.displayName).toBe("");
+  expect(find(base).appearance.displayName).toBe("Entry momentum");
+});

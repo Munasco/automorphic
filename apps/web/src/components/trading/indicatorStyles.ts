@@ -3,6 +3,7 @@ import { getIndicatorDefinition, type IndicatorKey } from "./indicatorCatalog";
 import type { IndicatorStyle } from "./indicatorDefinition";
 
 export type IndicatorAppearance = IndicatorStyle & {
+  displayName?: string;
   plots?: Record<string, IndicatorStyle>;
   histogramPriceLabel?: boolean;
   timeframeVisibility?: DrawingVisibility;
@@ -34,6 +35,12 @@ export function normalizeIndicatorAppearance(
 ): IndicatorAppearance {
   const next: IndicatorAppearance = normalizeStyle(value);
   if (!value || typeof value !== "object") return next;
+  if (
+    "displayName" in value &&
+    typeof value.displayName === "string" &&
+    value.displayName.trim().length <= 80
+  )
+    next.displayName = value.displayName.trim();
   if ("timeframeVisibility" in value)
     next.timeframeVisibility = sanitizeDrawingVisibility(value.timeframeVisibility);
   const histogramPriceLabel = (value as IndicatorAppearance).histogramPriceLabel;

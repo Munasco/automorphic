@@ -1,5 +1,10 @@
 import { expect, it } from "vite-plus/test";
-import { drawingMatchesSearch, drawingLabel, objectTreeMatches } from "./drawingObjectSearch";
+import {
+  filterChartObjects,
+  drawingMatchesSearch,
+  drawingLabel,
+  objectTreeMatches,
+} from "./drawingObjectSearch";
 import type { ChartDrawing } from "./drawingGeometry";
 const drawing = {
   id: "one",
@@ -61,4 +66,15 @@ it("combines type filters with search without excluding hidden objects or changi
   expect(result.drawings).toEqual([hidden]);
   expect(result.drawings[0]).toBe(hidden);
   expect(objects).toEqual([drawing, hidden]);
+});
+
+it("finds renamed indicators by custom name or original type and inputs", () => {
+  const entry = { label: "Entry momentum", searchText: "Entry momentum (RSI 14)" };
+  const exit = { label: "Exit momentum", searchText: "Exit momentum (RSI 21)" };
+  expect(filterChartObjects([], [entry, exit], "entry rsi 14", "all").indicators).toEqual([entry]);
+  expect(filterChartObjects([], [entry, exit], "rsi", "indicators").indicators).toEqual([
+    entry,
+    exit,
+  ]);
+  expect(filterChartObjects([], [entry, exit], "rsi 21", "drawings").indicators).toEqual([]);
 });

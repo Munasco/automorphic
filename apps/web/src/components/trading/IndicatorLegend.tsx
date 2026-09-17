@@ -7,7 +7,11 @@ import { DrawingToolIcon } from "./DrawingToolIcon";
 import { INDICATOR_INPUTS, getIndicatorDefinition, getIndicatorLabel } from "./indicatorCatalog";
 import { INDICATOR_COLORS, type IndicatorReadings } from "./chartIndicatorRenderer";
 import type { useChartPreferences } from "./chartPreferences";
-import { getChartIndicatorInstances, indicatorReadingKey } from "./chartIndicatorInstances";
+import {
+  getChartIndicatorInstances,
+  indicatorReadingKey,
+  indicatorInstanceLabels,
+} from "./chartIndicatorInstances";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
@@ -50,7 +54,7 @@ export function IndicatorLegend({
           const hiddenOnTimeframe = !isIndicatorVisibleOnTimeframe(appearance, interval);
           const muted = hidden || hiddenOnTimeframe;
           const { detail } = getIndicatorDefinition(key);
-          const label = getIndicatorLabel(key, { [key]: inputs });
+          const { description: label, original } = indicatorInstanceLabels(instance);
           const index = (indices.get(key) ?? 0) + 1;
           indices.set(key, index);
           const accessible = (text: string) =>
@@ -115,18 +119,19 @@ export function IndicatorLegend({
                         setSettingsId(id);
                       }}
                       className={cn(
-                        "shrink-0 rounded outline-none focus-visible:ring-1 focus-visible:ring-blue-400",
+                        "max-w-[12rem] truncate rounded outline-none focus-visible:ring-1 focus-visible:ring-blue-400",
                         muted && "text-zinc-600",
                       )}
                     />
                   }
                 >
-                  {key === "volume"
-                    ? "Vol"
-                    : getIndicatorLabel(key, { [key]: inputs }, settings.showIndicatorInputs)}
+                  {appearance.displayName ||
+                    (key === "volume"
+                      ? "Vol"
+                      : getIndicatorLabel(key, { [key]: inputs }, settings.showIndicatorInputs))}
                 </TooltipTrigger>
                 <TooltipPopup>
-                  {hiddenOnTimeframe ? `Hidden on this timeframe. ${description}` : description}
+                  {`${appearance.displayName ? `${label}. ` : `${original}. `}${hiddenOnTimeframe ? `Hidden on this timeframe. ${description}` : description}`}
                 </TooltipPopup>
               </Tooltip>
               <div

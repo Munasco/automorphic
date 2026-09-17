@@ -45,7 +45,7 @@ export type ObjectTreeFilter = "all" | "drawings" | "indicators";
 export const validObjectTreeFilter = (value: unknown): value is ObjectTreeFilter =>
   value === "all" || value === "drawings" || value === "indicators";
 
-export function filterChartObjects<T extends { label: string }>(
+export function filterChartObjects<T extends { label: string; searchText?: string }>(
   drawings: readonly ChartDrawing[],
   indicators: readonly T[],
   query: string,
@@ -59,6 +59,8 @@ export function filterChartObjects<T extends { label: string }>(
     indicators:
       type === "drawings"
         ? []
-        : indicators.filter((indicator) => objectTreeMatches(query, indicator.label)),
+        : indicators.filter((indicator) =>
+            objectTreeMatches(query, indicator.label, indicator.searchText),
+          ),
   };
 }

@@ -532,3 +532,25 @@ it("captures pinch zoom independently and restores enabled behavior for older te
     [true, true],
   ]);
 });
+
+it("captures named indicator instances independently in templates", () => {
+  const source = {
+    indicators: { rsi: true },
+    appearance: { rsi: { displayName: "Entry" } },
+    extraIndicators: [
+      {
+        id: "exit-rsi",
+        key: "rsi",
+        hidden: false,
+        inputs: { period: 21 },
+        appearance: { displayName: "Exit" },
+      },
+    ],
+  };
+  const saved = captureChartTemplateSettings(source);
+  source.appearance.rsi.displayName = "Changed";
+  expect(saved.appearance.rsi?.displayName).toBe("Entry");
+  expect(saved.extraIndicators[0]?.appearance.displayName).toBe("Exit");
+  expect(captureChartTemplateSettings(saved)).toEqual(saved);
+  expect(chartTemplateSettingsKey(saved)).not.toBe(chartTemplateSettingsKey(source));
+});

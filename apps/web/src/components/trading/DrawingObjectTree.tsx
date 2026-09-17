@@ -22,6 +22,7 @@ export interface DrawingObjectTreeIndicator {
   onRemove: () => void;
   settingsContent?: ReactNode;
   settingsLabel?: string;
+  searchText?: string;
   actionsLabel?: string;
   canDuplicate?: boolean;
   onDuplicate?: () => void;

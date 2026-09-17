@@ -2,6 +2,7 @@ import {
   DEFAULT_INITIAL_BALANCE,
   INDICATOR_CATALOG,
   getIndicatorInputs,
+  getIndicatorLabel,
   normalizeIndicatorInputs,
   isValidInitialBalanceSettings,
   resolveInitialBalanceSettings,
@@ -129,4 +130,11 @@ export function normalizeExtraIndicators(
     result.push(instance);
   }
   return result;
+}
+
+/** Keep the original indicator and inputs discoverable after a user names an instance. */
+export function indicatorInstanceLabels(instance: ChartIndicatorInstance) {
+  const original = getIndicatorLabel(instance.key, { [instance.key]: instance.inputs });
+  const name = instance.appearance.displayName || original;
+  return { name, original, description: name === original ? original : `${name} (${original})` };
 }

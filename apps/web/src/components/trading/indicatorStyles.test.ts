@@ -183,3 +183,13 @@ it("normalizes histogram labels independently from line and color-phase styles",
     });
   }
 });
+
+it("normalizes optional instance names without changing unrelated style patches", () => {
+  expect(normalizeIndicatorAppearance("rsi", { displayName: "  Entry momentum  " })).toEqual({
+    displayName: "Entry momentum",
+  });
+  expect(normalizeIndicatorAppearance("rsi", { displayName: "  " })).toEqual({ displayName: "" });
+  expect(normalizeIndicatorAppearance("rsi", { color: "#123456" })).toEqual({ color: "#123456" });
+  for (const displayName of [undefined, null, 7, {}, "x".repeat(81)])
+    expect(normalizeIndicatorAppearance("rsi", { displayName })).toEqual({});
+});

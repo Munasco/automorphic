@@ -771,7 +771,12 @@ export const useChartPreferences = create<{
         set((state) => {
           const appearance = { ...state.appearance };
           const timeframeVisibility = appearance[key]?.timeframeVisibility;
-          if (timeframeVisibility) appearance[key] = { timeframeVisibility };
+          const displayName = appearance[key]?.displayName;
+          if (timeframeVisibility || displayName)
+            appearance[key] = {
+              ...(timeframeVisibility ? { timeframeVisibility } : {}),
+              ...(displayName ? { displayName } : {}),
+            };
           else delete appearance[key];
           return {
             appearance,
@@ -897,6 +902,8 @@ export const useChartPreferences = create<{
           const appearance = { ...state.appearance };
           delete indicatorInputs[key];
           delete appearance[key];
+          if (instance.appearance.displayName)
+            appearance[key] = { displayName: instance.appearance.displayName };
           set({
             indicatorInputs,
             appearance,
@@ -907,7 +914,13 @@ export const useChartPreferences = create<{
           set({
             extraIndicators: state.extraIndicators.map((item) =>
               item.id === id
-                ? { ...createIndicatorInstance(item.key, id), hidden: item.hidden }
+                ? {
+                    ...createIndicatorInstance(item.key, id),
+                    hidden: item.hidden,
+                    appearance: item.appearance.displayName
+                      ? { displayName: item.appearance.displayName }
+                      : {},
+                  }
                 : item,
             ),
           });
@@ -956,9 +969,14 @@ export const useChartPreferences = create<{
               instance.id === id
                 ? {
                     ...instance,
-                    appearance: instance.appearance.timeframeVisibility
-                      ? { timeframeVisibility: instance.appearance.timeframeVisibility }
-                      : {},
+                    appearance: {
+                      ...(instance.appearance.timeframeVisibility
+                        ? { timeframeVisibility: instance.appearance.timeframeVisibility }
+                        : {}),
+                      ...(instance.appearance.displayName
+                        ? { displayName: instance.appearance.displayName }
+                        : {}),
+                    },
                     ...(instance.key === "volume"
                       ? { volumeColors: { ...DEFAULT_VOLUME_COLORS } }
                       : {}),

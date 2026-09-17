@@ -1,3 +1,4 @@
+import { IndicatorNameField } from "./IndicatorNameField";
 import type { ChartInterval } from "./tradingIntervals";
 import { IndicatorTimeframeControls } from "./IndicatorTimeframeControls";
 import { useState } from "react";
@@ -53,6 +54,13 @@ export function IndicatorSettingsContent({
     <>
       <PopoverTitle className="mb-4 text-sm">{label}</PopoverTitle>
       <div className="space-y-3 text-xs">
+        <IndicatorNameField
+          key={id}
+          label={accessible("Indicator name")}
+          value={appearance.displayName ?? ""}
+          placeholder={label}
+          onCommit={(displayName) => settings.setIndicatorInstanceAppearance(id, { displayName })}
+        />
         <label className="flex items-center justify-between">
           Visible
           <input

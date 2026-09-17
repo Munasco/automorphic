@@ -1,3 +1,4 @@
+import { indicatorInstanceLabels } from "./chartIndicatorInstances";
 import { chartCanvasBackground } from "./chartCanvasBackground";
 import { isIndicatorVisibleOnTimeframe } from "./indicatorTimeframeVisibility";
 import { previousCloseColors } from "./previousCloseColors";
@@ -75,7 +76,7 @@ import {
 import { sourcePrice, type Candle } from "./chartIndicators";
 import { hollowCandleColors } from "./hollowCandles";
 import { calculateHeikinAshi, heikinAshiBar } from "./heikinAshi";
-import { INDICATOR_CATALOG, getIndicatorDefinition, getIndicatorLabel } from "./indicatorCatalog";
+import { INDICATOR_CATALOG, getIndicatorDefinition } from "./indicatorCatalog";
 import { getChartIndicatorInstances, MAX_CHART_INDICATORS } from "./chartIndicatorInstances";
 import {
   createIndicatorRenderer,
@@ -1912,7 +1913,7 @@ export function TradovateChart({
             symbol={symbol}
             onClose={() => setObjectTreeOpen(false)}
             indicators={indicatorInstances.map((instance, index) => {
-              const label = getIndicatorLabel(instance.key, { [instance.key]: instance.inputs });
+              const { name: label, description: fullLabel } = indicatorInstanceLabels(instance);
               const ordinal = indicatorInstances
                 .slice(0, index + 1)
                 .filter((item) => item.key === instance.key).length;
@@ -1923,8 +1924,9 @@ export function TradovateChart({
                 label,
                 hidden: instance.hidden,
                 hiddenOnTimeframe: !isIndicatorVisibleOnTimeframe(instance.appearance, interval),
-                settingsLabel: accessible(`${label} settings`),
-                actionsLabel: accessible(`${label} actions`),
+                searchText: fullLabel,
+                settingsLabel: accessible(`${fullLabel} settings`),
+                actionsLabel: accessible(`${fullLabel} actions`),
                 canDuplicate: indicatorInstances.length < MAX_CHART_INDICATORS,
                 onDuplicate: () => settings.duplicateIndicatorInstance(instance.id),
                 settingsContent: (
