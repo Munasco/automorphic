@@ -7712,3 +7712,86 @@ describe("bars pattern display settings", () => {
     session.dispose();
   });
 });
+
+describe.each(["long-position", "short-position"] as const)(
+  "%s zone color transactions",
+  (kind) => {
+    it("previews without writing, cancels, then saves and restores colors independently", () => {
+      const original: ChartDrawing = {
+        id: "zone-colors",
+        kind,
+        color: "#123456",
+        width: 2,
+        anchors: [
+          { time: 100 as Time, price: 4900 },
+          { time: 300 as Time, price: kind === "long-position" ? 4940 : 4860 },
+          { time: 300 as Time, price: kind === "long-position" ? 4880 : 4920 },
+        ],
+      };
+      const f = fixture("position-zone-colors", JSON.stringify([original]));
+      const session = f.open();
+      const state = (): DrawingState => f.change.mock.lastCall![0];
+      session.selectDrawing(original.id);
+      expect(session.openSettings()).toBe(true);
+      expect(session.previewSettings({ positionTargetColor: "#abcdef" })).toBe(true);
+      expect(session.previewSettings({ positionStopColor: "#fedcba" })).toBe(true);
+      expect(state().selected).toMatchObject({
+        positionTargetColor: "#abcdef",
+        positionStopColor: "#fedcba",
+        anchors: original.anchors,
+      });
+      expect(session.getCommittedDrawings()).toEqual([original]);
+      expect(f.writes()).toBe(0);
+      session.closeSettings();
+      expect(session.getCommittedDrawings()).toEqual([original]);
+      expect(state().selected).toEqual(original);
+      expect(session.openSettings()).toBe(true);
+      expect(
+        session.previewSettings({ positionTargetColor: "#112233", positionStopColor: "#445566" }),
+      ).toBe(true);
+      expect(session.applySettings({})).toBe(true);
+      const saved = { ...original, positionTargetColor: "#112233", positionStopColor: "#445566" };
+      expect(session.getCommittedDrawings()).toEqual([saved]);
+      expect(f.writes()).toBe(1);
+      session.undo();
+      expect(session.getCommittedDrawings()).toEqual([original]);
+      session.redo();
+      expect(session.getCommittedDrawings()).toEqual([saved]);
+      session.dispose();
+      const restored = fixture("position-zone-colors", f.saved()).open();
+      expect(restored.getCommittedDrawings()).toEqual([saved]);
+      restored.dispose();
+    });
+
+    it("remembers edited palettes for new drawings and resets their defaults without recoloring existing drawings", () => {
+      const f = fixture("position-zone-defaults");
+      const session = f.open();
+      const place = () => {
+        session.setTool(kind);
+        f.click(100, 100);
+        f.click(300, kind === "long-position" ? 60 : 140);
+        f.click(300, kind === "long-position" ? 120 : 80);
+      };
+      place();
+      const first = session.getCommittedDrawings()![0]!;
+      session.updateDrawing(first.id, {
+        positionTargetColor: "#aabbcc",
+        positionStopColor: "#dd1122",
+      });
+      const edited = session.getCommittedDrawings()![0]!;
+      place();
+      expect(session.getCommittedDrawings()![1]).toMatchObject({
+        positionTargetColor: "#aabbcc",
+        positionStopColor: "#dd1122",
+      });
+      expect(session.resetDrawingDefaults(kind)).toBe(true);
+      place();
+      expect(session.getCommittedDrawings()![2]).toMatchObject({
+        positionTargetColor: "#26a69a",
+        positionStopColor: "#ef5350",
+      });
+      expect(session.getCommittedDrawings()![0]).toEqual(edited);
+      session.dispose();
+    });
+  },
+);

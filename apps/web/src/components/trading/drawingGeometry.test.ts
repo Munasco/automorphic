@@ -2391,3 +2391,41 @@ describe("shared position width", () => {
     },
   );
 });
+
+describe("position zone palette storage", () => {
+  it.each(["long-position", "short-position"] as const)(
+    "preserves independent valid %s zone colors",
+    (kind) => {
+      const source = {
+        ...drawing(kind, [
+          [100, 300],
+          [200, kind === "long-position" ? 400 : 200],
+          [200, kind === "long-position" ? 200 : 400],
+        ]),
+        positionTargetColor: "#123aBC",
+        positionStopColor: "#Fed654",
+      };
+      expect(parseChartDrawings(JSON.stringify([source]))).toEqual([source]);
+      expect(sanitizeDrawingSettings(source)).toMatchObject({
+        positionTargetColor: "#123aBC",
+        positionStopColor: "#Fed654",
+      });
+    },
+  );
+
+  it.each(["red", "#fff", "#12345678", "#xyz123", "url(secret)", 123, null])(
+    "drops invalid zone colors %j without discarding valid settings",
+    (color) => {
+      expect(
+        sanitizeDrawingSettings({
+          positionTargetColor: color,
+          positionStopColor: "#123456",
+          backgroundOpacity: 0.3,
+        }),
+      ).toEqual({ positionStopColor: "#123456", backgroundOpacity: 0.3 });
+      expect(
+        sanitizeDrawingSettings({ positionTargetColor: "#abcdef", positionStopColor: color }),
+      ).toEqual({ positionTargetColor: "#abcdef" });
+    },
+  );
+});

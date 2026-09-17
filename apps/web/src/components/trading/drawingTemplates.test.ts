@@ -667,3 +667,41 @@ describe("duplicating drawing templates", () => {
     expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
   });
 });
+
+describe.each(["long-position", "short-position"] as const)("%s zone color templates", (kind) => {
+  it("round trips both colors and resets only appearance to the factory palette", () => {
+    const source: ChartDrawing = {
+      ...drawing,
+      kind,
+      anchors: [
+        { time: 100 as Time, price: 100 },
+        { time: 200 as Time, price: kind === "long-position" ? 120 : 80 },
+        { time: 200 as Time, price: kind === "long-position" ? 90 : 110 },
+      ],
+      positionTargetColor: "#112233",
+      positionStopColor: "#aabbcc",
+      background: true,
+      backgroundOpacity: 0.35,
+    };
+    const saved = saveDrawingTemplate([], source, "My position palette")!;
+    const restored = normalizeDrawingTemplates(JSON.parse(JSON.stringify(saved)))[0]!;
+    expect(restored.settings).toMatchObject({
+      positionTargetColor: "#112233",
+      positionStopColor: "#aabbcc",
+      backgroundOpacity: 0.35,
+    });
+    const reset = applyDrawingTemplate(source, defaultDrawingTemplateSettings(kind));
+    expect(reset).toMatchObject({
+      id: source.id,
+      kind,
+      anchors: source.anchors,
+      name: source.name,
+      locked: true,
+      hidden: true,
+      positionTargetColor: "#26a69a",
+      positionStopColor: "#ef5350",
+    });
+    expect(applyDrawingTemplate(reset, restored.settings)).toEqual(source);
+    expect(parseChartDrawings(JSON.stringify([reset]))).toEqual([reset]);
+  });
+});

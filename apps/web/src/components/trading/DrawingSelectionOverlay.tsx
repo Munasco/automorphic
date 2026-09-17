@@ -1,4 +1,4 @@
-import { positionDrawingAnchors } from "./projectionDrawingGeometry";
+import { isPositionDrawing, positionDrawingAnchors } from "./projectionDrawingGeometry";
 import { BAR_PATTERN_MODES, type BarPatternMode } from "./drawingBarPattern";
 import { ANCHORED_VWAP_SOURCES, type AnchoredVwapSource } from "./anchoredVwapSource";
 import { clampDrawingToolbarOffset } from "./drawingToolbarBounds";
@@ -555,38 +555,42 @@ function DrawingSettings({
           draft.kind !== "channel" &&
           draft.kind !== "regression-trend" ? (
             <>
-              <div
-                className={cn(
-                  "flex items-center",
-                  isSpecialChannelDrawing(draft.kind) ? "gap-0" : axisLine ? "gap-5" : "gap-2",
-                )}
-              >
-                <span
+              {isPositionDrawing(draft.kind) ? (
+                <PositionAppearance drawing={draft} onChange={update} />
+              ) : (
+                <div
                   className={cn(
-                    "shrink-0 text-sm",
-                    isSpecialChannelDrawing(draft.kind) ? "w-[124px]" : !axisLine && "w-[100px]",
+                    "flex items-center",
+                    isSpecialChannelDrawing(draft.kind) ? "gap-0" : axisLine ? "gap-5" : "gap-2",
                   )}
                 >
-                  {line ? "Line" : "Stroke"}
-                </span>
-                <div className="flex items-center gap-2">
-                  <LineAppearancePicker drawing={draft} onChange={update} />
-                  {supportsLineMarkers(draft.kind) && !axisLine ? (
-                    <>
-                      <MarkerPicker
-                        side="start"
-                        value={markers.start}
-                        onChange={(startMarker) => update({ startMarker })}
-                      />
-                      <MarkerPicker
-                        side="end"
-                        value={markers.end}
-                        onChange={(endMarker) => update({ endMarker })}
-                      />
-                    </>
-                  ) : null}
+                  <span
+                    className={cn(
+                      "shrink-0 text-sm",
+                      isSpecialChannelDrawing(draft.kind) ? "w-[124px]" : !axisLine && "w-[100px]",
+                    )}
+                  >
+                    {line ? "Line" : "Stroke"}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <LineAppearancePicker drawing={draft} onChange={update} />
+                    {supportsLineMarkers(draft.kind) && !axisLine ? (
+                      <>
+                        <MarkerPicker
+                          side="start"
+                          value={markers.start}
+                          onChange={(startMarker) => update({ startMarker })}
+                        />
+                        <MarkerPicker
+                          side="end"
+                          value={markers.end}
+                          onChange={(endMarker) => update({ endMarker })}
+                        />
+                      </>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
+              )}
               {extendable ? (
                 <label
                   className={cn(
@@ -674,7 +678,7 @@ function DrawingSettings({
                   ))}
                 </div>
               ) : null}
-              {supportsShapeBackground(draft.kind) ? (
+              {supportsShapeBackground(draft.kind) && !isPositionDrawing(draft.kind) ? (
                 <div className="flex items-center justify-between gap-3">
                   <Check
                     label="Background"
@@ -1185,6 +1189,8 @@ export function DrawingSelectionOverlay({
                   />
                 ) : null}
               </>
+            ) : isPositionDrawing(selected.kind) ? (
+              <PositionAppearance drawing={selected} onChange={drawings.updateSelected} toolbar />
             ) : selected.kind === "regression-trend" ? (
               <WidthPicker
                 variant="toolbar"
@@ -1643,6 +1649,60 @@ function DrawingOrderSubmenu({ drawings }: { drawings: ChartDrawingsController }
         ))}
       </MenuSubPopup>
     </MenuSub>
+  );
+}
+
+function PositionAppearance({
+  drawing,
+  onChange,
+  toolbar = false,
+}: {
+  drawing: ChartDrawing;
+  onChange: (patch: DrawingPatch) => void;
+  toolbar?: boolean;
+}) {
+  return (
+    <>
+      {(
+        [
+          ["positionTargetColor", "Target color", "#26a69a"],
+          ["positionStopColor", "Stop color", "#ef5350"],
+        ] as const
+      ).map(([key, label, fallback]) => (
+        <div key={key} className={toolbar ? "contents" : "flex items-center justify-between gap-3"}>
+          {!toolbar && <span className="text-sm">{label}</span>}
+          <ColorPicker
+            label={label}
+            variant={toolbar ? "toolbar" : "settings"}
+            value={drawing[key] ?? fallback}
+            onChange={(color) => onChange({ [key]: color })}
+          />
+        </div>
+      ))}
+      {!toolbar && (
+        <>
+          <Check
+            label="Background"
+            checked={drawing.background ?? true}
+            onChange={(background) => onChange({ background })}
+          />
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span>Fill opacity (%)</span>
+            <DrawingNumberField
+              label="Fill opacity (%)"
+              value={Math.round((drawing.backgroundOpacity ?? 0.18) * 100)}
+              min={0}
+              max={100}
+              integerOnly
+              step={1}
+              onValueChange={(value) => {
+                if (value >= 0 && value <= 100) onChange({ backgroundOpacity: value / 100 });
+              }}
+            />
+          </div>
+        </>
+      )}
+    </>
   );
 }
 

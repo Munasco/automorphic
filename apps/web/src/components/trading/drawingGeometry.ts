@@ -127,6 +127,8 @@ export type DrawingSettings = {
   background?: boolean;
   backgroundOpacity?: number;
   backgroundColor?: string;
+  positionTargetColor?: string;
+  positionStopColor?: string;
   showPrices?: boolean;
   showLevels?: boolean;
   showTrendLine?: boolean;
@@ -837,6 +839,10 @@ export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
     if (source[key] === "normal" || source[key] === "arrow") result[key] = source[key];
   if (typeof source.backgroundColor === "string" && /^#[a-f\d]{6}$/i.test(source.backgroundColor))
     result.backgroundColor = source.backgroundColor;
+  for (const key of ["positionTargetColor", "positionStopColor"] as const) {
+    const color = source[key];
+    if (typeof color === "string" && /^#[a-f\d]{6}$/i.test(color)) result[key] = color;
+  }
   if (typeof source.priceLabelColor === "string" && /^#[a-f\d]{6}$/i.test(source.priceLabelColor))
     result.priceLabelColor = source.priceLabelColor;
   if (

@@ -90,8 +90,8 @@ export function projectionDrawingGeometry(
     return result;
   }
   if (isPositionDrawing(drawing.kind)) {
-    const targetColor = "#26a69a",
-      stopColor = "#ef5350";
+    const targetColor = drawing.positionTargetColor ?? "#26a69a",
+      stopColor = drawing.positionStopColor ?? "#ef5350";
     box(first.x, second.x, first.y, second.y, targetColor);
     label(
       { x: first.x, y: second.y },

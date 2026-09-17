@@ -55,6 +55,9 @@ export function defaultDrawingTemplateSettings(kind: DrawingKind): DrawingTempla
     ...defaultDrawingLevelSettings(kind),
     ...defaultChannelDrawingSettings(kind),
     ...defaultRegressionDrawingSettings(kind),
+    ...(kind === "long-position" || kind === "short-position"
+      ? { positionTargetColor: "#26a69a", positionStopColor: "#ef5350" }
+      : {}),
     // Explicit resets/new tools get the reference palette; legacy channel fallbacks stay unchanged.
     ...(kind === "flat-channel" || kind === "disjoint-channel"
       ? { color: kind === "flat-channel" ? "#ff9800" : "#089981", backgroundOpacity: 0.2 }
