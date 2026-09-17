@@ -1,5 +1,5 @@
 import { captureBarPattern } from "./drawingBarPattern";
-import { positionDrawingAnchors } from "./projectionDrawingGeometry";
+import { isPositionDrawing, positionDrawingAnchors } from "./projectionDrawingGeometry";
 import type { DrawingDataSource } from "./drawingMarketGeometry";
 import { snapDrawingAnchor } from "./drawingMagnet";
 import { drawingCopyName } from "./drawingNames";
@@ -72,6 +72,26 @@ type DrawingSelectionOptions = {
 };
 const supportsShiftLineAlignment = (kind: ChartDrawingTool) =>
   ["trend", "ray", "extended-line", "info-line", "trend-angle", "arrow"].includes(kind);
+
+/** A magnet must not move a position's entry outside its stop/target, or invert its risk. */
+function positionSnapFilter(
+  kind: ChartDrawingTool,
+  anchors: readonly DrawingAnchor[],
+  handle: number,
+): ((price: number) => boolean) | undefined {
+  if (!isPositionDrawing(kind) || handle < 0 || handle > 2) return undefined;
+  const direction = kind === "long-position" ? 1 : -1;
+  const [entry, target, stop] = anchors;
+  return (price) => {
+    if (handle === 0)
+      return (
+        (!target || (target.price - price) * direction > 0) &&
+        (!stop || (price - stop.price) * direction > 0)
+      );
+    if (!entry) return true;
+    return (price - entry.price) * direction * (handle === 1 ? 1 : -1) > 0;
+  };
+}
 
 /** Axis constraints retain the pointer's dominant coordinate; diagonals retain its radius. */
 function alignDrawingPoint(origin: DrawingPoint, point: DrawingPoint): DrawingPoint {
@@ -736,15 +756,26 @@ export function createChartDrawingSession(
     }
     return true;
   };
-  const snapAnchor = (anchor: DrawingAnchor, point: DrawingPoint): DrawingAnchor => {
+  const snapAnchor = (
+    anchor: DrawingAnchor,
+    point: DrawingPoint,
+    acceptsPrice?: (price: number) => boolean,
+  ): DrawingAnchor => {
     anchor = quantizePointerAnchor(anchor);
     if (magnetMode === "off") return anchor;
     const logical = chart.timeScale().coordinateToLogical(point.x);
     if (logical === null) return anchor;
     const candle = series.dataByIndex(Math.round(logical));
     if (!candle || !("open" in candle)) return anchor;
-    const snapped = snapDrawingAnchor(anchor, point, candle, magnetMode, (price) =>
-      series.priceToCoordinate(price),
+    const snapped = snapDrawingAnchor(
+      anchor,
+      point,
+      candle,
+      magnetMode,
+      (price) => series.priceToCoordinate(price),
+      acceptsPrice
+        ? (price) => acceptsPrice(quantizePointerAnchor({ ...anchor, price }).price)
+        : undefined,
     );
     return snapped === anchor ? anchor : quantizePointerAnchor(snapped);
   };
@@ -753,7 +784,7 @@ export function createChartDrawingSession(
     point: DrawingPoint,
     modifiers?: DrawingPointerModifiers,
   ): DrawingAnchor | null => {
-    const snapped = snapAnchor(anchor, point);
+    const snapped = snapAnchor(anchor, point, positionSnapFilter(tool, anchors, anchors.length));
     if (
       !modifiers?.shiftKey ||
       anchors.length !== 1 ||
@@ -937,7 +968,11 @@ export function createChartDrawingSession(
     const candidateAnchor =
       magnetMode !== "off" && !regression && !vertical ? projection.unproject(candidate) : null;
     if (candidateAnchor) {
-      const snapped = snapAnchor(candidateAnchor, candidate);
+      const snapped = snapAnchor(
+        candidateAnchor,
+        candidate,
+        positionSnapFilter(activeDrag.drawing.kind, activeDrag.drawing.anchors, activeDrag.handle),
+      );
       if (snapped !== candidateAnchor) {
         const projected = projection.project(snapped);
         if (projected) {

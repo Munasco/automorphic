@@ -9,11 +9,13 @@ export function snapDrawingAnchor(
   candle: Omit<Candle, "price"> | undefined,
   mode: "off" | "weak" | "strong",
   priceToCoordinate: (price: number) => number | null,
+  acceptsPrice?: (price: number) => boolean,
 ): DrawingAnchor {
   if (mode === "off" || !candle) return anchor;
   let distance = mode === "strong" ? Infinity : 12;
   let snapped = anchor;
   for (const price of [candle.open, candle.high, candle.low, candle.close]) {
+    if (acceptsPrice && !acceptsPrice(price)) continue;
     const y = priceToCoordinate(price);
     if (y === null || !Number.isFinite(y) || !Number.isFinite(price)) continue;
     const delta = Math.abs(point.y - y);

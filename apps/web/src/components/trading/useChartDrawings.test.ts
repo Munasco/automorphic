@@ -7274,6 +7274,208 @@ describe("position right-edge editing", () => {
   });
 });
 
+describe.each(["long-position", "short-position"] as const)("%s constrained magnet", (kind) => {
+  const direction = kind === "long-position" ? 1 : -1;
+  const price = (offset: number) => 4900 + direction * offset;
+  const original: ChartDrawing = {
+    id: "magnetic-position",
+    kind,
+    color: "#123456",
+    width: 2,
+    anchors: [
+      { time: 100 as Time, price: price(0) },
+      { time: 300 as Time, price: price(40) },
+      { time: 300 as Time, price: price(-20) },
+    ],
+  };
+  const candle = (time: number, offsets: number[]): CandlestickData => {
+    const values = offsets.map(price);
+    return {
+      time: time as UTCTimestamp,
+      open: values[0]!,
+      high: Math.max(...values),
+      low: Math.min(...values),
+      close: values.at(-1)!,
+    };
+  };
+  const point = (time: number, offset: number) => ({ x: time, y: 5000 - price(offset) });
+
+  it("keeps a valid target draggable when every candle price is on the wrong side of entry", () => {
+    const f = fixture("position-target-fallback", JSON.stringify([original]), [
+      candle(400, [-30, -10, -20, -25]),
+    ]);
+    const session = f.open();
+    session.selectDrawing(original.id);
+    session.setMagnetMode("strong");
+    expect(session.beginDrag(point(300, 40))).toBe(true);
+    session.dragTo(point(400, 15));
+    session.endDrag();
+    const edited = session.getCommittedDrawings()![0]!;
+    expect(edited.anchors).toEqual([
+      original.anchors[0],
+      { time: 400, price: price(15) },
+      { time: 400, price: price(-20) },
+    ]);
+    expect(f.writes()).toBe(1);
+    session.undo();
+    expect(session.getCommittedDrawings()).toEqual([original]);
+    session.redo();
+    expect(session.getCommittedDrawings()).toEqual([edited]);
+    const saved = f.saved();
+    session.dispose();
+    const restored = fixture("position-target-fallback", saved).open();
+    expect(restored.getCommittedDrawings()).toEqual([edited]);
+    restored.dispose();
+  });
+
+  it.each([
+    { handle: 1, from: 40, pointer: 1, readings: [0, 10, -20, -5], expected: 10 },
+    { handle: 2, from: -20, pointer: -1, readings: [0, -10, 20, 5], expected: -10 },
+    { handle: 0, from: 0, pointer: 39, readings: [40, 50, 10, 45], expected: 10 },
+  ])(
+    "chooses valid OHLC beyond an invalid nearest price for handle $handle",
+    ({ handle, from, pointer, readings, expected }) => {
+      const endTime = handle === 0 ? 200 : 400;
+      const f = fixture("position-valid-ohlc", JSON.stringify([original]), [
+        candle(endTime, readings),
+      ]);
+      const session = f.open();
+      session.selectDrawing(original.id);
+      session.setMagnetMode("strong");
+      expect(session.beginDrag(point(handle === 0 ? 100 : 300, from))).toBe(true);
+      session.dragTo(point(endTime, pointer));
+      session.endDrag();
+      const anchors = session.getCommittedDrawings()![0]!.anchors;
+      expect(anchors.map((anchor) => anchor.price)).toEqual(
+        original.anchors.map((anchor, index) =>
+          index === handle ? price(expected) : anchor.price,
+        ),
+      );
+      expect(anchors.map((anchor) => anchor.time)).toEqual(
+        handle === 0 ? [200, 300, 300] : [100, 400, 400],
+      );
+      session.dispose();
+    },
+  );
+
+  it("falls back to valid entry and stop pointer prices when no candle reading satisfies their bounds", () => {
+    for (const { handle, from, pointer, readings } of [
+      { handle: 0, from: 0, pointer: 30, readings: [50, 60, 55, 52] },
+      { handle: 2, from: -20, pointer: -10, readings: [5, 20, 10, 15] },
+    ]) {
+      const endTime = handle === 0 ? 200 : 400;
+      const f = fixture("position-bounded-fallback", JSON.stringify([original]), [
+        candle(endTime, readings),
+      ]);
+      const session = f.open();
+      session.selectDrawing(original.id);
+      session.setMagnetMode("strong");
+      expect(session.beginDrag(point(handle === 0 ? 100 : 300, from))).toBe(true);
+      session.dragTo(point(endTime, pointer));
+      session.endDrag();
+      expect(session.getCommittedDrawings()![0]!.anchors.map((anchor) => anchor.price)).toEqual(
+        original.anchors.map((anchor, index) => (index === handle ? price(pointer) : anchor.price)),
+      );
+      session.dispose();
+    }
+  });
+
+  it("filters magnet candidates during target and stop placement", () => {
+    const f = fixture("position-placement-magnet", null, [candle(300, [0, 10, -10, 0])]);
+    const session = f.open();
+    session.setTool(kind);
+    f.click(100, point(100, 0).y, 0, 100);
+    session.setMagnetMode("strong");
+    f.click(300, point(300, 1).y, 0, 300);
+    f.click(300, point(300, -1).y, 0, 300);
+    expect(session.getCommittedDrawings()).toHaveLength(1);
+    expect(session.getCommittedDrawings()![0]!.anchors).toEqual([
+      { time: 100, price: price(0) },
+      { time: 300, price: price(10) },
+      { time: 300, price: price(-10) },
+    ]);
+    session.dispose();
+  });
+
+  it("allows unsnapped valid placement if strong magnet has no valid target or stop reading", () => {
+    const f = fixture("position-placement-fallback", null, [
+      candle(300, [-5, -10, -20, -15]),
+      candle(400, [5, 10, 20, 15]),
+    ]);
+    const session = f.open();
+    session.setTool(kind);
+    f.click(100, point(100, 0).y, 0, 100);
+    session.setMagnetMode("strong");
+    f.click(300, point(300, 30).y, 0, 300);
+    f.click(400, point(400, -15).y, 0, 400);
+    expect(session.getCommittedDrawings()).toHaveLength(1);
+    expect(session.getCommittedDrawings()![0]!.anchors).toEqual([
+      { time: 100, price: price(0) },
+      { time: 300, price: price(30) },
+      { time: 300, price: price(-15) },
+    ]);
+    session.dispose();
+  });
+
+  it("keeps weak snapping local rather than jumping to a distant valid candle price", () => {
+    const f = fixture("position-weak-radius", JSON.stringify([original]), [
+      candle(400, [0, 20, -20, -10]),
+    ]);
+    const session = f.open();
+    session.selectDrawing(original.id);
+    session.setMagnetMode("weak");
+    expect(session.beginDrag(point(300, 40))).toBe(true);
+    session.dragTo(point(400, 1));
+    session.endDrag();
+    expect(session.getCommittedDrawings()![0]!.anchors).toEqual([
+      original.anchors[0],
+      { time: 400, price: price(1) },
+      { time: 400, price: price(-20) },
+    ]);
+    session.dispose();
+  });
+
+  it("still rejects an invalid target pointer when neither pointer nor candle preserves position direction", () => {
+    const f = fixture("position-invalid-fallback", JSON.stringify([original]), [
+      candle(400, [-5, -10, -20, -15]),
+    ]);
+    const session = f.open();
+    session.selectDrawing(original.id);
+    session.setMagnetMode("strong");
+    expect(session.beginDrag(point(300, 40))).toBe(true);
+    session.dragTo(point(400, -10));
+    session.endDrag();
+    expect(session.getCommittedDrawings()).toEqual([original]);
+    expect(f.writes()).toBe(0);
+    session.dispose();
+  });
+
+  it("protects all handles and the body after locking during a magnet drag", () => {
+    const f = fixture("position-magnet-lock", JSON.stringify([original]), [
+      candle(400, [10, 20, 30, 15]),
+    ]);
+    const session = f.open();
+    session.selectDrawing(original.id);
+    session.setMagnetMode("strong");
+    expect(session.beginDrag(point(300, 40))).toBe(true);
+    session.dragTo(point(400, 25));
+    session.updateSelected({ locked: true });
+    session.dragTo(point(500, 35));
+    session.endDrag();
+    const locked = { ...original, locked: true };
+    expect(session.getCommittedDrawings()).toEqual([locked]);
+    const writes = f.writes();
+    for (const from of [point(100, 0), point(300, 40), point(300, -20), point(200, 20)]) {
+      expect(session.beginDrag(from)).toBe(false);
+      session.dragTo(point(400, 10));
+      session.endDrag();
+    }
+    expect(session.getCommittedDrawings()).toEqual([locked]);
+    expect(f.writes()).toBe(writes);
+    session.dispose();
+  });
+});
+
 describe("anchored VWAP source settings", () => {
   const original: ChartDrawing = {
     id: "anchored-source",
