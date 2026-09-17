@@ -109,6 +109,7 @@ describe("indicator catalog and saved preferences", () => {
       "sma",
       "ema",
       "dema",
+      "tema",
       "wma",
       "vwma",
       "hma",
@@ -128,6 +129,7 @@ describe("indicator catalog and saved preferences", () => {
       "sma",
       "ema",
       "dema",
+      "tema",
       "wma",
       "vwma",
       "hma",
@@ -1399,4 +1401,70 @@ it("can hide legend arguments without changing full labels or indicator inputs",
   expect(getIndicatorLabel("ib", {}, false)).toBe(getIndicatorLabel("ib"));
   expect(getIndicatorLabel("volume", {}, false)).toBe(getIndicatorLabel("volume"));
   expect(inputs.sma.period).toBe(50);
+});
+
+describe("TEMA overlay inputs", () => {
+  it("discovers TEMA and defaults legacy workspaces to a disabled period-nine Close overlay", () => {
+    expect(findIndicators("triple exponential moving average").map((entry) => entry.key)).toEqual([
+      "tema",
+    ]);
+    expect(findIndicators("TEMA").map((entry) => entry.key)).toEqual(["tema"]);
+    expect(normalizeChartPreferences({ indicators: { ema: true } }).indicators).toMatchObject({
+      ema: true,
+      tema: false,
+    });
+    expect(getIndicatorInputs("tema")).toEqual({ period: 9, source: 0 });
+    expect(getIndicatorLabel("tema", { tema: { period: 3, source: 1 } })).toBe("TEMA 3");
+  });
+
+  it("calculates the selected source with three-stage warmup and preserves independent input edits", () => {
+    const definition = INDICATOR_CATALOG.find((entry) => entry.key === "tema")!;
+    const bars = [10, 30, 20, 50, 30, 60, 0].map((open, index) => ({
+      time: index + 1,
+      open,
+      close: 42,
+      high: 100,
+      low: -10,
+      volume: 1,
+    }));
+    const calculate = (source: number) =>
+      definition.calculate({
+        bars,
+        inputs: { period: 3, source },
+        interval: 5,
+        session: DEFAULT_INITIAL_BALANCE,
+      });
+    expect(definition.placement).toBe("overlay");
+    expect(calculate(0).plots[0]!.points).toEqual([{ time: 7, value: 42 }]);
+    const result = calculate(1);
+    expect(result.plots).toHaveLength(1);
+    expect(result.plots[0]).toMatchObject({
+      id: "main",
+      styleKey: "main",
+      title: "TEMA",
+      breakOnGaps: true,
+    });
+    expect(result.plots[0]!.points).toHaveLength(1);
+    expect(result.plots[0]!.points[0]!.time).toBe(7);
+    expect(result.plots[0]!.points[0]!.value).toBeCloseTo(95 / 9, 10);
+    const current = { tema: { period: 7, source: 5 } };
+    for (const patch of [
+      { period: 0 },
+      { period: 1.5 },
+      { period: 501 },
+      { source: 7 },
+      { source: -1 },
+      { source: NaN },
+    ])
+      expect(updateIndicatorInputs("tema", current, patch)).toBeNull();
+    expect(current).toEqual({ tema: { period: 7, source: 5 } });
+    expect(getIndicatorInputs("tema", { tema: { period: 7, source: 99 } })).toEqual({
+      period: 7,
+      source: 0,
+    });
+    expect(getIndicatorInputs("tema", { tema: { period: 0, source: 5 } })).toEqual({
+      period: 9,
+      source: 5,
+    });
+  });
 });

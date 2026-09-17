@@ -43,6 +43,7 @@ import { calculateMoneyFlowIndex } from "./moneyFlowIndex";
 import { calculateHullMovingAverage } from "./hullMovingAverage";
 import { calculateWeightedMovingAverage } from "./weightedMovingAverage";
 import { calculateDoubleExponentialMovingAverage } from "./doubleExponentialMovingAverage";
+import { calculateTripleExponentialMovingAverage } from "./tripleExponentialMovingAverage";
 import {
   calculateBollingerBandwidth,
   calculateBollingerBandwidthExtremes,
@@ -356,6 +357,24 @@ export const INDICATOR_DEFINITIONS = [
           PRICE_SOURCES[inputs.source ?? 0],
         ),
         { title: "DEMA", breakOnGaps: true },
+      ),
+  }),
+  defineIndicator({
+    key: "tema",
+    label: "TEMA 9",
+    detail: "Triple exponential moving average",
+    category: "Overlays",
+    placement: "overlay",
+    inputs: [length(9), priceSource],
+    styles: [style("main", "Line", "#a78bfa", true, 2)],
+    calculate: ({ bars, inputs }) =>
+      single(
+        calculateTripleExponentialMovingAverage(
+          bars,
+          inputs.period,
+          PRICE_SOURCES[inputs.source ?? 0],
+        ),
+        { title: "TEMA", breakOnGaps: true },
       ),
   }),
   defineIndicator({
