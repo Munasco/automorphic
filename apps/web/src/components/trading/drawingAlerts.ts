@@ -22,6 +22,8 @@ export const DRAWING_ALERT_CONDITIONS = [
   "exiting-rectangle",
   "inside-rectangle",
   "outside-rectangle",
+  "above-rectangle",
+  "below-rectangle",
 ] as const;
 export const DRAWING_ALERT_TRIGGERS = [
   "once",
@@ -46,6 +48,8 @@ export const isRectangleRegionCondition = (value: unknown) =>
   value === "exiting-rectangle" ||
   value === "inside-rectangle" ||
   value === "outside-rectangle";
+export const isRectangleAlertCondition = (value: unknown) =>
+  isRectangleRegionCondition(value) || value === "above-rectangle" || value === "below-rectangle";
 const isDrawingRegionCondition = (value: unknown) =>
   isChannelRegionCondition(value) || isRectangleRegionCondition(value);
 const validChannelBoundary = (drawing: ChartDrawing, value: unknown) =>
@@ -53,10 +57,8 @@ const validChannelBoundary = (drawing: ChartDrawing, value: unknown) =>
     ? isChannelBoundary(value)
     : value === undefined;
 const validDrawingRule = (drawing: ChartDrawing, condition: unknown, boundary: unknown) =>
-  drawing.kind === "rectangle" || isRectangleRegionCondition(condition)
-    ? drawing.kind === "rectangle" &&
-      isRectangleRegionCondition(condition) &&
-      boundary === undefined
+  drawing.kind === "rectangle" || isRectangleAlertCondition(condition)
+    ? drawing.kind === "rectangle" && isRectangleAlertCondition(condition) && boundary === undefined
     : isChannelRegionCondition(condition)
       ? drawing.kind === "channel" && boundary === undefined
       : validChannelBoundary(drawing, boundary);
@@ -289,7 +291,8 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
         (a.channelBoundary !== undefined &&
           (!isChannelBoundary(a.channelBoundary) ||
             a.targetKind === "time" ||
-            isDrawingRegionCondition(a.condition))) ||
+            isChannelRegionCondition(a.condition) ||
+            isRectangleAlertCondition(a.condition))) ||
         !(a.expiresAt === null || stamp(a.expiresAt)) ||
         typeof a.enabled !== "boolean" ||
         ![null, "user", "deleted", "expired", "triggered"].includes(a.disabledReason as null) ||
@@ -340,7 +343,8 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
         (e.channelBoundary !== undefined &&
           (!isChannelBoundary(e.channelBoundary) ||
             e.targetKind === "time" ||
-            isDrawingRegionCondition(e.condition))) ||
+            isChannelRegionCondition(e.condition) ||
+            isRectangleAlertCondition(e.condition))) ||
         (isDrawingRegionCondition(e.condition) &&
           (!record(e.channelRange) ||
             !finite(e.channelRange.lower) ||
@@ -837,7 +841,11 @@ export function createDrawingAlertSession(
                 sample.logical,
                 options.projection,
                 options.extent,
-                a.channelBoundary,
+                a.condition === "above-rectangle"
+                  ? "upper"
+                  : a.condition === "below-rectangle"
+                    ? "lower"
+                    : a.channelBoundary,
               );
           }
           if (
@@ -896,9 +904,9 @@ export function createDrawingAlertSession(
                   ? difference >= 0
                   : a.condition === "outside-channel" || a.condition === "outside-rectangle"
                     ? difference < 0
-                    : a.condition === "above"
+                    : a.condition === "above" || a.condition === "above-rectangle"
                       ? difference > 0
-                      : a.condition === "below"
+                      : a.condition === "below" || a.condition === "below-rectangle"
                         ? difference < 0
                         : a.condition === "crossing-up"
                           ? up

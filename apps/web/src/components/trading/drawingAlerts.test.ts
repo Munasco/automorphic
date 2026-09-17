@@ -1845,3 +1845,204 @@ describe("rectangle zone alerts", () => {
     h.session.dispose();
   });
 });
+
+describe("rectangle upper and lower threshold alerts", () => {
+  const rectangle = (patch: Partial<ChartDrawing> = {}): ChartDrawing =>
+    line({
+      kind: "rectangle",
+      anchors: [
+        { time: 0 as Time, price: 100 },
+        { time: 10 as Time, price: 120 },
+      ],
+      ...patch,
+    });
+  const conditions = ["above-rectangle", "below-rectangle"] as const;
+  const rule = (
+    condition: (typeof conditions)[number],
+    trigger: DrawingAlertTrigger = "once",
+  ): NewDrawingAlert => ({
+    drawingId: "line",
+    condition,
+    trigger,
+    expiresAt: null,
+  });
+
+  it.each([
+    ["above-rectangle", 121, 120],
+    ["below-rectangle", 99, 100],
+  ] as const)(
+    "%s accepts a first fresh sample beyond the edge and snapshots target %s",
+    (condition, price, target) => {
+      const h = harness();
+      h.session.syncDrawings([rectangle()]);
+      const alert = h.session.add(rule(condition))!;
+      expect(alert).not.toBeNull();
+      h.session.observe(h.sample(price));
+      expect(h.onTrigger).toHaveBeenCalledTimes(1);
+      expect(h.onTrigger.mock.lastCall![0]).toMatchObject({
+        alertId: alert.id,
+        condition,
+        price,
+        target,
+        targetKind: "price",
+      });
+      expect(h.onTrigger.mock.lastCall![0]).not.toHaveProperty("channelRange");
+      expect(h.onTrigger.mock.lastCall![0]).not.toHaveProperty("channelBoundary");
+      const saved = parseDrawingAlerts(h.values.get(DRAWING_ALERTS_KEY)!);
+      expect(saved).toEqual(h.session.getSnapshot());
+      h.session.dispose();
+      const reloaded = h.open();
+      reloaded.syncDrawings([rectangle()]);
+      expect(reloaded.getSnapshot()).toEqual(saved);
+      reloaded.dispose();
+    },
+  );
+
+  it.each(conditions)("%s does not match either edge or an inside price", (condition) => {
+    const h = harness();
+    h.session.syncDrawings([rectangle()]);
+    h.session.add(rule(condition));
+    for (const price of [100, 110, 120]) h.session.observe(h.sample(price));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    h.session.observe(h.sample(condition === "above-rectangle" ? 121 : 99));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    h.session.dispose();
+  });
+
+  it.each([
+    [
+      "inverted",
+      {
+        ...projection,
+        priceToCoordinate: (price: number) => price,
+        coordinateToPrice: (value: number) => value,
+      },
+    ],
+    ["logarithmic", { ...projection, priceToCoordinate: Math.log, coordinateToPrice: Math.exp }],
+  ] as const)(
+    "chooses actual price edges with reversed anchors on %s scales",
+    (_label, chartProjection) => {
+      const h = harness(chartProjection);
+      h.session.syncDrawings([
+        rectangle({
+          anchors: [
+            { time: 10 as Time, price: 400 },
+            { time: 0 as Time, price: 100 },
+          ],
+        }),
+      ]);
+      h.session.add(rule("above-rectangle"));
+      h.session.add(rule("below-rectangle"));
+      h.session.observe(h.sample(200));
+      h.session.observe(h.sample(400));
+      expect(h.onTrigger).not.toHaveBeenCalled();
+      h.session.observe(h.sample(401));
+      expect(h.onTrigger.mock.lastCall![0]).toMatchObject({
+        condition: "above-rectangle",
+        target: 400,
+      });
+      h.session.observe(h.sample(100));
+      expect(h.onTrigger).toHaveBeenCalledTimes(1);
+      h.session.observe(h.sample(99));
+      expect(h.onTrigger.mock.lastCall![0]).toMatchObject({
+        condition: "below-rectangle",
+        target: 100,
+      });
+      expect(h.onTrigger).toHaveBeenCalledTimes(2);
+      h.session.dispose();
+    },
+  );
+
+  it.each(conditions)(
+    "%s respects finite time bounds and unavailable endpoint projections",
+    (condition) => {
+      let available = true;
+      const h = harness({
+        ...projection,
+        priceToCoordinate: (price) => (available ? -price : null),
+      });
+      h.session.syncDrawings([rectangle({ extendLeft: true, extendRight: true })]);
+      h.session.add(rule(condition));
+      const price = condition === "above-rectangle" ? 121 : 99;
+      h.session.observe(h.sample(price, { logical: -1 }));
+      h.session.observe(h.sample(price, { logical: 11 }));
+      available = false;
+      h.session.observe(h.sample(price));
+      expect(h.onTrigger).not.toHaveBeenCalled();
+      available = true;
+      h.session.observe(h.sample(price));
+      expect(h.onTrigger).toHaveBeenCalledTimes(1);
+      h.session.dispose();
+    },
+  );
+
+  it("follows resized edges, permits rule edits, and leaves prior threshold history unchanged", () => {
+    const h = harness();
+    h.session.syncDrawings([rectangle()]);
+    const alert = h.session.add(rule("above-rectangle", "once-per-bar"))!;
+    const enlarged = rectangle({
+      anchors: [
+        { time: 0 as Time, price: 90 },
+        { time: 10 as Time, price: 130 },
+      ],
+    });
+    h.session.syncDrawings([enlarged]);
+    h.session.observe(h.sample(121));
+    h.session.observe(h.sample(130));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    h.session.observe(h.sample(131));
+    const originalEvent = h.session.getSnapshot().history[0]!;
+    expect(originalEvent).toMatchObject({ condition: "above-rectangle", target: 130 });
+    expect(h.session.update(alert.id, rule("below-rectangle", "once-per-bar"))).toBe(true);
+    h.session.observe(h.sample(90, { barId: "bar-2" }));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    h.session.observe(h.sample(89, { barId: "bar-2" }));
+    expect(h.onTrigger.mock.lastCall![0]).toMatchObject({
+      condition: "below-rectangle",
+      target: 90,
+    });
+    expect(h.session.getSnapshot().history.at(-1)).toEqual(originalEvent);
+    expect(parseDrawingAlerts(h.values.get(DRAWING_ALERTS_KEY)!)).toEqual(h.session.getSnapshot());
+    h.session.dispose();
+  });
+
+  it("rejects threshold rules on other kinds and rejects explicit boundary selectors on add/update/import", () => {
+    const h = harness();
+    for (const drawing of [
+      line(),
+      line({ kind: "vertical", anchors: [{ time: 5 as Time, price: 100 }] }),
+      line({
+        kind: "channel",
+        anchors: [
+          { time: 0 as Time, price: 100 },
+          { time: 10 as Time, price: 110 },
+          { time: 3 as Time, price: 123 },
+        ],
+      }),
+    ]) {
+      h.session.syncDrawings([drawing]);
+      for (const condition of conditions) expect(h.session.add(rule(condition))).toBeNull();
+    }
+    h.session.syncDrawings([rectangle()]);
+    const alert = h.session.add(rule("above-rectangle"))!;
+    const before = h.session.getSnapshot();
+    h.storage.setItem.mockClear();
+    for (const condition of conditions) {
+      for (const channelBoundary of ["upper", "lower"] as const) {
+        expect(h.session.add({ ...rule(condition), channelBoundary })).toBeNull();
+        expect(h.session.update(alert.id, { ...rule(condition), channelBoundary })).toBe(false);
+      }
+    }
+    expect(h.session.getSnapshot()).toBe(before);
+    expect(h.storage.setItem).not.toHaveBeenCalled();
+    const parsed = parseDrawingAlerts(
+      JSON.stringify({
+        version: 1,
+        alerts: [alert, { ...alert, id: "invalid-boundary", channelBoundary: "upper" }],
+        history: [],
+      }),
+    );
+    expect(parsed.alerts).toEqual([alert]);
+    h.session.dispose();
+  });
+});

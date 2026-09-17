@@ -91,6 +91,8 @@ const drawingConditionLabel: Record<DrawingAlertCondition, string> = {
   "exiting-rectangle": "Exiting rectangle",
   "inside-rectangle": "Inside rectangle",
   "outside-rectangle": "Outside rectangle",
+  "above-rectangle": "Above rectangle",
+  "below-rectangle": "Below rectangle",
 };
 const drawingTriggerLabel: Record<DrawingAlertTrigger, string> = {
   once: "Once",

@@ -7,7 +7,11 @@ import { DrawingAlertExpiration } from "./DrawingAlertExpiration";
 import { AlertIcon } from "./AlertIcon";
 import { DrawingSelect, inputClass } from "./DrawingStyleControls";
 import type { ChartDrawing } from "./drawingGeometry";
-import { isChannelRegionCondition, isRectangleRegionCondition } from "./drawingAlerts";
+import {
+  isChannelRegionCondition,
+  isRectangleRegionCondition,
+  isRectangleAlertCondition,
+} from "./drawingAlerts";
 import type {
   DrawingAlert,
   NewDrawingAlert,
@@ -43,6 +47,8 @@ const conditions: readonly (readonly [DrawingAlertCondition, string])[] = [
   ["exiting-rectangle", "Exiting rectangle"],
   ["inside-rectangle", "Inside rectangle"],
   ["outside-rectangle", "Outside rectangle"],
+  ["above-rectangle", "Greater Than"],
+  ["below-rectangle", "Less Than"],
 ];
 const triggers: readonly (readonly [DrawingAlertTrigger, string])[] = [
   ["once", "Once only"],
@@ -127,7 +133,13 @@ export function DrawingAlertDialog({
   );
   const baseLabel = drawing.name || drawingLabels[drawing.kind] || "Drawing";
   const targetLabel = (value: DrawingAlertCondition, boundary = channelBoundary) =>
-    channel && !isChannelRegionCondition(value) ? `${baseLabel} ${boundary} boundary` : baseLabel;
+    value === "above-rectangle"
+      ? `${baseLabel} upper boundary`
+      : value === "below-rectangle"
+        ? `${baseLabel} lower boundary`
+        : channel && !isChannelRegionCondition(value)
+          ? `${baseLabel} ${boundary} boundary`
+          : baseLabel;
   const defaultMessage = (value: DrawingAlertCondition, boundary = channelBoundary) => {
     const conditionLabel = conditions.find(([key]) => key === value)![1];
     const region = isChannelRegionCondition(value) || isRectangleRegionCondition(value);
@@ -293,8 +305,8 @@ export function DrawingAlertDialog({
                     value={condition}
                     options={conditions.filter(([value]) =>
                       rectangle
-                        ? isRectangleRegionCondition(value)
-                        : !isRectangleRegionCondition(value) &&
+                        ? isRectangleAlertCondition(value)
+                        : !isRectangleAlertCondition(value) &&
                           (channel || !isChannelRegionCondition(value)),
                     )}
                     className="h-[34px] w-full"
@@ -308,7 +320,7 @@ export function DrawingAlertDialog({
                 <input
                   aria-label="Drawing"
                   className={`${inputClass} w-full bg-white/5`}
-                  value={baseLabel}
+                  value={rectangle ? targetLabel(condition) : baseLabel}
                   readOnly
                 />
                 {channel && !isChannelRegionCondition(condition) ? (

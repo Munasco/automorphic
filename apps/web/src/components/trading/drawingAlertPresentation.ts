@@ -5,7 +5,7 @@ export function drawingAlertTargetLabel(event: DrawingAlertEvent): string {
   if (event.targetKind === "price" && event.channelRange)
     return `${isRectangleRegionCondition(event.condition) ? "Rectangle" : "Channel"} ${event.channelRange.lower.toLocaleString("en-US", { maximumFractionDigits: 6 })} – ${event.channelRange.upper.toLocaleString("en-US", { maximumFractionDigits: 6 })}`;
   if (event.targetKind === "price")
-    return `${event.channelBoundary === "upper" ? "Upper channel" : event.channelBoundary === "lower" ? "Lower channel" : "Line"} ${event.target.toLocaleString("en-US", { maximumFractionDigits: 6 })}`;
+    return `${event.condition === "above-rectangle" ? "Upper rectangle" : event.condition === "below-rectangle" ? "Lower rectangle" : event.channelBoundary === "upper" ? "Upper channel" : event.channelBoundary === "lower" ? "Lower channel" : "Line"} ${event.target.toLocaleString("en-US", { maximumFractionDigits: 6 })}`;
   if (event.intervalKey.startsWith("tick:")) return "Vertical line";
   const time = event.targetTime;
   if (typeof time === "number") {
