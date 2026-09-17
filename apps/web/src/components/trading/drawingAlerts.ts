@@ -636,6 +636,16 @@ export function createDrawingAlertSession(
       publish({ ...state, alerts: state.alerts.filter((a) => a.id !== alertId || !relevant(a)) });
       return true;
     },
+    removeHistoryEvent(id: string) {
+      if (disposed) return false;
+      refresh();
+      if (!state.history.some((event) => event.id === id && relevant(event))) return false;
+      publish({
+        ...state,
+        history: state.history.filter((event) => event.id !== id || !relevant(event)),
+      });
+      return true;
+    },
     clearHistory() {
       if (disposed) return false;
       refresh();

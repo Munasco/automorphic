@@ -1317,3 +1317,53 @@ describe("parallel channel boundary alerts", () => {
     expect(parsed.alerts[0]).not.toHaveProperty("channelBoundary");
   });
 });
+
+it("removes a single drawing log event within its scope without rearming its alert", () => {
+  const h = harness();
+  h.add("above", "once-per-bar");
+  h.session.observe(h.sample(101));
+  h.session.observe(h.sample(102, { barId: "bar-2" }));
+  const foreign = h.open("GCZ6", "minute:15");
+  foreign.syncDrawings([line()]);
+  foreign.add({ drawingId: "line", condition: "above", trigger: "once-per-bar", expiresAt: null });
+  foreign.observe(h.sample(103, { intervalKey: "minute:15" }));
+  const foreignId = foreign
+    .getSnapshot()
+    .history.find((event) => event.intervalKey === "minute:15")!.id;
+  const before = h.session.getSnapshot();
+  const own = before.history.filter((event) => event.intervalKey === "minute:5");
+  expect(own).toHaveLength(2);
+  h.storage.setItem.mockClear();
+  expect(h.session.removeHistoryEvent(foreignId)).toBe(false);
+  expect(h.storage.setItem).not.toHaveBeenCalled();
+  expect(h.session.removeHistoryEvent(own[0]!.id)).toBe(true);
+  expect(h.session.getSnapshot().alerts.toSorted((a, b) => a.id.localeCompare(b.id))).toEqual(
+    before.alerts.toSorted((a, b) => a.id.localeCompare(b.id)),
+  );
+  expect(
+    h.session
+      .getSnapshot()
+      .history.map((event) => event.id)
+      .sort(),
+  ).toEqual([foreignId, own[1]!.id].sort());
+  h.session.observe(h.sample(104, { barId: "bar-2" }));
+  expect(h.onTrigger).toHaveBeenCalledTimes(3);
+  expect(h.open().getSnapshot().history).toEqual(h.session.getSnapshot().history);
+  h.storage.setItem.mockClear();
+  expect(h.session.removeHistoryEvent(own[0]!.id)).toBe(false);
+  h.session.dispose();
+  expect(h.session.removeHistoryEvent(own[1]!.id)).toBe(false);
+  expect(h.storage.setItem).not.toHaveBeenCalled();
+});
+
+it("leaves drawing history unchanged when event deletion fails to persist", () => {
+  const h = harness();
+  h.add("above");
+  h.session.observe(h.sample(101));
+  const before = h.session.getSnapshot();
+  h.storage.setItem.mockImplementationOnce(() => {
+    throw Error("Storage unavailable");
+  });
+  expect(() => h.session.removeHistoryEvent(before.history[0]!.id)).toThrow("Storage unavailable");
+  expect(h.session.getSnapshot()).toBe(before);
+});

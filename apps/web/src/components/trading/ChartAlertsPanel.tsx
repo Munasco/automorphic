@@ -64,6 +64,7 @@ const INACTIVE_SESSION: PriceAlertSession = {
   setEnabled: () => false,
   remove: () => false,
   clearHistory: () => false,
+  removeHistoryEvent: () => false,
   observeQuote: () => {},
   checkExpiration: () => false,
   dispose: () => {},
@@ -778,8 +779,29 @@ export function ChartAlerts({
         >
           <ol className="divide-y divide-zinc-800" aria-live="polite" aria-relevant="additions">
             {history.map((event) => (
-              <li key={event.key} className="px-4 py-3 text-[13px]">
-                <p className="break-words font-medium text-zinc-200">{event.title}</p>
+              <li key={event.key} className="group/log-entry px-4 py-3 text-[13px]">
+                <div className="flex items-start gap-2">
+                  <p className="min-w-0 flex-1 break-words font-medium text-zinc-200">
+                    {event.title}
+                  </p>
+                  <div className="shrink-0 opacity-0 group-hover/log-entry:opacity-100 group-focus-within/log-entry:opacity-100 [@media(hover:none)]:opacity-100">
+                    <AlertAction
+                      label={`Delete log entry ${event.title}`}
+                      disabled={event.kind === "price" ? !controller.ready : !drawings?.ready}
+                      onClick={() =>
+                        act(
+                          () =>
+                            event.kind === "price"
+                              ? controller.removeHistoryEvent(event.id)
+                              : (drawings?.removeHistoryEvent(event.id) ?? false),
+                          "Could not delete the log entry. Try again.",
+                        )
+                      }
+                    >
+                      <ChartIcon name="trash" size={18} />
+                    </AlertAction>
+                  </div>
+                </div>
                 <p className="mt-1 whitespace-pre-wrap break-words text-zinc-400">
                   {event.description}
                 </p>

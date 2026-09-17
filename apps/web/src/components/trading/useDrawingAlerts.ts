@@ -213,6 +213,7 @@ export function useDrawingAlerts({
         active?.session.setEnabled(id, enabled) ?? false,
       remove: (id: string) => active?.session.remove(id) ?? false,
       clearHistory: () => active?.session.clearHistory() ?? false,
+      removeHistoryEvent: (id: string) => active?.session.removeHistoryEvent(id) ?? false,
       consume(snapshot: ChartMarketSnapshot) {
         if (!active) return;
         const committed = getCommittedDrawings();

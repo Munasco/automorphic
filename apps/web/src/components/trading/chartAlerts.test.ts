@@ -1217,3 +1217,40 @@ it("persists alert line visibility independently without rearming pending crossi
   saved.alerts[0].showLine = 0;
   expect(parseChartAlerts(JSON.stringify(saved)).alerts).toEqual([]);
 });
+
+it("removes one price log event without changing repeating alerts or cooldown state", () => {
+  const h = harness();
+  const session = h.open();
+  session.add({ ...crossing, condition: "above", repeat: true });
+  session.observeQuote(h.quote(101));
+  session.observeQuote(h.quote(102, 60_001));
+  const before = session.getSnapshot();
+  expect(before.history).toHaveLength(2);
+  const id = before.history[0]!.id;
+  expect(session.removeHistoryEvent(id)).toBe(true);
+  expect(session.getSnapshot().history).toEqual([before.history[1]]);
+  expect(session.getSnapshot().alerts).toEqual(before.alerts);
+  session.observeQuote(h.quote(103));
+  expect(h.onTrigger).toHaveBeenCalledTimes(2);
+  expect(h.open().getSnapshot().history).toEqual([before.history[1]]);
+  h.storage.setItem.mockClear();
+  expect(session.removeHistoryEvent(id)).toBe(false);
+  expect(session.removeHistoryEvent("missing")).toBe(false);
+  expect(h.storage.setItem).not.toHaveBeenCalled();
+  session.dispose();
+  expect(session.removeHistoryEvent(before.history[1]!.id)).toBe(false);
+  expect(h.storage.setItem).not.toHaveBeenCalled();
+});
+
+it("leaves price history unchanged when an event deletion cannot be saved", () => {
+  const h = harness();
+  const session = h.open();
+  session.add({ ...crossing, condition: "above" });
+  session.observeQuote(h.quote(101));
+  const before = session.getSnapshot();
+  h.storage.setItem.mockImplementationOnce(() => {
+    throw Error("Storage unavailable");
+  });
+  expect(() => session.removeHistoryEvent(before.history[0]!.id)).toThrow("Storage unavailable");
+  expect(session.getSnapshot()).toBe(before);
+});

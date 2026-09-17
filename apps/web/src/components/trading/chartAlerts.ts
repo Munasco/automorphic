@@ -398,6 +398,13 @@ export function createChartAlertSession(
       publish({ ...state, alerts: state.alerts.filter((alert) => alert.id !== id) });
       return true;
     },
+    removeHistoryEvent: (id: string) => {
+      if (disposed) return false;
+      refresh();
+      if (!state.history.some((event) => event.id === id)) return false;
+      publish({ ...state, history: state.history.filter((event) => event.id !== id) });
+      return true;
+    },
     clearHistory: () => {
       if (disposed) return false;
       refresh();
