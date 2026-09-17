@@ -70,7 +70,7 @@ const validDrawingRule = (
   boundary: unknown,
   fibLevel?: unknown,
 ) => {
-  if (drawing.kind === "fib")
+  if (drawing.kind === "fib" || drawing.kind === "fib-extension")
     return singleLevelCondition(condition) && boundary === undefined && isFibAlertLevel(fibLevel);
   if (fibLevel !== undefined) return false;
   return drawing.kind === "rectangle" || isRectangleAlertCondition(condition)
@@ -98,6 +98,7 @@ const KINDS = new Set([
   "channel",
   "rectangle",
   "fib",
+  "fib-extension",
 ]);
 export const supportsDrawingAlert = (drawing: ChartDrawing) =>
   KINDS.has(drawing.kind) && validDrawingAnchors(drawing.kind, drawing.anchors);
@@ -143,7 +144,9 @@ export function drawingAlertTarget(
     drawing.kind === "vertical" ||
     !finite(logical) ||
     !validChannelBoundary(drawing, channelBoundary) ||
-    (drawing.kind === "fib" ? !isFibAlertLevel(fibLevel) : fibLevel !== undefined)
+    (drawing.kind === "fib" || drawing.kind === "fib-extension"
+      ? !isFibAlertLevel(fibLevel)
+      : fibLevel !== undefined)
   )
     return null;
   try {
@@ -155,7 +158,28 @@ export function drawingAlertTarget(
       return extent === "infinite" || logical >= ax ? a.price : null;
     const b = drawing.anchors[1]!;
     const bx = projection.logicalAt(b.time);
-    if (!finite(bx) || ax === bx) return null;
+    if (!finite(bx)) return null;
+    if (drawing.kind === "fib-extension") {
+      const c = drawing.anchors[2]!;
+      const cx = projection.logicalAt(c.time);
+      if (
+        !finite(cx) ||
+        !finite(projection.priceToCoordinate(a.price)) ||
+        !finite(projection.priceToCoordinate(b.price)) ||
+        !finite(projection.priceToCoordinate(c.price))
+      )
+        return null;
+      // Extension levels span B–C; the drawing's level settings default both extensions off.
+      if (
+        extent === "visible" &&
+        ((!(drawing.extendLeft ?? false) && logical < Math.min(bx, cx)) ||
+          (!(drawing.extendRight ?? false) && logical > Math.max(bx, cx)))
+      )
+        return null;
+      const price = c.price + (b.price - a.price) * (drawing.reverse ? -1 : 1) * fibLevel!;
+      return finite(price) && finite(projection.priceToCoordinate(price)) ? price : null;
+    }
+    if (ax === bx) return null;
     if (drawing.kind === "rectangle") {
       if (extent === "visible" && (logical < Math.min(ax, bx) || logical > Math.max(ax, bx)))
         return null;
@@ -207,7 +231,9 @@ function fingerprint(drawing: ChartDrawing) {
     drawing.kind,
     drawing.anchors.map((anchor) => [drawingTimeValue(anchor.time), anchor.price]),
     drawing.kind === "rectangle" ? null : drawingLineExtensions(drawing),
-    ...(drawing.kind === "fib" ? [drawing.reverse ?? false] : []),
+    ...(drawing.kind === "fib" || drawing.kind === "fib-extension"
+      ? [drawing.reverse ?? false]
+      : []),
   ]);
 }
 export type DrawingAlertNotifications = { toast: boolean; sound: boolean; desktop: boolean };

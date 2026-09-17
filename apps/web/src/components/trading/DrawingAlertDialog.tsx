@@ -75,6 +75,7 @@ const drawingLabels: Partial<Record<ChartDrawing["kind"], string>> = {
   channel: "Parallel channel",
   rectangle: "Rectangle",
   fib: "Fib retracement",
+  "fib-extension": "Trend-based fib extension",
 };
 
 function monthAhead(now = Date.now()) {
@@ -121,15 +122,16 @@ export function DrawingAlertDialog({
   const initial = alert ?? initialValues;
   const vertical = drawing.kind === "vertical";
   const rectangle = drawing.kind === "rectangle";
-  const fib = drawing.kind === "fib";
+  const fib = drawing.kind === "fib" || drawing.kind === "fib-extension";
+  const defaultFibLevel = drawing.kind === "fib-extension" ? 1.618 : 0.618;
   const configuredLevels = (drawing.levels ?? defaultDrawingLevels(drawing.kind)).filter((level) =>
     isFibAlertLevel(level.value),
   );
   const [fibLevel, setFibLevel] = useState(
     initial?.fibLevel ??
-      configuredLevels.find((level) => level.value === 0.618)?.value ??
+      configuredLevels.find((level) => level.value === defaultFibLevel)?.value ??
       configuredLevels[0]?.value ??
-      0.618,
+      defaultFibLevel,
   );
   const fibOptions: Array<readonly [string, string]> = [
     ...new Map(

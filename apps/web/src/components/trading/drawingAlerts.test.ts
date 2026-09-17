@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import type { Time } from "lightweight-charts";
-import type { ChartDrawing } from "./drawingGeometry";
+import { buildDrawingGeometry, type ChartDrawing } from "./drawingGeometry";
 import {
   createDrawingAlertSession,
   drawingAlertTarget,
@@ -2277,6 +2277,229 @@ describe("Fibonacci retracement level alerts", () => {
       h.session.syncDrawings([drawing]);
       expect(h.session.add(input)).toBeNull();
     }
+    h.session.dispose();
+  });
+});
+
+describe("Fibonacci extension level alerts", () => {
+  const extension = (patch: Partial<ChartDrawing> = {}): ChartDrawing =>
+    line({
+      kind: "fib-extension",
+      anchors: [
+        { time: 0 as Time, price: 100 },
+        { time: 4 as Time, price: 200 },
+        { time: 10 as Time, price: 150 },
+      ],
+      ...patch,
+    });
+  const rule = (
+    fibLevel: number,
+    condition: DrawingAlertCondition = "crossing",
+  ): NewDrawingAlert => ({
+    drawingId: "line",
+    fibLevel,
+    condition,
+    trigger: "once",
+    expiresAt: null,
+  });
+
+  it.each([
+    [false, 0, 150],
+    [false, 1.618, 311.8],
+    [false, -0.5, 100],
+    [true, 0.5, 100],
+  ] as const)(
+    "computes reverse=%s ratio %s from the third anchor at %s",
+    (reverse, fibLevel, target) => {
+      const h = harness();
+      h.session.syncDrawings([extension({ reverse })]);
+      expect(supportsDrawingAlert(extension())).toBe(true);
+      const alert = h.session.add(rule(fibLevel, "above"))!;
+      expect(alert).not.toBeNull();
+      h.session.observe(h.sample(target + 1));
+      expect(h.onTrigger).toHaveBeenCalledTimes(1);
+      expect(h.onTrigger.mock.lastCall![0]).toMatchObject({
+        alertId: alert.id,
+        fibLevel,
+        targetKind: "price",
+      });
+      expect(h.onTrigger.mock.lastCall![0].target).toBeCloseTo(target);
+      const saved = parseDrawingAlerts(h.values.get(DRAWING_ALERTS_KEY)!);
+      expect(saved).toEqual(h.session.getSnapshot());
+      h.session.dispose();
+      const reloaded = h.open();
+      reloaded.syncDrawings([extension({ reverse })]);
+      expect(reloaded.getSnapshot()).toEqual(saved);
+      reloaded.dispose();
+    },
+  );
+
+  it.each([
+    [
+      "inverted",
+      {
+        ...projection,
+        priceToCoordinate: (price: number) => price,
+        coordinateToPrice: (value: number) => value,
+      },
+    ],
+    ["logarithmic", { ...projection, priceToCoordinate: Math.log, coordinateToPrice: Math.exp }],
+  ] as const)("uses source-price extension arithmetic on %s axes", (_label, p) => {
+    const h = harness(p);
+    h.session.syncDrawings([extension()]);
+    h.session.add(rule(0.5));
+    h.session.observe(h.sample(199));
+    h.session.observe(h.sample(201));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    expect(h.onTrigger.mock.lastCall![0]).toMatchObject({ target: 200, fibLevel: 0.5 });
+    h.session.dispose();
+  });
+
+  it("matches the actual finite rendered B–C span and respects explicit extensions/infinite policy", () => {
+    const drawing = extension({ levels: [{ value: 0.5, visible: true }], showTrendLine: false });
+    const geom = buildDrawingGeometry(
+      drawing,
+      ({ time, price }) => ({ x: Number(time), y: 500 - price }),
+      (price) => 500 - price,
+      100,
+      500,
+    );
+    expect(geom.lines).toHaveLength(1);
+    expect(geom.lines[0]!.from).toEqual({ x: 4, y: 300 });
+    expect(geom.lines[0]!.to).toEqual({ x: 10, y: 300 });
+    const target = (
+      logical: number,
+      patch: Partial<ChartDrawing> = {},
+      extent: DrawingAlertExtent = "visible",
+    ) => drawingAlertTarget({ ...drawing, ...patch }, logical, projection, extent, undefined, 0.5);
+    expect(target(3)).toBeNull();
+    expect(target(4)).toBe(200);
+    expect(target(10)).toBe(200);
+    expect(target(11)).toBeNull();
+    expect(target(3, { extendLeft: true })).toBe(200);
+    expect(target(11, { extendRight: true })).toBe(200);
+    expect(target(11, {}, "infinite")).toBe(200);
+    expect(target(3, {}, "infinite")).toBe(200);
+  });
+
+  it("supports shared A/B or B/C times without applying a two-anchor line slope guard", () => {
+    const sameAB = extension({
+      anchors: [
+        { time: 4 as Time, price: 100 },
+        { time: 4 as Time, price: 200 },
+        { time: 10 as Time, price: 150 },
+      ],
+    });
+    expect(drawingAlertTarget(sameAB, 5, projection, "visible", undefined, 0.5)).toBe(200);
+    const sameBC = extension({
+      anchors: [
+        { time: 0 as Time, price: 100 },
+        { time: 4 as Time, price: 200 },
+        { time: 4 as Time, price: 150 },
+      ],
+    });
+    expect(drawingAlertTarget(sameBC, 4, projection, "visible", undefined, 0.5)).toBe(200);
+    expect(drawingAlertTarget(sameBC, 5, projection, "visible", undefined, 0.5)).toBeNull();
+    expect(
+      drawingAlertTarget(
+        { ...sameBC, extendRight: true },
+        5,
+        projection,
+        "visible",
+        undefined,
+        0.5,
+      ),
+    ).toBe(200);
+  });
+
+  it("requires all three anchor projections and a finite projected target", () => {
+    for (const absent of [0, 4, 10]) {
+      expect(
+        drawingAlertTarget(
+          extension(),
+          5,
+          { ...projection, logicalAt: (time) => (Number(time) === absent ? null : Number(time)) },
+          "visible",
+          undefined,
+          0.5,
+        ),
+      ).toBeNull();
+    }
+    for (const absent of [100, 200, 150, 250]) {
+      expect(
+        drawingAlertTarget(
+          extension(),
+          5,
+          { ...projection, priceToCoordinate: (price) => (price === absent ? null : -price) },
+          "visible",
+          undefined,
+          1,
+        ),
+      ).toBeNull();
+    }
+  });
+
+  it("rearms third-anchor, reverse and ratio edits without deriving a crossing from the old target", () => {
+    const h = harness();
+    h.session.syncDrawings([extension()]);
+    const alert = h.session.add(rule(0.5))!;
+    h.session.observe(h.sample(190)); // below old target 200
+    const moved = extension({
+      anchors: [
+        { time: 0 as Time, price: 100 },
+        { time: 4 as Time, price: 200 },
+        { time: 10 as Time, price: 100 },
+      ],
+    });
+    h.session.syncDrawings([moved]);
+    h.session.observe(h.sample(190)); // above new target 150, establishes baseline
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    h.session.syncDrawings([{ ...moved, reverse: true }]);
+    h.session.observe(h.sample(40)); // below reverse target 50, establishes baseline
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    expect(h.session.update(alert.id, rule(0))).toBe(true);
+    h.session.observe(h.sample(110)); // above target 100, establishes baseline after ratio edit
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    h.session.observe(h.sample(99));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    expect(h.onTrigger.mock.lastCall![0]).toMatchObject({ fibLevel: 0, target: 100 });
+    h.session.dispose();
+  });
+
+  it("does not rearm hidden/removed levels or explicit false extension defaults", () => {
+    const h = harness();
+    h.session.syncDrawings([extension({ levels: [{ value: 0.5, visible: true }] })]);
+    h.session.add(rule(0.5));
+    h.session.observe(h.sample(199));
+    const armedAt = h.session.getSnapshot().alerts[0]!.armedAt;
+    h.session.syncDrawings([
+      extension({
+        levels: [{ value: 0.5, visible: false }],
+        extendLeft: false,
+        extendRight: false,
+      }),
+    ]);
+    h.session.syncDrawings([extension({ levels: [{ value: 1, visible: true }], hidden: true })]);
+    expect(h.session.getSnapshot().alerts[0]).toMatchObject({
+      armedAt,
+      fibLevel: 0.5,
+      enabled: true,
+    });
+    h.session.observe(h.sample(201));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    h.session.dispose();
+  });
+
+  it("requires a valid ratio and forbids region operators or boundary selectors", () => {
+    const h = harness();
+    h.session.syncDrawings([extension()]);
+    h.storage.setItem.mockClear();
+    expect(h.add()).toBeNull();
+    for (const value of [NaN, Infinity, -1001, 1001]) expect(h.session.add(rule(value))).toBeNull();
+    for (const condition of ["inside-channel", "entering-rectangle", "above-rectangle"] as const)
+      expect(h.session.add(rule(0.5, condition))).toBeNull();
+    expect(h.session.add({ ...rule(0.5), channelBoundary: "upper" })).toBeNull();
+    expect(h.storage.setItem).not.toHaveBeenCalled();
     h.session.dispose();
   });
 });
