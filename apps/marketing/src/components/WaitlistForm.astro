@@ -1,0 +1,57 @@
+---
+const waitlistEndpoint = import.meta.env.PUBLIC_CONVEX_SITE_URL
+  ? `${import.meta.env.PUBLIC_CONVEX_SITE_URL.replace(/\/$/, "")}/waitlist`
+  : "";
+---
+<form class="waitlist-form" data-endpoint={waitlistEndpoint}>
+          <label for="waitlist-email">Email address</label>
+          <div class="waitlist-fields">
+            <input id="waitlist-email" name="email" type="email" autocomplete="email" placeholder="Your email address" maxlength="254" required />
+            <button class="primary" type="submit">Join the waitlist <span aria-hidden="true">↗</span></button>
+          </div>
+          <p class="waitlist-status" role="status" aria-live="polite"></p>
+        </form>
+<div class="waitlist-success" hidden tabindex="-1" role="status">
+  <h3>You're on the list!</h3>
+  <p>We'll be in touch when your early preview is ready.</p>
+</div>
+    <script>
+      const form = document.querySelector<HTMLFormElement>(".waitlist-form");
+      form?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const email = form.querySelector<HTMLInputElement>("input[type=email]");
+        const button = form.querySelector<HTMLButtonElement>("button[type=submit]");
+        const status = form.querySelector<HTMLElement>(".waitlist-status");
+        if (!email || !button || !status || !form.reportValidity() || button.disabled) return;
+        const endpoint = form.dataset.endpoint;
+        if (!endpoint) {
+          status.textContent = "Signup is temporarily unavailable. Please try again soon.";
+          return;
+        }
+        button.disabled = true;
+        button.textContent = "Joining…";
+        status.textContent = "";
+        try {
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: email.value.trim() }),
+            signal: AbortSignal.timeout(15000),
+          });
+          const result = await response.json();
+          if (!response.ok || result.success !== true) throw new Error("Signup failed");
+          form.hidden = true;
+          const success = document.querySelector<HTMLElement>(".waitlist-success");
+          if (success) {
+            success.hidden = false;
+            success.focus();
+          }
+          form.reset();
+        } catch {
+          status.textContent = "Couldn't join just now. Please try again.";
+        } finally {
+          button.disabled = false;
+          button.textContent = "Join the waitlist ↗";
+        }
+      });
+    </script>

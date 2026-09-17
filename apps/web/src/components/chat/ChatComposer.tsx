@@ -1327,6 +1327,7 @@ export interface ChatComposerProps {
   settings: UnifiedSettings;
   keybindings: ResolvedKeybindingsConfig;
   terminalOpen: boolean;
+  tradingDockControl?: ReactNode;
   gitCwd: string | null;
   restingControlsHost: HTMLDivElement | null;
   restingControlsHaveLeadingContext: boolean;
@@ -1443,6 +1444,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     settings,
     keybindings,
     terminalOpen,
+    tradingDockControl,
     gitCwd,
     restingControlsHost,
     restingControlsHaveLeadingContext,
@@ -5788,6 +5790,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                   className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
+                  {tradingDockControl}
                   {showComposerAttachAction ? (
                     <>
                       <input

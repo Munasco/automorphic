@@ -40,3 +40,6 @@ export * from "./previewAutomation.ts";
 export * from "./resourceTelemetry.ts";
 export * from "./usage.ts";
 export * from "./rpc.ts";
+export * from "./tradingAccount.ts";
+export * from "./mcpIntegrations.ts";
+export * from "./tradingOrder.ts";

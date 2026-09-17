@@ -7,13 +7,17 @@
  * terminal surfaces point at terminal session ids, file surfaces point at
  * workspace paths, and diff/files remain singleton surfaces.
  */
-import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import {
-  EnvironmentId,
-  ThreadId,
-  type ChatFileAttachment,
-  type ScopedThreadRef,
-} from "@t3tools/contracts";
+/**
+ * Thread-scoped right-panel surface state.
+ *
+ * This is intentionally a shallow workspace model: it owns an ordered set of
+ * surface descriptors and the active surface, while each feature continues to
+ * own its durable resource state. Browser surfaces point at preview tab ids,
+ * terminal surfaces point at terminal session ids, file surfaces point at
+ * workspace paths, and diff/files remain singleton surfaces.
+ */
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { type ChatFileAttachment, type ScopedThreadRef } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -26,9 +30,8 @@ const RIGHT_PANEL_KINDS = [
   "preview",
   "device",
   "terminal",
-  "pull-request",
-  "pull-requests",
   "agents",
+  "trading",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
@@ -64,41 +67,15 @@ export type RightPanelSurface =
           than at a workspace or host path. */
       attachment?: ChatFileAttachment;
     }
-  | {
-      /**
-       * A change request opened beside a thread or in the pull-request list's shared panel.
-       * The reference lives in the id so several pull requests can remain open as peer tabs.
-       */
-      id: `pull-request:${string}`;
-      kind: "pull-request";
-      /**
-       * Which server the change request was read from. The list spans every connected one, so
-       * two of them can hold the same project id; a panel beside a thread leaves this out and
-       * takes the environment from its own ref.
-       */
-      environmentId?: string;
-      projectId: string;
-      host?: string;
-      repository: string;
-      number: number;
-      url?: string;
-    }
-  /** The thread's linked pull requests, one singleton tab beside any number of `pull-request` tabs. */
-  | { id: "pull-requests"; kind: "pull-requests" }
-  | { id: "agents"; kind: "agents" };
+  | { id: "agents"; kind: "agents" }
+  | { id: "trading"; kind: "trading" };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
 // v9 removed the "plan" surface kind (plans render inline in the transcript).
 // v10 keys pull-request surfaces by reference instead of a singleton tab.
 // v11 stops persisting the pull-request list's shared panel, so a restart opens the page fresh.
 // v12 adds the device surface.
-const RIGHT_PANEL_STORAGE_VERSION = 13;
-
-/** A fixed workspace-level ref: each PR surface carries its own real environment. */
-export const PULL_REQUESTS_PANEL_REF = scopeThreadRef(
-  EnvironmentId.make("pull-requests-panel"),
-  ThreadId.make("pull-requests-panel"),
-);
+const RIGHT_PANEL_STORAGE_VERSION = 14;
 
 /**
  * The pull-request list's shared panel is session
@@ -124,29 +101,15 @@ interface RightPanelStoreState {
    */
   openProactive: (
     ref: ScopedThreadRef,
-    surface: Extract<RightPanelSurface, { kind: "diff" | "pull-request" }>,
+    surface: Extract<RightPanelSurface, { kind: "diff" }>,
     expectedUserActionRevision: number,
   ) => boolean;
-  open: (
-    ref: ScopedThreadRef,
-    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
-  ) => void;
+  open: (ref: ScopedThreadRef, kind: Exclude<RightPanelKind, "file" | "terminal">) => void;
   openDevice: (ref: ScopedThreadRef, target: DeviceTabTarget, automatic?: boolean) => void;
   renameDevice: (ref: ScopedThreadRef, surfaceId: string, title: string) => void;
   openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
   openFile: (ref: ScopedThreadRef, relativePath: string, line?: number) => void;
   openAttachment: (ref: ScopedThreadRef, attachment: ChatFileAttachment) => void;
-  openPullRequest: (
-    ref: ScopedThreadRef,
-    target: {
-      environmentId?: string;
-      projectId: string;
-      host?: string;
-      repository: string;
-      number: number;
-      url?: string;
-    },
-  ) => void;
   openTerminal: (ref: ScopedThreadRef, terminalId: string) => void;
   splitTerminal: (
     ref: ScopedThreadRef,
@@ -166,10 +129,7 @@ interface RightPanelStoreState {
   show: (ref: ScopedThreadRef) => void;
   close: (ref: ScopedThreadRef) => void;
   toggleVisibility: (ref: ScopedThreadRef) => void;
-  toggle: (
-    ref: ScopedThreadRef,
-    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
-  ) => void;
+  toggle: (ref: ScopedThreadRef, kind: Exclude<RightPanelKind, "file" | "terminal">) => void;
   removeThread: (ref: ScopedThreadRef) => void;
 }
 
@@ -180,17 +140,17 @@ const EMPTY_THREAD_STATE: ThreadRightPanelState = {
 };
 
 const singletonSurface = (
-  kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "pull-request">,
+  kind: Exclude<RightPanelKind, "file" | "preview" | "terminal">,
 ): RightPanelSurface => {
   switch (kind) {
     case "diff":
       return { id: "diff", kind };
     case "files":
       return { id: "files", kind };
-    case "pull-requests":
-      return { id: "pull-requests", kind };
     case "agents":
       return { id: "agents", kind };
+    case "trading":
+      return { id: "trading", kind };
     case "device":
       return { id: "device", kind };
   }
@@ -229,43 +189,6 @@ const terminalSurface = (terminalId: string): RightPanelSurface => ({
   terminalIds: [terminalId],
   activeTerminalId: terminalId,
 });
-
-export type PullRequestSurface = Extract<RightPanelSurface, { kind: "pull-request" }>;
-
-export function pullRequestSurfaceId(target: {
-  environmentId?: string;
-  projectId: string;
-  host?: string;
-  repository: string;
-  number: number;
-}): PullRequestSurface["id"] {
-  // The environment leads the id where there is one, so the same change request read from two
-  // servers is two tabs rather than one tab that changes its mind about which server it is on.
-  const scope =
-    target.environmentId === undefined ? "" : `${encodeURIComponent(target.environmentId)}:`;
-  const host = target.host === undefined ? "" : `${encodeURIComponent(target.host.toLowerCase())}:`;
-  return `pull-request:${scope}${encodeURIComponent(target.projectId)}:${host}${encodeURIComponent(target.repository)}:${target.number}`;
-}
-
-export function pullRequestSurface(target: {
-  environmentId?: string;
-  projectId: string;
-  host?: string;
-  repository: string;
-  number: number;
-  url?: string;
-}): PullRequestSurface {
-  return {
-    id: pullRequestSurfaceId(target),
-    kind: "pull-request",
-    ...(target.environmentId === undefined ? {} : { environmentId: target.environmentId }),
-    projectId: target.projectId,
-    ...(typeof target.host === "string" ? { host: target.host.toLowerCase() } : {}),
-    repository: target.repository,
-    number: target.number,
-    ...(typeof target.url === "string" ? { url: target.url } : {}),
-  };
-}
 
 const upsertSurface = (
   current: ThreadRightPanelState,
@@ -381,25 +304,10 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                           : 0;
                       return [{ ...surface, revealLine, revealRequestId }];
                     }
-                    if (surface.kind === "pull-request") {
-                      if (
-                        typeof surface.projectId !== "string" ||
-                        typeof surface.repository !== "string" ||
-                        typeof surface.number !== "number" ||
-                        !Number.isSafeInteger(surface.number) ||
-                        surface.number < 1
-                      ) {
-                        return [];
-                      }
-                      const { environmentId, ...rest } = surface;
-                      // Anything else stored under that name is not an environment.
-                      return [
-                        pullRequestSurface({
-                          ...rest,
-                          ...(typeof environmentId === "string" ? { environmentId } : {}),
-                        }),
-                      ];
-                    }
+                    if (
+                      ["pull-request", "pull-requests"].includes((surface as { kind: string }).kind)
+                    )
+                      return [];
                     if (surface.kind !== "terminal") return [surface];
                     if (
                       !("resourceId" in surface) ||
@@ -439,9 +347,7 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                 (surface) => surface.id === rawActiveSurfaceId,
               )
                 ? (rawActiveSurfaceId ?? null)
-                : rawActiveSurfaceId === "pull-request"
-                  ? (surfaces.find((surface) => surface.kind === "pull-request")?.id ?? null)
-                  : null;
+                : null;
               // A migration that dropped every surface (e.g. plan-only panels
               // in v9) must not reopen an empty panel.
               const isOpen =
@@ -489,14 +395,6 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           const threadKey = scopedThreadKey(ref);
           if (
             (state.userActionRevisionByThreadKey[threadKey] ?? 0) !== expectedUserActionRevision
-          ) {
-            return state;
-          }
-          // A linked PR takes priority over a completed-turn diff. Manual actions
-          // always apply, and later user choices reject both proactive requests.
-          if (
-            surface.kind === "diff" &&
-            selectActiveRightPanel(state.byThreadKey, ref) === "pull-request"
           ) {
             return state;
           }
@@ -557,21 +455,6 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               ? current.surfaces.filter((entry) => entry.id !== "browser:new")
               : current.surfaces;
             return upsertSurface({ ...current, surfaces: withoutPlaceholder }, surface);
-          }),
-        ),
-      openPullRequest: (ref, target) =>
-        set((state) =>
-          userAction(state, scopedThreadKey(ref), (current) => {
-            const surface = pullRequestSurface(target);
-            const next = upsertSurface(current, surface);
-            return target.url
-              ? {
-                  ...next,
-                  surfaces: next.surfaces.map((entry) =>
-                    entry.id === surface.id ? surface : entry,
-                  ),
-                }
-              : next;
           }),
         ),
       openFile: (ref, relativePath, line) =>

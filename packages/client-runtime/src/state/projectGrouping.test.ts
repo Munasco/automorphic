@@ -147,14 +147,14 @@ describe("buildProjectGroups", () => {
     );
   });
 
-  it("keeps the repository label when shared titles match its repository name", () => {
+  it("keeps workspace titles instead of substituting repository display names", () => {
     const projects = [
       makeProject("first", "/work/t3code", { title: "t3code" }),
       makeProject("second", "/work/t3code-2", { title: "t3code" }),
     ];
 
     expect(buildProjectGroups({ projects, settings: settings("repository") })[0]?.label).toBe(
-      "T3 Code",
+      "t3code",
     );
   });
 

@@ -1,0 +1,1262 @@
+import type { ChartBackgroundMode } from "./chartCanvasBackground";
+import { validObjectTreeFilter, type ObjectTreeFilter } from "./drawingObjectSearch";
+import {
+  DEFAULT_PRICE_LINE_APPEARANCE,
+  normalizePriceLineAppearance,
+  updatePriceLineAppearance,
+  type ChartPriceLineAppearance,
+} from "./chartPriceLineAppearance";
+import {
+  DEFAULT_CHART_AREA_FILL,
+  normalizeChartAreaFill,
+  updateChartAreaFill,
+  type ChartAreaFill,
+} from "./chartAreaFill";
+import { normalizeFavoriteChartIntervals } from "./tradingIntervals";
+import {
+  normalizeChartPaneSizes,
+  equalChartPaneSizes,
+  type ChartPaneSizes,
+} from "./chartPaneSizes";
+import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { tradingWorkspaceStorage } from "./workspaceStorage";
+import { PRICE_SOURCES, type PriceSource } from "./chartIndicators";
+import { CHART_TIME_ZONES } from "./chartTimeZones";
+import { randomUUID } from "../../lib/utils";
+import {
+  DEFAULT_VOLUME_COLORS,
+  MAX_CHART_INDICATORS,
+  baseIndicatorKey,
+  createIndicatorInstance,
+  getChartIndicatorInstances,
+  isIndicatorKey,
+  normalizeExtraIndicators,
+  normalizeIndicatorOrder,
+  type ChartIndicatorInstance,
+} from "./chartIndicatorInstances";
+export { DEFAULT_VOLUME_COLORS } from "./chartIndicatorInstances";
+
+import {
+  DEFAULT_INDICATORS,
+  DEFAULT_INITIAL_BALANCE,
+  INDICATOR_CATALOG,
+  isValidInitialBalanceSettings,
+  resolveInitialBalanceSettings,
+  normalizeIndicatorInputs,
+  updateIndicatorInputs,
+  type IndicatorInputSettings,
+  type IndicatorInputValues,
+  type ChartStyle,
+  type ChartIndicators,
+  type IndicatorKey,
+  type InitialBalanceSettings,
+} from "./indicatorCatalog";
+export type {
+  ChartStyle,
+  IndicatorKey,
+  ChartIndicators,
+  InitialBalanceSettings,
+} from "./indicatorCatalog";
+
+import { normalizeIndicatorAppearance, type IndicatorAppearance } from "./indicatorStyles";
+export type { IndicatorAppearance } from "./indicatorStyles";
+export type ChartAppearance = Partial<Record<IndicatorKey, IndicatorAppearance>>;
+export type ChartZoomAnchor = "pointer" | "right";
+export type ChartCrosshairMode = "normal" | "magnet" | "ohlc" | "hidden";
+export type ChartCrosshairLineStyle = "solid" | "dotted" | "dashed" | "largeDashed";
+const validChartFontSize = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 8 && value <= 24;
+export type WatermarkHorizontalAlignment = "left" | "center" | "right";
+export type WatermarkVerticalAlignment = "top" | "center" | "bottom";
+const validWatermarkHorizontalAlignment = (value: unknown): value is WatermarkHorizontalAlignment =>
+  value === "left" || value === "center" || value === "right";
+const validWatermarkVerticalAlignment = (value: unknown): value is WatermarkVerticalAlignment =>
+  value === "top" || value === "center" || value === "bottom";
+const validWatermarkScale = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 25 && value <= 200;
+const validWatermarkOpacity = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 100;
+export type ChartReplaySpeed = 0.5 | 1 | 2 | 5 | 10;
+const validReplaySpeed = (value: unknown): value is ChartReplaySpeed =>
+  value === 0.5 || value === 1 || value === 2 || value === 5 || value === 10;
+export type CandleDetailColorKey =
+  | "candleWickUpColor"
+  | "candleWickDownColor"
+  | "candleBorderUpColor"
+  | "candleBorderDownColor";
+export type ChartLineWidth = 1 | 2 | 3 | 4;
+export type ChartLineShape = "straight" | "stepped";
+export type ChartLineMarkerRadius = 2 | 3 | 4 | 5 | 6;
+const validLineMarkerRadius = (value: unknown): value is ChartLineMarkerRadius =>
+  value === 2 || value === 3 || value === 4 || value === 5 || value === 6;
+const validLineChartShape = (value: unknown): value is ChartLineShape =>
+  value === "straight" || value === "stepped";
+const validLineChartSource = (value: unknown): value is PriceSource =>
+  typeof value === "string" && PRICE_SOURCES.some((source) => source === value);
+const validLineChartWidth = (value: unknown): value is ChartLineWidth =>
+  value === 1 || value === 2 || value === 3 || value === 4;
+export type ChartCrosshairLineWidth = 1 | 2 | 3;
+const validCrosshairLineStyle = (value: unknown): value is ChartCrosshairLineStyle =>
+  value === "solid" || value === "dotted" || value === "dashed" || value === "largeDashed";
+const validCrosshairLineWidth = (value: unknown): value is ChartCrosshairLineWidth =>
+  value === 1 || value === 2 || value === 3;
+export type ChartGridMode = "both" | "horizontal" | "vertical" | "none";
+export type ChartPriceScaleMargins = { top: number; bottom: number };
+export type ChartPriceScaleMode = "normal" | "logarithmic" | "percentage" | "indexedTo100";
+const validPriceScaleMode = (value: unknown): value is ChartPriceScaleMode =>
+  value === "normal" ||
+  value === "logarithmic" ||
+  value === "percentage" ||
+  value === "indexedTo100";
+export type ChartGridLineStyle = "solid" | "dotted" | "dashed";
+const validGridLineStyle = (value: unknown): value is ChartGridLineStyle =>
+  value === "solid" || value === "dotted" || value === "dashed";
+const validGridMode = (value: unknown): value is ChartGridMode =>
+  value === "both" || value === "horizontal" || value === "vertical" || value === "none";
+const validCrosshairMode = (value: unknown): value is ChartCrosshairMode =>
+  value === "normal" || value === "magnet" || value === "ohlc" || value === "hidden";
+const validTimeZone = (value: unknown): value is string =>
+  typeof value === "string" && CHART_TIME_ZONES.some((zone) => zone.value === value);
+function validPriceScaleMargins(value: unknown): value is ChartPriceScaleMargins {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  if (!("top" in value) || !("bottom" in value)) return false;
+  return [value.top, value.bottom].every(
+    (margin) =>
+      typeof margin === "number" && Number.isFinite(margin) && margin >= 0 && margin <= 0.45,
+  );
+}
+const validColor = (value: unknown): value is string =>
+  typeof value === "string" && /^#[a-f0-9]{6}$/i.test(value);
+const hiddenDefaults = () =>
+  Object.fromEntries(INDICATOR_CATALOG.map(({ key }) => [key, false])) as ChartIndicators;
+
+function mergeAppearance(
+  key: IndicatorKey,
+  previous: IndicatorAppearance,
+  patch: IndicatorAppearance,
+): IndicatorAppearance {
+  const cleaned = normalizeIndicatorAppearance(key, patch);
+  const plots = { ...previous.plots };
+  for (const [id, style] of Object.entries(cleaned.plots ?? {}))
+    plots[id] = { ...plots[id], ...style };
+  return { ...previous, ...cleaned, ...(Object.keys(plots).length ? { plots } : {}) };
+}
+
+type SavedChartPreferences = {
+  style: ChartStyle;
+  timeZone: string;
+  crosshairMode: ChartCrosshairMode;
+  showCrosshairHorizontalLine: boolean;
+  showCrosshairVerticalLine: boolean;
+  showCrosshairPriceLabel: boolean;
+  showCrosshairTimeLabel: boolean;
+  crosshairColor: string;
+  crosshairLineStyle: ChartCrosshairLineStyle;
+  crosshairLineWidth: ChartCrosshairLineWidth;
+  replaySpeed: ChartReplaySpeed;
+  indicators: ChartIndicators;
+  hiddenIndicators: ChartIndicators;
+  appearance: ChartAppearance;
+  indicatorInputs: IndicatorInputSettings;
+  extraIndicators: ChartIndicatorInstance[];
+  indicatorOrder: string[];
+  favoriteIndicators: IndicatorKey[];
+  favoriteChartIntervals: string[];
+  objectTreeFilter: ObjectTreeFilter;
+  volumeColors: typeof DEFAULT_VOLUME_COLORS;
+  initialBalance: InitialBalanceSettings;
+  gridMode: ChartGridMode;
+  gridLineStyle: ChartGridLineStyle;
+  gridColor: string;
+  chartBackgroundColor: string;
+  chartBackgroundMode: ChartBackgroundMode;
+  chartBackgroundBottomColor: string;
+  chartTextColor: string;
+  chartFontSize: number;
+  lineChartSource: PriceSource;
+  lineChartColor: string;
+  areaFill: ChartAreaFill;
+  lineChartWidth: ChartLineWidth;
+  lineChartShape: ChartLineShape;
+  showLineMarkers: boolean;
+  showSymbolWatermark: boolean;
+  watermarkColor: string;
+  watermarkOpacity: number;
+  watermarkScale: number;
+  watermarkHorizontalAlignment: WatermarkHorizontalAlignment;
+  watermarkVerticalAlignment: WatermarkVerticalAlignment;
+  lockVisibleTimeRangeOnResize: boolean;
+  zoomWithMouseWheel: boolean;
+  zoomWithPinch: boolean;
+  chartZoomAnchor: ChartZoomAnchor;
+  lineMarkerRadius: ChartLineMarkerRadius;
+  thinBars: boolean;
+  showBarOpen: boolean;
+  colorBarsByPreviousClose: boolean;
+  showCandleWicks: boolean;
+  showCandleBorders: boolean;
+  candleUpColor: string;
+  candleWickUpColor: string | null;
+  candleWickDownColor: string | null;
+  candleBorderUpColor: string | null;
+  candleBorderDownColor: string | null;
+  candleDownColor: string;
+  showChartTitle: boolean;
+  showCandleValues: boolean;
+  showBarChange: boolean;
+  indicatorLegendCollapsed: boolean;
+  showIndicatorInputs: boolean;
+  showIndicatorValues: boolean;
+  priceLineAppearance: ChartPriceLineAppearance;
+  showPriceLine: boolean;
+  showPriceLabel: boolean;
+  showBarCountdown: boolean;
+  priceScaleMode: ChartPriceScaleMode;
+  priceScaleMargins: ChartPriceScaleMargins | null;
+  paneStretchFactors: ChartPaneSizes;
+  invertScale: boolean;
+  showTimeScale: boolean;
+  rightOffsetBars: number;
+  showPriceScale: boolean;
+  showPriceScaleTicks: boolean;
+  alignPriceLabels: boolean;
+};
+
+/** Old saved charts keep their choices while newly introduced indicators stay disabled. */
+export function normalizeChartPreferences(value: unknown): SavedChartPreferences {
+  const saved =
+    value && typeof value === "object"
+      ? (value as Partial<SavedChartPreferences> & { showGrid?: unknown; logScale?: unknown })
+      : {};
+  const indicators = { ...DEFAULT_INDICATORS };
+  const hiddenIndicators = hiddenDefaults();
+  const appearance: ChartAppearance = {};
+  for (const { key } of INDICATOR_CATALOG) {
+    const enabled = saved.indicators?.[key];
+    if (typeof enabled === "boolean") indicators[key] = enabled;
+    hiddenIndicators[key] = saved.hiddenIndicators?.[key] === true;
+    const stored = saved.appearance?.[key];
+    if (stored && typeof stored === "object") {
+      const next = normalizeIndicatorAppearance(key, stored);
+      if (Object.keys(next).length) appearance[key] = next;
+    }
+  }
+  const extraIndicators = normalizeExtraIndicators(
+    saved.extraIndicators,
+    MAX_CHART_INDICATORS - Object.values(indicators).filter(Boolean).length,
+  );
+  return {
+    style:
+      saved.style === "hollow" ||
+      saved.style === "heikin-ashi" ||
+      saved.style === "bars" ||
+      saved.style === "line" ||
+      saved.style === "area"
+        ? saved.style
+        : "candles",
+    showCrosshairHorizontalLine: saved.showCrosshairHorizontalLine !== false,
+    showCrosshairVerticalLine: saved.showCrosshairVerticalLine !== false,
+    showCrosshairPriceLabel: saved.showCrosshairPriceLabel !== false,
+    showCrosshairTimeLabel: saved.showCrosshairTimeLabel !== false,
+    crosshairMode: validCrosshairMode(saved.crosshairMode) ? saved.crosshairMode : "normal",
+    indicators,
+    hiddenIndicators,
+    appearance,
+    indicatorInputs: normalizeIndicatorInputs(saved.indicatorInputs),
+    favoriteChartIntervals: normalizeFavoriteChartIntervals(saved.favoriteChartIntervals),
+    favoriteIndicators: Array.isArray(saved.favoriteIndicators)
+      ? [...new Set(saved.favoriteIndicators.filter(isIndicatorKey))]
+      : [],
+    extraIndicators,
+    indicatorOrder: normalizeIndicatorOrder(saved.indicatorOrder, [
+      ...INDICATOR_CATALOG.filter(({ key }) => indicators[key]).map(({ key }) => `base:${key}`),
+      ...extraIndicators.map(({ id }) => id),
+    ]),
+    volumeColors: {
+      up: validColor(saved.volumeColors?.up) ? saved.volumeColors.up : DEFAULT_VOLUME_COLORS.up,
+      down: validColor(saved.volumeColors?.down)
+        ? saved.volumeColors.down
+        : DEFAULT_VOLUME_COLORS.down,
+    },
+    initialBalance: isValidInitialBalanceSettings(saved.initialBalance)
+      ? resolveInitialBalanceSettings(saved.initialBalance)
+      : { ...DEFAULT_INITIAL_BALANCE },
+    replaySpeed: validReplaySpeed(saved.replaySpeed) ? saved.replaySpeed : 1,
+    timeZone: validTimeZone(saved.timeZone) ? saved.timeZone : "UTC",
+    crosshairColor: validColor(saved.crosshairColor) ? saved.crosshairColor : "#9598A1",
+    crosshairLineStyle: validCrosshairLineStyle(saved.crosshairLineStyle)
+      ? saved.crosshairLineStyle
+      : "largeDashed",
+    crosshairLineWidth: validCrosshairLineWidth(saved.crosshairLineWidth)
+      ? saved.crosshairLineWidth
+      : 1,
+    objectTreeFilter: validObjectTreeFilter(saved.objectTreeFilter)
+      ? saved.objectTreeFilter
+      : "all",
+    gridMode: validGridMode(saved.gridMode)
+      ? saved.gridMode
+      : saved.showGrid === false
+        ? "none"
+        : "both",
+    gridLineStyle: validGridLineStyle(saved.gridLineStyle) ? saved.gridLineStyle : "solid",
+    gridColor: validColor(saved.gridColor) ? saved.gridColor : "#171a23",
+    chartBackgroundColor: validColor(saved.chartBackgroundColor)
+      ? saved.chartBackgroundColor
+      : "#0b0d12",
+    chartBackgroundMode: saved.chartBackgroundMode === "gradient" ? "gradient" : "solid",
+    chartBackgroundBottomColor: validColor(saved.chartBackgroundBottomColor)
+      ? saved.chartBackgroundBottomColor
+      : "#000000",
+    chartTextColor: validColor(saved.chartTextColor) ? saved.chartTextColor : "#9299a7",
+    chartFontSize: validChartFontSize(saved.chartFontSize) ? saved.chartFontSize : 12,
+    lineChartSource: validLineChartSource(saved.lineChartSource) ? saved.lineChartSource : "close",
+    lineChartColor: validColor(saved.lineChartColor) ? saved.lineChartColor : "#6097ee",
+    areaFill: normalizeChartAreaFill(saved.areaFill),
+    lineChartWidth: validLineChartWidth(saved.lineChartWidth) ? saved.lineChartWidth : 2,
+    lineChartShape: validLineChartShape(saved.lineChartShape) ? saved.lineChartShape : "straight",
+    showLineMarkers: saved.showLineMarkers === true,
+    showSymbolWatermark: saved.showSymbolWatermark === true,
+    watermarkColor: validColor(saved.watermarkColor) ? saved.watermarkColor : "#9299a7",
+    watermarkOpacity: validWatermarkOpacity(saved.watermarkOpacity) ? saved.watermarkOpacity : 14,
+    watermarkScale: validWatermarkScale(saved.watermarkScale) ? saved.watermarkScale : 100,
+    watermarkHorizontalAlignment: validWatermarkHorizontalAlignment(
+      saved.watermarkHorizontalAlignment,
+    )
+      ? saved.watermarkHorizontalAlignment
+      : "center",
+    watermarkVerticalAlignment: validWatermarkVerticalAlignment(saved.watermarkVerticalAlignment)
+      ? saved.watermarkVerticalAlignment
+      : "center",
+    lockVisibleTimeRangeOnResize: saved.lockVisibleTimeRangeOnResize === true,
+    zoomWithMouseWheel: saved.zoomWithMouseWheel !== false,
+    zoomWithPinch: saved.zoomWithPinch !== false,
+    chartZoomAnchor: saved.chartZoomAnchor === "right" ? "right" : "pointer",
+    lineMarkerRadius: validLineMarkerRadius(saved.lineMarkerRadius) ? saved.lineMarkerRadius : 3,
+    thinBars: typeof saved.thinBars === "boolean" ? saved.thinBars : true,
+    showBarOpen: typeof saved.showBarOpen === "boolean" ? saved.showBarOpen : true,
+    colorBarsByPreviousClose: saved.colorBarsByPreviousClose === true,
+    showCandleWicks: typeof saved.showCandleWicks === "boolean" ? saved.showCandleWicks : true,
+    showCandleBorders:
+      typeof saved.showCandleBorders === "boolean" ? saved.showCandleBorders : true,
+    candleUpColor: validColor(saved.candleUpColor) ? saved.candleUpColor : "#26a69a",
+    candleWickUpColor: validColor(saved.candleWickUpColor) ? saved.candleWickUpColor : null,
+    candleWickDownColor: validColor(saved.candleWickDownColor) ? saved.candleWickDownColor : null,
+    candleBorderUpColor: validColor(saved.candleBorderUpColor) ? saved.candleBorderUpColor : null,
+    candleBorderDownColor: validColor(saved.candleBorderDownColor)
+      ? saved.candleBorderDownColor
+      : null,
+    candleDownColor: validColor(saved.candleDownColor) ? saved.candleDownColor : "#ef5350",
+    showChartTitle: typeof saved.showChartTitle === "boolean" ? saved.showChartTitle : true,
+    showBarChange: saved.showBarChange === true,
+    showCandleValues: typeof saved.showCandleValues === "boolean" ? saved.showCandleValues : true,
+    indicatorLegendCollapsed: saved.indicatorLegendCollapsed === true,
+    showIndicatorInputs: saved.showIndicatorInputs !== false,
+    showIndicatorValues: saved.showIndicatorValues !== false,
+    priceLineAppearance: normalizePriceLineAppearance(saved.priceLineAppearance),
+    showPriceLine: typeof saved.showPriceLine === "boolean" ? saved.showPriceLine : true,
+    showPriceLabel: typeof saved.showPriceLabel === "boolean" ? saved.showPriceLabel : true,
+    showBarCountdown: saved.showBarCountdown === true,
+    paneStretchFactors: normalizeChartPaneSizes(saved.paneStretchFactors),
+    priceScaleMargins: validPriceScaleMargins(saved.priceScaleMargins)
+      ? { top: saved.priceScaleMargins.top, bottom: saved.priceScaleMargins.bottom }
+      : null,
+    priceScaleMode: validPriceScaleMode(saved.priceScaleMode)
+      ? saved.priceScaleMode
+      : saved.logScale === true
+        ? "logarithmic"
+        : "normal",
+    invertScale: typeof saved.invertScale === "boolean" ? saved.invertScale : false,
+    showTimeScale: saved.showTimeScale !== false,
+    rightOffsetBars:
+      typeof saved.rightOffsetBars === "number" &&
+      Number.isInteger(saved.rightOffsetBars) &&
+      saved.rightOffsetBars >= 0 &&
+      saved.rightOffsetBars <= 100
+        ? saved.rightOffsetBars
+        : 5,
+    showPriceScale: saved.showPriceScale !== false,
+    showPriceScaleTicks: saved.showPriceScaleTicks === true,
+    alignPriceLabels: saved.alignPriceLabels !== false,
+  };
+}
+export const useChartPreferences = create<{
+  style: ChartStyle;
+  timeZone: string;
+  crosshairMode: ChartCrosshairMode;
+  showCrosshairHorizontalLine: boolean;
+  showCrosshairVerticalLine: boolean;
+  showCrosshairPriceLabel: boolean;
+  showCrosshairTimeLabel: boolean;
+  crosshairColor: string;
+  crosshairLineStyle: ChartCrosshairLineStyle;
+  crosshairLineWidth: ChartCrosshairLineWidth;
+  replaySpeed: ChartReplaySpeed;
+  indicators: ChartIndicators;
+  hiddenIndicators: ChartIndicators;
+  appearance: ChartAppearance;
+  indicatorInputs: IndicatorInputSettings;
+  extraIndicators: ChartIndicatorInstance[];
+  indicatorOrder: string[];
+  favoriteIndicators: IndicatorKey[];
+  favoriteChartIntervals: string[];
+  objectTreeFilter: ObjectTreeFilter;
+  volumeColors: typeof DEFAULT_VOLUME_COLORS;
+  initialBalance: InitialBalanceSettings;
+  setInitialBalance: (settings: InitialBalanceSettings) => void;
+  gridMode: ChartGridMode;
+  gridLineStyle: ChartGridLineStyle;
+  gridColor: string;
+  chartBackgroundColor: string;
+  chartBackgroundMode: ChartBackgroundMode;
+  chartBackgroundBottomColor: string;
+  chartTextColor: string;
+  chartFontSize: number;
+  lineChartSource: PriceSource;
+  lineChartColor: string;
+  areaFill: ChartAreaFill;
+  lineChartWidth: ChartLineWidth;
+  lineChartShape: ChartLineShape;
+  showLineMarkers: boolean;
+  showSymbolWatermark: boolean;
+  watermarkColor: string;
+  watermarkOpacity: number;
+  watermarkScale: number;
+  watermarkHorizontalAlignment: WatermarkHorizontalAlignment;
+  watermarkVerticalAlignment: WatermarkVerticalAlignment;
+  lockVisibleTimeRangeOnResize: boolean;
+  zoomWithMouseWheel: boolean;
+  zoomWithPinch: boolean;
+  chartZoomAnchor: ChartZoomAnchor;
+  lineMarkerRadius: ChartLineMarkerRadius;
+  thinBars: boolean;
+  showBarOpen: boolean;
+  colorBarsByPreviousClose: boolean;
+  showCandleWicks: boolean;
+  showCandleBorders: boolean;
+  candleUpColor: string;
+  candleWickUpColor: string | null;
+  candleWickDownColor: string | null;
+  candleBorderUpColor: string | null;
+  candleBorderDownColor: string | null;
+  candleDownColor: string;
+  showChartTitle: boolean;
+  showCandleValues: boolean;
+  showBarChange: boolean;
+  indicatorLegendCollapsed: boolean;
+  showIndicatorInputs: boolean;
+  showIndicatorValues: boolean;
+  priceLineAppearance: ChartPriceLineAppearance;
+  showPriceLine: boolean;
+  showPriceLabel: boolean;
+  showBarCountdown: boolean;
+  priceScaleMode: ChartPriceScaleMode;
+  priceScaleMargins: ChartPriceScaleMargins | null;
+  paneStretchFactors: ChartPaneSizes;
+  invertScale: boolean;
+  showTimeScale: boolean;
+  rightOffsetBars: number;
+  showPriceScale: boolean;
+  showPriceScaleTicks: boolean;
+  alignPriceLabels: boolean;
+  setShowChartTitle: (show: boolean) => void;
+  setShowBarChange: (show: boolean) => void;
+  setShowCandleValues: (show: boolean) => void;
+  setShowIndicatorInputs: (show: boolean) => void;
+  setShowIndicatorValues: (show: boolean) => void;
+  setIndicatorLegendCollapsed: (collapsed: boolean) => void;
+  setStyle: (style: ChartStyle) => void;
+  setTimeZone: (timeZone: string) => void;
+  setCrosshairMode: (mode: ChartCrosshairMode) => void;
+  setShowCrosshairHorizontalLine: (show: boolean) => void;
+  setShowCrosshairVerticalLine: (show: boolean) => void;
+  setShowCrosshairPriceLabel: (show: boolean) => void;
+  setShowCrosshairTimeLabel: (show: boolean) => void;
+  setReplaySpeed: (speed: ChartReplaySpeed) => void;
+  setCrosshairColor: (color: string) => void;
+  setCrosshairLineStyle: (style: ChartCrosshairLineStyle) => void;
+  setCrosshairLineWidth: (width: ChartCrosshairLineWidth) => void;
+  toggleIndicator: (key: IndicatorKey) => void;
+  toggleFavoriteIndicator: (key: IndicatorKey) => void;
+  toggleFavoriteChartInterval: (key: string) => void;
+  toggleIndicatorVisibility: (key: IndicatorKey) => void;
+  setIndicatorsHidden: (hidden: boolean) => void;
+  removeAllIndicators: () => void;
+  setIndicatorAppearance: (key: IndicatorKey, patch: IndicatorAppearance) => void;
+  resetIndicatorAppearance: (key: IndicatorKey) => void;
+  setIndicatorInputs: (key: IndicatorKey, patch: IndicatorInputValues) => void;
+  resetIndicatorInputs: (key: IndicatorKey) => void;
+  setVolumeColors: (colors: typeof DEFAULT_VOLUME_COLORS) => void;
+  addIndicator: (key: IndicatorKey) => string | null;
+  duplicateIndicatorInstance: (id: string) => string | null;
+  removeIndicatorInstance: (id: string) => void;
+  moveIndicatorInstance: (id: string, direction: "up" | "down") => boolean;
+  moveIndicatorInstanceTo: (id: string, targetId: string, position: "before" | "after") => boolean;
+  toggleIndicatorInstanceVisibility: (id: string) => void;
+  setIndicatorInstanceInputs: (id: string, patch: IndicatorInputValues) => boolean;
+  resetIndicatorInstanceInputs: (id: string) => void;
+  resetIndicatorInstance: (id: string) => boolean;
+  setIndicatorInstanceAppearance: (id: string, patch: IndicatorAppearance) => void;
+  resetIndicatorInstanceAppearance: (id: string) => void;
+  setIndicatorInstanceInitialBalance: (id: string, settings: InitialBalanceSettings) => boolean;
+  setIndicatorInstanceVolumeColors: (id: string, colors: typeof DEFAULT_VOLUME_COLORS) => void;
+  setGridMode: (mode: ChartGridMode) => void;
+  setGridLineStyle: (style: ChartGridLineStyle) => void;
+  setPriceLineAppearance: (patch: Partial<ChartPriceLineAppearance>) => boolean;
+  setObjectTreeFilter: (filter: ObjectTreeFilter) => void;
+  setGridColor: (color: string) => void;
+  setChartBackgroundColor: (color: string) => void;
+  setChartBackgroundMode: (mode: ChartBackgroundMode) => void;
+  setChartBackgroundBottomColor: (color: string) => void;
+  setChartTextColor: (color: string) => void;
+  setChartFontSize: (size: number) => boolean;
+  setLineChartSource: (source: PriceSource) => void;
+  setLineChartColor: (color: string) => void;
+  setAreaFill: (patch: Partial<ChartAreaFill>) => boolean;
+  setCandleUpColor: (color: string) => void;
+  setCandleDetailColor: (key: CandleDetailColorKey, value: string | null) => void;
+  setCandleDownColor: (color: string) => void;
+  setLineChartWidth: (width: ChartLineWidth) => void;
+  setLineChartShape: (shape: ChartLineShape) => void;
+  toggleLineMarkers: () => void;
+  setShowSymbolWatermark: (show: boolean) => void;
+  setWatermarkColor: (color: string) => void;
+  setWatermarkOpacity: (opacity: number) => boolean;
+  setWatermarkScale: (scale: number) => boolean;
+  setWatermarkHorizontalAlignment: (alignment: WatermarkHorizontalAlignment) => void;
+  setWatermarkVerticalAlignment: (alignment: WatermarkVerticalAlignment) => void;
+  setPaneStretchFactors: (sizes: ChartPaneSizes) => void;
+  setLockVisibleTimeRangeOnResize: (lock: boolean) => void;
+  setZoomWithMouseWheel: (enabled: boolean) => void;
+  setZoomWithPinch: (enabled: boolean) => void;
+  setChartZoomAnchor: (anchor: ChartZoomAnchor) => void;
+  setLineMarkerRadius: (radius: ChartLineMarkerRadius) => void;
+  toggleThinBars: () => void;
+  toggleBarOpen: () => void;
+  setColorBarsByPreviousClose: (enabled: boolean) => void;
+  toggleCandleWicks: () => void;
+  toggleCandleBorders: () => void;
+  togglePriceLine: () => void;
+  togglePriceLabel: () => void;
+  toggleBarCountdown: () => void;
+  setPriceScaleMode: (mode: ChartPriceScaleMode) => void;
+  setPriceScaleMargins: (value: ChartPriceScaleMargins | null) => void;
+  toggleInvertScale: () => void;
+  setShowTimeScale: (show: boolean) => void;
+  setRightOffsetBars: (bars: number) => boolean;
+  setShowPriceScale: (show: boolean) => void;
+  setShowPriceScaleTicks: (show: boolean) => void;
+  setAlignPriceLabels: (align: boolean) => void;
+}>()(
+  persist(
+    (set, get) => ({
+      style: "candles",
+      timeZone: "UTC",
+      crosshairMode: "normal",
+      showCrosshairHorizontalLine: true,
+      showCrosshairVerticalLine: true,
+      showCrosshairPriceLabel: true,
+      showCrosshairTimeLabel: true,
+      crosshairColor: "#9598A1",
+      crosshairLineStyle: "largeDashed",
+      crosshairLineWidth: 1,
+      replaySpeed: 1,
+      indicators: { ...DEFAULT_INDICATORS },
+      hiddenIndicators: hiddenDefaults(),
+      appearance: {},
+      indicatorInputs: {},
+      extraIndicators: [],
+      indicatorOrder: INDICATOR_CATALOG.filter(({ key }) => DEFAULT_INDICATORS[key]).map(
+        ({ key }) => `base:${key}`,
+      ),
+      favoriteIndicators: [],
+      favoriteChartIntervals: [],
+      volumeColors: { ...DEFAULT_VOLUME_COLORS },
+      initialBalance: { ...DEFAULT_INITIAL_BALANCE },
+      setInitialBalance: (settings) => {
+        if (isValidInitialBalanceSettings(settings))
+          set({ initialBalance: resolveInitialBalanceSettings(settings) });
+      },
+      objectTreeFilter: "all",
+      gridMode: "both",
+      gridLineStyle: "solid",
+      gridColor: "#171a23",
+      chartBackgroundColor: "#0b0d12",
+      chartBackgroundMode: "solid",
+      chartBackgroundBottomColor: "#000000",
+      chartTextColor: "#9299a7",
+      chartFontSize: 12,
+      lineChartSource: "close",
+      lineChartColor: "#6097ee",
+      areaFill: { ...DEFAULT_CHART_AREA_FILL },
+      lineChartWidth: 2,
+      lineChartShape: "straight",
+      showLineMarkers: false,
+      showSymbolWatermark: false,
+      watermarkColor: "#9299a7",
+      watermarkOpacity: 14,
+      watermarkScale: 100,
+      watermarkHorizontalAlignment: "center",
+      watermarkVerticalAlignment: "center",
+      lockVisibleTimeRangeOnResize: false,
+      zoomWithMouseWheel: true,
+      zoomWithPinch: true,
+      chartZoomAnchor: "pointer",
+      lineMarkerRadius: 3,
+      thinBars: true,
+      showBarOpen: true,
+      colorBarsByPreviousClose: false,
+      showCandleWicks: true,
+      showCandleBorders: true,
+      candleUpColor: "#26a69a",
+      candleWickUpColor: null,
+      candleWickDownColor: null,
+      candleBorderUpColor: null,
+      candleBorderDownColor: null,
+      candleDownColor: "#ef5350",
+      showChartTitle: true,
+      showCandleValues: true,
+      showBarChange: false,
+      indicatorLegendCollapsed: false,
+      showIndicatorInputs: true,
+      showIndicatorValues: true,
+      priceLineAppearance: { ...DEFAULT_PRICE_LINE_APPEARANCE },
+      showPriceLine: true,
+      showPriceLabel: true,
+      showBarCountdown: false,
+      priceScaleMode: "normal",
+      priceScaleMargins: null,
+      paneStretchFactors: {},
+      invertScale: false,
+      showTimeScale: true,
+      rightOffsetBars: 5,
+      showPriceScale: true,
+      showPriceScaleTicks: false,
+      alignPriceLabels: true,
+      setShowChartTitle: (showChartTitle) => {
+        if (typeof showChartTitle === "boolean" && showChartTitle !== get().showChartTitle)
+          set({ showChartTitle });
+      },
+      setShowBarChange: (showBarChange) => {
+        if (typeof showBarChange === "boolean" && showBarChange !== get().showBarChange)
+          set({ showBarChange });
+      },
+      setShowCandleValues: (showCandleValues) => {
+        if (typeof showCandleValues === "boolean" && showCandleValues !== get().showCandleValues)
+          set({ showCandleValues });
+      },
+      setShowIndicatorInputs: (showIndicatorInputs) => {
+        if (
+          typeof showIndicatorInputs === "boolean" &&
+          showIndicatorInputs !== get().showIndicatorInputs
+        )
+          set({ showIndicatorInputs });
+      },
+      setShowIndicatorValues: (showIndicatorValues) => {
+        if (
+          typeof showIndicatorValues === "boolean" &&
+          showIndicatorValues !== get().showIndicatorValues
+        )
+          set({ showIndicatorValues });
+      },
+      setIndicatorLegendCollapsed: (indicatorLegendCollapsed) => {
+        if (
+          typeof indicatorLegendCollapsed === "boolean" &&
+          indicatorLegendCollapsed !== get().indicatorLegendCollapsed
+        )
+          set({ indicatorLegendCollapsed });
+      },
+      setStyle: (style) => set({ style }),
+      setTimeZone: (timeZone) => {
+        if (validTimeZone(timeZone) && timeZone !== get().timeZone) set({ timeZone });
+      },
+      setShowCrosshairHorizontalLine: (show) => {
+        if (typeof show === "boolean" && show !== get().showCrosshairHorizontalLine)
+          set({ showCrosshairHorizontalLine: show });
+      },
+      setShowCrosshairVerticalLine: (show) => {
+        if (typeof show === "boolean" && show !== get().showCrosshairVerticalLine)
+          set({ showCrosshairVerticalLine: show });
+      },
+      setShowCrosshairPriceLabel: (show) => {
+        if (typeof show === "boolean" && show !== get().showCrosshairPriceLabel)
+          set({ showCrosshairPriceLabel: show });
+      },
+      setShowCrosshairTimeLabel: (show) => {
+        if (typeof show === "boolean" && show !== get().showCrosshairTimeLabel)
+          set({ showCrosshairTimeLabel: show });
+      },
+      setCrosshairMode: (crosshairMode) => {
+        if (validCrosshairMode(crosshairMode) && crosshairMode !== get().crosshairMode)
+          set({ crosshairMode });
+      },
+      setReplaySpeed: (replaySpeed) => {
+        if (validReplaySpeed(replaySpeed) && replaySpeed !== get().replaySpeed)
+          set({ replaySpeed });
+      },
+      setCrosshairColor: (crosshairColor) => {
+        if (validColor(crosshairColor) && crosshairColor !== get().crosshairColor)
+          set({ crosshairColor });
+      },
+      setCrosshairLineStyle: (crosshairLineStyle) => {
+        if (
+          validCrosshairLineStyle(crosshairLineStyle) &&
+          crosshairLineStyle !== get().crosshairLineStyle
+        )
+          set({ crosshairLineStyle });
+      },
+      setCrosshairLineWidth: (crosshairLineWidth) => {
+        if (
+          validCrosshairLineWidth(crosshairLineWidth) &&
+          crosshairLineWidth !== get().crosshairLineWidth
+        )
+          set({ crosshairLineWidth });
+      },
+      toggleFavoriteChartInterval: (key) => {
+        if (!normalizeFavoriteChartIntervals([key]).length) return;
+        set((state) => ({
+          favoriteChartIntervals: state.favoriteChartIntervals.includes(key)
+            ? state.favoriteChartIntervals.filter((favorite) => favorite !== key)
+            : [...state.favoriteChartIntervals, key],
+        }));
+      },
+      toggleFavoriteIndicator: (key) => {
+        if (!isIndicatorKey(key)) return;
+        set((state) => ({
+          favoriteIndicators: state.favoriteIndicators.includes(key)
+            ? state.favoriteIndicators.filter((favorite) => favorite !== key)
+            : [...state.favoriteIndicators, key],
+        }));
+      },
+      toggleIndicator: (key) => {
+        if (!isIndicatorKey(key)) return;
+        const state = get();
+        if (
+          !state.indicators[key] &&
+          getChartIndicatorInstances(state).length >= MAX_CHART_INDICATORS
+        )
+          return;
+        set({
+          indicators: { ...state.indicators, [key]: !state.indicators[key] },
+          hiddenIndicators: { ...state.hiddenIndicators, [key]: false },
+          indicatorOrder: state.indicators[key]
+            ? getChartIndicatorInstances(state)
+                .map(({ id }) => id)
+                .filter((id) => id !== `base:${key}`)
+            : [...getChartIndicatorInstances(state).map(({ id }) => id), `base:${key}`],
+        });
+      },
+      toggleIndicatorVisibility: (key) =>
+        set((state) => ({
+          hiddenIndicators: { ...state.hiddenIndicators, [key]: !state.hiddenIndicators[key] },
+        })),
+      setIndicatorsHidden: (hidden) =>
+        set((state) => {
+          const hiddenIndicators = { ...state.hiddenIndicators };
+          for (const { key } of INDICATOR_CATALOG)
+            if (state.indicators[key]) hiddenIndicators[key] = hidden;
+          return {
+            hiddenIndicators,
+            extraIndicators: state.extraIndicators.map((instance) => ({ ...instance, hidden })),
+          };
+        }),
+      removeAllIndicators: () =>
+        set({
+          indicators: hiddenDefaults(),
+          hiddenIndicators: hiddenDefaults(),
+          extraIndicators: [],
+          indicatorOrder: [],
+        }),
+      setIndicatorAppearance: (key, patch) =>
+        set((state) => {
+          const next = mergeAppearance(key, state.appearance[key] ?? {}, patch);
+          return { appearance: { ...state.appearance, [key]: next } };
+        }),
+      resetIndicatorAppearance: (key) =>
+        set((state) => {
+          const appearance = { ...state.appearance };
+          const timeframeVisibility = appearance[key]?.timeframeVisibility;
+          const displayName = appearance[key]?.displayName;
+          if (timeframeVisibility || displayName)
+            appearance[key] = {
+              ...(timeframeVisibility ? { timeframeVisibility } : {}),
+              ...(displayName ? { displayName } : {}),
+            };
+          else delete appearance[key];
+          return {
+            appearance,
+            ...(key === "volume" ? { volumeColors: { ...DEFAULT_VOLUME_COLORS } } : {}),
+          };
+        }),
+      setIndicatorInputs: (key, patch) =>
+        set((state) => {
+          const indicatorInputs = updateIndicatorInputs(key, state.indicatorInputs, patch);
+          return indicatorInputs ? { indicatorInputs } : state;
+        }),
+      resetIndicatorInputs: (key) =>
+        set((state) => {
+          const indicatorInputs = { ...state.indicatorInputs };
+          delete indicatorInputs[key];
+          return { indicatorInputs };
+        }),
+      setVolumeColors: (colors) => {
+        if (validColor(colors.up) && validColor(colors.down)) set({ volumeColors: { ...colors } });
+      },
+      addIndicator: (key) => {
+        const state = get();
+        if (
+          !isIndicatorKey(key) ||
+          getChartIndicatorInstances(state).length >= MAX_CHART_INDICATORS
+        )
+          return null;
+        if (!state.indicators[key]) {
+          state.toggleIndicator(key);
+          return `base:${key}`;
+        }
+        const id = randomUUID();
+        set({
+          extraIndicators: [...state.extraIndicators, createIndicatorInstance(key, id)],
+          indicatorOrder: [...getChartIndicatorInstances(state).map((instance) => instance.id), id],
+        });
+        return id;
+      },
+      duplicateIndicatorInstance: (id) => {
+        const state = get();
+        const instances = getChartIndicatorInstances(state);
+        if (instances.length >= MAX_CHART_INDICATORS) return null;
+        const source = instances.find((instance) => instance.id === id);
+        if (!source) return null;
+        const copy = { ...structuredClone(source), id: randomUUID() };
+        set({
+          extraIndicators: [...state.extraIndicators, copy],
+          indicatorOrder: [...instances.map((instance) => instance.id), copy.id],
+        });
+        return copy.id;
+      },
+      removeIndicatorInstance: (id) => {
+        const state = get();
+        const key = baseIndicatorKey(id);
+        if (key) {
+          if (state.indicators[key]) state.toggleIndicator(key);
+        } else if (state.extraIndicators.some((instance) => instance.id === id))
+          set({
+            extraIndicators: state.extraIndicators.filter((instance) => instance.id !== id),
+            indicatorOrder: getChartIndicatorInstances(state)
+              .map((instance) => instance.id)
+              .filter((current) => current !== id),
+          });
+      },
+      moveIndicatorInstance: (id, direction) => {
+        if (direction !== "up" && direction !== "down") return false;
+        const order = getChartIndicatorInstances(get()).map((instance) => instance.id);
+        const index = order.indexOf(id);
+        if (index < 0) return false;
+        const target = order[index + (direction === "up" ? -1 : 1)];
+        return target
+          ? get().moveIndicatorInstanceTo(id, target, direction === "up" ? "before" : "after")
+          : false;
+      },
+      moveIndicatorInstanceTo: (id, targetId, position) => {
+        if (id === targetId || (position !== "before" && position !== "after")) return false;
+        const order = getChartIndicatorInstances(get()).map((instance) => instance.id);
+        if (!order.includes(id) || !order.includes(targetId)) return false;
+        const next = order.filter((current) => current !== id);
+        next.splice(next.indexOf(targetId) + (position === "after" ? 1 : 0), 0, id);
+        if (next.every((current, index) => current === order[index])) return false;
+        set({ indicatorOrder: next });
+        return true;
+      },
+      toggleIndicatorInstanceVisibility: (id) => {
+        const state = get();
+        const key = baseIndicatorKey(id);
+        if (key) {
+          if (state.indicators[key]) state.toggleIndicatorVisibility(key);
+        } else if (state.extraIndicators.some((instance) => instance.id === id))
+          set({
+            extraIndicators: state.extraIndicators.map((instance) =>
+              instance.id === id ? { ...instance, hidden: !instance.hidden } : instance,
+            ),
+          });
+      },
+      setIndicatorInstanceInputs: (id, patch) => {
+        const state = get();
+        const instance = getChartIndicatorInstances(state).find((instance) => instance.id === id);
+        if (!instance) return false;
+        const inputs = updateIndicatorInputs(
+          instance.key,
+          { [instance.key]: instance.inputs },
+          patch,
+        );
+        if (!inputs) return false;
+        if (baseIndicatorKey(id)) state.setIndicatorInputs(instance.key, patch);
+        else
+          set({
+            extraIndicators: state.extraIndicators.map((item) =>
+              item.id === id ? { ...item, inputs: inputs[instance.key]! } : item,
+            ),
+          });
+        return true;
+      },
+      resetIndicatorInstance: (id) => {
+        const state = get();
+        const instance = getChartIndicatorInstances(state).find((item) => item.id === id);
+        if (!instance) return false;
+        const key = baseIndicatorKey(id);
+        if (key) {
+          const indicatorInputs = { ...state.indicatorInputs };
+          const appearance = { ...state.appearance };
+          delete indicatorInputs[key];
+          delete appearance[key];
+          if (instance.appearance.displayName)
+            appearance[key] = { displayName: instance.appearance.displayName };
+          set({
+            indicatorInputs,
+            appearance,
+            ...(key === "ib" ? { initialBalance: { ...DEFAULT_INITIAL_BALANCE } } : {}),
+            ...(key === "volume" ? { volumeColors: { ...DEFAULT_VOLUME_COLORS } } : {}),
+          });
+        } else {
+          set({
+            extraIndicators: state.extraIndicators.map((item) =>
+              item.id === id
+                ? {
+                    ...createIndicatorInstance(item.key, id),
+                    hidden: item.hidden,
+                    appearance: item.appearance.displayName
+                      ? { displayName: item.appearance.displayName }
+                      : {},
+                  }
+                : item,
+            ),
+          });
+        }
+        return true;
+      },
+      resetIndicatorInstanceInputs: (id) => {
+        const state = get();
+        const key = baseIndicatorKey(id);
+        if (key) {
+          if (state.indicators[key]) state.resetIndicatorInputs(key);
+        } else if (state.extraIndicators.some((instance) => instance.id === id))
+          set({
+            extraIndicators: state.extraIndicators.map((instance) =>
+              instance.id === id
+                ? { ...instance, inputs: createIndicatorInstance(instance.key, id).inputs }
+                : instance,
+            ),
+          });
+      },
+      setIndicatorInstanceAppearance: (id, patch) => {
+        const state = get();
+        const key = baseIndicatorKey(id);
+        if (key) {
+          if (state.indicators[key]) state.setIndicatorAppearance(key, patch);
+        } else if (state.extraIndicators.some((instance) => instance.id === id))
+          set({
+            extraIndicators: state.extraIndicators.map((instance) =>
+              instance.id === id
+                ? {
+                    ...instance,
+                    appearance: mergeAppearance(instance.key, instance.appearance, patch),
+                  }
+                : instance,
+            ),
+          });
+      },
+      resetIndicatorInstanceAppearance: (id) => {
+        const state = get();
+        const key = baseIndicatorKey(id);
+        if (key) {
+          if (state.indicators[key]) state.resetIndicatorAppearance(key);
+        } else if (state.extraIndicators.some((instance) => instance.id === id))
+          set({
+            extraIndicators: state.extraIndicators.map((instance) =>
+              instance.id === id
+                ? {
+                    ...instance,
+                    appearance: {
+                      ...(instance.appearance.timeframeVisibility
+                        ? { timeframeVisibility: instance.appearance.timeframeVisibility }
+                        : {}),
+                      ...(instance.appearance.displayName
+                        ? { displayName: instance.appearance.displayName }
+                        : {}),
+                    },
+                    ...(instance.key === "volume"
+                      ? { volumeColors: { ...DEFAULT_VOLUME_COLORS } }
+                      : {}),
+                  }
+                : instance,
+            ),
+          });
+      },
+      setIndicatorInstanceInitialBalance: (id, settings) => {
+        if (!isValidInitialBalanceSettings(settings)) return false;
+        const state = get();
+        if (id === "base:ib" && state.indicators.ib) state.setInitialBalance(settings);
+        else if (
+          state.extraIndicators.some((instance) => instance.id === id && instance.key === "ib")
+        )
+          set({
+            extraIndicators: state.extraIndicators.map((instance) =>
+              instance.id === id
+                ? { ...instance, initialBalance: resolveInitialBalanceSettings(settings) }
+                : instance,
+            ),
+          });
+        else return false;
+        return true;
+      },
+      setIndicatorInstanceVolumeColors: (id, colors) => {
+        if (!validColor(colors.up) || !validColor(colors.down)) return;
+        const state = get();
+        if (id === "base:volume" && state.indicators.volume) state.setVolumeColors(colors);
+        else if (
+          state.extraIndicators.some((instance) => instance.id === id && instance.key === "volume")
+        )
+          set({
+            extraIndicators: state.extraIndicators.map((instance) =>
+              instance.id === id ? { ...instance, volumeColors: { ...colors } } : instance,
+            ),
+          });
+      },
+      setGridMode: (gridMode) => {
+        if (validGridMode(gridMode) && gridMode !== get().gridMode) set({ gridMode });
+      },
+      setGridLineStyle: (gridLineStyle) => {
+        if (validGridLineStyle(gridLineStyle) && gridLineStyle !== get().gridLineStyle)
+          set({ gridLineStyle });
+      },
+      setLineChartSource: (lineChartSource) => {
+        if (validLineChartSource(lineChartSource) && lineChartSource !== get().lineChartSource)
+          set({ lineChartSource });
+      },
+      setCandleDetailColor: (key, value) => {
+        if (
+          (key !== "candleWickUpColor" &&
+            key !== "candleWickDownColor" &&
+            key !== "candleBorderUpColor" &&
+            key !== "candleBorderDownColor") ||
+          (value !== null && !validColor(value)) ||
+          get()[key] === value
+        )
+          return;
+        set({ [key]: value });
+      },
+      setCandleUpColor: (candleUpColor) => {
+        if (validColor(candleUpColor) && candleUpColor !== get().candleUpColor)
+          set({ candleUpColor });
+      },
+      setCandleDownColor: (candleDownColor) => {
+        if (validColor(candleDownColor) && candleDownColor !== get().candleDownColor)
+          set({ candleDownColor });
+      },
+      setLineChartColor: (lineChartColor) => {
+        if (validColor(lineChartColor) && lineChartColor !== get().lineChartColor)
+          set({ lineChartColor });
+      },
+      setLineChartWidth: (lineChartWidth) => {
+        if (validLineChartWidth(lineChartWidth) && lineChartWidth !== get().lineChartWidth)
+          set({ lineChartWidth });
+      },
+      setLineChartShape: (lineChartShape) => {
+        if (validLineChartShape(lineChartShape) && lineChartShape !== get().lineChartShape)
+          set({ lineChartShape });
+      },
+      setChartBackgroundMode: (chartBackgroundMode) => {
+        if (
+          (chartBackgroundMode === "solid" || chartBackgroundMode === "gradient") &&
+          chartBackgroundMode !== get().chartBackgroundMode
+        )
+          set({ chartBackgroundMode });
+      },
+      setChartBackgroundBottomColor: (chartBackgroundBottomColor) => {
+        if (
+          validColor(chartBackgroundBottomColor) &&
+          chartBackgroundBottomColor !== get().chartBackgroundBottomColor
+        )
+          set({ chartBackgroundBottomColor });
+      },
+      setChartBackgroundColor: (chartBackgroundColor) => {
+        if (validColor(chartBackgroundColor) && chartBackgroundColor !== get().chartBackgroundColor)
+          set({ chartBackgroundColor });
+      },
+      setChartTextColor: (chartTextColor) => {
+        if (validColor(chartTextColor) && chartTextColor !== get().chartTextColor)
+          set({ chartTextColor });
+      },
+      setPriceLineAppearance: (patch) => {
+        const current = get().priceLineAppearance;
+        const next = updatePriceLineAppearance(current, patch);
+        if (!next) return false;
+        if (
+          next.color !== current.color ||
+          next.width !== current.width ||
+          next.style !== current.style
+        )
+          set({ priceLineAppearance: next });
+        return true;
+      },
+      setObjectTreeFilter: (objectTreeFilter) => {
+        if (validObjectTreeFilter(objectTreeFilter) && objectTreeFilter !== get().objectTreeFilter)
+          set({ objectTreeFilter });
+      },
+      setGridColor: (gridColor) => {
+        if (validColor(gridColor) && gridColor !== get().gridColor) set({ gridColor });
+      },
+      setPaneStretchFactors: (sizes) => {
+        const next = normalizeChartPaneSizes(sizes);
+        if (!equalChartPaneSizes(get().paneStretchFactors, next)) set({ paneStretchFactors: next });
+      },
+      setChartZoomAnchor: (chartZoomAnchor) => {
+        if (
+          (chartZoomAnchor === "pointer" || chartZoomAnchor === "right") &&
+          chartZoomAnchor !== get().chartZoomAnchor
+        )
+          set({ chartZoomAnchor });
+      },
+      setZoomWithPinch: (zoomWithPinch) => {
+        if (typeof zoomWithPinch === "boolean" && zoomWithPinch !== get().zoomWithPinch)
+          set({ zoomWithPinch });
+      },
+      setZoomWithMouseWheel: (zoomWithMouseWheel) => {
+        if (
+          typeof zoomWithMouseWheel === "boolean" &&
+          zoomWithMouseWheel !== get().zoomWithMouseWheel
+        )
+          set({ zoomWithMouseWheel });
+      },
+      setLockVisibleTimeRangeOnResize: (lockVisibleTimeRangeOnResize) => {
+        if (
+          typeof lockVisibleTimeRangeOnResize === "boolean" &&
+          lockVisibleTimeRangeOnResize !== get().lockVisibleTimeRangeOnResize
+        )
+          set({ lockVisibleTimeRangeOnResize });
+      },
+      setAreaFill: (patch) => {
+        const previous = get().areaFill;
+        const next = updateChartAreaFill(previous, patch);
+        if (!next) return false;
+        if (
+          Object.keys(next).some(
+            (key) => next[key as keyof ChartAreaFill] !== previous[key as keyof ChartAreaFill],
+          )
+        )
+          set({ areaFill: next });
+        return true;
+      },
+      setChartFontSize: (chartFontSize) => {
+        if (!validChartFontSize(chartFontSize)) return false;
+        if (chartFontSize !== get().chartFontSize) set({ chartFontSize });
+        return true;
+      },
+      setWatermarkColor: (watermarkColor) => {
+        if (validColor(watermarkColor) && watermarkColor !== get().watermarkColor)
+          set({ watermarkColor });
+      },
+      setWatermarkHorizontalAlignment: (alignment) => {
+        if (
+          validWatermarkHorizontalAlignment(alignment) &&
+          alignment !== get().watermarkHorizontalAlignment
+        )
+          set({ watermarkHorizontalAlignment: alignment });
+      },
+      setWatermarkVerticalAlignment: (alignment) => {
+        if (
+          validWatermarkVerticalAlignment(alignment) &&
+          alignment !== get().watermarkVerticalAlignment
+        )
+          set({ watermarkVerticalAlignment: alignment });
+      },
+      setWatermarkScale: (watermarkScale) => {
+        if (!validWatermarkScale(watermarkScale)) return false;
+        if (watermarkScale !== get().watermarkScale) set({ watermarkScale });
+        return true;
+      },
+      setWatermarkOpacity: (watermarkOpacity) => {
+        if (!validWatermarkOpacity(watermarkOpacity)) return false;
+        if (watermarkOpacity !== get().watermarkOpacity) set({ watermarkOpacity });
+        return true;
+      },
+      setShowSymbolWatermark: (showSymbolWatermark) => {
+        if (
+          typeof showSymbolWatermark === "boolean" &&
+          showSymbolWatermark !== get().showSymbolWatermark
+        )
+          set({ showSymbolWatermark });
+      },
+      toggleLineMarkers: () => set((state) => ({ showLineMarkers: !state.showLineMarkers })),
+      setLineMarkerRadius: (lineMarkerRadius) => {
+        if (validLineMarkerRadius(lineMarkerRadius) && lineMarkerRadius !== get().lineMarkerRadius)
+          set({ lineMarkerRadius });
+      },
+      toggleThinBars: () => set((state) => ({ thinBars: !state.thinBars })),
+      toggleBarOpen: () => set((state) => ({ showBarOpen: !state.showBarOpen })),
+      setColorBarsByPreviousClose: (enabled) => {
+        if (typeof enabled === "boolean" && enabled !== get().colorBarsByPreviousClose)
+          set({ colorBarsByPreviousClose: enabled });
+      },
+      toggleCandleWicks: () => set((state) => ({ showCandleWicks: !state.showCandleWicks })),
+      toggleCandleBorders: () => set((state) => ({ showCandleBorders: !state.showCandleBorders })),
+      togglePriceLine: () => set((state) => ({ showPriceLine: !state.showPriceLine })),
+      togglePriceLabel: () => set((state) => ({ showPriceLabel: !state.showPriceLabel })),
+      toggleBarCountdown: () => set((state) => ({ showBarCountdown: !state.showBarCountdown })),
+      setPriceScaleMargins: (value) => {
+        if (value !== null && !validPriceScaleMargins(value)) return;
+        const current = get().priceScaleMargins;
+        if (current === null && value === null) return;
+        if (
+          current !== null &&
+          value !== null &&
+          current.top === value.top &&
+          current.bottom === value.bottom
+        )
+          return;
+        set({
+          priceScaleMargins: value === null ? null : { top: value.top, bottom: value.bottom },
+        });
+      },
+      setPriceScaleMode: (priceScaleMode) => {
+        if (validPriceScaleMode(priceScaleMode) && priceScaleMode !== get().priceScaleMode)
+          set({ priceScaleMode });
+      },
+      toggleInvertScale: () => set((state) => ({ invertScale: !state.invertScale })),
+      setShowTimeScale: (show) => {
+        if (typeof show === "boolean" && show !== get().showTimeScale) set({ showTimeScale: show });
+      },
+      setRightOffsetBars: (bars) => {
+        if (!Number.isInteger(bars) || bars < 0 || bars > 100) return false;
+        if (bars !== get().rightOffsetBars) set({ rightOffsetBars: bars });
+        return true;
+      },
+      setShowPriceScale: (show) => {
+        if (typeof show === "boolean" && show !== get().showPriceScale)
+          set({ showPriceScale: show });
+      },
+      setAlignPriceLabels: (alignPriceLabels) => {
+        if (typeof alignPriceLabels === "boolean" && alignPriceLabels !== get().alignPriceLabels)
+          set({ alignPriceLabels });
+      },
+      setShowPriceScaleTicks: (showPriceScaleTicks) => {
+        if (
+          typeof showPriceScaleTicks === "boolean" &&
+          showPriceScaleTicks !== get().showPriceScaleTicks
+        )
+          set({ showPriceScaleTicks });
+      },
+    }),
+    {
+      name: "automorphic:chart:v1",
+      storage: createJSONStorage(() => tradingWorkspaceStorage),
+      skipHydration: true,
+      merge: (persisted, current) => ({ ...current, ...normalizeChartPreferences(persisted) }),
+    },
+  ),
+);
+
+tradingWorkspaceStorage.registerHydrator(() => {
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  return useChartPreferences.persist.rehydrate();
+});

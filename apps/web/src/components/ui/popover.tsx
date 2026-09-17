@@ -1,5 +1,7 @@
 "use client";
 
+import { useOverlayLayout, mergeOverlayStyle, overlayCollisionBoundary } from "./overlay-layout";
+
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 
 import { cn } from "~/lib/utils";
@@ -20,29 +22,42 @@ function PopoverPopup({
   children,
   className,
   viewportClassName,
+  positionerClassName,
   side = "bottom",
   align = "center",
   sideOffset = 4,
   alignOffset = 0,
   tooltipStyle = false,
+  instant = false,
   anchor,
   ...props
 }: PopoverPrimitive.Popup.Props & {
   viewportClassName?: string;
+  positionerClassName?: string;
   side?: PopoverPrimitive.Positioner.Props["side"];
   align?: PopoverPrimitive.Positioner.Props["align"];
   sideOffset?: PopoverPrimitive.Positioner.Props["sideOffset"];
   alignOffset?: PopoverPrimitive.Positioner.Props["alignOffset"];
   tooltipStyle?: boolean;
+  instant?: boolean;
   anchor?: PopoverPrimitive.Positioner.Props["anchor"];
 }) {
+  const overlayLayout = useOverlayLayout();
+  const popupStyle = overlayLayout.measured
+    ? { ...overlayLayout.popupStyle, overflowY: "auto" as const }
+    : overlayLayout.popupStyle;
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}
         anchor={anchor}
-        className="z-[130] h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-transform data-instant:transition-none"
+        collisionBoundary={overlayCollisionBoundary(overlayLayout)}
+        className={cn(
+          "z-[130] h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-transform data-instant:transition-none",
+          instant && "transition-none",
+          positionerClassName,
+        )}
         data-slot="popover-positioner"
         side={side}
         sideOffset={sideOffset}
@@ -54,10 +69,13 @@ function PopoverPopup({
               "w-fit text-balance rounded-md text-xs shadow-md/5 before:rounded-[calc(var(--radius-md)-1px)]",
             !tooltipStyle &&
               "shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]",
+            instant &&
+              "transition-none data-starting-style:scale-100 data-starting-style:opacity-100",
             className,
           )}
           data-slot="popover-popup"
           {...props}
+          style={mergeOverlayStyle(props.style, popupStyle)}
         >
           <PopoverPrimitive.Viewport
             className={cn(
@@ -65,6 +83,8 @@ function PopoverPopup({
               tooltipStyle
                 ? "py-1 [--viewport-inline-padding:--spacing(2)]"
                 : "not-data-transitioning:overflow-y-auto",
+              instant &&
+                "**:data-current:transition-none **:data-previous:transition-none **:data-current:data-starting-style:opacity-100 **:data-current:data-ending-style:opacity-100",
               viewportClassName,
             )}
             data-slot="popover-viewport"

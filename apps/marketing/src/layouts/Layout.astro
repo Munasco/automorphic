@@ -1,4 +1,5 @@
 ---
+import ReactGrab from "../components/ReactGrab.astro";
 import { getImage, Image } from "astro:assets";
 import appIcon from "../assets/icon.webp";
 import desktopScreenshot from "../assets/app-desktop.webp";
@@ -41,6 +42,7 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
 
 <html lang="en">
   <head>
+    <ReactGrab />
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />

@@ -40,6 +40,18 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
       }),
     );
 
+    it("points Vertex authentication failures at Google credentials instead of subscription login", () => {
+      const message = claudeSignedOutMessage({
+        configDir: undefined,
+        cwd: "/synthetic",
+        environment: { CLAUDE_CODE_USE_VERTEX: "1" },
+      });
+      expect(message).toContain("Google Application Default Credentials");
+      expect(message).toContain("ANTHROPIC_VERTEX_PROJECT_ID");
+      expect(message).not.toContain("claude auth login");
+      expect(message).not.toContain("subscription");
+    });
+
     it("points the signed-out hint at the configured Claude home", () => {
       expect(claudeSignedOutMessage({ configDir: undefined, cwd: "/synthetic" })).toContain(
         "run `claude auth login`",

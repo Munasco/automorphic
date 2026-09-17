@@ -9,6 +9,7 @@ import {
 } from "./settingsScope";
 
 export type SettingsPath =
+  | "/settings/trading"
   | "/settings/projects"
   | "/settings/general"
   | "/settings/appearance"
@@ -70,8 +71,9 @@ export interface SettingsSearchAvailability {
  * subtitles both render from this record, so each label exists once.
  */
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
-  "/settings/projects": "Project",
+  "/settings/projects": "Workspaces",
   "/settings/general": "General",
+  "/settings/trading": "Trading",
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
   "/settings/snap-shot": "SnapShots",
@@ -89,17 +91,29 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
  */
 export const SETTINGS_SEARCH_ITEMS = [
   {
+    id: "tradingview-charts",
+    title: "Use TradingView charts",
+    to: "/settings/trading",
+    searchTerms: ["trading futures MGC NQ Tradovate chart"],
+  },
+  {
+    id: "trading-live-wires",
+    title: "Live Wires news rail",
+    to: "/settings/trading",
+    searchTerms: ["news macro investinglive"],
+  },
+  {
     id: "project-defaults",
-    title: "Project defaults and overrides",
+    title: "Workspace defaults and overrides",
     to: "/settings/general",
     scope: "project-defaults",
     searchTerms: ["model workspace environments projects inheritance checkout"],
   },
   {
     id: "project-overview",
-    title: "Project overview",
+    title: "Workspace overview",
     to: "/settings/projects",
-    searchTerms: ["name icon emoji image checkout remove delete"],
+    searchTerms: ["project overview name icon emoji image checkout remove delete"],
   },
   {
     id: "default-model",
@@ -197,7 +211,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "project-grouping",
-    title: "Project grouping",
+    title: "Workspace grouping",
     to: "/settings/general",
     searchTerms: ["combine matching repositories environments sidebar"],
   },
@@ -303,7 +317,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "add-project-starts-in",
-    title: "Add project starts in",
+    title: "Add workspace starts in",
     to: "/settings/general",
     scope: "environment-defaults",
     searchTerms: ["base directory folder browser path home"],
@@ -529,13 +543,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["auto pull default branch current checkout fast forward upstream"],
   },
   {
-    id: "pull-request-merge-method",
-    title: "Default merge method",
-    to: "/settings/source-control",
-    scope: "project-defaults",
-    searchTerms: ["pull request merge squash rebase last selected"],
-  },
-  {
     id: "source-control",
     title: "Source control",
     to: "/settings/source-control",
@@ -677,6 +684,7 @@ const SEARCH_ITEMS_BY_ID = new Map(SETTINGS_SEARCH_ITEMS.map((item) => [item.id,
 const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScope | null>> = {
   "/settings/projects": "project",
   "/settings/general": null,
+  "/settings/trading": null,
   "/settings/appearance": null,
   "/settings/snap-shot": null,
   // Keybindings fan out to the selection; Providers shows the representative

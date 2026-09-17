@@ -1,0 +1,270 @@
+import { useQuery } from "@tanstack/react-query";
+import { tradingQueryScope } from "./tradingQueries";
+import { tradingFetch } from "./tradingTransport";
+import { useEffect, useState } from "react";
+import { ArrowDownRight, ArrowUpRight, Minus, RefreshCw } from "lucide-react";
+import { selectBreakingNews } from "./breakingNews";
+import { cn } from "../../lib/utils";
+import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
+
+type Analysis =
+  | { status: "pending" | "unrated"; reason: string }
+  | {
+      status: "rated";
+      direction: "bullish" | "bearish" | "neutral";
+      strength: "weak" | "moderate" | "strong" | "neutral";
+      confidence: number;
+      reason: string;
+    };
+type Wire = {
+  id: string;
+  title: string;
+  url: string;
+  publishedAt: string;
+  source: string;
+  category: string;
+  analysis?: Analysis;
+};
+const FILTERS = ["All news", "Bullish", "Bearish", "Neutral"] as const;
+
+export function LiveWires({
+  root = "MGC",
+  projectId,
+}: {
+  root?: "MGC" | "NQ";
+  projectId?: string | null;
+}) {
+  const query = useQuery({
+    queryKey: [...tradingQueryScope(), "news", projectId ?? null, root],
+    queryFn: async ({ signal }) => {
+      const response = await tradingFetch(
+        `/api/trading/news?root=${root}${projectId ? `&projectId=${encodeURIComponent(projectId)}` : ""}`,
+        { signal },
+      );
+      if (!response.ok) throw new Error("News feed unavailable. Retrying shortly.");
+      const data = await response.json();
+      if (!Array.isArray(data.items)) throw new Error("No headlines received");
+      return {
+        items: data.items as Wire[],
+        updated: data.fetchedAt as number,
+        stale: Boolean(data.stale),
+        analysisPending: data.analysisStatus === "pending",
+      };
+    },
+    staleTime: 30_000,
+    refetchInterval: (current) => (current.state.data?.analysisPending ? 2500 : 60_000),
+  });
+  const feed = query.data;
+  const error =
+    query.error?.message ?? (feed?.stale ? "Showing cached headlines. Feed is reconnecting." : "");
+  const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All news");
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const items = feed?.items ?? [];
+  const breaking = !error ? selectBreakingNews(items, now) : null;
+  const regularItems = items.filter((item) => item.id !== breaking?.id);
+  const filtered =
+    filter === "All news"
+      ? regularItems
+      : regularItems.filter(
+          (item) =>
+            item.analysis?.status === "rated" && item.analysis.direction === filter.toLowerCase(),
+        );
+  return (
+    <section
+      className="flex h-full min-h-0 min-w-0 flex-col bg-[#0c0c0e]"
+      aria-label={`Live Wires for ${root}`}
+    >
+      {breaking ? (
+        <div
+          aria-label="Breaking news"
+          className="shrink-0 border-b border-amber-400/20 bg-amber-400/5 px-4 py-2.5"
+        >
+          <Tooltip>
+            <TooltipTrigger className="text-[11px] font-semibold uppercase tracking-wide text-amber-400">
+              Breaking
+            </TooltipTrigger>
+            <TooltipPopup className="max-w-64">
+              Publisher-marked breaking news from the past 15 minutes, independent of sentiment
+              filters.
+            </TooltipPopup>
+          </Tooltip>
+          <NewsItem item={breaking} root={root} compact />
+        </div>
+      ) : null}
+      <nav
+        aria-label="News impact filters"
+        className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-white/5 p-2"
+      >
+        {FILTERS.map((item) => (
+          <button
+            key={item}
+            type="button"
+            aria-pressed={filter === item}
+            onClick={() => setFilter(item)}
+            className={cn(
+              "shrink-0 rounded-full border px-2.5 py-1.5 text-[11px]",
+              filter === item
+                ? "border-zinc-200 bg-zinc-200 font-semibold text-zinc-950"
+                : "border-white/10 bg-white/5 text-zinc-400 hover:text-white",
+            )}
+          >
+            {item}
+          </button>
+        ))}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                aria-label="Refresh news"
+                onClick={() => void query.refetch()}
+                className="ml-auto shrink-0 rounded p-1.5 text-zinc-500 hover:text-zinc-200"
+              />
+            }
+          >
+            <RefreshCw className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipPopup>
+            Refresh news
+            {feed?.updated
+              ? ` · Updated ${new Date(feed.updated).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`
+              : ""}
+          </TooltipPopup>
+        </Tooltip>
+      </nav>
+      {error && (
+        <p role="status" className="px-3 py-2 text-xs text-amber-400">
+          {error}
+        </p>
+      )}
+      <div className="min-h-0 flex-1 divide-y divide-white/5 overflow-y-auto px-3">
+        {!filtered.length && (
+          <p className="px-1 py-5 text-xs text-zinc-500">
+            {items.length
+              ? "No headlines match this impact filter."
+              : error
+                ? "Waiting for the feed."
+                : "Loading headlines…"}
+          </p>
+        )}
+        {filtered.map((item) => (
+          <NewsItem key={item.id} item={item} root={root} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function NewsItem({
+  item,
+  root,
+  compact = false,
+}: {
+  item: Wire;
+  root: "MGC" | "NQ";
+  compact?: boolean;
+}) {
+  const analysis = item.analysis;
+  const rated = analysis?.status === "rated" ? analysis : undefined;
+  const direction = rated?.direction;
+  const strength = rated ? { neutral: 0, weak: 1, moderate: 2, strong: 3 }[rated.strength] : 0;
+  const tone =
+    direction === "bullish"
+      ? "text-emerald-400"
+      : direction === "bearish"
+        ? "text-rose-400"
+        : "text-zinc-500";
+  const Icon =
+    direction === "bullish" ? ArrowUpRight : direction === "bearish" ? ArrowDownRight : Minus;
+  return (
+    <article className={compact ? "pt-2" : "px-1 py-4"}>
+      <div className="mb-2.5 flex flex-wrap items-center gap-2 text-[11px]">
+        <Tooltip>
+          <TooltipTrigger
+            aria-label={
+              rated
+                ? direction === "neutral"
+                  ? `Neutral impact on ${root}`
+                  : `${direction}, ${rated.strength} impact on ${root}`
+                : analysis?.status === "pending"
+                  ? "Analyzing headline"
+                  : "Unrated headline"
+            }
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-white/5",
+              tone,
+            )}
+          >
+            <Icon className="size-3.5" />
+            <span className="mr-1 font-medium uppercase tracking-wide">
+              {rated ? direction : analysis?.status === "pending" ? "Analyzing" : "Unrated"}
+            </span>
+            {rated ? (
+              direction !== "neutral" &&
+              [1, 2, 3].map((level) => (
+                <span
+                  key={level}
+                  className={cn(
+                    "size-1 rounded-full",
+                    strength >= level ? "bg-current" : "bg-zinc-800",
+                  )}
+                />
+              ))
+            ) : (
+              <span aria-hidden="true">{analysis?.status === "pending" ? "…" : "?"}</span>
+            )}
+          </TooltipTrigger>
+          <TooltipPopup className="max-w-72">
+            {rated ? (
+              <>
+                <span className="capitalize">
+                  {direction}
+                  {direction !== "neutral" ? ` · ${rated.strength}` : ""}
+                </span>
+                <p className="mt-1">
+                  {root}: {rated.reason}
+                </p>
+              </>
+            ) : (
+              (analysis?.reason ?? "Analysis unavailable")
+            )}
+          </TooltipPopup>
+        </Tooltip>
+        <time
+          dateTime={item.publishedAt}
+          aria-label={new Date(item.publishedAt).toLocaleString()}
+          className="ml-auto text-zinc-600"
+        >
+          {new Date(item.publishedAt).toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+          })}{" "}
+          ·{" "}
+          {new Date(item.publishedAt).toLocaleTimeString(undefined, {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </time>
+      </div>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <a
+              href={item.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-[13px] font-medium leading-relaxed text-zinc-200 hover:text-white"
+            />
+          }
+        >
+          {item.title}
+        </TooltipTrigger>
+        <TooltipPopup>Read on {item.source}</TooltipPopup>
+      </Tooltip>
+    </article>
+  );
+}

@@ -95,6 +95,11 @@ describe("brand-assets", () => {
     ]);
     expect(BRAND_ASSET_PATHS.developmentDesktopIconPng).toMatch(/^assets\/dev\/blueprint-/);
     expect(BRAND_ASSET_PATHS.nightlyMacIconPng).toMatch(/^assets\/nightly\/nightly-/);
-    expect(BRAND_ASSET_PATHS.productionMacIconPng).toMatch(/^assets\/prod\/black-/);
+    expect(BRAND_ASSET_PATHS.productionMacIconPng).toBe(
+      "apps/desktop/resources/automorphic-macos-1024.png",
+    );
+    expect(BRAND_ASSET_PATHS.productionWebAppleTouchIconPng).toBe(
+      "assets/automorphic/apple-touch-icon.png",
+    );
   });
 });

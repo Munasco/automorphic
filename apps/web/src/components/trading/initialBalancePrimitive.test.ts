@@ -1,0 +1,467 @@
+import { describe, expect, it, vi } from "vite-plus/test";
+import type { IChartApi, ISeriesApi, Logical } from "lightweight-charts";
+import type { InitialBalanceRange } from "./initialBalance";
+import { DEFAULT_INITIAL_BALANCE } from "./indicatorCatalog";
+import {
+  createInitialBalancePrimitive,
+  initialBalanceGeometry,
+  initialBalanceLevels,
+  projectInitialBalanceTime,
+} from "./initialBalancePrimitive";
+
+const range: InitialBalanceRange = {
+  session: "2026-09-14",
+  startTime: 0,
+  endTime: 3600,
+  sessionEndTime: 23400,
+  lastTime: 3900,
+  high: 110,
+  low: 100,
+  volume: 1200,
+  status: "complete",
+};
+
+function styleFixture() {
+  const chart = {
+    paneSize: () => ({ width: chart.timeScale().width(), height: 500 }),
+    timeScale: () => ({
+      width: () => 500,
+      timeToCoordinate: (time: number) => time / 60,
+      logicalToCoordinate: (logical: number) => logical,
+    }),
+    options: () => ({ layout: { fontFamily: "Inter" } }),
+  } as unknown as IChartApi;
+  const series = {
+    priceToCoordinate: (price: number) => 500 - price,
+    priceFormatter: () => ({ format: (price: number) => price.toFixed(2) }),
+    getPane: () => ({ getHeight: () => 500 }),
+  } as unknown as ISeriesApi<"Line">;
+  const strokes: Array<{ color: string; opacity: number; width: number }> = [];
+  const dashes: number[][] = [];
+  let dash: number[] = [];
+  const labels: Array<{ text: string; opacity: number }> = [];
+  const fills: Array<{ color: string; opacity: number }> = [];
+  const ctx = {
+    globalAlpha: 1,
+    strokeStyle: "",
+    fillStyle: "",
+    lineWidth: 1,
+    save: vi.fn(),
+    restore: vi.fn(),
+    beginPath: vi.fn(),
+    rect: vi.fn(),
+    clip: vi.fn(),
+    fillRect: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    stroke: vi.fn(),
+    fillText: vi.fn(),
+    setLineDash: vi.fn(),
+    roundRect: vi.fn(),
+    fill: vi.fn(),
+    measureText: (label: string) => ({ width: label.length * 6 }),
+  };
+  ctx.setLineDash.mockImplementation((value: number[]) => {
+    dash = [...value];
+  });
+  ctx.stroke.mockImplementation(() => {
+    dashes.push([...dash]);
+    strokes.push({
+      color: ctx.strokeStyle,
+      opacity: ctx.globalAlpha,
+      width: ctx.lineWidth,
+    });
+  });
+  ctx.fillText.mockImplementation((text: string) =>
+    labels.push({ text, opacity: ctx.globalAlpha }),
+  );
+  ctx.fillRect.mockImplementation(() =>
+    fills.push({ color: ctx.fillStyle, opacity: ctx.globalAlpha }),
+  );
+  const plugin = createInitialBalancePrimitive(chart, series);
+  return {
+    ...plugin,
+    strokes,
+    dashes,
+    labels,
+    fills,
+    autoscale: (start = 0, end = 500) =>
+      plugin.primitive.autoscaleInfo!(start as Logical, end as Logical),
+    draw: () => {
+      for (const view of plugin.primitive.paneViews!()) {
+        const renderer = view.renderer()!;
+        renderer.draw({
+          useMediaCoordinateSpace: (callback: (scope: { context: typeof ctx }) => void) =>
+            callback({ context: ctx }),
+        } as unknown as Parameters<typeof renderer.draw>[0]);
+      }
+    },
+  };
+}
+
+describe("initial balance visual geometry", () => {
+  it("filters whole high/low/internal groups and keeps partial opacity in projected levels", () => {
+    const styles = {
+      high: { visible: false },
+      low: { opacity: 0 },
+      internal: { opacity: 0.35, color: "#123456", lineWidth: 3 },
+    };
+    const levels = initialBalanceLevels(range, DEFAULT_INITIAL_BALANCE, styles);
+    expect(
+      levels.map((level) => [level.label, level.price, level.color, level.width, level.opacity]),
+    ).toEqual([
+      ["50%", 105, "#123456", 3, 0.35],
+      ["25%", 102.5, "#123456", 3, 0.35],
+      ["75%", 107.5, "#123456", 3, 0.35],
+    ]);
+    const shape = initialBalanceGeometry(
+      range,
+      DEFAULT_INITIAL_BALANCE,
+      (time) => time / 60,
+      (price) => 500 - price,
+      500,
+      styles,
+    )!;
+    expect(shape.levels).toHaveLength(3);
+    expect(shape.box).toEqual({ left: 0, right: 60, top: 390, bottom: 400 });
+    expect(
+      initialBalanceLevels(range, DEFAULT_INITIAL_BALANCE, { internal: { visible: false } }).map(
+        (level) => level.label,
+      ),
+    ).toEqual(["IBH", "IBL", "+0.5x", "-0.5x", "+1.0x", "-1.0x"]);
+  });
+
+  it("paints rail and label opacity independently from the opening-hour background", () => {
+    const f = styleFixture();
+    f.update(
+      range,
+      { ...DEFAULT_INITIAL_BALANCE, backgroundColor: "#abcdef", backgroundOpacity: 0.6 },
+      [],
+      5,
+      {
+        high: { opacity: 0.25, color: "#123456", lineWidth: 3 },
+        low: { opacity: 0.75 },
+        internal: { visible: false },
+      },
+    );
+    f.draw();
+    expect(f.strokes.map((stroke) => stroke.opacity)).toEqual([0.25, 0.75, 0.25, 0.75, 0.25, 0.75]);
+    expect(f.strokes[0]).toEqual({ color: "#123456", width: 3, opacity: 0.25 });
+    expect(f.labels).toEqual([
+      { text: "IBH 110.00", opacity: 0.25 },
+      { text: "IBL 100.00", opacity: 0.75 },
+      { text: "+0.5x", opacity: 0.25 },
+      { text: "-0.5x", opacity: 0.75 },
+      { text: "+1.0x", opacity: 0.25 },
+      { text: "-1.0x", opacity: 0.75 },
+    ]);
+    expect(f.fills).toEqual([{ color: "#abcdef", opacity: 0.6 }]);
+    f.strokes.length = 0;
+    f.labels.length = 0;
+    f.update(range, DEFAULT_INITIAL_BALANCE, [], 5, {
+      high: { visible: false },
+      low: { opacity: 0 },
+      internal: { visible: false },
+    });
+    f.draw();
+    expect(f.strokes).toEqual([]);
+    expect(f.labels).toEqual([]);
+    expect(f.fills).toHaveLength(2);
+  });
+
+  it("autoscales only visible rails and overlapping opaque boxes, never empty infinite bounds", () => {
+    const f = styleFixture();
+    const hidden = { high: { visible: false }, low: { opacity: 0 }, internal: { visible: false } };
+    f.update(range, DEFAULT_INITIAL_BALANCE, [], 5, hidden);
+    expect(f.autoscale()?.priceRange).toEqual({ minValue: 100, maxValue: 110 });
+    expect(f.autoscale(100, 200)).toBeNull();
+    f.update(range, { ...DEFAULT_INITIAL_BALANCE, showBox: false }, [], 5, hidden);
+    expect(f.autoscale()).toBeNull();
+    f.update(range, { ...DEFAULT_INITIAL_BALANCE, backgroundOpacity: 0 }, [], 5, hidden);
+    expect(f.autoscale()).toBeNull();
+    f.update(range, { ...DEFAULT_INITIAL_BALANCE, showBox: false }, [], 5, {
+      ...hidden,
+      internal: { opacity: 0.3 },
+    });
+    expect(f.autoscale()?.priceRange).toEqual({ minValue: 102.5, maxValue: 107.5 });
+    expect(f.autoscale(400, 500)).toBeNull();
+    f.update({ ...range, high: NaN, low: Infinity }, DEFAULT_INITIAL_BALANCE, [], 5);
+    expect(f.autoscale()).toBeNull();
+    f.update(range, DEFAULT_INITIAL_BALANCE, [], 5);
+    expect(f.autoscale()?.priceRange).toEqual({ minValue: 90, maxValue: 120 });
+  });
+  it("projects physical exchange times through distinct synthetic chart keys", () => {
+    const bars = [100, 100.1, 100.2].map((time, index) => ({
+      time,
+      actualTime: index < 2 ? 10 : 20,
+      open: 100,
+      close: 100,
+      high: 110,
+      low: 90,
+      volume: 1,
+    }));
+    const chart = {
+      paneSize: () => ({ width: chart.timeScale().width(), height: 500 }),
+      timeScale: () => ({
+        timeToCoordinate: (time: number) => ({ 100: 10, 100.1: 20, 100.2: 30 })[time] ?? null,
+        width: () => 400,
+      }),
+    } as unknown as IChartApi;
+    expect(projectInitialBalanceTime(chart, bars, 0, 10)).toBe(10);
+    expect(projectInitialBalanceTime(chart, bars, 0, 15)).toBe(25);
+    expect(projectInitialBalanceTime(chart, bars, 0, 20)).toBe(30);
+  });
+  it("interpolates irregular bars and clamps missing endpoints offscreen without a fake tick duration", () => {
+    const bars = [100, 100.125, 300].map((time) => ({
+      time,
+      open: 100,
+      close: 100,
+      high: 110,
+      low: 90,
+      volume: 1,
+    }));
+    const chart = {
+      paneSize: () => ({ width: chart.timeScale().width(), height: 500 }),
+      timeScale: () => ({
+        timeToCoordinate: (time: number) => ({ 100: 10, 100.125: 20, 300: 30 })[time] ?? null,
+        width: () => 400,
+      }),
+    } as unknown as IChartApi;
+    expect(projectInitialBalanceTime(chart, bars, 0, 100.0625)).toBe(15);
+    expect(projectInitialBalanceTime(chart, bars, 0, 0)).toBe(-1);
+    expect(projectInitialBalanceTime(chart, bars, 0, 400)).toBe(401);
+  });
+  it("projects quarter and expansion levels from the observed IB range", () => {
+    const levels = initialBalanceLevels(range, DEFAULT_INITIAL_BALANCE);
+    expect(levels.map((level) => [level.label, level.price])).toEqual([
+      ["IBH", 110],
+      ["IBL", 100],
+      ["50%", 105],
+      ["25%", 102.5],
+      ["75%", 107.5],
+      ["+0.5x", 115],
+      ["-0.5x", 95],
+      ["+1.0x", 120],
+      ["-1.0x", 90],
+    ]);
+    expect(levels.slice(0, 2).map((level) => [level.dashed, level.width])).toEqual([
+      [false, 2],
+      [false, 2],
+    ]);
+    expect(levels.slice(2).every((level) => level.dashed && level.width === 1)).toBe(true);
+    const shape = initialBalanceGeometry(
+      range,
+      DEFAULT_INITIAL_BALANCE,
+      (time) => time / 60,
+      (price) => 200 - price,
+      500,
+    )!;
+    expect(shape.box).toEqual({ left: 0, right: 60, top: 90, bottom: 100 });
+    expect(shape.right).toBe(390);
+    expect(
+      initialBalanceGeometry(
+        { ...range, status: "incomplete" },
+        DEFAULT_INITIAL_BALANCE,
+        (time) => time,
+        (price) => price,
+        500,
+      ),
+    ).toBeNull();
+  });
+
+  it("clips projections to the resized viewport without moving session or box boundaries", () => {
+    const original = initialBalanceGeometry(
+      range,
+      DEFAULT_INITIAL_BALANCE,
+      (time) => time / 60,
+      (price) => price,
+      300,
+    )!;
+    const expanded = initialBalanceGeometry(
+      range,
+      DEFAULT_INITIAL_BALANCE,
+      (time) => time / 60,
+      (price) => price,
+      800,
+    )!;
+    expect(original.right).toBe(296);
+    expect(expanded.right).toBe(390);
+    expect(expanded.box).toEqual(original.box);
+    expect(
+      initialBalanceGeometry(
+        range,
+        DEFAULT_INITIAL_BALANCE,
+        (time) => time / 60 - 400,
+        (price) => price,
+        300,
+      ),
+    ).toBeNull();
+  });
+
+  it("extends time coordinates into empty future space without creating timeline bars", () => {
+    const bars = Object.freeze(
+      [1000, 1300].map((time) =>
+        Object.freeze({ time, open: 100, close: 100, high: 101, low: 99, volume: 1 }),
+      ),
+    );
+    const chart = {
+      timeScale: () => ({
+        timeToCoordinate: (time: number) => (time === 1000 ? 0 : time === 1300 ? 10 : null),
+        coordinateToLogical: (x: number) => x / 10,
+        logicalToCoordinate: (logical: number) => logical * 10,
+      }),
+    } as unknown as IChartApi;
+    expect(projectInitialBalanceTime(chart, bars, 5, 2200)).toBe(40);
+    expect(projectInitialBalanceTime(chart, bars, 5, 1150)).toBe(5);
+    expect(projectInitialBalanceTime(chart, bars, 5, 700)).toBe(-10);
+    expect(bars.map((bar) => bar.time)).toEqual([1000, 1300]);
+  });
+
+  it("draws the shaded opening hour and attached labels, and honors all visibility switches", () => {
+    const chart = {
+      paneSize: () => ({ width: chart.timeScale().width(), height: 500 }),
+      timeScale: () => ({
+        width: () => 1000,
+        timeToCoordinate: (time: number) => time / 6,
+        logicalToCoordinate: (logical: number) => logical,
+      }),
+      options: () => ({ layout: { fontFamily: "Inter" } }),
+    } as unknown as IChartApi;
+    const series = {
+      priceToCoordinate: (price: number) => 500 - price,
+      priceFormatter: () => ({ format: (price: number) => price.toFixed(2) }),
+      getPane: () => ({ getHeight: () => 500 }),
+    } as unknown as ISeriesApi<"Line">;
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      clip: vi.fn(),
+      fillRect: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      fillText: vi.fn(),
+      setLineDash: vi.fn(),
+      roundRect: vi.fn(),
+      fill: vi.fn(),
+      measureText: (label: string) => ({ width: label.length * 6 }),
+    };
+    const fills: Array<{ color: string; opacity: number }> = [];
+    const strokes: Array<{ color: string; opacity: number }> = [];
+    ctx.fillRect.mockImplementation(() => {
+      const canvas = ctx as unknown as CanvasRenderingContext2D;
+      fills.push({ color: String(canvas.fillStyle), opacity: canvas.globalAlpha });
+    });
+    ctx.stroke.mockImplementation(() => {
+      const canvas = ctx as unknown as CanvasRenderingContext2D;
+      strokes.push({ color: String(canvas.strokeStyle), opacity: canvas.globalAlpha });
+    });
+    const plugin = createInitialBalancePrimitive(chart, series);
+    plugin.update(range, DEFAULT_INITIAL_BALANCE, [], 5);
+    const draw = () => {
+      for (const view of plugin.primitive.paneViews!()) {
+        const renderer = view.renderer()!;
+        renderer.draw({
+          useMediaCoordinateSpace: (callback: (scope: { context: typeof ctx }) => void) =>
+            callback({ context: ctx }),
+        } as unknown as Parameters<typeof renderer.draw>[0]);
+      }
+    };
+    draw();
+    expect(ctx.fillRect).toHaveBeenCalledWith(0, 390, 600, 10);
+    expect(ctx.stroke).toHaveBeenCalledTimes(9);
+    expect(ctx.fillText.mock.calls.map((call) => call[0])).toEqual([
+      "IBH 110.00",
+      "IBL 100.00",
+      "50%",
+      "25%",
+      "75%",
+      "+0.5x",
+      "-0.5x",
+      "+1.0x",
+      "-1.0x",
+    ]);
+    expect(plugin.primitive.autoscaleInfo!(0 as Logical, 1000 as Logical)?.priceRange).toEqual({
+      minValue: 90,
+      maxValue: 120,
+    });
+    expect(fills[0]).toEqual({
+      color: DEFAULT_INITIAL_BALANCE.backgroundColor,
+      opacity: DEFAULT_INITIAL_BALANCE.backgroundOpacity,
+    });
+    plugin.update(
+      range,
+      { ...DEFAULT_INITIAL_BALANCE, backgroundColor: "#ff0000", backgroundOpacity: 0.5 },
+      [],
+      5,
+    );
+    draw();
+    expect(fills.at(-1)).toEqual({ color: "#ff0000", opacity: 0.5 });
+    expect(strokes.slice(-9).map((stroke) => stroke.color)).toEqual(
+      initialBalanceLevels(range, DEFAULT_INITIAL_BALANCE).map((level) => level.color),
+    );
+    expect(strokes.every((stroke) => stroke.opacity === 1)).toBe(true);
+    plugin.update(
+      range,
+      { ...DEFAULT_INITIAL_BALANCE, backgroundColor: "#00ff00", backgroundOpacity: 0 },
+      [],
+      5,
+    );
+    draw();
+    expect(fills.at(-1)).toEqual({ color: "#00ff00", opacity: 0 });
+    expect(strokes.every((stroke) => stroke.opacity === 1)).toBe(true);
+    ctx.fillRect.mockClear();
+    ctx.stroke.mockClear();
+    ctx.fillText.mockClear();
+    plugin.update(
+      range,
+      {
+        ...DEFAULT_INITIAL_BALANCE,
+        showBox: false,
+        showLabels: false,
+        showMidpoint: false,
+        showQuarters: false,
+        showExpansions: false,
+      },
+      [],
+      5,
+    );
+    draw();
+    expect(ctx.fillRect).not.toHaveBeenCalled();
+    expect(ctx.fillText).not.toHaveBeenCalled();
+    expect(ctx.stroke).toHaveBeenCalledTimes(2);
+    expect(plugin.primitive.autoscaleInfo!(0 as Logical, 1000 as Logical)?.priceRange).toEqual({
+      minValue: 100,
+      maxValue: 110,
+    });
+  });
+});
+
+it("draws explicit IB line patterns and restores mixed default strokes without changing levels", () => {
+  const fixture = styleFixture();
+  const styles = {
+    high: { linePattern: "dotted" as const, lineWidth: 3 },
+    internal: { linePattern: "solid" as const },
+  };
+  fixture.update(range, DEFAULT_INITIAL_BALANCE, [], 5, styles);
+  fixture.draw();
+  expect(fixture.dashes.slice(0, 5)).toEqual([[3, 3], [], [], [], []]);
+  expect(fixture.dashes[5]).toEqual([3, 3]);
+  expect(fixture.dashes[6]).toEqual([5, 4]);
+  const prices = initialBalanceLevels(range, DEFAULT_INITIAL_BALANCE, styles).map(
+    (level) => level.price,
+  );
+  fixture.dashes.length = 0;
+  fixture.update(range, DEFAULT_INITIAL_BALANCE, [], 5, {
+    high: { linePattern: "default", lineWidth: 3 },
+    internal: { linePattern: "default" },
+  });
+  fixture.draw();
+  expect(fixture.dashes.slice(0, 3)).toEqual([[], [], [5, 4]]);
+  expect(fixture.dashes.slice(2).every((dash) => JSON.stringify(dash) === "[5,4]")).toBe(true);
+  expect(initialBalanceLevels(range, DEFAULT_INITIAL_BALANCE).map((level) => level.price)).toEqual(
+    prices,
+  );
+});

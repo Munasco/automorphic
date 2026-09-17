@@ -1,3 +1,4 @@
+import { seedTradingWorkspaceInstructions } from "./trading/workspaceInstructions.ts";
 import {
   CommandId,
   DEFAULT_MODEL,
@@ -20,6 +21,7 @@ import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -29,6 +31,11 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
 import * as ServerConfig from "./config.ts";
+import {
+  DEFAULT_TRADING_WORKSPACE_TITLE,
+  resolveDefaultTradingWorkspaceRoot,
+  resolveLegacyTradingWorkspaceRoots,
+} from "./trading/defaultWorkspace.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
@@ -177,99 +184,167 @@ const getAutoBootstrapThreadModelSelection = (): ModelSelection => ({
 });
 
 export const resolveWelcomeBase = Effect.gen(function* () {
-  const serverConfig = yield* ServerConfig.ServerConfig;
-  const segments = serverConfig.cwd.split(/[/\\]/).filter(Boolean);
-  const projectName = segments[segments.length - 1] ?? "project";
-
   return {
-    cwd: serverConfig.cwd,
-    projectName,
+    cwd: yield* resolveDefaultTradingWorkspaceRoot,
+    projectName: DEFAULT_TRADING_WORKSPACE_TITLE,
   } as const;
 });
+
+class TradingWorkspaceMigrationError extends Schema.TaggedError<TradingWorkspaceMigrationError>()(
+  "TradingWorkspaceMigrationError",
+  { workspaceRoot: Schema.String },
+) {
+  override get message() {
+    return "Trading workspace destination already exists; original workspace kept.";
+  }
+}
 
 export const resolveAutoBootstrapWelcomeTargets = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const randomUUID = crypto.randomUUIDv4;
-  const serverConfig = yield* ServerConfig.ServerConfig;
+  const workspaceRoot = yield* resolveDefaultTradingWorkspaceRoot;
+  const fs = yield* FileSystem.FileSystem;
   const projectionReadModelQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
   const path = yield* Path.Path;
+  const { stateDir } = yield* ServerConfig.ServerConfig;
 
   let bootstrapProjectId: ProjectId | undefined;
   let bootstrapThreadId: ThreadId | undefined;
   let bootstrapProjectCreated = false;
   let bootstrapThreadCreated = false;
 
-  if (serverConfig.autoBootstrapProjectFromCwd) {
-    const settings = yield* (yield* ServerSettings.ServerSettingsService).getSettings;
-    const defaultModelSelection =
-      settings.defaultModelSelection ?? getAutoBootstrapThreadModelSelection();
-    yield* Effect.gen(function* () {
-      const existingProject = yield* projectionReadModelQuery.getActiveProjectByWorkspaceRoot(
-        serverConfig.cwd,
-      );
-      let nextProjectId: ProjectId;
-      let nextThreadModelSelection: ModelSelection;
+  const settings = yield* (yield* ServerSettings.ServerSettingsService).getSettings;
+  const defaultModelSelection =
+    settings.defaultModelSelection ?? getAutoBootstrapThreadModelSelection();
+  yield* Effect.gen(function* () {
+    let existingProject =
+      yield* projectionReadModelQuery.getActiveProjectByWorkspaceRoot(workspaceRoot);
+    if (Option.isNone(existingProject)) {
+      const legacyRoots = [
+        ...(yield* resolveLegacyTradingWorkspaceRoots),
+        path.join(stateDir, "workspaces", "trading"),
+      ];
+      for (const legacyRoot of legacyRoots) {
+        const legacyProject =
+          yield* projectionReadModelQuery.getActiveProjectByWorkspaceRoot(legacyRoot);
+        const legacyFolderExists = yield* fs.exists(legacyRoot);
+        if (Option.isSome(legacyProject) || legacyFolderExists) {
+          yield* fs.makeDirectory(path.dirname(workspaceRoot), { recursive: true });
+          if (legacyFolderExists) {
+            // Never merge or overwrite a user's existing home folder during migration.
+            // A failed move leaves the old project and all its files untouched.
+            if (yield* fs.exists(workspaceRoot)) {
+              return yield* new TradingWorkspaceMigrationError({ workspaceRoot });
+            }
+            yield* fs.rename(legacyRoot, workspaceRoot);
+          } else {
+            yield* fs.makeDirectory(workspaceRoot, { recursive: true });
+          }
+          if (Option.isNone(legacyProject)) break;
+          yield* orchestrationEngine.dispatch({
+            type: "project.meta.update",
+            commandId: CommandId.make(yield* randomUUID),
+            projectId: legacyProject.value.id,
+            workspaceRoot,
+            ...(legacyProject.value.title === "My Trading Workspace"
+              ? { title: DEFAULT_TRADING_WORKSPACE_TITLE }
+              : {}),
+          });
+          existingProject = Option.some({
+            ...legacyProject.value,
+            workspaceRoot,
+            title:
+              legacyProject.value.title === "My Trading Workspace"
+                ? DEFAULT_TRADING_WORKSPACE_TITLE
+                : legacyProject.value.title,
+          });
+          break;
+        }
+      }
+    }
+    if (Option.isSome(existingProject) && existingProject.value.title === "My Trading Workspace") {
+      yield* orchestrationEngine.dispatch({
+        type: "project.meta.update",
+        commandId: CommandId.make(yield* randomUUID),
+        projectId: existingProject.value.id,
+        title: DEFAULT_TRADING_WORKSPACE_TITLE,
+      });
+    }
+    yield* fs.makeDirectory(workspaceRoot, { recursive: true });
+    yield* seedTradingWorkspaceInstructions(workspaceRoot);
+    let nextProjectId: ProjectId;
+    let nextThreadModelSelection: ModelSelection;
 
-      if (Option.isNone(existingProject)) {
+    if (Option.isNone(existingProject)) {
+      const createdAt = DateTime.formatIso(yield* DateTime.now);
+      nextProjectId = ProjectId.make(yield* randomUUID);
+      const bootstrapProjectTitle = DEFAULT_TRADING_WORKSPACE_TITLE;
+      nextThreadModelSelection = defaultModelSelection;
+      yield* orchestrationEngine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make(yield* randomUUID),
+        projectId: nextProjectId,
+        title: bootstrapProjectTitle,
+        workspaceRoot,
+        createdAt,
+      });
+      bootstrapProjectId = nextProjectId;
+      bootstrapProjectCreated = true;
+    } else {
+      nextProjectId = existingProject.value.id;
+      bootstrapProjectId = nextProjectId;
+      nextThreadModelSelection =
+        resolveProjectSettings(settings, nextProjectId, existingProject.value).settings
+          .defaultModelSelection ?? defaultModelSelection;
+    }
+
+    yield* Effect.gen(function* () {
+      const existingThreadId =
+        yield* projectionReadModelQuery.getFirstActiveThreadIdByProjectId(nextProjectId);
+      if (Option.isNone(existingThreadId)) {
         const createdAt = DateTime.formatIso(yield* DateTime.now);
-        nextProjectId = ProjectId.make(yield* randomUUID);
-        const bootstrapProjectTitle = path.basename(serverConfig.cwd) || "project";
-        nextThreadModelSelection = defaultModelSelection;
+        const createdThreadId = ThreadId.make(yield* randomUUID);
         yield* orchestrationEngine.dispatch({
-          type: "project.create",
+          type: "thread.create",
           commandId: CommandId.make(yield* randomUUID),
+          threadId: createdThreadId,
           projectId: nextProjectId,
-          title: bootstrapProjectTitle,
-          workspaceRoot: serverConfig.cwd,
+          title: "New thread",
+          modelSelection: nextThreadModelSelection,
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
           createdAt,
         });
-        bootstrapProjectId = nextProjectId;
-        bootstrapProjectCreated = true;
+        bootstrapThreadId = createdThreadId;
+        bootstrapThreadCreated = true;
       } else {
-        nextProjectId = existingProject.value.id;
-        bootstrapProjectId = nextProjectId;
-        nextThreadModelSelection =
-          resolveProjectSettings(settings, nextProjectId, existingProject.value).settings
-            .defaultModelSelection ?? defaultModelSelection;
-      }
-
-      yield* Effect.gen(function* () {
-        const existingThreadId =
-          yield* projectionReadModelQuery.getFirstActiveThreadIdByProjectId(nextProjectId);
-        if (Option.isNone(existingThreadId)) {
-          const createdAt = DateTime.formatIso(yield* DateTime.now);
-          const createdThreadId = ThreadId.make(yield* randomUUID);
+        bootstrapThreadId = existingThreadId.value;
+        const existingThread = yield* projectionReadModelQuery.getThreadShellById(
+          existingThreadId.value,
+        );
+        if (Option.isSome(existingThread) && existingThread.value.title === "Market research") {
           yield* orchestrationEngine.dispatch({
-            type: "thread.create",
+            type: "thread.meta.update",
             commandId: CommandId.make(yield* randomUUID),
-            threadId: createdThreadId,
-            projectId: nextProjectId,
+            threadId: existingThreadId.value,
             title: "New thread",
-            modelSelection: nextThreadModelSelection,
-            interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-            runtimeMode: "full-access",
-            branch: null,
-            worktreePath: null,
-            createdAt,
           });
-          bootstrapThreadId = createdThreadId;
-          bootstrapThreadCreated = true;
-        } else {
-          bootstrapThreadId = existingThreadId.value;
         }
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Cause.hasInterrupts(cause)
-            ? Effect.failCause(cause)
-            : Effect.logWarning("startup thread auto-bootstrap failed", {
-                bootstrapProjectId: nextProjectId,
-                cause,
-              }),
-        ),
-      );
-    });
-  }
+      }
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterrupts(cause)
+          ? Effect.failCause(cause)
+          : Effect.logWarning("startup thread auto-bootstrap failed", {
+              bootstrapProjectId: nextProjectId,
+              cause,
+            }),
+      ),
+    );
+  });
 
   return {
     ...(bootstrapProjectId ? { bootstrapProjectId } : {}),
@@ -888,39 +963,32 @@ export const make = (options?: StartupOptions) =>
       const environment = yield* serverEnvironment.getDescriptor;
       yield* Effect.logDebug("startup phase: preparing welcome payload");
 
-      if (serverConfig.autoBootstrapProjectFromCwd) {
-        yield* forkParked(
-          runStartupPhase(
-            "welcome.autobootstrap",
-            Effect.gen(function* () {
-              const bootstrapCompletion = yield* completeAutoBootstrapWelcome(
-                resolveAutoBootstrapWelcomeTargets.pipe(
-                  Effect.provideService(Crypto.Crypto, crypto),
-                ),
-              );
+      yield* forkParked(
+        runStartupPhase(
+          "welcome.autobootstrap",
+          Effect.gen(function* () {
+            const bootstrapCompletion = yield* completeAutoBootstrapWelcome(
+              resolveAutoBootstrapWelcomeTargets.pipe(Effect.provideService(Crypto.Crypto, crypto)),
+            );
 
-              yield* Effect.logDebug(
-                "startup phase: publishing completed bootstrap welcome event",
-                {
-                  environmentId: environment.environmentId,
-                  cwd: welcomeBase.cwd,
-                  projectName: welcomeBase.projectName,
-                  ...bootstrapCompletion,
-                },
-              );
-              yield* lifecycleEvents.publish({
-                version: 1,
-                type: "welcome",
-                payload: {
-                  environment,
-                  ...welcomeBase,
-                  ...bootstrapCompletion,
-                },
-              });
-            }).pipe(Effect.ignoreCause({ log: true })),
-          ),
-        );
-      }
+            yield* Effect.logDebug("startup phase: publishing completed bootstrap welcome event", {
+              environmentId: environment.environmentId,
+              cwd: welcomeBase.cwd,
+              projectName: welcomeBase.projectName,
+              ...bootstrapCompletion,
+            });
+            yield* lifecycleEvents.publish({
+              version: 1,
+              type: "welcome",
+              payload: {
+                environment,
+                ...welcomeBase,
+                ...bootstrapCompletion,
+              },
+            });
+          }).pipe(Effect.ignoreCause({ log: true })),
+        ),
+      );
 
       yield* forkParked(
         Effect.gen(function* () {
@@ -966,7 +1034,7 @@ export const make = (options?: StartupOptions) =>
           payload: {
             environment,
             ...welcomeBase,
-            bootstrapStatus: serverConfig.autoBootstrapProjectFromCwd ? "pending" : "complete",
+            bootstrapStatus: "pending",
           },
         }),
       );

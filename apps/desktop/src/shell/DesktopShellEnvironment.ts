@@ -441,9 +441,36 @@ const installPosixEnvironment = Effect.fn("desktop.shellEnvironment.installPosix
       config.platform === "darwin" && !shellEnvironment.PATH
         ? yield* readLaunchctlPath
         : Option.none<string>();
+    // Finder launches do not inherit the PATH additions made by the Codex app.
+    // Keep shell-installed CLIs first, then discover a bundled Codex executable.
+    const bundledCliDirectories: string[] = [];
+    if (config.platform === "darwin") {
+      const applicationRoots = [
+        ...(config.env.HOME ? [`${config.env.HOME}/Applications`] : []),
+        "/Applications",
+      ];
+      for (const root of applicationRoots) {
+        for (const app of ["Codex.app", "ChatGPT.app"]) {
+          const directory = `${root}/${app}/Contents/Resources`;
+          const exists = yield* fileSystem
+            .exists(`${directory}/codex`)
+            .pipe(Effect.orElseSucceed(() => false));
+          if (exists) bundledCliDirectories.push(directory);
+        }
+      }
+    }
+    // Native CLI installers commonly use ~/.local/bin without updating shell startup files.
+    const nativeCliDirectory = config.env.HOME
+      ? `${config.env.HOME.replace(/\/+$/u, "")}/.local/bin`
+      : undefined;
+    const nativeCliDirectoryExists = nativeCliDirectory
+      ? yield* fileSystem.exists(nativeCliDirectory).pipe(Effect.orElseSucceed(() => false))
+      : false;
     const mergedPath = mergePaths(config.platform, [
       trimNonEmpty(shellEnvironment.PATH).pipe(Option.orElse(() => launchctlPath)),
       readEnvPath(config.env),
+      nativeCliDirectoryExists ? trimNonEmpty(nativeCliDirectory) : Option.none(),
+      trimNonEmpty(bundledCliDirectories.join(":")),
     ]);
 
     if (Option.isSome(mergedPath)) {

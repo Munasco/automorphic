@@ -1,0 +1,2495 @@
+import { describe, expect, it } from "vite-plus/test";
+import { calculateChartRegression } from "./chartRegression";
+import { defaultDrawingTemplateSettings } from "./drawingTemplates";
+import type { Time } from "lightweight-charts";
+import {
+  buildDrawingGeometry,
+  drawingLineExtensions,
+  drawingLineMarkers,
+  hitDrawingGeometry,
+  hitDrawingHandle,
+  validDrawingAnchors,
+  DRAWING_ANCHORS,
+  defaultDrawingLevels,
+  parallelChannelSettingsLevels,
+  defaultRegressionDrawingSettings,
+  defaultFibTimeDrawingSettings,
+  fibTimeAppearancePatch,
+  maximumDrawingAnchors,
+  sanitizeDrawingSettings,
+  parseChartDrawings,
+  type ChartDrawing,
+  type DrawingKind,
+} from "./drawingGeometry";
+
+function drawing(kind: DrawingKind, anchors: Array<[number, number]>): ChartDrawing {
+  return {
+    id: "shape",
+    kind,
+    anchors: anchors.map(([time, price]) => ({ time: time as Time, price })),
+    color: "#729bff",
+    width: 2,
+  };
+}
+const geometry = (shape: ChartDrawing) =>
+  buildDrawingGeometry(
+    shape,
+    ({ time, price }) => ({ x: Number(time), y: 500 - price }),
+    (price) => 500 - price,
+    1000,
+    500,
+  );
+
+describe("native drawing geometry", () => {
+  it.each([false, true])(
+    "accepts and hits a vertical trendline with reversed anchors %s",
+    (reversed) => {
+      const source = drawing(
+        "trend",
+        reversed
+          ? [
+              [100, 200],
+              [100, 400],
+            ]
+          : [
+              [100, 400],
+              [100, 200],
+            ],
+      );
+      expect(validDrawingAnchors(source.kind, source.anchors)).toBe(true);
+      expect(parseChartDrawings(JSON.stringify([source]))).toEqual([source]);
+      const shape = geometry(source);
+      expect(shape.lines).toEqual([{ from: shape.handles[0], to: shape.handles[1] }]);
+      expect(hitDrawingGeometry(shape, { x: 100, y: 200 })).toBe(true);
+      expect(hitDrawingGeometry(shape, { x: 125, y: 200 })).toBe(false);
+      expect(hitDrawingGeometry(shape, { x: 100, y: 50 })).toBe(false);
+      expect(validDrawingAnchors("trend", [source.anchors[0]!, source.anchors[0]!])).toBe(false);
+      const extended = geometry({ ...source, extendLeft: true, extendRight: true });
+      expect(extended.lines).toEqual([
+        {
+          from: { x: 100, y: reversed ? 500 : 0 },
+          to: { x: 100, y: reversed ? 0 : 500 },
+        },
+      ]);
+      expect(extended.handles).toEqual(shape.handles);
+      expect(hitDrawingGeometry(extended, { x: 100, y: 50 })).toBe(true);
+      expect(hitDrawingGeometry(extended, { x: 100, y: 450 })).toBe(true);
+      for (const extend of [{ extendLeft: true }, { extendRight: true }]) {
+        const oneSide = geometry({ ...source, ...extend });
+        expect(oneSide.lines).toHaveLength(1);
+        expect(oneSide.lines[0]!.from).toEqual(
+          extend.extendLeft ? { x: 100, y: reversed ? 500 : 0 } : shape.handles[0],
+        );
+        expect(oneSide.lines[0]!.to).toEqual(
+          extend.extendRight ? { x: 100, y: reversed ? 0 : 500 } : shape.handles[1],
+        );
+      }
+    },
+  );
+
+  it("renders factory retracements with the documented palette and keeps level edits independent", () => {
+    const shape: ChartDrawing = {
+      ...drawing("fib", [
+        [100, 100],
+        [200, 200],
+      ]),
+      ...defaultDrawingTemplateSettings("fib"),
+    };
+    const colors = ["#808080", "#f23645", "#ff9800", "#4caf50", "#089981", "#00bcd4", "#808080"];
+    expect(geometry(shape).lines.map((line) => line.color)).toEqual(colors);
+    const edited: ChartDrawing = {
+      ...shape,
+      levels: shape.levels!.map((level) =>
+        level.value === 0.382 ? { ...level, color: "#123456" } : level,
+      ),
+    };
+    const [restored] = parseChartDrawings(JSON.stringify([edited]));
+    expect(restored?.levels).toEqual(edited.levels);
+    expect(geometry(restored!).lines.map((line) => line.color)).toEqual([
+      ...colors.slice(0, 2),
+      "#123456",
+      ...colors.slice(3),
+    ]);
+    expect(
+      geometry({ ...edited, useOneColor: true }).lines.every((line) => line.color === edited.color),
+    ).toBe(true);
+    expect(geometry({ ...edited, useOneColor: false }).lines[2]?.color).toBe("#123456");
+    expect(defaultDrawingLevels("fib").map((level) => level.color)).toEqual(colors);
+  });
+
+  it.each(["#2962ff", "#729bff"])(
+    "repairs saved default-blue %s retracements while honoring explicit single-color mode",
+    (color) => {
+      const legacy = {
+        ...drawing("fib", [
+          [100, 100],
+          [200, 200],
+        ]),
+        color,
+      };
+      const [restored] = parseChartDrawings(JSON.stringify([legacy]));
+      const colors = defaultDrawingLevels("fib").map((level) => level.color);
+      expect(restored?.levels).toBeUndefined();
+      expect(geometry(restored!).lines.map((line) => line.color)).toEqual(colors);
+      expect(
+        geometry({ ...restored!, useOneColor: true }).lines.every((line) => line.color === color),
+      ).toBe(true);
+    },
+  );
+
+  it("fills absent level colors from the palette without overriding explicit per-level choices", () => {
+    const saved = {
+      ...drawing("fib", [
+        [100, 100],
+        [200, 200],
+      ]),
+      levels: [
+        { value: 0, visible: true },
+        { value: 0.236, visible: true, color: "#123456" },
+        { value: 0.618, visible: true },
+        { value: 0.75, visible: true },
+      ],
+    };
+    const [restored] = parseChartDrawings(JSON.stringify([saved]));
+    expect(geometry(restored!).lines.map((line) => line.color)).toEqual([
+      "#808080",
+      "#123456",
+      "#089981",
+      saved.color,
+    ]);
+    expect(restored?.levels).toEqual(saved.levels);
+  });
+
+  it("preserves legacy custom retracement colors on reload until factory appearance is explicitly restored", () => {
+    const legacy = {
+      ...drawing("fib", [
+        [100, 100],
+        [200, 200],
+      ]),
+      color: "#aa44cc",
+    };
+    const [restored] = parseChartDrawings(JSON.stringify([legacy]));
+    expect(restored?.levels).toBeUndefined();
+    expect(geometry(restored!).lines.every((line) => line.color === "#aa44cc")).toBe(true);
+    const reset = { ...restored!, ...defaultDrawingTemplateSettings("fib") };
+    expect(new Set(geometry(reset).lines.map((line) => line.color)).size).toBe(6);
+    expect(reset.anchors).toEqual(legacy.anchors);
+  });
+
+  it.each(["rectangle", "circle", "ellipse", "triangle", "rotated-rectangle"] as const)(
+    "%s retains its border and handles when independent background settings change",
+    (kind) => {
+      const anchors: Array<[number, number]> = [
+        [100, 400],
+        [300, 300],
+      ];
+      if (kind === "triangle" || kind === "rotated-rectangle") anchors.push([200, 200]);
+      const original = drawing(kind, anchors),
+        initial = geometry(original);
+      const fills = (shape: ReturnType<typeof geometry>) =>
+        shape.rectangleFill ? [shape.rectangleFill] : (shape.polygons ?? []);
+      expect(fills(initial)).toMatchObject([{ color: original.color, opacity: 0.12 }]);
+      const edited = {
+        ...original,
+        background: true,
+        backgroundColor: "#00ff00",
+        backgroundOpacity: 1,
+        lineOpacity: 0.2,
+      };
+      const painted = geometry(edited);
+      expect(fills(painted)).toMatchObject([{ color: "#00ff00", opacity: 1 }]);
+      expect(painted.polygons?.some((fill) => fill.lineFill)).not.toBe(true);
+      const restored = parseChartDrawings(JSON.stringify([edited]))[0]!;
+      expect(geometry(restored)).toEqual(painted);
+      const hidden = geometry({ ...edited, background: false });
+      expect(fills(hidden)).toEqual([]);
+      expect(hidden.lines).toEqual(initial.lines);
+      expect(hidden.handles).toEqual(initial.handles);
+      const transparent = geometry({ ...edited, backgroundOpacity: 0 });
+      expect(fills(transparent)).toMatchObject([{ opacity: 0 }]);
+    },
+  );
+
+  it("extends lines independently toward earlier/later time while retaining original drag handles", () => {
+    const line = drawing("trend", [
+      [100, 400],
+      [300, 300],
+    ]);
+    const left = geometry({ ...line, extendLeft: true });
+    expect(left.lines[0]).toEqual({ from: { x: 0, y: 50 }, to: { x: 300, y: 200 } });
+    expect(left.handles).toEqual([
+      { x: 100, y: 100 },
+      { x: 300, y: 200 },
+    ]);
+    expect(hitDrawingGeometry(left, { x: 20, y: 60 })).toBe(true);
+    const right = geometry({ ...line, extendRight: true });
+    expect(right.lines[0]?.to).toEqual({ x: 900, y: 500 });
+    const reversed = geometry({ ...line, anchors: line.anchors.toReversed(), extendLeft: true });
+    expect(reversed.lines[0]).toEqual({ from: { x: 300, y: 200 }, to: { x: 0, y: 50 } });
+    const ray = geometry({ ...line, kind: "ray", extendLeft: false, extendRight: false });
+    expect(ray.lines[0]).toEqual({ from: { x: 100, y: 100 }, to: { x: 300, y: 200 } });
+  });
+
+  it("adds independent arrow endpoints and can return arrow tools to normal endpoints", () => {
+    const line = drawing("trend", [
+      [100, 400],
+      [300, 400],
+    ]);
+    const arrows = geometry({
+      ...line,
+      startMarker: "arrow",
+      endMarker: "arrow",
+      extendRight: true,
+    });
+    expect(arrows.polygons).toBeUndefined();
+    expect(arrows.lines).toEqual([
+      { from: { x: 100, y: 100 }, to: { x: 1000, y: 100 } },
+      { from: { x: 110, y: 90 }, to: { x: 100, y: 100 } },
+      { from: { x: 100, y: 100 }, to: { x: 110, y: 110 } },
+      { from: { x: 290, y: 110 }, to: { x: 300, y: 100 } },
+      { from: { x: 300, y: 100 }, to: { x: 290, y: 90 } },
+    ]);
+    expect(arrows.handles).toHaveLength(2);
+    expect(geometry({ ...line, kind: "arrow", endMarker: "normal" }).polygons).toBeUndefined();
+    const channel = geometry({
+      ...drawing("channel", [
+        [100, 400],
+        [300, 300],
+        [200, 300],
+      ]),
+      extendLeft: true,
+    });
+    expect(channel.lines.map((part) => part.from.x)).toEqual([0, 0, 0]);
+  });
+
+  it.each([1, 2, 4] as const)(
+    "uses 45-degree marker wings scaled to a %spx stroke even on short segments",
+    (width) => {
+      for (const length of [200, 1]) {
+        const shape = geometry({
+          ...drawing("trend", [
+            [100, 400],
+            [100 + length, 400],
+          ]),
+          width,
+          startMarker: "arrow",
+          endMarker: "arrow",
+        });
+        const depth = 5 * width;
+        expect(shape.lines.slice(1)).toEqual([
+          { from: { x: 100 + depth, y: 100 - depth }, to: { x: 100, y: 100 } },
+          { from: { x: 100, y: 100 }, to: { x: 100 + depth, y: 100 + depth } },
+          { from: { x: 100 + length - depth, y: 100 + depth }, to: { x: 100 + length, y: 100 } },
+          { from: { x: 100 + length, y: 100 }, to: { x: 100 + length - depth, y: 100 - depth } },
+        ]);
+        expect(shape.polygons).toBeUndefined();
+        expect(shape.handles).toEqual([
+          { x: 100, y: 100 },
+          { x: 100 + length, y: 100 },
+        ]);
+      }
+      const zero = geometry({
+        ...drawing("trend", [
+          [100, 400],
+          [100, 400],
+        ]),
+        width,
+        endMarker: "arrow",
+      });
+      expect(zero.lines).toHaveLength(1);
+      expect(zero.polygons).toBeUndefined();
+    },
+  );
+
+  it.each([
+    { reversed: false, extendLeft: true, extendRight: false },
+    { reversed: false, extendLeft: false, extendRight: true },
+    { reversed: true, extendLeft: true, extendRight: true },
+  ])("keeps open markers at original anchors when extensions change: %j", (settings) => {
+    const source = drawing("trend", [
+      [100, 400],
+      [300, 400],
+    ]);
+    const anchors = settings.reversed ? source.anchors.toReversed() : source.anchors;
+    const shape = geometry({
+      ...source,
+      ...settings,
+      anchors,
+      startMarker: "arrow",
+      endMarker: "arrow",
+    });
+    const first = { x: Number(anchors[0]!.time), y: 100 };
+    const second = { x: Number(anchors[1]!.time), y: 100 };
+    expect(shape.handles).toEqual([first, second]);
+    expect(shape.lines).toHaveLength(5);
+    expect(shape.lines[1]!.to).toEqual(first);
+    expect(shape.lines[2]!.from).toEqual(first);
+    expect(shape.lines[3]!.to).toEqual(second);
+    expect(shape.lines[4]!.from).toEqual(second);
+    expect(shape.polygons).toBeUndefined();
+    expect(hitDrawingHandle(shape, first)).toBe(0);
+    expect(hitDrawingHandle(shape, second)).toBe(1);
+  });
+
+  it.each([false, true])(
+    "does not relocate offscreen marker tips to clipped viewport edges, reversed=%s",
+    (reversed) => {
+      const source = drawing("trend", [
+        [-100, 400],
+        [1100, 400],
+      ]);
+      const anchors = reversed ? source.anchors.toReversed() : source.anchors;
+      const shape = geometry({
+        ...source,
+        anchors,
+        extendLeft: true,
+        extendRight: true,
+        startMarker: "arrow",
+        endMarker: "arrow",
+      });
+      expect(shape.lines[0]).toEqual(
+        reversed
+          ? { from: { x: 1000, y: 100 }, to: { x: 0, y: 100 } }
+          : { from: { x: 0, y: 100 }, to: { x: 1000, y: 100 } },
+      );
+      expect(
+        shape.lines
+          .slice(1)
+          .flatMap((part) => [part.from.x, part.to.x])
+          .every((x) => x < 0 || x > 1000),
+      ).toBe(true);
+      expect(shape.handles).toEqual(anchors.map((anchor) => ({ x: Number(anchor.time), y: 100 })));
+      expect(shape.polygons).toBeUndefined();
+    },
+  );
+
+  it("uses a ray's original second anchor for its marker while retaining the extended body", () => {
+    const shape = geometry({
+      ...drawing("ray", [
+        [100, 400],
+        [300, 400],
+      ]),
+      endMarker: "arrow",
+    });
+    expect(shape.lines[0]!.to).toEqual({ x: 1000, y: 100 });
+    expect(shape.lines[1]!.to).toEqual({ x: 300, y: 100 });
+    expect(shape.lines[2]!.from).toEqual({ x: 300, y: 100 });
+    expect(shape.handles).toEqual([
+      { x: 100, y: 100 },
+      { x: 300, y: 100 },
+    ]);
+  });
+
+  it.each(["horizontal", "horizontal-ray", "vertical"] as const)(
+    "retains the %s body's direction for one-anchor endpoint markers",
+    (kind) => {
+      const shape = geometry({
+        ...drawing(kind, [[100, 400]]),
+        startMarker: "arrow",
+        endMarker: "arrow",
+      });
+      const first =
+        kind === "horizontal"
+          ? { x: 0, y: 100 }
+          : kind === "vertical"
+            ? { x: 100, y: 0 }
+            : { x: 100, y: 100 };
+      const last = kind === "vertical" ? { x: 100, y: 500 } : { x: 1000, y: 100 };
+      expect(shape.lines[1]!.to).toEqual(first);
+      expect(shape.lines[2]!.from).toEqual(first);
+      expect(shape.lines[3]!.to).toEqual(last);
+      expect(shape.lines[4]!.from).toEqual(last);
+      expect(
+        shape.lines
+          .slice(1)
+          .every((part) => Math.hypot(part.to.x - part.from.x, part.to.y - part.from.y) > 0),
+      ).toBe(true);
+      expect(shape.handles).toEqual([{ x: 100, y: 100 }]);
+    },
+  );
+
+  it("keeps extended-line markers at their original endpoints with default two-sided extension", () => {
+    const shape = geometry({
+      ...drawing("extended-line", [
+        [100, 400],
+        [300, 400],
+      ]),
+      startMarker: "arrow",
+      endMarker: "arrow",
+    });
+    expect(shape.lines[0]).toEqual({ from: { x: 0, y: 100 }, to: { x: 1000, y: 100 } });
+    expect(shape.lines[1]!.to).toEqual({ x: 100, y: 100 });
+    expect(shape.lines[3]!.to).toEqual({ x: 300, y: 100 });
+  });
+
+  it.each(["flat-channel", "disjoint-channel"] as const)(
+    "keeps open %s markers on both original boundaries under extension and reversal",
+    (kind) => {
+      for (const reversed of [false, true]) {
+        const source = drawing(
+          kind,
+          reversed
+            ? [
+                [300, 300],
+                [100, 400],
+                [100, 200],
+              ]
+            : [
+                [100, 400],
+                [300, 300],
+                [300, 200],
+              ],
+        );
+        const original = geometry(source);
+        for (const extensions of [
+          { extendRight: true },
+          { extendLeft: true },
+          { extendLeft: true, extendRight: true },
+        ]) {
+          const body = geometry({ ...source, ...extensions });
+          const marked = geometry({
+            ...source,
+            ...extensions,
+            startMarker: "arrow",
+            endMarker: "arrow",
+          });
+          expect(marked.lines.slice(0, 2)).toEqual(body.lines);
+          expect(marked.lines).toHaveLength(10);
+          expect(marked.polygons).toEqual(body.polygons);
+          expect(marked.handles).toEqual(original.handles);
+          original.lines.forEach((boundary, index) => {
+            const wings = marked.lines.slice(2 + index * 4, 6 + index * 4);
+            expect(wings[0]!.to).toEqual(boundary.from);
+            expect(wings[1]!.from).toEqual(boundary.from);
+            expect(wings[2]!.to).toEqual(boundary.to);
+            expect(wings[3]!.from).toEqual(boundary.to);
+            for (const wing of wings) {
+              expect(Math.hypot(wing.to.x - wing.from.x, wing.to.y - wing.from.y)).toBeCloseTo(
+                Math.SQRT2 * 10,
+              );
+            }
+          });
+        }
+      }
+    },
+  );
+
+  it.each(["flat-channel", "disjoint-channel"] as const)(
+    "does not add viewport-edge arrow tips for %s anchors outside the pane",
+    (kind) => {
+      const source = drawing(kind, [
+        [-100, 400],
+        [1100, 300],
+        [1100, 200],
+      ]);
+      const body = geometry({ ...source, extendLeft: true, extendRight: true });
+      const marked = geometry({
+        ...source,
+        extendLeft: true,
+        extendRight: true,
+        endMarker: "arrow",
+      });
+      expect(marked.lines.slice(0, 2)).toEqual(body.lines);
+      expect(marked.lines).toHaveLength(6);
+      expect(marked.lines.slice(2).every((wing) => wing.from.x > 1000 && wing.to.x > 1000)).toBe(
+        true,
+      );
+      expect(marked.polygons).toEqual(body.polygons);
+      expect(marked.handles).toEqual(body.handles);
+    },
+  );
+
+  it("places multiline text relative to line anchors and hit-tests its chosen size/alignment", () => {
+    const shape = geometry({
+      ...drawing("trend", [
+        [100, 400],
+        [300, 300],
+      ]),
+      text: "Breakout\nwatch",
+      textFontSize: 20,
+      textPosition: "below",
+      textAlignment: "right",
+    });
+    expect(shape.text).toEqual({
+      point: { x: 300 - 6 / Math.sqrt(5), y: 200 + 12 / Math.sqrt(5) },
+      angle: Math.atan2(100, 200),
+      value: "Breakout\nwatch",
+      fontSize: 20,
+      align: "right",
+      baseline: "top",
+    });
+    expect(hitDrawingGeometry(shape, { x: 250, y: 240 })).toBe(true);
+    expect(hitDrawingGeometry(shape, { x: 350, y: 240 })).toBe(false);
+    expect(
+      geometry({ ...drawing("horizontal", [[100, 400]]), text: "Support", textAlignment: "center" })
+        .text?.point,
+    ).toEqual({ x: 500, y: 94 });
+  });
+
+  it("persists line and text settings without retaining malformed style options", () => {
+    const settings = {
+      extendLeft: false,
+      extendRight: true,
+      showPriceLabel: true,
+      showTimeLabel: false,
+      startMarker: "arrow",
+      endMarker: "normal",
+      text: "Supply",
+      textColor: "#aabbcc",
+      textFontSize: 20,
+      textBold: true,
+      textItalic: false,
+      textPosition: "above",
+      textAlignment: "center",
+    } as const;
+    const line = {
+      ...drawing("trend", [
+        [100, 400],
+        [300, 300],
+      ]),
+      ...settings,
+    };
+    expect(parseChartDrawings(JSON.stringify([line]))).toEqual([line]);
+    expect(
+      sanitizeDrawingSettings({
+        extendLeft: "yes",
+        showPriceLabel: 1,
+        showTimeLabel: "true",
+        startMarker: "triangle",
+        endMarker: "arrow",
+        textColor: "red",
+        textFontSize: Infinity,
+        textPosition: "bad",
+        textAlignment: "bad",
+        textBold: "true",
+        textItalic: true,
+      }),
+    ).toEqual({ endMarker: "arrow", textItalic: true });
+    expect(sanitizeDrawingSettings({ text: "x".repeat(200), textFontSize: 7 }).text).toBe(
+      "x".repeat(200),
+    );
+  });
+
+  it.each(["ray", "arrow"] as const)(
+    "round-trips %s midpoint and configurable statistics",
+    (kind) => {
+      const shape: ChartDrawing = {
+        ...drawing(kind, [
+          [100, 400],
+          [300, 300],
+        ]),
+        showMiddlePoint: true,
+        stats: ["price", "percent", "ticks", "bars", "datetime", "distance", "angle"],
+        statsPosition: "auto",
+        alwaysShowStats: false,
+      };
+      const reloaded = parseChartDrawings(JSON.stringify([shape]));
+      expect(reloaded).toEqual([shape]);
+      expect(geometry(reloaded[0]!)).toEqual(geometry(shape));
+    },
+  );
+
+  it("persists automatic statistics positioning and rejects unknown modes", () => {
+    const shape = {
+      ...drawing("trend", [
+        [100, 400],
+        [300, 300],
+      ]),
+      statsPosition: "auto" as const,
+    };
+    expect(sanitizeDrawingSettings({ statsPosition: "auto" })).toEqual({ statsPosition: "auto" });
+    expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+    expect(sanitizeDrawingSettings({ statsPosition: "automatic" as "auto" })).toEqual({});
+  });
+
+  it("preserves long multiline Unicode drawing text through settings and stored drawing reloads", () => {
+    const text = `${"x".repeat(139)}📈\n${"确认回踩 e\u0301 — wait for confirmation.\n".repeat(20)}`;
+    const line = { ...drawing("horizontal-ray", [[100, 400]]), text };
+    expect(sanitizeDrawingSettings({ text })).toEqual({ text });
+    const reloaded = parseChartDrawings(JSON.stringify([line]));
+    expect(reloaded).toEqual([line]);
+    expect(geometry(reloaded[0]!).text?.value).toBe(text);
+    expect(sanitizeDrawingSettings({ text: 123 })).toEqual({});
+  });
+
+  it("renders freehand, highlighter, polyline and arrow-ended paths with editable anchor indices", () => {
+    const points: Array<[number, number]> = [
+      [100, 400],
+      [150, 350],
+      [200, 400],
+    ];
+    const brush = geometry(drawing("brush", points));
+    expect(brush.lines).toHaveLength(2);
+    expect(hitDrawingGeometry(brush, { x: 150, y: 150 })).toBe(true);
+    expect(hitDrawingHandle(brush, { x: 150, y: 150 })).toBe(-1);
+    expect(hitDrawingHandle(brush, { x: 200, y: 100 })).toBe(2);
+    expect(hitDrawingHandle(geometry(drawing("polyline", points)), { x: 150, y: 150 })).toBe(1);
+    const highlight = geometry(
+      drawing("highlighter", [
+        [100, 400],
+        [200, 400],
+      ]),
+    );
+    expect(highlight.strokeWidth).toBe(16);
+    expect(highlight.opacity).toBe(0.25);
+    expect(hitDrawingGeometry(highlight, { x: 150, y: 110 })).toBe(true);
+    expect(hitDrawingGeometry(highlight, { x: 150, y: 130 })).toBe(false);
+    const path = geometry(drawing("path", points));
+    expect(path.polygons).toBeUndefined();
+    expect(path.lines.at(-1)?.from).toEqual({ x: 200, y: 100 });
+    expect(geometry(drawing("polyline", points)).polygons).toBeUndefined();
+  });
+
+  it("distinguishes thin arrows, filled arrow markers and one-click directional arrows", () => {
+    const anchors: Array<[number, number]> = [
+      [100, 400],
+      [200, 400],
+    ];
+    const arrow = geometry(drawing("arrow", anchors));
+    const marker = geometry(drawing("arrow-marker", anchors));
+    expect(arrow.lines[0]).toEqual({ from: { x: 100, y: 100 }, to: { x: 200, y: 100 } });
+    expect(arrow.polygons).toBeUndefined();
+    expect(arrow.lines).toHaveLength(3);
+    expect(marker.polygons?.[0]?.points).toHaveLength(7);
+    expect(hitDrawingGeometry(marker, { x: 150, y: 100 })).toBe(true);
+    const up = geometry(drawing("arrow-up", [[100, 400]]));
+    const down = geometry(drawing("arrow-down", [[100, 400]]));
+    expect(Math.min(...up.polygons![0]!.points.map((point) => point.y))).toBe(100);
+    expect(Math.max(...down.polygons![0]!.points.map((point) => point.y))).toBe(100);
+    expect(up.handles).toEqual([{ x: 100, y: 100 }]);
+  });
+
+  it("constructs screen-space circles and ellipses and permits a same-time circle radius", () => {
+    const circle = drawing("circle", [
+      [100, 400],
+      [100, 350],
+    ]);
+    expect(validDrawingAnchors("circle", circle.anchors)).toBe(true);
+    const round = geometry(circle);
+    const vertices = round.polygons![0]!.points;
+    expect(Math.min(...vertices.map((point) => point.x))).toBe(50);
+    expect(Math.max(...vertices.map((point) => point.y))).toBe(150);
+    expect(hitDrawingGeometry(round, { x: 125, y: 100 })).toBe(true);
+    expect(hitDrawingGeometry(round, { x: 175, y: 100 })).toBe(false);
+    const oval = geometry(
+      drawing("ellipse", [
+        [300, 300],
+        [100, 400],
+      ]),
+    ).polygons![0]!.points;
+    expect(Math.min(...oval.map((point) => point.x))).toBe(100);
+    expect(Math.max(...oval.map((point) => point.x))).toBe(300);
+    expect(Math.min(...oval.map((point) => point.y))).toBe(100);
+    expect(Math.max(...oval.map((point) => point.y))).toBe(200);
+  });
+
+  it("uses a perpendicular width for rotated rectangles and closes triangles", () => {
+    const rectangle = geometry(
+      drawing("rotated-rectangle", [
+        [100, 400],
+        [200, 300],
+        [50, 350],
+      ]),
+    );
+    const vertices = rectangle.polygons![0]!.points;
+    expect(vertices).toHaveLength(4);
+    expect(vertices[2]!.x).toBeCloseTo(150);
+    expect(vertices[2]!.y).toBeCloseTo(250);
+    expect(vertices[3]!.x).toBeCloseTo(50);
+    expect(vertices[3]!.y).toBeCloseTo(150);
+    expect(rectangle.handles).toHaveLength(3);
+    const triangle = geometry(
+      drawing("triangle", [
+        [100, 400],
+        [200, 400],
+        [150, 300],
+      ]),
+    );
+    expect(triangle.lines).toHaveLength(3);
+    expect(hitDrawingGeometry(triangle, { x: 150, y: 130 })).toBe(true);
+    expect(hitDrawingGeometry(triangle, { x: 250, y: 130 })).toBe(false);
+  });
+
+  it("samples quadratic and cubic Bezier curves from their actual control points", () => {
+    const quadratic = geometry(
+      drawing("curve", [
+        [100, 400],
+        [200, 300],
+        [300, 400],
+      ]),
+    );
+    expect(quadratic.lines[31]!.to).toEqual({ x: 200, y: 150 });
+    expect(hitDrawingGeometry(quadratic, { x: 200, y: 150 })).toBe(true);
+    expect(hitDrawingGeometry(quadratic, { x: 200, y: 100 })).toBe(false);
+    const cubic = geometry(
+      drawing("double-curve", [
+        [100, 400],
+        [200, 300],
+        [300, 500],
+        [400, 400],
+      ]),
+    );
+    expect(cubic.lines[15]!.to).toEqual({ x: 175, y: 128.125 });
+    expect(cubic.lines[31]!.to).toEqual({ x: 250, y: 100 });
+    expect(cubic.lines.at(-1)!.to).toEqual({ x: 400, y: 100 });
+    expect(cubic.handles).toHaveLength(4);
+  });
+
+  it("draws a circular arc through all three anchors and handles collinear input without infinities", () => {
+    for (const points of [
+      [
+        [100, 400],
+        [150, 350],
+        [200, 400],
+      ],
+      [
+        [200, 400],
+        [150, 350],
+        [100, 400],
+      ],
+    ] as Array<Array<[number, number]>>) {
+      const arc = geometry(drawing("arc", points));
+      expect(hitDrawingGeometry(arc, { x: 150, y: 150 }, 1)).toBe(true);
+      for (const line of arc.lines)
+        expect(Math.hypot(line.to.x - 150, line.to.y - 100)).toBeCloseTo(50);
+      expect(hitDrawingGeometry(arc, { x: 150, y: 50 })).toBe(false);
+    }
+    const flat = geometry(
+      drawing("arc", [
+        [100, 400],
+        [150, 400],
+        [200, 400],
+      ]),
+    );
+    expect(flat.lines).toHaveLength(2);
+    expect(flat.lines.at(-1)!.to).toEqual({ x: 200, y: 100 });
+  });
+
+  it("round-trips every added tool and rejects corrupt, degenerate and oversized saved shapes", () => {
+    const anchors: Array<[number, number]> = [
+      [100, 400],
+      [200, 300],
+      [300, 450],
+      [400, 400],
+    ];
+    const kinds: DrawingKind[] = [
+      "brush",
+      "highlighter",
+      "arrow-marker",
+      "arrow",
+      "arrow-up",
+      "arrow-down",
+      "rotated-rectangle",
+      "path",
+      "circle",
+      "ellipse",
+      "polyline",
+      "triangle",
+      "arc",
+      "curve",
+      "double-curve",
+    ];
+    const shapes = kinds.map((kind) => drawing(kind, anchors.slice(0, DRAWING_ANCHORS[kind])));
+    expect(parseChartDrawings(JSON.stringify(shapes))).toEqual(shapes);
+    const long = drawing(
+      "brush",
+      Array.from({ length: maximumDrawingAnchors("brush") }, (_, i) => [100 + i, 400]),
+    );
+    expect(parseChartDrawings(JSON.stringify([long]))).toEqual([long]);
+    const invalid = [
+      { ...long, anchors: [...long.anchors, long.anchors[0]] },
+      drawing("path", [[100, 400]]),
+      drawing("circle", [
+        [100, 400],
+        [100, 400],
+      ]),
+      drawing("ellipse", [
+        [100, 400],
+        [100, 300],
+      ]),
+      drawing("triangle", [
+        [100, 400],
+        [200, 400],
+        [300, 400],
+      ]),
+      {
+        ...shapes[0],
+        anchors: [
+          { time: "bad", price: 1 },
+          { time: 2, price: 3 },
+        ],
+      },
+    ];
+    expect(parseChartDrawings(JSON.stringify(invalid))).toEqual([]);
+  });
+
+  it("extends rays in the anchor direction and horizontal rays from their starting point", () => {
+    expect(
+      geometry(
+        drawing("ray", [
+          [100, 400],
+          [200, 350],
+        ]),
+      ).lines,
+    ).toEqual([{ from: { x: 100, y: 100 }, to: { x: 900, y: 500 } }]);
+    expect(
+      geometry(
+        drawing("ray", [
+          [200, 350],
+          [100, 400],
+        ]),
+      ).lines[0]?.to,
+    ).toEqual({ x: 0, y: 50 });
+    expect(geometry(drawing("horizontal-ray", [[100, 400]])).lines[0]).toEqual({
+      from: { x: 100, y: 100 },
+      to: { x: 1000, y: 100 },
+    });
+    expect(geometry(drawing("vertical", [[100, 400]])).lines[0]).toEqual({
+      from: { x: 100, y: 0 },
+      to: { x: 100, y: 500 },
+    });
+  });
+  it("normalizes backwards rectangle anchors and hit-tests edges without selecting unrelated space", () => {
+    const box = geometry(
+      drawing("rectangle", [
+        [300, 200],
+        [100, 400],
+      ]),
+    );
+    expect(box.rectangle).toEqual({ x: 100, y: 100, width: 200, height: 200 });
+    expect(box.lines).toHaveLength(4);
+    expect(hitDrawingGeometry(box, { x: 200, y: 103 })).toBe(true);
+    expect(hitDrawingGeometry(box, { x: 500, y: 103 })).toBe(false);
+  });
+  it("derives retracements from prices, including reversal of anchor direction", () => {
+    const fib = geometry(
+      drawing("fib", [
+        [100, 100],
+        [300, 200],
+      ]),
+    );
+    expect(fib.lines).toHaveLength(7);
+    expect(fib.lines.find((line) => line.label === "61.8%")?.from.y).toBeCloseTo(361.8);
+    expect(fib.lines[0]?.from.y).toBe(300);
+    expect(fib.lines.at(-1)?.from.y).toBe(400);
+    const reverse = geometry(
+      drawing("fib", [
+        [300, 200],
+        [100, 100],
+      ]),
+    );
+    expect(reverse.lines[0]?.from.y).toBe(400);
+  });
+  it("uses the third channel anchor to create parallel bounds and a midpoint", () => {
+    const channel = geometry(
+      drawing("channel", [
+        [100, 400],
+        [300, 300],
+        [200, 300],
+      ]),
+    );
+    expect(channel.lines).toEqual([
+      { from: { x: 100, y: 100 }, to: { x: 300, y: 200 } },
+      { from: { x: 100, y: 150 }, to: { x: 300, y: 250 } },
+      { from: { x: 100, y: 125 }, to: { x: 300, y: 225 } },
+    ]);
+    expect(channel.handles).toEqual([
+      { x: 100, y: 100 },
+      { x: 200, y: 150 },
+      { x: 300, y: 200 },
+      { x: 100, y: 150 },
+      { x: 200, y: 200 },
+      { x: 300, y: 250 },
+    ]);
+    channel.handles.forEach((point, index) => {
+      expect(hitDrawingHandle(channel, point)).toBe(index);
+    });
+    expect(hitDrawingGeometry(channel, { x: 200, y: 200 })).toBe(true);
+  });
+  it("pads legacy channel settings with disabled rows without changing its original appearance", () => {
+    const original = drawing("channel", [
+      [100, 400],
+      [300, 300],
+      [200, 300],
+    ]);
+    const levels = parallelChannelSettingsLevels(original);
+    expect(levels.map((level) => [level.value, level.visible])).toEqual([
+      [-0.25, false],
+      [0, true],
+      [0.25, false],
+      [0.5, true],
+      [0.75, false],
+      [1, true],
+      [1.25, false],
+    ]);
+    const initial = geometry(original);
+    const normalized = geometry({ ...original, levels });
+    expect(normalized.lines).toEqual([initial.lines[0], initial.lines[2], initial.lines[1]]);
+    expect(normalized.handles).toEqual(initial.handles);
+    const customized = levels.map((level, index) =>
+      index === 0
+        ? { ...level, visible: true, value: -0.75, color: "#ff0000", width: 4, opacity: 0.4 }
+        : level,
+    );
+    expect(parallelChannelSettingsLevels({ ...original, levels: customized })).toEqual(customized);
+    expect(
+      parallelChannelSettingsLevels({
+        ...original,
+        levels: [{ value: -0.75, visible: true, color: "#ff0000" }],
+      }),
+    ).toContainEqual({ value: -0.75, visible: true, color: "#ff0000" });
+  });
+  it("retains edited primary channel ratios and extra rows when reopening saved settings", () => {
+    const original = drawing("channel", [
+      [100, 400],
+      [300, 300],
+      [200, 300],
+    ]);
+    const levels = parallelChannelSettingsLevels(original).map((level, index) => {
+      if (index === 1) return { ...level, value: 0.2, color: "#ff0000", width: 4, opacity: 0.4 };
+      if (index === 5) return { ...level, value: 0.8, lineStyle: "dotted" as const };
+      return level;
+    });
+    levels.push({ value: 1.8, visible: false, color: "#00ff00" });
+    const [restored] = parseChartDrawings(JSON.stringify([{ ...original, levels }]));
+    const reopened = parallelChannelSettingsLevels(restored!);
+    expect(reopened).toEqual(levels);
+    expect(parallelChannelSettingsLevels({ ...original, levels: reopened })).toEqual(levels);
+    expect(geometry({ ...original, levels: reopened }).lines).toEqual([
+      {
+        from: { x: 100, y: 110 },
+        to: { x: 300, y: 210 },
+        color: "#ff0000",
+        width: 4,
+        opacity: 0.4,
+      },
+      { from: { x: 100, y: 125 }, to: { x: 300, y: 225 } },
+      {
+        from: { x: 100, y: 140 },
+        to: { x: 300, y: 240 },
+        lineStyle: "dotted",
+      },
+    ]);
+    expect(geometry({ ...original, levels: reopened }).handles).toEqual(geometry(original).handles);
+  });
+  it.each([
+    { ratios: [0.2, 0.5, 1], min: 0.2, max: 1 },
+    { ratios: [-0.25, 0.2, 0.5, 1], min: -0.25, max: 1 },
+    { ratios: [1.2, 0.5, -0.4], min: -0.4, max: 1.2 },
+  ])(
+    "fills the visible channel bounds for $ratios while keeping placement handles",
+    ({ ratios, min, max }) => {
+      const original = drawing("channel", [
+        [100, 400],
+        [300, 300],
+        [200, 300],
+      ]);
+      const edited = {
+        ...original,
+        background: true,
+        levels: [
+          { value: -10, visible: false },
+          ...ratios.map((value) => ({ value, visible: true })),
+          { value: 10, visible: false },
+        ],
+      };
+      expect(geometry(edited).polygons).toEqual([
+        {
+          points: [
+            { x: 100, y: 100 + 50 * min },
+            { x: 300, y: 200 + 50 * min },
+            { x: 300, y: 200 + 50 * max },
+            { x: 100, y: 100 + 50 * max },
+          ],
+          color: original.color,
+          opacity: 0.12,
+        },
+      ]);
+      expect(geometry(edited).handles).toEqual(geometry(original).handles);
+      expect(geometry(parseChartDrawings(JSON.stringify([edited]))[0]!)).toEqual(geometry(edited));
+    },
+  );
+  it.each([{ ratios: [] }, { ratios: [0.2] }, { ratios: [0.2, 0.2] }])(
+    "does not fill an unbounded or collapsed channel with ratios $ratios",
+    ({ ratios }) => {
+      const base = drawing("channel", [
+        [100, 400],
+        [300, 300],
+        [200, 300],
+      ]);
+      expect(
+        geometry({
+          ...base,
+          background: true,
+          levels: [
+            { value: 2, visible: false },
+            ...ratios.map((value) => ({ value, visible: true })),
+          ],
+        }).polygons,
+      ).toBeUndefined();
+    },
+  );
+  it("edits channel ratios and line appearance without moving the construction handles", () => {
+    const base = drawing("channel", [
+      [100, 400],
+      [300, 300],
+      [200, 300],
+    ]);
+    const original = geometry(base);
+    expect(original.polygons).toBeUndefined();
+    const edited: ChartDrawing = {
+      ...base,
+      levels: [
+        { value: 0, visible: false },
+        { value: -1, visible: true, color: "#ff0000", width: 5, lineStyle: "dashed", opacity: 0.3 },
+        { value: 2, visible: true, color: "#00ff00", width: 1, lineStyle: "dotted", opacity: 0 },
+      ],
+    };
+    const shape = geometry(edited);
+    expect(shape.handles).toEqual(original.handles);
+    expect(shape.lines).toEqual([
+      {
+        from: { x: 100, y: 50 },
+        to: { x: 300, y: 150 },
+        color: "#ff0000",
+        width: 5,
+        lineStyle: "dashed",
+        opacity: 0.3,
+      },
+      {
+        from: { x: 100, y: 200 },
+        to: { x: 300, y: 300 },
+        color: "#00ff00",
+        width: 1,
+        lineStyle: "dotted",
+        opacity: 0,
+      },
+    ]);
+    expect(hitDrawingHandle(shape, { x: 200, y: 200 })).toBe(4);
+    expect(geometry(parseChartDrawings(JSON.stringify([edited]))[0]!)).toEqual(shape);
+    const extended = geometry({ ...edited, extendLeft: true, extendRight: true });
+    expect(extended.handles).toEqual(original.handles);
+    expect(extended.lines[0]).toEqual({
+      ...shape.lines[0],
+      from: { x: 0, y: 0 },
+      to: { x: 1000, y: 500 },
+    });
+  });
+  it.each([false, true])(
+    "extends the channel fill along time with reversed anchors=%s",
+    (reverse) => {
+      const points: Array<[number, number]> = reverse
+        ? [
+            [300, 300],
+            [100, 400],
+            [200, 300],
+          ]
+        : [
+            [100, 400],
+            [300, 300],
+            [200, 300],
+          ];
+      const base = drawing("channel", points);
+      const edited = {
+        ...base,
+        levels: [
+          { value: 0, visible: true },
+          { value: 1, visible: true },
+        ],
+        background: true,
+        backgroundColor: "#00ff00",
+        backgroundOpacity: 0.4,
+        extendLeft: true,
+      };
+      const shape = geometry(edited);
+      expect(shape.lines).toHaveLength(2);
+      expect(shape.handles).toEqual(geometry(base).handles);
+      expect(shape.polygons).toEqual([
+        {
+          points: [
+            { x: 0, y: 50 },
+            { x: 300, y: 200 },
+            { x: 300, y: 250 },
+            { x: 0, y: 100 },
+          ],
+          color: "#00ff00",
+          opacity: 0.4,
+        },
+      ]);
+      expect(geometry({ ...edited, background: false }).polygons).toBeUndefined();
+      const right = geometry({ ...edited, extendLeft: false, extendRight: true });
+      expect(right.polygons?.[0]?.points.map((point) => point.x)).toEqual([100, 1000, 1000, 100]);
+    },
+  );
+  it("restores all new drawing kinds, migrates legacy records, and rejects corrupt anchors", () => {
+    const shapes = [
+      drawing("ray", [
+        [100, 1],
+        [200, 2],
+      ]),
+      drawing("vertical", [[100, 1]]),
+      drawing("rectangle", [
+        [100, 1],
+        [200, 2],
+      ]),
+      drawing("fib", [
+        [100, 1],
+        [200, 2],
+      ]),
+      drawing("channel", [
+        [100, 1],
+        [200, 2],
+        [150, 5],
+      ]),
+      { ...drawing("text", [[100, 1]]), text: "Entry" },
+    ];
+    expect(parseChartDrawings(JSON.stringify(shapes))).toEqual(shapes);
+    const records = parseChartDrawings(
+      JSON.stringify([
+        { kind: "horizontal", price: 100 },
+        { kind: "trend", from: { time: 1, price: 1 }, to: { time: 2, price: 2 } },
+        { kind: "channel", anchors: [{ time: 1, price: 1 }] },
+        {
+          ...shapes[0],
+          anchors: [
+            { time: "bad", price: 1 },
+            { time: 2, price: 2 },
+          ],
+        },
+      ]),
+    );
+    expect(records.map((item) => item.kind)).toEqual(["horizontal", "trend"]);
+  });
+  it("uses text bounds for selection and suppresses drawings without projected anchors", () => {
+    const text = geometry({ ...drawing("text", [[100, 400]]), text: "Entry" });
+    expect(hitDrawingGeometry(text, { x: 130, y: 92 })).toBe(true);
+    expect(hitDrawingGeometry(text, { x: 300, y: 92 })).toBe(false);
+    expect(
+      buildDrawingGeometry(
+        drawing("ray", [
+          [1, 2],
+          [2, 3],
+        ]),
+        () => null,
+        () => 10,
+        500,
+        500,
+      ).lines,
+    ).toEqual([]);
+  });
+});
+
+describe("additional line tools", () => {
+  it.each(["arrow", "path"] as const)(
+    "%s marker settings reflect the rendered defaults and explicit removal",
+    (kind) => {
+      const shape = drawing(kind, [
+        [100, 400],
+        [300, 300],
+      ]);
+      expect(drawingLineMarkers(shape)).toEqual({ start: "normal", end: "arrow" });
+      expect(geometry(shape).polygons).toBeUndefined();
+      expect(geometry(shape).lines).toHaveLength(3);
+      const removed = { ...shape, endMarker: "normal" as const };
+      expect(drawingLineMarkers(removed).end).toBe("normal");
+      expect(geometry(removed).polygons).toBeUndefined();
+      expect(geometry(removed).lines).toHaveLength(1);
+      expect(geometry({ ...removed, startMarker: "arrow" }).lines).toHaveLength(3);
+    },
+  );
+  it("reports the same extension direction for reversed rays as the rendered line", () => {
+    const ray = drawing("ray", [
+      [300, 400],
+      [100, 400],
+    ]);
+    expect(drawingLineExtensions(ray)).toEqual({ left: true, right: false });
+    expect(geometry(ray).lines[0]?.to.x).toBe(0);
+    const edited = { ...ray, extendLeft: false, extendRight: true };
+    expect(drawingLineExtensions(edited)).toEqual({ left: false, right: true });
+    expect(geometry(edited).lines[0]?.from.x).toBe(1000);
+    expect(
+      drawingLineExtensions({
+        ...ray,
+        anchors: [
+          { time: { year: 2026, month: 9, day: 12 }, price: 400 },
+          { time: "2026-09-11", price: 400 },
+        ],
+      }),
+    ).toEqual({ left: true, right: false });
+  });
+
+  it("extends both directions by default, honors overrides and keeps original handles", () => {
+    const line = drawing("extended-line", [
+      [100, 400],
+      [300, 300],
+    ]);
+    const extended = geometry(line);
+    expect(extended.lines).toEqual([{ from: { x: 0, y: 50 }, to: { x: 900, y: 500 } }]);
+    expect(extended.handles).toEqual([
+      { x: 100, y: 100 },
+      { x: 300, y: 200 },
+    ]);
+    expect(hitDrawingGeometry(extended, { x: 800, y: 450 })).toBe(true);
+    expect(hitDrawingHandle(extended, { x: 300, y: 200 })).toBe(1);
+    expect(geometry({ ...line, extendLeft: false }).lines[0]?.from).toEqual({ x: 100, y: 100 });
+    expect(geometry({ ...line, extendRight: false }).lines[0]?.to).toEqual({ x: 300, y: 200 });
+    expect(geometry({ ...line, anchors: line.anchors.toReversed() }).lines).toEqual([
+      { from: { x: 900, y: 500 }, to: { x: 0, y: 50 } },
+    ]);
+    const vertical = geometry(
+      drawing("extended-line", [
+        [100, 400],
+        [100, 300],
+      ]),
+    );
+    expect(vertical.lines).toEqual([{ from: { x: 100, y: 0 }, to: { x: 100, y: 500 } }]);
+  });
+
+  it("draws a one-anchor crossline across both axes and hit-tests either arm", () => {
+    const cross = geometry(drawing("crossline", [[200, 300]]));
+    expect(cross.lines).toEqual([
+      { from: { x: 0, y: 200 }, to: { x: 1000, y: 200 } },
+      { from: { x: 200, y: 0 }, to: { x: 200, y: 500 } },
+    ]);
+    expect(cross.handles).toEqual([{ x: 200, y: 200 }]);
+    expect(hitDrawingGeometry(cross, { x: 950, y: 200 })).toBe(true);
+    expect(hitDrawingGeometry(cross, { x: 200, y: 490 })).toBe(true);
+    expect(hitDrawingGeometry(cross, { x: 250, y: 250 })).toBe(false);
+  });
+
+  it("builds a signed angle guide from projected points without unsupported text or markers", () => {
+    const shape = drawing("trend-angle", [
+      [100, 300],
+      [200, 400],
+    ]);
+    const angle = geometry({ ...shape, text: "Momentum", endMarker: "arrow" });
+    expect(angle.lines.find((line) => line.label)?.label).toBe("45°");
+    expect(angle.text).toBeUndefined();
+    expect(angle.polygons).toBeUndefined();
+    expect(angle.lines.find((line) => line.label)?.labelPoint).toEqual({ x: 160, y: 200 });
+    expect(angle.handles).toHaveLength(2);
+    const arcPoint = { x: 100 + 50 * Math.cos(Math.PI / 8), y: 200 - 50 * Math.sin(Math.PI / 8) };
+    expect(hitDrawingGeometry(angle, arcPoint, 1)).toBe(true);
+    const rescaled = buildDrawingGeometry(
+      shape,
+      ({ time, price }) => ({ x: Number(time), y: (500 - price) * 2 }),
+      (price) => (500 - price) * 2,
+      1000,
+      1000,
+    );
+    expect(rescaled.lines.find((line) => line.label)?.label).toBe("63.43°");
+    const down = geometry(
+      drawing("trend-angle", [
+        [100, 400],
+        [200, 300],
+      ]),
+    );
+    expect(down.lines.find((line) => line.label)?.label).toBe("-45°");
+    const vertical = geometry(
+      drawing("trend-angle", [
+        [100, 300],
+        [100, 400],
+      ]),
+    );
+    expect(vertical.lines.find((line) => line.label)?.label).toBe("90°");
+  });
+
+  it("validates and round-trips new kinds and their existing settings", () => {
+    const kinds: DrawingKind[] = ["info-line", "extended-line", "trend-angle", "crossline"];
+    for (const kind of kinds) {
+      const shape = {
+        ...drawing(
+          kind,
+          [
+            [100, 400],
+            [200, 300],
+          ].slice(0, DRAWING_ANCHORS[kind]) as Array<[number, number]>,
+        ),
+        extendLeft: false,
+        showPriceLabel: true,
+        text: "Note",
+        textBold: true,
+      };
+      expect(validDrawingAnchors(kind, shape.anchors)).toBe(true);
+      expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+      expect(validDrawingAnchors(kind, [])).toBe(false);
+      expect(
+        parseChartDrawings(
+          JSON.stringify([{ ...shape, anchors: [...shape.anchors, shape.anchors[0]] }]),
+        ),
+      ).toEqual([]);
+      if (kind !== "crossline") {
+        expect(validDrawingAnchors(kind, [shape.anchors[0]!, shape.anchors[0]!])).toBe(false);
+        expect(
+          validDrawingAnchors(kind, [
+            { time: 100 as Time, price: 400 },
+            { time: 100 as Time, price: 300 },
+          ]),
+        ).toBe(true);
+      }
+    }
+    const info = geometry({
+      ...drawing("info-line", [
+        [100, 400],
+        [200, 300],
+      ]),
+      extendRight: true,
+      endMarker: "arrow",
+    });
+    expect(info.lines[0]?.to).toEqual({ x: 500, y: 500 });
+    expect(info.polygons).toBeUndefined();
+    expect(info.lines[1]?.to).toEqual({ x: 200, y: 200 });
+    expect(info.lines[2]?.from).toEqual({ x: 200, y: 200 });
+  });
+});
+
+describe("configurable Fibonacci and pitchfork geometry", () => {
+  const pivots: Array<[number, number]> = [
+    [100, 100],
+    [300, 300],
+    [500, 200],
+  ];
+  const levels = (values: number[]) => values.map((value) => ({ value, visible: true }));
+
+  it("projects a measured move from the retracement, reverses it and keeps all three handles", () => {
+    const extension = {
+      ...drawing("fib-extension", pivots),
+      levels: levels([0, 0.618, 1]),
+      showTrendLine: false,
+      showPrices: false,
+      levelLabelFormat: "percent" as const,
+      extendRight: true,
+    };
+    const shape = geometry(extension);
+    expect(
+      shape.lines.map((line) => [Number(line.from.y.toFixed(4)), line.to.x, line.label]),
+    ).toEqual([
+      [300, 1000, "0%"],
+      [176.4, 1000, "61.8%"],
+      [100, 1000, "100%"],
+    ]);
+    expect(shape.handles).toEqual([
+      { x: 100, y: 400 },
+      { x: 300, y: 200 },
+      { x: 500, y: 300 },
+    ]);
+    expect(hitDrawingHandle(shape, { x: 500, y: 300 })).toBe(2);
+    expect(hitDrawingGeometry(shape, { x: 900, y: 100 })).toBe(true);
+    const reversed = geometry({ ...extension, reverse: true, levels: levels([0.5]) });
+    expect(reversed.lines[0]?.from.y).toBe(400);
+    expect(geometry({ ...extension, extendRight: false }).lines[0]?.to.x).toBe(500);
+    expect(geometry({ ...extension, extendRight: false }).lines[0]?.from.x).toBe(300);
+    expect(geometry({ ...extension, extendLeft: true }).lines[0]?.from.x).toBe(0);
+    const down = geometry({
+      ...drawing("fib-extension", [
+        [100, 300],
+        [300, 100],
+        [500, 200],
+      ]),
+      levels: levels([1]),
+      showTrendLine: false,
+    });
+    expect(down.lines[0]?.from.y).toBe(500);
+  });
+
+  it("builds channel ratios as parallel offsets and passes the 100% line through the third point", () => {
+    const channel = {
+      ...drawing("fib-channel", [
+        [100, 100],
+        [300, 200],
+        [200, 300],
+      ]),
+      levels: levels([0, 0.5, 1]),
+      extendRight: false,
+    };
+    const shape = geometry(channel);
+    expect(shape.lines.map((line) => [line.from.y, line.to.y])).toEqual([
+      [400, 300],
+      [300, 200],
+      [200, 100],
+    ]);
+    expect(hitDrawingGeometry(shape, { x: 200, y: 200 }, 1)).toBe(true);
+    expect(
+      shape.lines.map((line) => (line.to.y - line.from.y) / (line.to.x - line.from.x)),
+    ).toEqual([-0.5, -0.5, -0.5]);
+    const mirrored = geometry({ ...channel, reverse: true, levels: levels([0.5]) });
+    expect(mirrored.lines[0]?.from.y).toBe(500);
+  });
+
+  it.each([
+    ["pitchfork", { x: 100, y: 400 }, { x: 400, y: 250 }],
+    ["schiff-pitchfork", { x: 100, y: 300 }, { x: 400, y: 250 }],
+    ["modified-schiff-pitchfork", { x: 200, y: 300 }, { x: 400, y: 250 }],
+    ["inside-pitchfork", { x: 400, y: 250 }, { x: 700, y: 250 }],
+  ] as const)("constructs the documented %s median and parallel outer rails", (kind, from, to) => {
+    const shape = geometry({
+      ...drawing(kind, pivots),
+      levels: levels([1]),
+      showLevels: true,
+      extendRight: false,
+      extendLeft: false,
+    });
+    const median = shape.lines.find((line) => line.label === "Median")!;
+    expect(median.from).toEqual(from);
+    expect(median.to).toEqual(to);
+    const slope = (to.y - from.y) / (to.x - from.x);
+    for (const line of shape.lines.filter((line) => line.label))
+      expect((line.to.y - line.from.y) / (line.to.x - line.from.x)).toBeCloseTo(slope);
+    expect(shape.lines.find((line) => line.label === "-100%")?.from).toEqual({ x: 300, y: 200 });
+    expect(shape.lines.find((line) => line.label === "100%")?.from).toEqual({ x: 500, y: 300 });
+    expect(shape.handles).toHaveLength(3);
+    const extended = geometry({ ...drawing(kind, pivots), levels: levels([0]), extendLeft: true });
+    expect(extended.lines[0]?.from.x).toBeLessThanOrEqual(from.x);
+    expect(extended.lines[0]?.to.x).toBeGreaterThan(to.x);
+  });
+
+  it("edits existing retracement levels, colors, labels, reverse and background without changing anchors", () => {
+    const fib: ChartDrawing = {
+      ...drawing("fib", [
+        [100, 100],
+        [300, 300],
+      ]),
+      levels: [
+        { value: 0, visible: true, color: "#ff0000" },
+        { value: 0.25, visible: false },
+        { value: 0.5, visible: true, color: "#00ff00" },
+      ],
+      background: true,
+      backgroundOpacity: 0.3,
+      showPrices: true,
+      levelLabelFormat: "value",
+      levelLabelPosition: "center",
+      levelLabelAlignment: "middle",
+    };
+    const shape = geometry(fib);
+    expect(shape.lines.map((line) => [line.label, line.color])).toEqual([
+      ["0  300", "#ff0000"],
+      ["0.5  200", "#00ff00"],
+    ]);
+    expect(shape.lines[0]?.labelPoint).toEqual({ x: 200, y: 200 });
+    expect(shape.lines[0]?.labelBaseline).toBe("middle");
+    expect(shape.polygons).toMatchObject([{ opacity: 0.3, color: "#00ff00" }]);
+    expect(geometry({ ...fib, reverse: true }).lines[0]?.from.y).toBe(400);
+    expect(
+      geometry({ ...fib, background: false, showPrices: false, showLevels: false }).lines.every(
+        (line) => !line.label,
+      ),
+    ).toBe(true);
+    expect(geometry({ ...fib, levels: [] }).lines).toEqual([]);
+    expect(shape.handles).toEqual([
+      { x: 100, y: 400 },
+      { x: 300, y: 200 },
+    ]);
+    const unified = geometry({ ...fib, useOneColor: true });
+    expect(unified.lines.every((line) => line.color === fib.color)).toBe(true);
+    expect(unified.polygons?.every((polygon) => polygon.color === fib.color)).toBe(true);
+    expect(fib.levels?.[0]?.color).toBe("#ff0000");
+  });
+
+  it("validates level settings and rejects geometrically degenerate persisted projections", () => {
+    const settings = sanitizeDrawingSettings({
+      levels: [
+        { value: 0.618, visible: false, color: "#ff00ff" },
+        { value: NaN },
+        { value: 101 },
+        { value: 1, color: "url(bad)" },
+      ],
+      backgroundOpacity: 1.1,
+      reverse: true,
+      showPrices: false,
+      levelLabelFormat: "value",
+      levelLabelPosition: "left",
+    });
+    expect(settings).toEqual({
+      levels: [
+        { value: 0.618, visible: false, color: "#ff00ff" },
+        { value: 1, visible: true },
+      ],
+      reverse: true,
+      showPrices: false,
+      levelLabelFormat: "value",
+      levelLabelPosition: "left",
+    });
+    expect(
+      sanitizeDrawingSettings({ levels: Array.from({ length: 100 }, (_, value) => ({ value })) })
+        .levels,
+    ).toHaveLength(64);
+    for (const kind of [
+      "fib-extension",
+      "fib-channel",
+      "pitchfork",
+      "schiff-pitchfork",
+      "modified-schiff-pitchfork",
+      "inside-pitchfork",
+    ] as const) {
+      const shape = { ...drawing(kind, pivots), ...settings };
+      expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+      expect(validDrawingAnchors(kind, shape.anchors.slice(0, 2))).toBe(false);
+      expect(
+        validDrawingAnchors(kind, [shape.anchors[0]!, shape.anchors[0]!, shape.anchors[2]!]),
+      ).toBe(false);
+      if (kind !== "fib-extension")
+        expect(
+          validDrawingAnchors(
+            kind,
+            drawing(kind, [
+              [100, 100],
+              [200, 200],
+              [300, 300],
+            ]).anchors,
+          ),
+        ).toBe(false);
+    }
+  });
+});
+
+describe("pitchfork style settings", () => {
+  it.each([
+    "pitchfork",
+    "schiff-pitchfork",
+    "modified-schiff-pitchfork",
+    "inside-pitchfork",
+  ] as const)(
+    "%s shades symmetric bands from B–C without filling back to the median anchor",
+    (kind) => {
+      for (const reverseTime of [false, true]) {
+        const x = (value: number) => (reverseTime ? 1000 - value : value);
+        const fork: ChartDrawing = {
+          ...drawing(kind, [
+            [x(100), 100],
+            [x(300), 300],
+            [x(500), 200],
+          ]),
+          ...defaultDrawingTemplateSettings(kind),
+          lineOpacity: 0,
+        };
+        const shape = geometry(fork);
+        expect(shape.polygons?.map(({ color, opacity }) => ({ color, opacity }))).toEqual([
+          { color: "#2962ff", opacity: 0.2 },
+          { color: "#089981", opacity: 0.2 },
+          { color: "#089981", opacity: 0.2 },
+          { color: "#2962ff", opacity: 0.2 },
+        ]);
+        expect(shape.polygons?.map(({ points }) => [points[0], points[3]])).toEqual([
+          [
+            { x: x(300), y: 200 },
+            { x: x(350), y: 225 },
+          ],
+          [
+            { x: x(350), y: 225 },
+            { x: x(400), y: 250 },
+          ],
+          [
+            { x: x(400), y: 250 },
+            { x: x(450), y: 275 },
+          ],
+          [
+            { x: x(450), y: 275 },
+            { x: x(500), y: 300 },
+          ],
+        ]);
+        expect(geometry(parseChartDrawings(JSON.stringify([fork]))[0]!).polygons).toEqual(
+          shape.polygons,
+        );
+        expect(
+          geometry({ ...fork, useOneColor: true }).polygons?.every((p) => p.color === fork.color),
+        ).toBe(true);
+        expect(geometry({ ...fork, levels: [] }).polygons).toBeUndefined();
+        expect(geometry({ ...fork, background: false }).polygons).toBeUndefined();
+        const extended = geometry({ ...fork, extendLines: true });
+        expect(
+          extended.polygons?.every(
+            (p) =>
+              p.points.some((point) => point.x < 0) && p.points.some((point) => point.x > 1000),
+          ),
+        ).toBe(true);
+      }
+    },
+  );
+  it.each([
+    "pitchfork",
+    "schiff-pitchfork",
+    "modified-schiff-pitchfork",
+    "inside-pitchfork",
+  ] as const)("%s keeps zero-level rails and accepts signed symmetric ratios", (kind) => {
+    const fork = drawing(kind, [
+      [100, 100],
+      [300, 300],
+      [500, 200],
+    ]);
+    const level = {
+      value: 0,
+      visible: true,
+      color: "#089981",
+      opacity: 0.5,
+      width: 4,
+      lineStyle: "dashed" as const,
+    };
+    const zero = geometry({ ...fork, levels: [level] });
+    const rails = zero.lines.filter((line) => line.color === level.color);
+    expect(rails).toHaveLength(2);
+    expect(rails[0]).toEqual(rails[1]);
+    expect(rails[0]).toMatchObject({ opacity: 0.5, width: 4, lineStyle: "dashed" });
+    expect(zero.lines[0]?.color).toBe(fork.color);
+    expect(geometry({ ...fork, levels: [{ ...level, visible: false }] }).lines).toHaveLength(3);
+    expect(geometry({ ...fork, levels: [{ ...level, value: -0.5 }] })).toEqual(
+      geometry({ ...fork, levels: [{ ...level, value: 0.5 }] }),
+    );
+  });
+  it("keeps a separate median, expands enabled positive ratios symmetrically and switches geometry in place", () => {
+    const fork = drawing("pitchfork", [
+      [100, 100],
+      [300, 300],
+      [500, 200],
+    ]);
+    const defaults = defaultDrawingLevels("pitchfork");
+    expect(defaults).toHaveLength(9);
+    expect(defaults.filter((level) => level.visible).map((level) => level.value)).toEqual([0.5, 1]);
+    const normal = geometry(fork);
+    expect(normal.lines).toHaveLength(7);
+    expect(normal.lines.every((line) => !line.label)).toBe(true);
+    expect(normal.polygons).toHaveLength(4);
+    expect(normal.lines[0]?.color).toBe(fork.color);
+    const inside = geometry({ ...fork, pitchforkStyle: "inside", levels: [] });
+    expect(inside.lines[0]?.from).toEqual({ x: 400, y: 250 });
+    expect(inside.lines[0]?.to).toEqual({ x: 1000, y: 250 });
+    expect(inside.lines).toHaveLength(3);
+    const both = geometry({ ...fork, extendLines: true, levels: [] });
+    expect(both.lines[0]?.from).toEqual({ x: 0, y: 450 });
+    const forward = geometry({ ...fork, extendLines: false, levels: [] });
+    expect(forward.lines[0]?.from).toEqual({ x: 100, y: 400 });
+    expect(sanitizeDrawingSettings({ pitchforkStyle: "inside", extendLines: true })).toEqual({
+      pitchforkStyle: "inside",
+      extendLines: true,
+    });
+    expect(sanitizeDrawingSettings({ pitchforkStyle: "unsupported", extendLines: "true" })).toEqual(
+      {},
+    );
+    expect(
+      parseChartDrawings(
+        JSON.stringify([{ ...fork, pitchforkStyle: "inside", extendLines: true }]),
+      )[0],
+    ).toMatchObject({ pitchforkStyle: "inside", extendLines: true });
+  });
+});
+
+describe("three-anchor non-parallel channels", () => {
+  it("builds a sloped boundary and a flat opposite boundary over the first two timestamps", () => {
+    const flat = drawing("flat-channel", [
+      [100, 300],
+      [300, 400],
+      [900, 100],
+    ]);
+    const shape = geometry(flat);
+    expect(shape.lines).toEqual([
+      { from: { x: 100, y: 200 }, to: { x: 300, y: 100 } },
+      { from: { x: 100, y: 400 }, to: { x: 300, y: 400 } },
+    ]);
+    expect(shape.handles).toEqual([
+      { x: 100, y: 200 },
+      { x: 300, y: 100 },
+      { x: 300, y: 400 },
+      { x: 100, y: 400 },
+    ]);
+    expect(shape.polygons?.[0]?.points).toEqual([
+      { x: 100, y: 200 },
+      { x: 300, y: 100 },
+      { x: 300, y: 400 },
+      { x: 100, y: 400 },
+    ]);
+    expect(hitDrawingGeometry(shape, { x: 200, y: 300 })).toBe(true);
+    expect(
+      geometry({
+        ...flat,
+        anchors: [flat.anchors[0]!, flat.anchors[1]!, { time: 10 as Time, price: 100 }],
+      }).lines,
+    ).toEqual(shape.lines);
+    const moved = geometry({
+      ...flat,
+      anchors: [flat.anchors[0]!, flat.anchors[1]!, { time: 900 as Time, price: 150 }],
+    });
+    expect(moved.handles.slice(2).map((point) => point.y)).toEqual([350, 350]);
+  });
+
+  it("reflects the disjoint opposite slope", () => {
+    const channel = drawing("disjoint-channel", [
+      [100, 250],
+      [350, 310],
+      [900, 40],
+    ]);
+    const shape = geometry(channel);
+    expect(shape.lines).toEqual([
+      { from: { x: 100, y: 250 }, to: { x: 350, y: 190 } },
+      { from: { x: 100, y: 400 }, to: { x: 350, y: 460 } },
+    ]);
+    expect(hitDrawingHandle(shape, { x: 100, y: 400 })).toBe(3);
+    expect(geometry(channel).lines).toHaveLength(2);
+    const upward = geometry(
+      drawing("disjoint-channel", [
+        [100, 310],
+        [350, 250],
+        [900, 100],
+      ]),
+    );
+    expect(upward.lines[1]).toEqual({ from: { x: 100, y: 460 }, to: { x: 350, y: 400 } });
+  });
+
+  it("extends each channel boundary, fills the extended region and styles all endpoint markers", () => {
+    const channel: ChartDrawing = {
+      ...drawing("flat-channel", [
+        [100, 300],
+        [300, 400],
+        [900, 100],
+      ]),
+      extendLeft: true,
+      extendRight: true,
+      backgroundColor: "#00ff00",
+      backgroundOpacity: 0.3,
+      startMarker: "arrow",
+      endMarker: "arrow",
+    };
+    const shape = geometry(channel);
+    expect(shape.lines[0]).toEqual({ from: { x: 0, y: 250 }, to: { x: 500, y: 0 } });
+    expect(shape.lines[1]).toEqual({ from: { x: 0, y: 400 }, to: { x: 1000, y: 400 } });
+    expect(shape.polygons?.[0]).toMatchObject({ color: "#00ff00", opacity: 0.3 });
+    expect(shape.polygons?.[0]?.points.map((point) => point.x)).toEqual([0, 1000, 1000, 0]);
+    expect(shape.polygons).toHaveLength(1);
+    expect(shape.lines).toHaveLength(10);
+    const noFill = geometry({
+      ...channel,
+      background: false,
+      startMarker: "normal",
+      endMarker: "normal",
+    });
+    expect(noFill.polygons).toBeUndefined();
+    expect(hitDrawingGeometry(noFill, { x: 900, y: 300 })).toBe(false);
+    const text = geometry({ ...channel, text: "Range", extendLeft: false, extendRight: false });
+    expect(text.text?.angle).toBeCloseTo(Math.atan2(-100, 200));
+    expect(text.text?.align).toBe("left");
+  });
+
+  it("round-trips three anchors and settings while rejecting collapsed time spans or empty ranges", () => {
+    for (const kind of ["flat-channel", "disjoint-channel"] as const) {
+      const shape = {
+        ...drawing(kind, [
+          [100, 300],
+          [300, 400],
+          [900, 100],
+        ]),
+        backgroundColor: "#00ff00",
+        backgroundOpacity: 0.3,
+        priceLabelColor: "#ff0000",
+        priceLabelFontSize: 16,
+        priceLabelBold: true,
+        priceLabelItalic: true,
+      };
+      expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+      expect(validDrawingAnchors(kind, shape.anchors)).toBe(true);
+      expect(validDrawingAnchors(kind, shape.anchors.slice(0, 2))).toBe(false);
+      expect(
+        validDrawingAnchors(
+          kind,
+          drawing(kind, [
+            [100, 300],
+            [100, 400],
+            [900, 100],
+          ]).anchors,
+        ),
+      ).toBe(false);
+      expect(
+        validDrawingAnchors(
+          kind,
+          drawing(kind, [
+            [100, 300],
+            [300, 300],
+            [900, 300],
+          ]).anchors,
+        ),
+      ).toBe(false);
+    }
+    expect(sanitizeDrawingSettings({ backgroundColor: "invalid" })).toEqual({});
+    expect(sanitizeDrawingSettings({ backgroundColor: "#00ff00" })).toEqual({
+      backgroundColor: "#00ff00",
+    });
+  });
+});
+
+describe("regression drawing geometry", () => {
+  const regression = drawing("regression-trend", [
+    [100, 9999],
+    [300, -9999],
+  ]);
+  const result = calculateChartRegression([100, 120, 110].map((close) => ({ close })))!;
+  const build = (shape: ChartDrawing = regression) =>
+    buildDrawingGeometry(
+      shape,
+      ({ time, price }) => ({ x: Number(time), y: 500 - price }),
+      (price) => 500 - price,
+      1000,
+      500,
+      undefined,
+      undefined,
+      { result, start: 100 as Time, end: 300 as Time },
+    );
+  it("projects fitted prices independently of clicked prices and maps all six handles onto bar endpoints", () => {
+    const shape = build();
+    expect(shape.handles).toHaveLength(6);
+    expect(shape.handles.slice(0, 2)).toEqual([
+      { x: 100, y: 395 },
+      { x: 300, y: 385 },
+    ]);
+    expect(shape.handleAnchorIndices).toEqual([0, 1, 0, 1, 0, 1]);
+    expect(shape.lines[0]).toMatchObject({ color: "#f23645", lineStyle: "dashed", width: 1 });
+    expect(shape.polygons).toHaveLength(2);
+    expect(shape.text?.value).toBe(String(result.pearsonR));
+    expect(shape.text?.point.x).toBe(100);
+    expect(
+      build({ ...regression, anchors: regression.anchors.toReversed() }).handleAnchorIndices,
+    ).toEqual([1, 0, 1, 0, 1, 0]);
+    expect(geometry(regression)).toEqual({
+      lines: [],
+      handles: [],
+      handleAnchorIndices: [],
+      polygons: [],
+    });
+  });
+  it("extends right only and respects independent styles, visibility, and the Pearson toggle", () => {
+    const defaults = defaultRegressionDrawingSettings();
+    const shape = build({
+      ...regression,
+      extendLines: true,
+      regressionShowPearson: false,
+      regressionUpperLine: { ...defaults.regressionUpperLine, visible: false },
+      regressionBaseLine: {
+        ...defaults.regressionBaseLine,
+        color: "#00ff00",
+        width: 4,
+        lineStyle: "dotted",
+      },
+    });
+    expect(shape.lines).toHaveLength(2);
+    expect(shape.lines[0]).toMatchObject({
+      from: { x: 100, y: 395 },
+      to: { x: 1000, y: 350 },
+      color: "#00ff00",
+      width: 4,
+      lineStyle: "dotted",
+    });
+    expect(shape.handles).toHaveLength(4);
+    expect(shape.polygons).toHaveLength(1);
+    expect(shape.text).toBeUndefined();
+  });
+  it("uses Up fill above Base and Base fill below, preserving opaque boundaries at zero opacity", () => {
+    const defaults = defaultRegressionDrawingSettings();
+    const shape = build({
+      ...regression,
+      regressionUpperLine: { ...defaults.regressionUpperLine, color: "#00ff00", opacity: 0.8 },
+      regressionBaseLine: { ...defaults.regressionBaseLine, color: "#ff0000", opacity: 0 },
+      regressionLowerLine: { ...defaults.regressionLowerLine, color: "#0000ff", opacity: 1 },
+    });
+    expect(shape.polygons?.map(({ color, opacity }) => ({ color, opacity }))).toEqual([
+      { color: "#00ff00", opacity: 0.8 },
+      { color: "#ff0000", opacity: 0 },
+    ]);
+    expect(shape.lines).toHaveLength(3);
+    expect(shape.opacity).toBeUndefined();
+    expect(
+      sanitizeDrawingSettings({
+        regressionBaseLine: { ...defaults.regressionBaseLine, opacity: 0 },
+      }).regressionBaseLine?.opacity,
+    ).toBe(0);
+    expect(
+      sanitizeDrawingSettings({
+        regressionBaseLine: { ...defaults.regressionBaseLine, opacity: Infinity },
+      }).regressionBaseLine?.opacity,
+    ).toBeUndefined();
+    const { opacity: _, ...legacy } = defaults.regressionBaseLine;
+    expect(sanitizeDrawingSettings({ regressionBaseLine: legacy }).regressionBaseLine).toEqual(
+      legacy,
+    );
+  });
+  it("round-trips typed inputs and styles while rejecting corrupt values and single-bar ranges", () => {
+    const shape = {
+      ...regression,
+      ...defaultRegressionDrawingSettings(),
+      regressionSource: "hlcc4" as const,
+    };
+    expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+    expect(defaultRegressionDrawingSettings("trend")).toEqual({});
+    expect(
+      validDrawingAnchors("regression-trend", [
+        { time: 100 as Time, price: 1 },
+        { time: 100 as Time, price: 2 },
+      ]),
+    ).toBe(false);
+    expect(
+      sanitizeDrawingSettings({
+        regressionSource: "bad",
+        regressionUpperDeviation: Infinity,
+        regressionLowerDeviation: 101,
+        regressionBaseLine: { visible: true, color: "bad", width: 1, lineStyle: "solid" },
+        regressionUseUpperDeviation: "yes",
+      }),
+    ).toEqual({});
+  });
+});
+
+describe("Fibonacci time tools", () => {
+  const build = (shape: ChartDrawing) =>
+    buildDrawingGeometry(
+      shape,
+      ({ time, price }) => ({
+        x:
+          new Map([
+            [100, 100],
+            [200, 200],
+            [10000, 300],
+            [10100, 400],
+          ]).get(Number(time)) ?? 0,
+        y: 500 - price,
+      }),
+      (price) => 500 - price,
+      1000,
+      500,
+    );
+  it("uses logical bar spacing across a market closure rather than elapsed timestamps", () => {
+    const shape = build({
+      ...drawing("fib-time-zone", [
+        [100, 400],
+        [10000, 200],
+      ]),
+      levels: [
+        { value: 0, visible: true },
+        { value: 1, visible: true },
+        { value: 2, visible: true },
+        { value: 3, visible: true },
+      ],
+    });
+    expect(shape.lines.filter((line) => line.label).map((line) => line.from.x)).toEqual([
+      100, 300, 500, 700,
+    ]);
+    expect(
+      shape.lines
+        .filter((line) => line.label)
+        .every((line) => line.from.y === 0 && line.to.y === 500),
+    ).toBe(true);
+    expect(shape.lines[0]).toMatchObject({
+      from: { x: 100, y: 100 },
+      to: { x: 300, y: 300 },
+      lineStyle: "dashed",
+    });
+    expect(shape.polygons).toBeUndefined();
+    expect(shape.lines[1]).toMatchObject({
+      label: "0",
+      labelPoint: { x: 105, y: 495 },
+      labelAlign: "left",
+      labelBaseline: "bottom",
+    });
+    expect(hitDrawingGeometry(shape, { x: 500, y: 250 })).toBe(true);
+    expect(hitDrawingGeometry(shape, { x: 450, y: 250 })).toBe(false);
+  });
+  it("projects from the third anchor and reverses only the spacing when the baseline reverses", () => {
+    const original = drawing("fib-trend-time", [
+      [100, 400],
+      [200, 300],
+      [10100, 200],
+    ]);
+    const options = {
+      levels: [
+        { value: 0, visible: true },
+        { value: 1, visible: true },
+        { value: 2, visible: true },
+      ],
+      showTrendLine: false,
+    };
+    expect(build({ ...original, ...options }).lines.map((line) => line.from.x)).toEqual([
+      400, 500, 600,
+    ]);
+    const reversed = build({
+      ...original,
+      ...options,
+      anchors: [original.anchors[1]!, original.anchors[0]!, original.anchors[2]!],
+    });
+    expect(reversed.lines.map((line) => line.from.x)).toEqual([400, 300, 200]);
+    expect(reversed.polygons).toHaveLength(2);
+    expect(reversed.handles).toHaveLength(3);
+    expect(build({ ...original, ...options, background: false }).polygons).toBeUndefined();
+    expect(
+      build({
+        ...drawing("fib-time-zone", [
+          [100, 400],
+          [200, 300],
+        ]),
+        showTrendLine: false,
+        levels: [],
+      }).lines,
+    ).toHaveLength(1);
+  });
+  it("defaults time backgrounds to20% and validates independent level and construction opacity", () => {
+    const defaults = defaultFibTimeDrawingSettings("fib-trend-time");
+    expect(defaults.backgroundOpacity).toBe(0.2);
+    expect(defaults.trendLine?.opacity).toBe(1);
+    const settings = {
+      levels: [
+        { value: 1, visible: true, opacity: 0 },
+        { value: 2, visible: true, opacity: 0.45 },
+      ],
+      trendLine: { color: "#808080", width: 2, lineStyle: "dashed" as const, opacity: 0.7 },
+    };
+    const shape = {
+      ...drawing("fib-trend-time", [
+        [100, 400],
+        [200, 300],
+        [10100, 200],
+      ]),
+      ...settings,
+    };
+    expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+    expect(build(shape).lines.map((line) => line.opacity)).toEqual([0.7, 0.7, 0, 0.45]);
+    expect(build(shape).polygons?.[0]?.opacity).toBe(0.2);
+    expect(
+      sanitizeDrawingSettings({
+        levels: [
+          { value: 1, visible: true, opacity: -1 },
+          { value: 2, visible: true, opacity: Infinity },
+        ],
+        trendLine: { ...settings.trendLine, opacity: 2 },
+      }),
+    ).toEqual({
+      levels: [
+        { value: 1, visible: true },
+        { value: 2, visible: true },
+      ],
+      trendLine: { color: "#808080", width: 2, lineStyle: "dashed" },
+    });
+  });
+  it("honors each level and construction style and round-trips them without adding ignored text", () => {
+    const shape: ChartDrawing = {
+      ...drawing("fib-trend-time", [
+        [100, 400],
+        [200, 300],
+        [10100, 200],
+      ]),
+      ...defaultFibTimeDrawingSettings("fib-trend-time"),
+      levels: [
+        { value: 0, visible: true, color: "#ff0000", width: 4, lineStyle: "dotted" },
+        { value: 1, visible: false, color: "#00ff00", width: 3, lineStyle: "dashed" },
+      ],
+      trendLine: { color: "#808080", width: 1, lineStyle: "solid" },
+      text: "Ignored",
+      reverse: true,
+      extendLeft: true,
+    };
+    const result = build(shape);
+    expect(
+      result.lines
+        .slice(0, 2)
+        .every(
+          (line) => line.color === "#808080" && line.width === 1 && line.lineStyle === "solid",
+        ),
+    ).toBe(true);
+    expect(result.lines.at(-1)).toMatchObject({
+      from: { x: 400, y: 0 },
+      color: "#ff0000",
+      width: 4,
+      lineStyle: "dotted",
+    });
+    expect(result.text).toBeUndefined();
+    expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+    expect(defaultDrawingLevels("fib-time-zone").map((level) => level.value)).toEqual([
+      0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89,
+    ]);
+    expect(defaultDrawingLevels("fib-trend-time").find((level) => !level.visible)?.value).toBe(0.5);
+    expect(
+      sanitizeDrawingSettings({
+        levels: [{ value: 1, visible: true, width: Infinity, lineStyle: "wrong" }],
+        trendLine: { color: "bad", width: 1, lineStyle: "solid" },
+      }),
+    ).toEqual({ levels: [{ value: 1, visible: true }] });
+    expect(
+      validDrawingAnchors(
+        "fib-time-zone",
+        drawing("fib-time-zone", [
+          [100, 400],
+          [100, 300],
+        ]).anchors,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("Fibonacci time global appearance", () => {
+  const tool = drawing("fib-trend-time", [
+    [100, 400],
+    [200, 300],
+    [300, 200],
+  ]);
+  it("changes all widths while preserving independent colors, opacity, visibility and construction dashes", () => {
+    const original: ChartDrawing = {
+      ...tool,
+      levels: [
+        { value: 0, visible: true, color: "#ff0000", opacity: 0.2, width: 1, lineStyle: "dotted" },
+        { value: 0.5, visible: false, color: "#00ff00", opacity: 0, width: 2, lineStyle: "solid" },
+      ],
+      trendLine: { color: "#808080", width: 2, lineStyle: "dashed", opacity: 0.6 },
+    };
+    const patch = fibTimeAppearancePatch(original, { width: 3 });
+    expect(patch.levels).toEqual(original.levels!.map((level) => ({ ...level, width: 3 })));
+    expect(patch.trendLine).toEqual({ ...original.trendLine, width: 3 });
+    expect(original.levels?.[0]?.width).toBe(1);
+  });
+  it("applies color to disabled levels and only the trend-time construction, resetting alpha unless explicit", () => {
+    const original: ChartDrawing = {
+      ...tool,
+      levels: [{ value: 0.5, visible: false, color: "#00ff00", opacity: 0.2 }],
+    };
+    const patch = fibTimeAppearancePatch(original, { color: "#ff0000" });
+    expect(patch.levels).toEqual([{ value: 0.5, visible: false, color: "#ff0000", opacity: 1 }]);
+    expect(patch.trendLine).toEqual({
+      color: "#ff0000",
+      width: 2,
+      lineStyle: "dashed",
+      opacity: 1,
+    });
+    expect(
+      fibTimeAppearancePatch({ ...original, kind: "fib-time-zone" }, { color: "#ff0000" })
+        .trendLine,
+    ).toBeUndefined();
+    expect(
+      fibTimeAppearancePatch(original, { color: "#ff0000", opacity: 0 }).levels?.[0]?.opacity,
+    ).toBe(0);
+    const updated: ChartDrawing = {
+      ...original,
+      ...patch,
+      levels: patch.levels!.map((level) => ({ ...level, color: "#0000ff" })),
+    };
+    expect(fibTimeAppearancePatch(updated, { width: 4 }).levels?.[0]?.color).toBe("#0000ff");
+    expect(updated.trendLine?.color).toBe("#ff0000");
+  });
+  it("filters unsupported keys and invalid values without changing geometry or background", () => {
+    const input = { color: "#ff0000", visible: false, value: 99, background: false };
+    const patch = fibTimeAppearancePatch(tool, input);
+    expect(Object.keys(patch).sort()).toEqual(["levels", "trendLine"]);
+    expect(patch.levels?.[0]).toMatchObject({ value: 0, visible: true });
+    expect(patch.background).toBeUndefined();
+    expect(fibTimeAppearancePatch(tool, { width: Infinity, opacity: -1, color: "bad" })).toEqual(
+      {},
+    );
+    expect(fibTimeAppearancePatch({ ...tool, kind: "trend" }, { color: "#ff0000" })).toEqual({});
+  });
+});
+
+describe("line and annotation opacity persistence", () => {
+  it("preserves transparent and partial alpha while rejecting non-finite or out-of-range values", () => {
+    const shape = {
+      ...drawing("trend", [
+        [100, 400],
+        [200, 300],
+      ]),
+      lineOpacity: 0,
+      textOpacity: 0.5,
+    };
+    expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+    expect(sanitizeDrawingSettings({ lineOpacity: 0.5, textOpacity: 0 })).toEqual({
+      lineOpacity: 0.5,
+      textOpacity: 0,
+    });
+    expect(sanitizeDrawingSettings({ lineOpacity: Infinity, textOpacity: -1 })).toEqual({});
+    expect(sanitizeDrawingSettings({ lineOpacity: 1.1, textOpacity: "0.5" })).toEqual({});
+  });
+});
+
+describe("standalone text box geometry", () => {
+  const textDrawing: ChartDrawing = {
+    ...drawing("text", [[100, 400]]),
+    text: "Alpha Beta",
+    textPosition: "below",
+    textFontSize: 20,
+    textWrap: true,
+    textWrapWidth: 40,
+  };
+  const measured = (value: ChartDrawing) =>
+    buildDrawingGeometry(
+      value,
+      ({ time, price }) => ({ x: Number(time), y: 500 - price }),
+      (price) => 500 - price,
+      1000,
+      500,
+      undefined,
+      undefined,
+      undefined,
+      { fontFamily: "Test", measure: (value) => value.length * 6 },
+    );
+  it("shares wrapped rows and exact measured body with its width handle", () => {
+    const result = measured(textDrawing);
+    expect(result.text?.layout).toMatchObject({
+      rows: ["Alpha", "Beta"],
+      width: 40,
+      height: 56,
+      left: -4,
+      top: -4,
+    });
+    expect(result.handles).toEqual([
+      { x: 100, y: 100 },
+      { x: 136, y: 124 },
+    ]);
+    expect(hitDrawingGeometry(result, { x: 105, y: 130 }, 0)).toBe(true);
+    expect(hitDrawingGeometry(result, { x: 160, y: 105 }, 0)).toBe(false);
+    expect(hitDrawingHandle(result, { x: 136, y: 124 })).toBe(1);
+    expect(measured({ ...textDrawing, locked: true }).handles).toHaveLength(1);
+  });
+  it("round trips independent background, border, wrapping and opacity settings", () => {
+    const value: ChartDrawing = {
+      ...textDrawing,
+      background: true,
+      backgroundColor: "#112233",
+      backgroundOpacity: 0.3,
+      textBorder: true,
+      textBorderColor: "#abcdef",
+      textBorderOpacity: 0.8,
+      textOpacity: 0,
+    };
+    expect(parseChartDrawings(JSON.stringify([value]))[0]).toMatchObject(value);
+    expect(measured(value).text).toMatchObject({
+      opacity: 0,
+      background: { color: "#112233", opacity: 0.3 },
+      border: { color: "#abcdef", opacity: 0.8 },
+    });
+  });
+  it("uses the settings swatch defaults independently of the text color", () => {
+    const result = measured({
+      ...textDrawing,
+      color: "#ff0000",
+      background: true,
+      textBorder: true,
+    });
+    expect(result.text).toMatchObject({
+      background: { color: "#2962ff", opacity: 0.2 },
+      border: { color: "#787b86", opacity: 1 },
+    });
+  });
+  it("drops malformed box appearance instead of persisting invalid coordinates or colors", () => {
+    expect(
+      sanitizeDrawingSettings({
+        textWrap: "yes",
+        textBorder: 1,
+        textBorderColor: "red",
+        textBorderOpacity: Infinity,
+        textWrapWidth: NaN,
+      }),
+    ).toEqual({});
+    expect(sanitizeDrawingSettings({ textWrapWidth: 39, textBorderOpacity: 1.01 })).toEqual({});
+    expect(sanitizeDrawingSettings({ textWrapWidth: 4001, textBorderOpacity: -0.1 })).toEqual({});
+    expect(
+      sanitizeDrawingSettings({
+        textWrap: false,
+        textBorder: false,
+        textWrapWidth: 40,
+        textBorderOpacity: 0,
+      }),
+    ).toEqual({ textWrap: false, textBorder: false, textWrapWidth: 40, textBorderOpacity: 0 });
+  });
+});
+
+describe("position and range drawings", () => {
+  it.each(["long-position", "short-position"] as const)(
+    "renders independent target and stop zones with source-price risk/reward for %s",
+    (kind) => {
+      const direction = kind === "long-position" ? 1 : -1;
+      const shape = drawing(kind, [
+        [100, 100],
+        [300, 100 + direction * 20],
+        [300, 100 - direction * 10],
+      ]);
+      expect(validDrawingAnchors(kind, shape.anchors)).toBe(true);
+      const result = geometry(shape);
+      expect(result.polygons).toHaveLength(2);
+      expect(result.handles).toHaveLength(3);
+      expect(result.polygons?.map((polygon) => polygon.color)).toEqual(["#26a69a", "#ef5350"]);
+      expect(result.lines.some((line) => line.label === "Risk/reward 2.00")).toBe(true);
+      expect(result.lines.some((line) => line.label?.startsWith("Entry 100"))).toBe(true);
+      expect(hitDrawingGeometry(result, { x: 200, y: 400 - direction * 10 })).toBe(true);
+      expect(hitDrawingHandle(result, result.handles[2]!)).toBe(2);
+      expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+      expect(
+        validDrawingAnchors(kind, [shape.anchors[0]!, shape.anchors[2]!, shape.anchors[1]!]),
+      ).toBe(false);
+      expect(
+        validDrawingAnchors(kind, [shape.anchors[0]!, shape.anchors[1]!, shape.anchors[0]!]),
+      ).toBe(false);
+    },
+  );
+
+  it("reports actual signed prices and elapsed time without inventing bar counts", () => {
+    const price = geometry(
+      drawing("price-range", [
+        [100, 100],
+        [400, 90],
+      ]),
+    );
+    expect(price.lines.map((line) => line.label).filter(Boolean)).toEqual(["-10 (-10.00%)"]);
+    const date = geometry(
+      drawing("date-range", [
+        [100, 100],
+        [400, 90],
+      ]),
+    );
+    expect(date.lines.map((line) => line.label).filter(Boolean)).toEqual(["5m"]);
+    const combined = geometry(
+      drawing("date-price-range", [
+        [100, 0],
+        [400, 10],
+      ]),
+    );
+    expect(combined.lines.map((line) => line.label).filter(Boolean)).toEqual(["+10", "5m"]);
+    expect(combined.polygons).toHaveLength(1);
+    expect(hitDrawingGeometry(combined, { x: 250, y: 495 })).toBe(true);
+  });
+});
+
+it("renders a true circular sector with radial edges, a curved boundary and hit-testable fill", () => {
+  const shape = drawing("sector", [
+    [100, 400],
+    [200, 400],
+    [100, 300],
+  ]);
+  const result = geometry(shape);
+  expect(result.handles).toHaveLength(3);
+  expect(result.polygons).toHaveLength(1);
+  expect(result.lines).toHaveLength(66);
+  expect(result.lines[1]!.to.x).toBeGreaterThan(100);
+  expect(result.lines[1]!.to.y).toBeGreaterThan(100);
+  expect(hitDrawingGeometry(result, { x: 130, y: 130 })).toBe(true);
+  expect(parseChartDrawings(JSON.stringify([shape]))).toEqual([shape]);
+});
+
+describe("shared position width", () => {
+  it.each(["long-position", "short-position"] as const)(
+    "canonicalizes legacy %s stop times and renders a single right edge",
+    (kind) => {
+      const direction = kind === "long-position" ? 1 : -1;
+      for (const stopTime of [100, 500]) {
+        const stored = drawing(kind, [
+          [100, 100],
+          [300, 100 + direction * 20],
+          [stopTime, 100 - direction * 10],
+        ]);
+        const result = geometry(stored);
+        expect(result.handles.map((point) => point.x)).toEqual([100, 300, 300]);
+        expect(
+          result.polygons?.map((polygon) => Math.max(...polygon.points.map((point) => point.x))),
+        ).toEqual([300, 300]);
+        const restored = parseChartDrawings(JSON.stringify([stored]));
+        expect(restored).toHaveLength(1);
+        expect(restored[0]!.anchors.map((anchor) => Number(anchor.time))).toEqual([100, 300, 300]);
+        expect(restored[0]!.anchors.map((anchor) => anchor.price)).toEqual(
+          stored.anchors.map((anchor) => anchor.price),
+        );
+        expect(restored[0]!.color).toBe(stored.color);
+        expect(stored.anchors[2]!.time).toBe(stopTime);
+      }
+    },
+  );
+});
+
+describe("position zone palette storage", () => {
+  it.each(["long-position", "short-position"] as const)(
+    "preserves independent valid %s zone colors",
+    (kind) => {
+      const source = {
+        ...drawing(kind, [
+          [100, 300],
+          [200, kind === "long-position" ? 400 : 200],
+          [200, kind === "long-position" ? 200 : 400],
+        ]),
+        positionTargetColor: "#123aBC",
+        positionStopColor: "#Fed654",
+      };
+      expect(parseChartDrawings(JSON.stringify([source]))).toEqual([source]);
+      expect(sanitizeDrawingSettings(source)).toMatchObject({
+        positionTargetColor: "#123aBC",
+        positionStopColor: "#Fed654",
+      });
+    },
+  );
+
+  it.each(["red", "#fff", "#12345678", "#xyz123", "url(secret)", 123, null])(
+    "drops invalid zone colors %j without discarding valid settings",
+    (color) => {
+      expect(
+        sanitizeDrawingSettings({
+          positionTargetColor: color,
+          positionStopColor: "#123456",
+          backgroundOpacity: 0.3,
+        }),
+      ).toEqual({ positionStopColor: "#123456", backgroundOpacity: 0.3 });
+      expect(
+        sanitizeDrawingSettings({ positionTargetColor: "#abcdef", positionStopColor: color }),
+      ).toEqual({ positionTargetColor: "#abcdef" });
+    },
+  );
+});
+
+describe.each(["long-position", "short-position"] as const)("%s compact statistics", (kind) => {
+  const source = drawing(kind, [
+    [100, 300],
+    [200, kind === "long-position" ? 400 : 200],
+    [200, kind === "long-position" ? 250 : 350],
+  ]);
+  it("shortens labels without changing zone geometry, handles, colors or the ratio position", () => {
+    const full = geometry(source);
+    const compact = geometry({ ...source, positionCompactStats: true });
+    expect(full.lines.filter((line) => line.label).map((line) => line.label)).toEqual([
+      `Target ${kind === "long-position" ? 400 : 200} · 100`,
+      "Entry 300",
+      `Stop ${kind === "long-position" ? 250 : 350} · 50`,
+      "Risk/reward 2.00",
+    ]);
+    expect(compact.lines.filter((line) => line.label).map((line) => line.label)).toEqual([
+      `T ${kind === "long-position" ? 400 : 200}`,
+      "E 300",
+      `S ${kind === "long-position" ? 250 : 350}`,
+      "R/R 2.00",
+    ]);
+    expect(compact.polygons).toEqual(full.polygons);
+    expect(compact.handles).toEqual(full.handles);
+    const withoutLabels = (lines: typeof compact.lines) =>
+      lines.map(({ label: _label, ...rest }) => rest);
+    expect(withoutLabels(compact.lines)).toEqual(withoutLabels(full.lines));
+    expect(compact.lines.at(-1)!.labelPoint).toEqual({ x: 150, y: 218 });
+    expect(geometry({ ...source, positionCompactStats: false })).toEqual(full);
+  });
+  it("round trips true and false and ignores malformed compact preferences", () => {
+    for (const positionCompactStats of [true, false]) {
+      const saved = { ...source, positionCompactStats };
+      expect(parseChartDrawings(JSON.stringify([saved]))).toEqual([saved]);
+    }
+    for (const positionCompactStats of ["true", 1, null])
+      expect(parseChartDrawings(JSON.stringify([{ ...source, positionCompactStats }]))).toEqual([
+        source,
+      ]);
+  });
+});
+
+it.each(["long-position", "short-position"] as const)(
+  "separates %s entry and ratio labels at every supported font size",
+  (kind) => {
+    const source = drawing(kind, [
+      [100, 300],
+      [200, kind === "long-position" ? 400 : 200],
+      [200, kind === "long-position" ? 250 : 350],
+    ]);
+    const baseline = geometry(source);
+    for (const textFontSize of [8, 12, 16, 24, 32, 40]) {
+      for (const positionCompactStats of [false, true]) {
+        const result = geometry({ ...source, textFontSize, positionCompactStats });
+        const labels = result.lines.filter((line) => line.label);
+        expect(labels[3]!.labelPoint).toEqual({ x: 150, y: 200 + textFontSize + 6 });
+        expect(labels[3]!.labelPoint!.y - labels[1]!.labelPoint!.y).toBeGreaterThan(textFontSize);
+        expect(result.polygons).toEqual(baseline.polygons);
+        expect(result.handles).toEqual(baseline.handles);
+      }
+    }
+    expect(baseline.lines.at(-1)!.labelPoint).toEqual({ x: 150, y: 218 });
+  },
+);

@@ -1,3 +1,5 @@
+import { mcpIntegrationsRouteLayer } from "./http.ts";
+import { TradingWorkspaceLive } from "./trading/TradingWorkspace.ts";
 import { EnvironmentHttpApi, ProviderDriverKind } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
@@ -14,6 +16,9 @@ import * as HostPowerMonitor from "./background/HostPowerMonitor.ts";
 import * as ServerConfig from "./config.ts";
 import {
   otlpTracesProxyRouteLayer,
+  tradingRouteLayer,
+  tradingWorkspaceWriteRouteLayer,
+  tradingWorkspaceCreateRouteLayer,
   assetRouteLayer,
   attachmentUploadRouteLayer,
   serverEnvironmentHttpApiLayer,
@@ -559,6 +564,10 @@ export const makeRoutesLayer = Layer.mergeAll(
       Layer.provide(environmentAuthenticatedAuthLayer),
     ),
     otlpTracesProxyRouteLayer,
+    tradingRouteLayer,
+    mcpIntegrationsRouteLayer,
+    tradingWorkspaceWriteRouteLayer,
+    tradingWorkspaceCreateRouteLayer,
     assetRouteLayer,
     attachmentUploadRouteLayer,
     deviceHubProxyRouteLayer,
@@ -569,6 +578,7 @@ export const makeRoutesLayer = Layer.mergeAll(
 ).pipe(
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
+  Layer.provide(TradingWorkspaceLive),
   Layer.provide(PullRequestServiceLive),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(DesktopAppUpdateLayerLive))),
