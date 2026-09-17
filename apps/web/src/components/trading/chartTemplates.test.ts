@@ -500,3 +500,35 @@ it("captures label alignment and keeps older templates avoiding overlaps", () =>
     chartTemplateSettingsKey({}),
   );
 });
+
+it("captures pinch zoom independently and restores enabled behavior for older templates", () => {
+  expect(captureChartTemplateSettings({ zoomWithPinch: false })).toMatchObject({
+    zoomWithPinch: false,
+    zoomWithMouseWheel: true,
+  });
+  expect(captureChartTemplateSettings({}).zoomWithPinch).toBe(true);
+  expect(chartTemplateSettingsKey({ zoomWithPinch: false })).not.toBe(chartTemplateSettingsKey({}));
+  const templates = normalizeChartTemplates([
+    {
+      id: "pinch-off",
+      name: "No pinch zoom",
+      settings: { zoomWithPinch: false, zoomWithMouseWheel: true },
+    },
+    {
+      id: "wheel-off",
+      name: "Touch zoom",
+      settings: { zoomWithPinch: true, zoomWithMouseWheel: false },
+    },
+    { id: "legacy", name: "Legacy", settings: {} },
+  ]);
+  expect(
+    templates.map((template) => [
+      template.settings.zoomWithPinch,
+      template.settings.zoomWithMouseWheel,
+    ]),
+  ).toEqual([
+    [false, true],
+    [true, false],
+    [true, true],
+  ]);
+});

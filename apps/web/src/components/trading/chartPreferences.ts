@@ -187,6 +187,7 @@ type SavedChartPreferences = {
   watermarkVerticalAlignment: WatermarkVerticalAlignment;
   lockVisibleTimeRangeOnResize: boolean;
   zoomWithMouseWheel: boolean;
+  zoomWithPinch: boolean;
   chartZoomAnchor: ChartZoomAnchor;
   lineMarkerRadius: ChartLineMarkerRadius;
   thinBars: boolean;
@@ -327,6 +328,7 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
       : "center",
     lockVisibleTimeRangeOnResize: saved.lockVisibleTimeRangeOnResize === true,
     zoomWithMouseWheel: saved.zoomWithMouseWheel !== false,
+    zoomWithPinch: saved.zoomWithPinch !== false,
     chartZoomAnchor: saved.chartZoomAnchor === "right" ? "right" : "pointer",
     lineMarkerRadius: validLineMarkerRadius(saved.lineMarkerRadius) ? saved.lineMarkerRadius : 3,
     thinBars: typeof saved.thinBars === "boolean" ? saved.thinBars : true,
@@ -421,6 +423,7 @@ export const useChartPreferences = create<{
   watermarkVerticalAlignment: WatermarkVerticalAlignment;
   lockVisibleTimeRangeOnResize: boolean;
   zoomWithMouseWheel: boolean;
+  zoomWithPinch: boolean;
   chartZoomAnchor: ChartZoomAnchor;
   lineMarkerRadius: ChartLineMarkerRadius;
   thinBars: boolean;
@@ -521,6 +524,7 @@ export const useChartPreferences = create<{
   setPaneStretchFactors: (sizes: ChartPaneSizes) => void;
   setLockVisibleTimeRangeOnResize: (lock: boolean) => void;
   setZoomWithMouseWheel: (enabled: boolean) => void;
+  setZoomWithPinch: (enabled: boolean) => void;
   setChartZoomAnchor: (anchor: ChartZoomAnchor) => void;
   setLineMarkerRadius: (radius: ChartLineMarkerRadius) => void;
   toggleThinBars: () => void;
@@ -591,6 +595,7 @@ export const useChartPreferences = create<{
       watermarkVerticalAlignment: "center",
       lockVisibleTimeRangeOnResize: false,
       zoomWithMouseWheel: true,
+      zoomWithPinch: true,
       chartZoomAnchor: "pointer",
       lineMarkerRadius: 3,
       thinBars: true,
@@ -1086,6 +1091,10 @@ export const useChartPreferences = create<{
           chartZoomAnchor !== get().chartZoomAnchor
         )
           set({ chartZoomAnchor });
+      },
+      setZoomWithPinch: (zoomWithPinch) => {
+        if (typeof zoomWithPinch === "boolean" && zoomWithPinch !== get().zoomWithPinch)
+          set({ zoomWithPinch });
       },
       setZoomWithMouseWheel: (zoomWithMouseWheel) => {
         if (

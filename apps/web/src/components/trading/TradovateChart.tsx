@@ -515,10 +515,10 @@ export function TradovateChart({
   useEffect(() => {
     if (engine && !engine.disposed)
       engine.chart.applyOptions({
-        handleScale: { mouseWheel: settings.zoomWithMouseWheel },
+        handleScale: { mouseWheel: settings.zoomWithMouseWheel, pinch: settings.zoomWithPinch },
         timeScale: { rightBarStaysOnScroll: settings.chartZoomAnchor === "right" },
       });
-  }, [engine, settings.zoomWithMouseWheel, settings.chartZoomAnchor]);
+  }, [engine, settings.zoomWithMouseWheel, settings.zoomWithPinch, settings.chartZoomAnchor]);
 
   useEffect(() => {
     if (
@@ -657,6 +657,7 @@ export function TradovateChart({
       areaFill,
       lockVisibleTimeRangeOnResize,
       zoomWithMouseWheel,
+      zoomWithPinch,
       chartZoomAnchor,
       showTimeScale,
       rightOffsetBars,
@@ -666,7 +667,7 @@ export function TradovateChart({
     } = useChartPreferences.getState();
     const chart = createChart(host.current, {
       autoSize: true,
-      handleScale: { mouseWheel: zoomWithMouseWheel },
+      handleScale: { mouseWheel: zoomWithMouseWheel, pinch: zoomWithPinch },
       layout: {
         background: chartCanvasBackground(
           chartBackgroundMode,

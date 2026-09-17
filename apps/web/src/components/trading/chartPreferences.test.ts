@@ -5159,3 +5159,36 @@ it("persists label alignment and ignores invalid or unchanged updates", async ()
   useChartPreferences.getState().setAlignPriceLabels(true);
   expect(useChartPreferences.getState().alignPriceLabels).toBe(true);
 });
+
+it("persists pinch zoom independently of wheel zoom and ignores invalid or unchanged updates", async () => {
+  const store = useChartPreferences.getState();
+  expect(store.zoomWithPinch).toBe(true);
+  for (const value of [undefined, null, 0, 1, "false", {}, []]) {
+    expect(normalizeChartPreferences({ zoomWithPinch: value }).zoomWithPinch).toBe(true);
+    store.setZoomWithPinch(value as never);
+  }
+  store.setZoomWithPinch(true);
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  store.setZoomWithPinch(false);
+  expect(useChartPreferences.getState()).toMatchObject({
+    zoomWithPinch: false,
+    zoomWithMouseWheel: true,
+  });
+  store.setZoomWithMouseWheel(false);
+  store.setChartZoomAnchor("right");
+  const payload = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(payload);
+  await useChartPreferences.persist.rehydrate();
+  expect(useChartPreferences.getState()).toMatchObject({
+    zoomWithPinch: false,
+    zoomWithMouseWheel: false,
+    chartZoomAnchor: "right",
+  });
+  useChartPreferences.getState().setZoomWithPinch(true);
+  expect(useChartPreferences.getState()).toMatchObject({
+    zoomWithPinch: true,
+    zoomWithMouseWheel: false,
+    chartZoomAnchor: "right",
+  });
+});
