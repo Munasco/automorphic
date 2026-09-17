@@ -2470,3 +2470,26 @@ describe.each(["long-position", "short-position"] as const)("%s compact statisti
       ]);
   });
 });
+
+it.each(["long-position", "short-position"] as const)(
+  "separates %s entry and ratio labels at every supported font size",
+  (kind) => {
+    const source = drawing(kind, [
+      [100, 300],
+      [200, kind === "long-position" ? 400 : 200],
+      [200, kind === "long-position" ? 250 : 350],
+    ]);
+    const baseline = geometry(source);
+    for (const textFontSize of [8, 12, 16, 24, 32, 40]) {
+      for (const positionCompactStats of [false, true]) {
+        const result = geometry({ ...source, textFontSize, positionCompactStats });
+        const labels = result.lines.filter((line) => line.label);
+        expect(labels[3]!.labelPoint).toEqual({ x: 150, y: 200 + textFontSize + 6 });
+        expect(labels[3]!.labelPoint!.y - labels[1]!.labelPoint!.y).toBeGreaterThan(textFontSize);
+        expect(result.polygons).toEqual(baseline.polygons);
+        expect(result.handles).toEqual(baseline.handles);
+      }
+    }
+    expect(baseline.lines.at(-1)!.labelPoint).toEqual({ x: 150, y: 218 });
+  },
+);

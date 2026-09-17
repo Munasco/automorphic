@@ -124,7 +124,10 @@ export function projectionDrawingGeometry(
         { x: second.x, y: first.y },
         `${compact ? "R/R" : "Risk/reward"} ${(reward / risk).toFixed(2)}`,
       );
-      result.lines.at(-1)!.labelPoint = { x: (first.x + second.x) / 2, y: first.y + 18 };
+      result.lines.at(-1)!.labelPoint = {
+        x: (first.x + second.x) / 2,
+        y: first.y + (drawing.textFontSize ?? 12) + 6,
+      };
     }
     return result;
   }

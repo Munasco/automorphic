@@ -730,3 +730,29 @@ it.each(["long-position", "short-position"] as const)(
     expect(applyDrawingTemplate(reset, template.settings)).toEqual(source);
   },
 );
+
+it.each(["long-position", "short-position"] as const)(
+  "restores %s stats typography from a saved template after factory reset",
+  (kind) => {
+    const source: ChartDrawing = {
+      ...drawing,
+      kind,
+      textColor: "#ffffff",
+      textFontSize: 24,
+      positionCompactStats: true,
+      anchors: [
+        { time: 100 as Time, price: 100 },
+        { time: 200 as Time, price: kind === "long-position" ? 120 : 80 },
+        { time: 200 as Time, price: kind === "long-position" ? 90 : 110 },
+      ],
+    };
+    const template = normalizeDrawingTemplates(
+      JSON.parse(JSON.stringify(saveDrawingTemplate([], source, "Readable stats"))),
+    )[0]!;
+    const reset = applyDrawingTemplate(source, defaultDrawingTemplateSettings(kind));
+    expect(reset.textColor).toBeUndefined();
+    expect(reset.textFontSize).toBeUndefined();
+    expect(reset.anchors).toEqual(source.anchors);
+    expect(applyDrawingTemplate(reset, template.settings)).toEqual(source);
+  },
+);

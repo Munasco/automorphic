@@ -7907,3 +7907,44 @@ it.each(["long-position", "short-position"] as const)(
     restored.dispose();
   },
 );
+
+it.each(["long-position", "short-position"] as const)(
+  "saves %s stats typography without changing zones and restores it after undo and reload",
+  (kind) => {
+    const original: ChartDrawing = {
+      id: "position-text",
+      kind,
+      color: "#2962ff",
+      width: 2,
+      positionTargetColor: "#26a69a",
+      positionStopColor: "#ef5350",
+      positionCompactStats: true,
+      anchors: [
+        { time: 100 as Time, price: 100 },
+        { time: 200 as Time, price: kind === "long-position" ? 120 : 80 },
+        { time: 200 as Time, price: kind === "long-position" ? 90 : 110 },
+      ],
+    };
+    const f = fixture("position-text", JSON.stringify([original]));
+    const session = f.open();
+    session.selectDrawing(original.id);
+    session.openSettings();
+    session.previewSettings({ textColor: "#ffffff", textFontSize: 24 });
+    session.closeSettings();
+    expect(session.getCommittedDrawings()).toEqual([original]);
+    expect(f.writes()).toBe(0);
+    session.openSettings();
+    session.previewSettings({ textColor: "#ffffff", textFontSize: 24 });
+    session.applySettings({});
+    const saved = { ...original, textColor: "#ffffff", textFontSize: 24 };
+    expect(session.getCommittedDrawings()).toEqual([saved]);
+    session.undo();
+    expect(session.getCommittedDrawings()).toEqual([original]);
+    session.redo();
+    expect(session.getCommittedDrawings()).toEqual([saved]);
+    session.dispose();
+    const restored = fixture("position-text", f.saved()).open();
+    expect(restored.getCommittedDrawings()).toEqual([saved]);
+    restored.dispose();
+  },
+);

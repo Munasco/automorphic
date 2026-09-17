@@ -552,10 +552,11 @@ export function createDrawingPrimitive(
             drawing.id === state.selected ||
             state.selectedIds?.includes(drawing.id) ||
             drawing === state.preview;
+          const positionTextColor = isPositionDrawing(drawing.kind) ? drawing.textColor : undefined;
           for (const line of geometry.lines) {
             if (!line.label || !showPositionStats) continue;
             ctx.globalAlpha = (line.opacity ?? 1) * lineAlpha;
-            ctx.fillStyle = line.color ?? drawing.color;
+            ctx.fillStyle = positionTextColor ?? line.color ?? drawing.color;
             ctx.textAlign = line.labelAlign ?? "left";
             ctx.textBaseline = line.labelBaseline ?? "alphabetic";
             const point = line.labelPoint ?? { x: line.to.x + 4, y: line.to.y - 3 };

@@ -1681,6 +1681,27 @@ function PositionAppearance({
       ))}
       {!toolbar && (
         <>
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span>Text</span>
+            <div className="flex items-center gap-2">
+              <ColorPicker
+                label="Stats text color"
+                value={drawing.textColor ?? drawing.color}
+                onChange={(textColor) => onChange({ textColor })}
+              />
+              <DrawingSelect
+                label="Stats text size"
+                value={String(drawing.textFontSize ?? 12)}
+                onChange={(value) => onChange({ textFontSize: Number(value) })}
+                options={Array.from(
+                  new Set([...DRAWING_TEXT_FONT_SIZES, drawing.textFontSize ?? 12]),
+                )
+                  .sort((a, b) => a - b)
+                  .map((size) => [String(size), String(size)] as const)}
+                className="w-16"
+              />
+            </div>
+          </div>
           <Check
             label="Compact stats mode"
             checked={drawing.positionCompactStats ?? false}

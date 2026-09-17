@@ -696,6 +696,76 @@ describe("additional line primitive behavior", () => {
       ]);
     };
 
+    it.each([false, true])(
+      "paints configurable text color and size in compact mode %s without recoloring zones",
+      (positionCompactStats) => {
+        const drawing = {
+          ...position(true),
+          positionCompactStats,
+          positionTargetColor: "#112233",
+          positionStopColor: "#445566",
+          textColor: "#aabbcc",
+          textFontSize: 24,
+        };
+        const f = renderFixture(drawing);
+        const ctx = Object.assign(f.ctx, { fillStyle: "", globalAlpha: 1 });
+        const painted: Array<{ label: string; color: string; font: string; x: number; y: number }> =
+          [];
+        const fills: Array<{ color: string; opacity: number }> = [];
+        f.ctx.fillText.mockImplementation((label: string, x: number, y: number) => {
+          painted.push({ label, color: ctx.fillStyle, font: ctx.font, x, y });
+        });
+        f.ctx.fill.mockImplementation(() =>
+          fills.push({ color: ctx.fillStyle, opacity: ctx.globalAlpha }),
+        );
+        f.draw();
+        expect(painted).toHaveLength(4);
+        expect(painted.map(({ color, font }) => ({ color, font }))).toEqual(
+          Array(4).fill({ color: "#aabbcc", font: "24px system-ui" }),
+        );
+        expect(painted.map(({ label }) => label)).toEqual(
+          positionCompactStats
+            ? [
+                `T ${kind === "long-position" ? "400.00" : "200.00"}`,
+                "E 300.00",
+                `S ${kind === "long-position" ? "250.00" : "350.00"}`,
+                "R/R 2.00",
+              ]
+            : [
+                `Target ${kind === "long-position" ? "400.00" : "200.00"} · 100.00`,
+                "Entry 300.00",
+                `Stop ${kind === "long-position" ? "250.00" : "350.00"} · 50.00`,
+                "Risk/reward 2.00",
+              ],
+        );
+        expect(painted[3]!.y - painted[1]!.y).toBeGreaterThan(24);
+        expect(fills).toEqual([
+          { color: "#112233", opacity: 0.18 },
+          { color: "#445566", opacity: 0.18 },
+        ]);
+        expect(ctx.stroke).not.toHaveBeenCalled();
+        expect(f.plugin.hitTest({ x: 100, y: 200 })?.handle).toBe(0);
+      },
+    );
+
+    it("retains the existing per-zone text colors and twelve-pixel font when overrides are absent", () => {
+      const f = renderFixture({
+        ...position(true),
+        positionTargetColor: "#112233",
+        positionStopColor: "#445566",
+      });
+      const ctx = Object.assign(f.ctx, { fillStyle: "" });
+      const paints: Array<[string, string]> = [];
+      ctx.fillText.mockImplementation(() => paints.push([ctx.fillStyle, ctx.font]));
+      f.draw();
+      expect(paints).toEqual([
+        ["#112233", "12px system-ui"],
+        ["#729bff", "12px system-ui"],
+        ["#445566", "12px system-ui"],
+        ["#729bff", "12px system-ui"],
+      ]);
+    });
+
     it("keeps fills and handles interactive while showing stats only for selection or creation", () => {
       const drawing = position(false);
       const f = renderFixture(drawing);
@@ -760,6 +830,16 @@ describe("additional line primitive behavior", () => {
       { time: 100 as Time, price: 400 },
       { time: 200 as Time, price: 300 },
     ],
+  });
+
+  it("does not apply the position text override to non-position range labels", () => {
+    const f = renderFixture({ ...line("date-price-range"), textColor: "#aabbcc" });
+    const ctx = Object.assign(f.ctx, { fillStyle: "" });
+    const colors: string[] = [];
+    ctx.fillText.mockImplementation(() => colors.push(ctx.fillStyle));
+    f.draw();
+    expect(colors.length).toBeGreaterThan(0);
+    expect(colors.every((color) => color === "#729bff")).toBe(true);
   });
 
   it.each([false, true])("paints a same-bar trendline with extensions %s", (extended) => {
