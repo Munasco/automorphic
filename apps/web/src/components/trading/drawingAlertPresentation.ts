@@ -2,6 +2,8 @@ import { isRectangleRegionCondition, type DrawingAlertEvent } from "./drawingAle
 
 /** Time targets must never pass through the price formatter (including synthetic tick keys). */
 export function drawingAlertTargetLabel(event: DrawingAlertEvent): string {
+  if (event.targetKind === "price" && event.fibLevel !== undefined)
+    return `Fib ${event.fibLevel} · ${event.target.toLocaleString("en-US", { maximumFractionDigits: 6 })}`;
   if (event.targetKind === "price" && event.channelRange)
     return `${isRectangleRegionCondition(event.condition) ? "Rectangle" : "Channel"} ${event.channelRange.lower.toLocaleString("en-US", { maximumFractionDigits: 6 })} – ${event.channelRange.upper.toLocaleString("en-US", { maximumFractionDigits: 6 })}`;
   if (event.targetKind === "price")

@@ -56,12 +56,29 @@ const validChannelBoundary = (drawing: ChartDrawing, value: unknown) =>
   drawing.kind === "channel" || drawing.kind === "rectangle"
     ? isChannelBoundary(value)
     : value === undefined;
-const validDrawingRule = (drawing: ChartDrawing, condition: unknown, boundary: unknown) =>
-  drawing.kind === "rectangle" || isRectangleAlertCondition(condition)
+export const isFibAlertLevel = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= 1000;
+const singleLevelCondition = (value: unknown) =>
+  value === "crossing" ||
+  value === "crossing-up" ||
+  value === "crossing-down" ||
+  value === "above" ||
+  value === "below";
+const validDrawingRule = (
+  drawing: ChartDrawing,
+  condition: unknown,
+  boundary: unknown,
+  fibLevel?: unknown,
+) => {
+  if (drawing.kind === "fib")
+    return singleLevelCondition(condition) && boundary === undefined && isFibAlertLevel(fibLevel);
+  if (fibLevel !== undefined) return false;
+  return drawing.kind === "rectangle" || isRectangleAlertCondition(condition)
     ? drawing.kind === "rectangle" && isRectangleAlertCondition(condition) && boundary === undefined
     : isChannelRegionCondition(condition)
       ? drawing.kind === "channel" && boundary === undefined
       : validChannelBoundary(drawing, boundary);
+};
 export type DrawingAlertProjection = {
   /** Use actual chart bar positions, including the drawing renderer's interpolation between bars. */
   logicalAt: (time: Time) => number | null;
@@ -80,6 +97,7 @@ const KINDS = new Set([
   "vertical",
   "channel",
   "rectangle",
+  "fib",
 ]);
 export const supportsDrawingAlert = (drawing: ChartDrawing) =>
   KINDS.has(drawing.kind) && validDrawingAnchors(drawing.kind, drawing.anchors);
@@ -118,12 +136,14 @@ export function drawingAlertTarget(
   projection: DrawingAlertProjection,
   extent: DrawingAlertExtent = "visible",
   channelBoundary?: DrawingAlertChannelBoundary,
+  fibLevel?: number,
 ): number | null {
   if (
     !supportsDrawingAlert(drawing) ||
     drawing.kind === "vertical" ||
     !finite(logical) ||
-    !validChannelBoundary(drawing, channelBoundary)
+    !validChannelBoundary(drawing, channelBoundary) ||
+    (drawing.kind === "fib" ? !isFibAlertLevel(fibLevel) : fibLevel !== undefined)
   )
     return null;
   try {
@@ -156,6 +176,13 @@ export function drawingAlertTarget(
     const ay = projection.priceToCoordinate(a.price),
       by = projection.priceToCoordinate(b.price);
     if (!finite(ay) || !finite(by)) return null;
+    if (drawing.kind === "fib") {
+      // Match the drawing's linear-price retracement formula, including reverse.
+      const base = drawing.reverse ? a.price : b.price;
+      const delta = (a.price - b.price) * (drawing.reverse ? -1 : 1);
+      const price = base + delta * fibLevel!;
+      return finite(price) && finite(projection.priceToCoordinate(price)) ? price : null;
+    }
     const y = ay + ((by - ay) * (logical - ax)) / (bx - ax);
     const price = projection.coordinateToPrice(y);
     if (!finite(price)) return null;
@@ -180,6 +207,7 @@ function fingerprint(drawing: ChartDrawing) {
     drawing.kind,
     drawing.anchors.map((anchor) => [drawingTimeValue(anchor.time), anchor.price]),
     drawing.kind === "rectangle" ? null : drawingLineExtensions(drawing),
+    ...(drawing.kind === "fib" ? [drawing.reverse ?? false] : []),
   ]);
 }
 export type DrawingAlertNotifications = { toast: boolean; sound: boolean; desktop: boolean };
@@ -216,6 +244,7 @@ export type DrawingAlert = DrawingAlertPresentation & {
   geometry: string;
   targetKind: "price" | "time";
   channelBoundary?: DrawingAlertChannelBoundary;
+  fibLevel?: number;
   condition: DrawingAlertCondition;
   trigger: DrawingAlertTrigger;
   expiresAt: number | null;
@@ -230,6 +259,7 @@ export type DrawingAlert = DrawingAlertPresentation & {
 };
 export type DrawingAlertEvent = DrawingAlertPresentation & {
   channelBoundary?: DrawingAlertChannelBoundary;
+  fibLevel?: number;
   id: string;
   alertId: string;
   drawingId: string;
@@ -249,7 +279,7 @@ export type NewDrawingAlert = Pick<
   DrawingAlert,
   "drawingId" | "condition" | "trigger" | "expiresAt"
 > &
-  DrawingAlertPresentation & { channelBoundary?: DrawingAlertChannelBoundary };
+  DrawingAlertPresentation & { channelBoundary?: DrawingAlertChannelBoundary; fibLevel?: number };
 export type DrawingAlertSample = {
   symbol: string;
   intervalKey: string;
@@ -288,6 +318,11 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
         a.geometry.length > 2000 ||
         ![undefined, "price", "time"].includes(a.targetKind as undefined) ||
         !supportedRule(a.targetKind === "time" ? "time" : "price", a.condition, a.trigger) ||
+        (a.fibLevel !== undefined &&
+          (!isFibAlertLevel(a.fibLevel) ||
+            !singleLevelCondition(a.condition) ||
+            a.channelBoundary !== undefined ||
+            a.targetKind === "time")) ||
         (a.channelBoundary !== undefined &&
           (!isChannelBoundary(a.channelBoundary) ||
             a.targetKind === "time" ||
@@ -306,6 +341,7 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
       empty.alerts.push({
         ...presentation(a),
         ...(isChannelBoundary(a.channelBoundary) ? { channelBoundary: a.channelBoundary } : {}),
+        ...(isFibAlertLevel(a.fibLevel) ? { fibLevel: a.fibLevel } : {}),
         id: a.id,
         symbol: a.symbol,
         intervalKey: a.intervalKey,
@@ -340,6 +376,11 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
         !identifier(e.intervalKey) ||
         !identifier(e.barId) ||
         !isCondition(e.condition) ||
+        (e.fibLevel !== undefined &&
+          (!isFibAlertLevel(e.fibLevel) ||
+            !singleLevelCondition(e.condition) ||
+            e.channelBoundary !== undefined ||
+            e.targetKind === "time")) ||
         (e.channelBoundary !== undefined &&
           (!isChannelBoundary(e.channelBoundary) ||
             e.targetKind === "time" ||
@@ -365,6 +406,7 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
       empty.history.push({
         ...presentation(e),
         ...(isChannelBoundary(e.channelBoundary) ? { channelBoundary: e.channelBoundary } : {}),
+        ...(isFibAlertLevel(e.fibLevel) ? { fibLevel: e.fibLevel } : {}),
         id: e.id,
         alertId: e.alertId,
         drawingId: e.drawingId,
@@ -504,7 +546,8 @@ export function createDrawingAlertSession(
         updated.condition !== alert.condition ||
         updated.trigger !== alert.trigger ||
         updated.targetKind !== alert.targetKind ||
-        updated.channelBoundary !== alert.channelBoundary
+        updated.channelBoundary !== alert.channelBoundary ||
+        updated.fibLevel !== alert.fibLevel
       )
         previous.delete(alert.id);
     }
@@ -568,7 +611,7 @@ export function createDrawingAlertSession(
           if (
             !drawing ||
             targetKindFor(drawing) !== a.targetKind ||
-            !validDrawingRule(drawing, a.condition, a.channelBoundary)
+            !validDrawingRule(drawing, a.condition, a.channelBoundary, a.fibLevel)
           ) {
             previous.delete(a.id);
             return a.enabled ? { ...a, enabled: false, disabledReason: "deleted" as const } : a;
@@ -589,7 +632,7 @@ export function createDrawingAlertSession(
       if (
         disposed ||
         !drawing ||
-        !validDrawingRule(drawing, input.condition, input.channelBoundary) ||
+        !validDrawingRule(drawing, input.condition, input.channelBoundary, input.fibLevel) ||
         !identifier(context.symbol) ||
         !identifier(context.intervalKey) ||
         !supportedRule(targetKindFor(drawing), input.condition, input.trigger) ||
@@ -603,6 +646,7 @@ export function createDrawingAlertSession(
       const alert: DrawingAlert = {
         ...presentation(input),
         ...(input.channelBoundary ? { channelBoundary: input.channelBoundary } : {}),
+        ...(input.fibLevel !== undefined ? { fibLevel: input.fibLevel } : {}),
         id: id(),
         ...context,
         drawingId: input.drawingId,
@@ -632,7 +676,12 @@ export function createDrawingAlertSession(
         input.drawingId !== alert.drawingId ||
         !drawings.has(alert.drawingId) ||
         targetKindFor(drawings.get(alert.drawingId)!) !== alert.targetKind ||
-        !validDrawingRule(drawings.get(alert.drawingId)!, input.condition, input.channelBoundary) ||
+        !validDrawingRule(
+          drawings.get(alert.drawingId)!,
+          input.condition,
+          input.channelBoundary,
+          input.fibLevel,
+        ) ||
         !supportedRule(alert.targetKind, input.condition, input.trigger) ||
         !(input.expiresAt === null || (stamp(input.expiresAt) && input.expiresAt > now()))
       )
@@ -640,16 +689,19 @@ export function createDrawingAlertSession(
       const rearm =
         alert.condition !== input.condition ||
         alert.trigger !== input.trigger ||
-        alert.channelBoundary !== input.channelBoundary;
+        alert.channelBoundary !== input.channelBoundary ||
+        alert.fibLevel !== input.fibLevel;
       const retained = { ...alert };
       // Editable presentation fields are replacements, so clearing a field removes its old value.
       delete retained.name;
       delete retained.message;
       delete retained.channelBoundary;
+      delete retained.fibLevel;
       const updated: DrawingAlert = {
         ...retained,
         ...presentation(input),
         ...(input.channelBoundary ? { channelBoundary: input.channelBoundary } : {}),
+        ...(input.fibLevel !== undefined ? { fibLevel: input.fibLevel } : {}),
         condition: input.condition,
         trigger: input.trigger,
         expiresAt: input.expiresAt,
@@ -678,7 +730,12 @@ export function createDrawingAlertSession(
         (enabled &&
           (!drawings.has(a.drawingId) ||
             targetKindFor(drawings.get(a.drawingId)!) !== a.targetKind ||
-            !validDrawingRule(drawings.get(a.drawingId)!, a.condition, a.channelBoundary) ||
+            !validDrawingRule(
+              drawings.get(a.drawingId)!,
+              a.condition,
+              a.channelBoundary,
+              a.fibLevel,
+            ) ||
             (a.expiresAt !== null && a.expiresAt <= now())))
       )
         return false;
@@ -846,6 +903,7 @@ export function createDrawingAlertSession(
                   : a.condition === "below-rectangle"
                     ? "lower"
                     : a.channelBoundary,
+                a.fibLevel,
               );
           }
           if (
@@ -925,6 +983,7 @@ export function createDrawingAlertSession(
           events.push({
             ...presentation(a),
             ...(a.channelBoundary ? { channelBoundary: a.channelBoundary } : {}),
+            ...(a.fibLevel !== undefined ? { fibLevel: a.fibLevel } : {}),
             id: id(),
             alertId: a.id,
             drawingId: a.drawingId,

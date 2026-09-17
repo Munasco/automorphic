@@ -6,11 +6,12 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { DrawingAlertExpiration } from "./DrawingAlertExpiration";
 import { AlertIcon } from "./AlertIcon";
 import { DrawingSelect, inputClass } from "./DrawingStyleControls";
-import type { ChartDrawing } from "./drawingGeometry";
+import { defaultDrawingLevels, type ChartDrawing } from "./drawingGeometry";
 import {
   isChannelRegionCondition,
   isRectangleRegionCondition,
   isRectangleAlertCondition,
+  isFibAlertLevel,
 } from "./drawingAlerts";
 import type {
   DrawingAlert,
@@ -23,6 +24,7 @@ import type {
 export type DrawingAlertDialogInput = {
   drawingId: string;
   channelBoundary?: DrawingAlertChannelBoundary;
+  fibLevel?: number;
   condition: DrawingAlertCondition;
   trigger: DrawingAlertTrigger;
   expiresAt: number | null;
@@ -72,6 +74,7 @@ const drawingLabels: Partial<Record<ChartDrawing["kind"], string>> = {
   vertical: "Vertical line",
   channel: "Parallel channel",
   rectangle: "Rectangle",
+  fib: "Fib retracement",
 };
 
 function monthAhead(now = Date.now()) {
@@ -118,6 +121,26 @@ export function DrawingAlertDialog({
   const initial = alert ?? initialValues;
   const vertical = drawing.kind === "vertical";
   const rectangle = drawing.kind === "rectangle";
+  const fib = drawing.kind === "fib";
+  const configuredLevels = (drawing.levels ?? defaultDrawingLevels(drawing.kind)).filter((level) =>
+    isFibAlertLevel(level.value),
+  );
+  const [fibLevel, setFibLevel] = useState(
+    initial?.fibLevel ??
+      configuredLevels.find((level) => level.value === 0.618)?.value ??
+      configuredLevels[0]?.value ??
+      0.618,
+  );
+  const fibOptions: Array<readonly [string, string]> = [
+    ...new Map(
+      configuredLevels.map((level) => [
+        level.value,
+        [String(level.value), `${level.value}${level.visible ? "" : " (hidden)"}`] as const,
+      ]),
+    ).values(),
+  ];
+  if (!fibOptions.some(([value]) => value === String(fibLevel)))
+    fibOptions.push([String(fibLevel), `${fibLevel} (saved)`]);
   const messageInterval = /^\d+m$/.test(intervalLabel) ? intervalLabel.slice(0, -1) : intervalLabel;
   const [page, setPage] = useState<Page>("main");
   const [condition, setCondition] = useState<DrawingAlertCondition>(
@@ -132,18 +155,29 @@ export function DrawingAlertDialog({
     initial?.channelBoundary ?? "upper",
   );
   const baseLabel = drawing.name || drawingLabels[drawing.kind] || "Drawing";
-  const targetLabel = (value: DrawingAlertCondition, boundary = channelBoundary) =>
-    value === "above-rectangle"
-      ? `${baseLabel} upper boundary`
-      : value === "below-rectangle"
-        ? `${baseLabel} lower boundary`
-        : channel && !isChannelRegionCondition(value)
-          ? `${baseLabel} ${boundary} boundary`
-          : baseLabel;
-  const defaultMessage = (value: DrawingAlertCondition, boundary = channelBoundary) => {
+  const targetLabel = (
+    value: DrawingAlertCondition,
+    boundary = channelBoundary,
+    ratio = fibLevel,
+  ) =>
+    fib
+      ? `${baseLabel} ${ratio} level`
+      : value === "above-rectangle"
+        ? `${baseLabel} upper boundary`
+        : value === "below-rectangle"
+          ? `${baseLabel} lower boundary`
+          : channel && !isChannelRegionCondition(value)
+            ? `${baseLabel} ${boundary} boundary`
+            : baseLabel;
+  const defaultMessage = (
+    value: DrawingAlertCondition,
+    boundary = channelBoundary,
+    ratio = fibLevel,
+  ) => {
     const conditionLabel = conditions.find(([key]) => key === value)![1];
     const region = isChannelRegionCondition(value) || isRectangleRegionCondition(value);
-    const suffix = region && !drawing.name ? "" : ` ${targetLabel(value, boundary).toLowerCase()}`;
+    const suffix =
+      region && !drawing.name ? "" : ` ${targetLabel(value, boundary, ratio).toLowerCase()}`;
     return `${symbol}, ${messageInterval} ${conditionLabel}${suffix}`;
   };
   const [message, setMessage] = useState<MessageDraft>(() => ({
@@ -208,6 +242,7 @@ export function DrawingAlertDialog({
       const failure = await onSubmit({
         drawingId: drawing.id,
         ...(channel && !isChannelRegionCondition(condition) ? { channelBoundary } : {}),
+        ...(fib ? { fibLevel } : {}),
         condition: vertical ? "crossing" : condition,
         trigger: vertical ? "once" : trigger,
         expiresAt,
@@ -280,7 +315,7 @@ export function DrawingAlertDialog({
         <div className="min-h-0 overflow-y-auto text-sm">
           {page === "main" ? (
             <div
-              className={`${vertical ? "min-h-[307px]" : channel && !isChannelRegionCondition(condition) ? "min-h-[379px]" : "min-h-[337px]"} px-5 py-4`}
+              className={`${vertical ? "min-h-[307px]" : fib || (channel && !isChannelRegionCondition(condition)) ? "min-h-[379px]" : "min-h-[337px]"} px-5 py-4`}
             >
               <div className="grid grid-cols-[minmax(90px,30%)_minmax(0,1fr)] gap-x-0 gap-y-2 pr-[5px]">
                 <span className="self-center text-[#8c8c8c]">Condition</span>
@@ -323,6 +358,31 @@ export function DrawingAlertDialog({
                   value={rectangle ? targetLabel(condition) : baseLabel}
                   readOnly
                 />
+                {fib ? (
+                  <>
+                    <span className="self-center text-[#8c8c8c]">Level</span>
+                    <DrawingSelect
+                      label="Fibonacci level"
+                      value={String(fibLevel)}
+                      options={fibOptions}
+                      className="h-[34px] w-full"
+                      onChange={(value) => {
+                        const next = Number(value);
+                        if (!isFibAlertLevel(next)) return;
+                        const previousDefault = defaultMessage(condition);
+                        setMessage((current) =>
+                          current.message === previousDefault
+                            ? {
+                                ...current,
+                                message: defaultMessage(condition, channelBoundary, next),
+                              }
+                            : current,
+                        );
+                        setFibLevel(next);
+                      }}
+                    />
+                  </>
+                ) : null}
                 {channel && !isChannelRegionCondition(condition) ? (
                   <>
                     <span className="self-center text-[#8c8c8c]">Boundary</span>

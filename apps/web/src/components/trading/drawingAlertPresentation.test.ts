@@ -76,6 +76,16 @@ describe("drawing alert target labels", () => {
       drawingAlertTargetLabel({ ...common, condition, targetKind: "price", target: 24301.25 }),
     ).toBe(`${label} 24,301.25`);
   });
+  it("labels the retained Fibonacci ratio and its triggered price", () => {
+    expect(
+      drawingAlertTargetLabel({
+        ...common,
+        fibLevel: 0.618,
+        targetKind: "price",
+        target: 24301.25,
+      }),
+    ).toBe("Fib 0.618 · 24,301.25");
+  });
   it("shows a vertical boundary as a UTC date and time, never as a price", () => {
     expect(drawingAlertTargetLabel(timeEvent((Date.UTC(2026, 8, 12, 14, 30) / 1000) as Time))).toBe(
       "Vertical line · Sep 12, 2026, 02:30 PM UTC",

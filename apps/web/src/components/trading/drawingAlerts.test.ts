@@ -2046,3 +2046,237 @@ describe("rectangle upper and lower threshold alerts", () => {
     h.session.dispose();
   });
 });
+
+describe("Fibonacci retracement level alerts", () => {
+  const fib = (patch: Partial<ChartDrawing> = {}): ChartDrawing =>
+    line({
+      kind: "fib",
+      anchors: [
+        { time: 0 as Time, price: 100 },
+        { time: 10 as Time, price: 400 },
+      ],
+      ...patch,
+    });
+  const rule = (
+    fibLevel: number,
+    condition: DrawingAlertCondition = "crossing",
+    trigger: DrawingAlertTrigger = "once",
+  ): NewDrawingAlert => ({
+    drawingId: "line",
+    fibLevel,
+    condition,
+    trigger,
+    expiresAt: null,
+  });
+
+  it.each([
+    [false, 0, 400],
+    [false, 0.25, 325],
+    [false, 0.618, 214.6],
+    [false, 1, 100],
+    [false, -1, 700],
+    [false, 1.5, -50],
+    [true, 0.25, 175],
+    [true, 1.5, 550],
+  ] as const)(
+    "projects reverse=%s ratio %s to the renderer's source-price level %s",
+    (reverse, fibLevel, target) => {
+      const h = harness();
+      h.session.syncDrawings([fib({ reverse })]);
+      expect(supportsDrawingAlert(fib())).toBe(true);
+      const alert = h.session.add(rule(fibLevel, "above"))!;
+      expect(alert).not.toBeNull();
+      h.session.observe(h.sample(target + 1));
+      expect(h.onTrigger).toHaveBeenCalledTimes(1);
+      expect(h.onTrigger.mock.lastCall![0]).toMatchObject({
+        alertId: alert.id,
+        fibLevel,
+        condition: "above",
+        targetKind: "price",
+      });
+      expect(h.onTrigger.mock.lastCall![0].target).toBeCloseTo(target);
+      expect(h.onTrigger.mock.lastCall![0]).not.toHaveProperty("channelBoundary");
+      expect(h.onTrigger.mock.lastCall![0]).not.toHaveProperty("channelRange");
+      h.session.dispose();
+    },
+  );
+
+  it.each([
+    [
+      "inverted",
+      {
+        ...projection,
+        priceToCoordinate: (price: number) => price,
+        coordinateToPrice: (value: number) => value,
+      },
+    ],
+    ["logarithmic", { ...projection, priceToCoordinate: Math.log, coordinateToPrice: Math.exp }],
+  ] as const)(
+    "retains arithmetic price ratios on %s scales rather than interpolating projected prices",
+    (_label, chartProjection) => {
+      const h = harness(chartProjection);
+      h.session.syncDrawings([fib()]);
+      h.session.add(rule(0.5));
+      h.session.observe(h.sample(240));
+      h.session.observe(h.sample(260));
+      expect(h.onTrigger).toHaveBeenCalledTimes(1);
+      expect(h.onTrigger.mock.lastCall![0]).toMatchObject({ fibLevel: 0.5, target: 250 });
+      h.session.dispose();
+    },
+  );
+
+  it("honors finite left/right time extents and rejects unavailable price projection", () => {
+    let available = true;
+    const h = harness({ ...projection, priceToCoordinate: (price) => (available ? -price : null) });
+    h.session.syncDrawings([fib()]);
+    h.session.add(rule(0.5, "above", "once-per-bar"));
+    h.session.observe(h.sample(260, { logical: -1, barId: "left-outside" }));
+    h.session.observe(h.sample(260, { logical: 11, barId: "right-outside" }));
+    available = false;
+    h.session.observe(h.sample(260));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    available = true;
+    h.session.syncDrawings([fib({ extendLeft: true })]);
+    h.session.observe(h.sample(260, { logical: -1, barId: "left-extended" }));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    h.session.observe(h.sample(260, { logical: 11, barId: "right-still-outside" }));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    h.session.syncDrawings([fib({ extendRight: true })]);
+    h.session.observe(h.sample(260, { logical: 11, barId: "right-extended" }));
+    expect(h.onTrigger).toHaveBeenCalledTimes(2);
+    h.session.dispose();
+  });
+
+  it("retains a ratio and crossing baseline when its plotted level is hidden or removed", () => {
+    const h = harness();
+    h.session.syncDrawings([fib({ levels: [{ value: 0.5, visible: true }] })]);
+    const alert = h.session.add(rule(0.5))!;
+    h.session.observe(h.sample(240));
+    const armedAt = h.session.getSnapshot().alerts[0]!.armedAt;
+    h.session.syncDrawings([fib({ levels: [{ value: 0.5, visible: false }], hidden: true })]);
+    h.session.syncDrawings([fib({ levels: [{ value: 0.25, visible: true }] })]);
+    expect(h.session.getSnapshot().alerts[0]).toMatchObject({
+      id: alert.id,
+      fibLevel: 0.5,
+      enabled: true,
+      armedAt,
+    });
+    h.session.observe(h.sample(260));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    expect(h.onTrigger.mock.lastCall![0]).toMatchObject({ fibLevel: 0.5, target: 250 });
+    h.session.dispose();
+  });
+
+  it("rearms edited ratios and persists immutable ratio/target snapshots", () => {
+    const h = harness();
+    h.session.syncDrawings([fib()]);
+    const alert = h.session.add(rule(0.25, "crossing", "once-per-bar"))!;
+    h.session.observe(h.sample(320));
+    expect(h.session.update(alert.id, rule(0.5, "crossing", "once-per-bar"))).toBe(true);
+    h.session.observe(h.sample(260));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    h.session.observe(h.sample(240));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    const event = h.session.getSnapshot().history[0]!;
+    expect(event).toMatchObject({ fibLevel: 0.5, target: 250 });
+    expect(h.session.update(alert.id, rule(0.75, "crossing", "once-per-bar"))).toBe(true);
+    expect(h.session.getSnapshot().history).toEqual([event]);
+    const saved = parseDrawingAlerts(h.values.get(DRAWING_ALERTS_KEY)!);
+    expect(saved).toEqual(h.session.getSnapshot());
+    h.session.dispose();
+    const reloaded = h.open();
+    reloaded.syncDrawings([fib()]);
+    expect(reloaded.getSnapshot()).toEqual(saved);
+    expect(reloaded.getSnapshot().alerts[0]!.fibLevel).toBe(0.75);
+    reloaded.dispose();
+  });
+
+  it.each(["reverse", "anchor"] as const)(
+    "rearms a %s change without inventing a cross from the old level",
+    (change) => {
+      const h = harness();
+      h.session.syncDrawings([fib()]);
+      h.session.add(rule(0.25));
+      h.session.observe(h.sample(300));
+      const changed =
+        change === "reverse"
+          ? fib({ reverse: true })
+          : fib({
+              anchors: [
+                { time: 0 as Time, price: 100 },
+                { time: 10 as Time, price: 200 },
+              ],
+            });
+      h.session.syncDrawings([changed]);
+      h.session.observe(h.sample(300));
+      expect(h.onTrigger).not.toHaveBeenCalled();
+      h.session.observe(h.sample(174));
+      expect(h.onTrigger).toHaveBeenCalledTimes(1);
+      expect(h.onTrigger.mock.lastCall![0]).toMatchObject({ target: 175, fibLevel: 0.25 });
+      h.session.dispose();
+    },
+  );
+
+  it("validates required finite bounded ratios and rejects incompatible conditions or selectors without writes", () => {
+    const h = harness();
+    h.session.syncDrawings([fib()]);
+    h.storage.setItem.mockClear();
+    expect(h.add()).toBeNull();
+    for (const fibLevel of [NaN, Infinity, -Infinity, -1000.01, 1000.01, "0.5", null]) {
+      expect(h.session.add({ ...rule(0.5), fibLevel } as unknown as NewDrawingAlert)).toBeNull();
+    }
+    for (const condition of [
+      "inside-channel",
+      "entering-channel",
+      "outside-rectangle",
+      "below-rectangle",
+    ] as const) {
+      expect(h.session.add(rule(0.5, condition))).toBeNull();
+    }
+    expect(h.session.add({ ...rule(0.5), channelBoundary: "upper" })).toBeNull();
+    expect(h.storage.setItem).not.toHaveBeenCalled();
+    const alert = h.session.add(rule(0.5))!;
+    h.storage.setItem.mockClear();
+    expect(h.session.update(alert.id, { ...rule(0.5), fibLevel: NaN })).toBe(false);
+    expect(h.storage.setItem).not.toHaveBeenCalled();
+    for (const fibLevel of [-1000, 1000]) expect(h.session.add(rule(fibLevel))).not.toBeNull();
+    const parsed = parseDrawingAlerts(
+      JSON.stringify({
+        version: 1,
+        alerts: [
+          alert,
+          { ...alert, id: "bad-ratio", fibLevel: 1001 },
+          { ...alert, id: "bad-type", fibLevel: "0.5" },
+        ],
+        history: [],
+      }),
+    );
+    expect(parsed.alerts).toEqual([alert]);
+    h.session.dispose();
+  });
+
+  it("forbids fibLevel on ordinary, time, channel and rectangle rules", () => {
+    const h = harness();
+    const inputs: Array<[ChartDrawing, NewDrawingAlert]> = [
+      [line(), rule(0.5)],
+      [line({ kind: "vertical", anchors: [{ time: 5 as Time, price: 100 }] }), rule(0.5)],
+      [
+        line({
+          kind: "channel",
+          anchors: [
+            { time: 0 as Time, price: 100 },
+            { time: 10 as Time, price: 110 },
+            { time: 3 as Time, price: 123 },
+          ],
+        }),
+        { ...rule(0.5), channelBoundary: "upper" },
+      ],
+      [line({ kind: "rectangle" }), rule(0.5, "inside-rectangle")],
+    ];
+    for (const [drawing, input] of inputs) {
+      h.session.syncDrawings([drawing]);
+      expect(h.session.add(input)).toBeNull();
+    }
+    h.session.dispose();
+  });
+});
