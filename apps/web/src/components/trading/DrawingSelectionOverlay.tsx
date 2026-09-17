@@ -1682,6 +1682,11 @@ function PositionAppearance({
       {!toolbar && (
         <>
           <Check
+            label="Always show stats"
+            checked={drawing.alwaysShowStats ?? true}
+            onChange={(alwaysShowStats) => onChange({ alwaysShowStats })}
+          />
+          <Check
             label="Background"
             checked={drawing.background ?? true}
             onChange={(background) => onChange({ background })}

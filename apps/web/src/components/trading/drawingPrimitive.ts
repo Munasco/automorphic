@@ -546,8 +546,14 @@ export function createDrawingPrimitive(
           }
           if (visibleLines.length) ctx.stroke();
           if (clipTextGap) ctx.restore();
+          const showPositionStats =
+            !isPositionDrawing(drawing.kind) ||
+            drawing.alwaysShowStats !== false ||
+            drawing.id === state.selected ||
+            state.selectedIds?.includes(drawing.id) ||
+            drawing === state.preview;
           for (const line of geometry.lines) {
-            if (!line.label) continue;
+            if (!line.label || !showPositionStats) continue;
             ctx.globalAlpha = (line.opacity ?? 1) * lineAlpha;
             ctx.fillStyle = line.color ?? drawing.color;
             ctx.textAlign = line.labelAlign ?? "left";

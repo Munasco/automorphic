@@ -604,12 +604,20 @@ describe("additional line primitive behavior", () => {
     const { chart, series } = fixture();
     let selected: string | null = null,
       hovered: string | null = null,
+      selectedIds: string[] | undefined,
       preview: ChartDrawing | null = null,
       hidden = false;
     const plugin = createDrawingPrimitive(
       chart,
       series,
-      () => ({ drawings: [drawing, ...extraDrawings], selected, hovered, preview, hidden }),
+      () => ({
+        drawings: [drawing, ...extraDrawings],
+        selected,
+        ...(selectedIds === undefined ? {} : { selectedIds }),
+        hovered,
+        preview,
+        hidden,
+      }),
       regressionSeries ?? series,
     );
     const ctx = {
@@ -651,6 +659,10 @@ describe("additional line primitive behavior", () => {
       select: () => {
         selected = drawing.id;
       },
+      selectMany: (ids: string[]) => {
+        selectedIds = ids;
+        selected = ids.at(-1) ?? null;
+      },
       hover: (id: string | null) => {
         hovered = id;
       },
@@ -662,6 +674,83 @@ describe("additional line primitive behavior", () => {
       },
     };
   }
+  describe.each(["long-position", "short-position"] as const)("%s stats visibility", (kind) => {
+    const position = (alwaysShowStats?: boolean): ChartDrawing => ({
+      id: "position-stats",
+      kind,
+      color: "#729bff",
+      width: 2,
+      anchors: [
+        { time: 100 as Time, price: 300 },
+        { time: 200 as Time, price: kind === "long-position" ? 400 : 200 },
+        { time: 200 as Time, price: kind === "long-position" ? 250 : 350 },
+      ],
+      ...(alwaysShowStats === undefined ? {} : { alwaysShowStats }),
+    });
+    const expectLabels = (f: ReturnType<typeof renderFixture>) => {
+      expect(f.ctx.fillText.mock.calls.map((call) => call[0])).toEqual([
+        expect.stringMatching(/^Target /),
+        expect.stringMatching(/^Entry /),
+        expect.stringMatching(/^Stop /),
+        "Risk/reward 2.00",
+      ]);
+    };
+
+    it("keeps fills and handles interactive while showing stats only for selection or creation", () => {
+      const drawing = position(false);
+      const f = renderFixture(drawing);
+      f.draw();
+      expect(f.ctx.fillText).not.toHaveBeenCalled();
+      expect(f.ctx.fill).toHaveBeenCalledTimes(2);
+      expect(f.ctx.stroke).not.toHaveBeenCalled();
+      expect(f.plugin.hitTest({ x: 100, y: 200 })?.handle).toBe(0);
+      expect(f.plugin.hitTest({ x: 200, y: kind === "long-position" ? 100 : 300 })?.handle).toBe(1);
+      expect(f.plugin.hitTest({ x: 200, y: kind === "long-position" ? 250 : 150 })?.handle).toBe(2);
+      f.hover(drawing.id);
+      f.ctx.stroke.mockClear();
+      f.ctx.arc.mockClear();
+      f.draw();
+      expect(f.ctx.fillText).not.toHaveBeenCalled();
+      expect(f.ctx.arc).toHaveBeenCalledTimes(3);
+      expect(f.ctx.stroke).toHaveBeenCalledTimes(3); // Only the anchor handles, no zone borders.
+      f.hover(null);
+      f.select();
+      f.ctx.stroke.mockClear();
+      f.ctx.arc.mockClear();
+      f.draw();
+      expectLabels(f);
+      expect(f.ctx.arc).toHaveBeenCalledTimes(3);
+      expect(f.ctx.stroke).toHaveBeenCalledTimes(3);
+      f.selectMany([drawing.id, "another-object"]);
+      f.ctx.stroke.mockClear();
+      f.draw();
+      expectLabels(f);
+      expect(f.ctx.stroke).not.toHaveBeenCalled();
+      f.selectMany([]);
+      f.preview({ ...drawing, id: "provisional" });
+      f.draw();
+      expectLabels(f);
+      f.preview(null);
+      f.draw();
+      expect(f.ctx.fillText).not.toHaveBeenCalled();
+    });
+
+    it.each([true, undefined])(
+      "retains always-visible labels for persisted setting %s",
+      (value) => {
+        const drawing = position(value);
+        const f = renderFixture(drawing);
+        f.draw();
+        expectLabels(f);
+        expect(f.ctx.fill).toHaveBeenCalledTimes(2);
+        expect(f.ctx.stroke).not.toHaveBeenCalled();
+        drawing.hidden = true;
+        f.draw();
+        expect(f.ctx.fillText).not.toHaveBeenCalled();
+      },
+    );
+  });
+
   const line = (kind: ChartDrawing["kind"]): ChartDrawing => ({
     id: "measurement",
     kind,

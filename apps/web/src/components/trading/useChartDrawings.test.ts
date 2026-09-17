@@ -7795,3 +7795,70 @@ describe.each(["long-position", "short-position"] as const)(
     });
   },
 );
+
+describe.each(["long-position", "short-position"] as const)(
+  "%s persistent stats preference",
+  (kind) => {
+    it("previews and cancels then saves, undoes and reloads without moving the position", () => {
+      const original: ChartDrawing = {
+        id: "position-stats",
+        kind,
+        color: "#123456",
+        width: 2,
+        alwaysShowStats: false,
+        anchors: [
+          { time: 100 as Time, price: 4900 },
+          { time: 300 as Time, price: kind === "long-position" ? 4940 : 4860 },
+          { time: 300 as Time, price: kind === "long-position" ? 4880 : 4920 },
+        ],
+      };
+      const f = fixture("position-stats", JSON.stringify([original]));
+      const session = f.open();
+      const state = (): DrawingState => f.change.mock.lastCall![0];
+      session.selectDrawing(original.id);
+      expect(session.openSettings()).toBe(true);
+      expect(session.previewSettings({ alwaysShowStats: true })).toBe(true);
+      expect(state().selected).toEqual({ ...original, alwaysShowStats: true });
+      expect(session.getCommittedDrawings()).toEqual([original]);
+      expect(f.writes()).toBe(0);
+      session.closeSettings();
+      expect(state().selected).toEqual(original);
+      expect(session.openSettings()).toBe(true);
+      expect(session.previewSettings({ alwaysShowStats: true })).toBe(true);
+      expect(session.applySettings({})).toBe(true);
+      const saved = { ...original, alwaysShowStats: true };
+      expect(session.getCommittedDrawings()).toEqual([saved]);
+      expect(f.writes()).toBe(1);
+      session.undo();
+      expect(session.getCommittedDrawings()).toEqual([original]);
+      session.redo();
+      expect(session.getCommittedDrawings()).toEqual([saved]);
+      session.dispose();
+      const reopened = fixture("position-stats", f.saved()).open();
+      expect(reopened.getCommittedDrawings()).toEqual([saved]);
+      reopened.dispose();
+    });
+
+    it("defaults new and reset positions to selection-only while remembering explicit always-show preference", () => {
+      const f = fixture("position-stats-defaults");
+      const session = f.open();
+      const place = () => {
+        session.setTool(kind);
+        f.click(100, 100);
+        f.click(300, kind === "long-position" ? 60 : 140);
+        f.click(300, kind === "long-position" ? 120 : 80);
+      };
+      place();
+      const first = session.getCommittedDrawings()![0]!;
+      expect(first.alwaysShowStats).toBe(false);
+      session.updateDrawing(first.id, { alwaysShowStats: true });
+      place();
+      expect(session.getCommittedDrawings()![1]!.alwaysShowStats).toBe(true);
+      expect(session.resetDrawingDefaults(kind)).toBe(true);
+      place();
+      expect(session.getCommittedDrawings()![2]!.alwaysShowStats).toBe(false);
+      expect(session.getCommittedDrawings()![0]).toEqual({ ...first, alwaysShowStats: true });
+      session.dispose();
+    });
+  },
+);
