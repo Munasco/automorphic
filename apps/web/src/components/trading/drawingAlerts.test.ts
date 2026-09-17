@@ -478,7 +478,7 @@ const projection: DrawingAlertProjection = {
   priceToCoordinate: (price) => -price,
   coordinateToPrice: (y) => -y,
 };
-function harness() {
+function harness(alertProjection: DrawingAlertProjection = projection) {
   let time = EPOCH,
     nextId = 0;
   const values = new Map<string, string>();
@@ -491,7 +491,7 @@ function harness() {
   const onTrigger = vi.fn();
   const open = (symbol = "GCZ6", intervalKey = "minute:5") =>
     createDrawingAlertSession({ symbol, intervalKey }, storage, {
-      projection,
+      projection: alertProjection,
       now: () => time,
       id: () => `id-${++nextId}`,
       onTrigger,
@@ -1366,4 +1366,218 @@ it("leaves drawing history unchanged when event deletion fails to persist", () =
   });
   expect(() => h.session.removeHistoryEvent(before.history[0]!.id)).toThrow("Storage unavailable");
   expect(h.session.getSnapshot()).toBe(before);
+});
+
+describe("channel region alert operators", () => {
+  const channel = (): ChartDrawing =>
+    line({
+      kind: "channel",
+      anchors: [
+        { time: 0 as Time, price: 100 },
+        { time: 10 as Time, price: 110 },
+        { time: 3 as Time, price: 123 },
+      ],
+    });
+  const conditions = [
+    "entering-channel",
+    "exiting-channel",
+    "inside-channel",
+    "outside-channel",
+  ] as const;
+  const rule = (
+    condition: (typeof conditions)[number],
+    trigger: DrawingAlertTrigger = "once",
+  ): NewDrawingAlert => ({
+    drawingId: "line",
+    condition,
+    trigger,
+    expiresAt: null,
+  });
+
+  it.each([
+    ["entering-channel", 104, 105],
+    ["entering-channel", 126, 125],
+    ["exiting-channel", 105, 104],
+    ["exiting-channel", 125, 126],
+  ] as const)(
+    "%s detects a continuous transition %s to %s with inclusive edges",
+    (condition, before, after) => {
+      const h = harness();
+      h.session.syncDrawings([channel()]);
+      const alert = h.session.add(rule(condition))!;
+      expect(alert).not.toBeNull();
+      h.session.observe(h.sample(before));
+      expect(h.onTrigger).not.toHaveBeenCalled();
+      h.session.observe(h.sample(after));
+      expect(h.onTrigger).toHaveBeenCalledTimes(1);
+      expect(h.onTrigger.mock.lastCall![0]).toMatchObject({
+        alertId: alert.id,
+        condition,
+        channelRange: { lower: 105, upper: 125 },
+        target: after <= 105 ? 105 : 125,
+        price: after,
+      });
+      expect(h.onTrigger.mock.lastCall![0]).not.toHaveProperty("channelBoundary");
+      h.session.dispose();
+    },
+  );
+
+  it.each([
+    ["inside-channel", 105, true],
+    ["inside-channel", 125, true],
+    ["inside-channel", 104, false],
+    ["outside-channel", 104, true],
+    ["outside-channel", 126, true],
+    ["outside-channel", 105, false],
+    ["outside-channel", 125, false],
+  ] as const)("%s evaluates first fresh price %s as %s", (condition, price, matches) => {
+    const h = harness();
+    h.session.syncDrawings([channel()]);
+    expect(h.session.add(rule(condition))).not.toBeNull();
+    h.session.observe(h.sample(price));
+    expect(h.onTrigger).toHaveBeenCalledTimes(matches ? 1 : 0);
+    h.session.dispose();
+  });
+
+  it("does not invent an entry or exit when two samples jump across the entire channel", () => {
+    const h = harness();
+    h.session.syncDrawings([channel()]);
+    h.session.add(rule("entering-channel"));
+    h.session.add(rule("exiting-channel"));
+    h.session.observe(h.sample(104));
+    h.session.observe(h.sample(126));
+    h.session.observe(h.sample(104));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    h.session.dispose();
+  });
+
+  it("evaluates both rails at each bar's position rather than freezing the initial bounds", () => {
+    const h = harness();
+    h.session.syncDrawings([channel()]);
+    h.session.add(rule("exiting-channel"));
+    h.session.observe(h.sample(107, { logical: 5 })); // inside 105..125
+    h.session.observe(h.sample(107, { logical: 9, barId: "bar-2" })); // below 109..129
+    expect(h.onTrigger.mock.lastCall![0]).toMatchObject({
+      condition: "exiting-channel",
+      channelRange: { lower: 109, upper: 129 },
+      target: 109,
+    });
+    h.session.dispose();
+  });
+
+  it("uses nonlinear rendered rails for region membership and persists exact range snapshots", () => {
+    const h = harness({ ...projection, priceToCoordinate: Math.log, coordinateToPrice: Math.exp });
+    const logChannel = line({
+      kind: "channel",
+      anchors: [
+        { time: 0 as Time, price: 100 },
+        { time: 10 as Time, price: 400 },
+        { time: 5 as Time, price: 400 },
+      ],
+    });
+    h.session.syncDrawings([logChannel]);
+    const alert = h.session.add(rule("entering-channel"))!;
+    h.session.observe(h.sample(190));
+    h.session.observe(h.sample(220)); // inside log rails 200..400, below linear lower rail 250
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    const event = h.session.getSnapshot().history[0]!;
+    expect(event).toMatchObject({ alertId: alert.id, condition: "entering-channel", price: 220 });
+    expect(event.targetKind).toBe("price");
+    if (event.targetKind === "price") {
+      expect(event.channelRange!.lower).toBeCloseTo(200);
+      expect(event.channelRange!.upper).toBeCloseTo(400);
+      expect(event.target).toBeCloseTo(200);
+    }
+    const saved = parseDrawingAlerts(h.values.get(DRAWING_ALERTS_KEY)!);
+    expect(saved).toEqual(h.session.getSnapshot());
+    h.session.dispose();
+    const reopened = h.open();
+    reopened.syncDrawings([logChannel]);
+    expect(reopened.getSnapshot()).toEqual(saved);
+    expect(reopened.getSnapshot().alerts[0]).not.toHaveProperty("channelBoundary");
+    reopened.dispose();
+  });
+
+  it.each(["stale", "missing-projection", "reconnect", "stream-change"] as const)(
+    "clears transition continuity after %s without firing on the new inside baseline",
+    (gap) => {
+      let available = true;
+      const h = harness({ ...projection, logicalAt: (time) => (available ? Number(time) : null) });
+      h.session.syncDrawings([channel()]);
+      h.session.add(rule("entering-channel"));
+      h.session.observe(h.sample(104, { streamId: "first", sequence: 1 }));
+      if (gap === "stale") h.advance(15001);
+      if (gap === "missing-projection") {
+        available = false;
+        h.session.observe(h.sample(110, { streamId: "first", sequence: 2 }));
+        available = true;
+      }
+      if (gap === "reconnect") h.session.resetConnection();
+      const streamId = gap === "stream-change" ? "second" : "first";
+      h.session.observe(h.sample(110, { streamId, sequence: 3 }));
+      expect(h.onTrigger).not.toHaveBeenCalled();
+      h.session.observe(h.sample(104, { streamId, sequence: 4 }));
+      h.session.observe(h.sample(110, { streamId, sequence: 5 }));
+      expect(h.onTrigger).toHaveBeenCalledTimes(1);
+      h.session.dispose();
+    },
+  );
+
+  it("rearms a boundary-rule change to a region without comparing old state and preserves its history", () => {
+    const h = harness();
+    h.session.syncDrawings([channel()]);
+    const alert = h.session.add({
+      ...rule("entering-channel"),
+      condition: "crossing",
+      channelBoundary: "upper",
+    })!;
+    h.session.observe(h.sample(126));
+    expect(h.session.update(alert.id, rule("entering-channel"))).toBe(true);
+    expect(h.session.getSnapshot().alerts[0]).not.toHaveProperty("channelBoundary");
+    h.session.observe(h.sample(120));
+    expect(h.onTrigger).not.toHaveBeenCalled();
+    h.session.observe(h.sample(126));
+    h.session.observe(h.sample(120));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    const history = h.session.getSnapshot().history;
+    expect(h.session.update(alert.id, rule("outside-channel"))).toBe(true);
+    expect(h.session.getSnapshot().alerts[0]).toMatchObject({
+      condition: "outside-channel",
+      enabled: false,
+    });
+    expect(h.session.getSnapshot().history).toEqual(history);
+    h.session.dispose();
+  });
+
+  it("applies existing once-per-bar throttling to a continuously true inside condition", () => {
+    const h = harness();
+    h.session.syncDrawings([channel()]);
+    h.session.add(rule("inside-channel", "once-per-bar"));
+    h.session.observe(h.sample(110));
+    h.session.observe(h.sample(111));
+    expect(h.onTrigger).toHaveBeenCalledTimes(1);
+    h.session.observe(h.sample(112, { barId: "bar-2", logical: 6 }));
+    expect(h.onTrigger).toHaveBeenCalledTimes(2);
+    h.session.dispose();
+  });
+
+  it("rejects region operators on ordinary/time lines and explicit boundary selectors atomically", () => {
+    const h = harness();
+    for (const drawing of [
+      line(),
+      line({ kind: "vertical", anchors: [{ time: 5 as Time, price: 100 }] }),
+    ]) {
+      h.session.syncDrawings([drawing]);
+      for (const condition of conditions) expect(h.session.add(rule(condition))).toBeNull();
+    }
+    h.session.syncDrawings([channel()]);
+    h.storage.setItem.mockClear();
+    for (const condition of conditions) {
+      for (const channelBoundary of ["upper", "lower"] as const) {
+        expect(h.session.add({ ...rule(condition), channelBoundary })).toBeNull();
+      }
+    }
+    expect(h.storage.setItem).not.toHaveBeenCalled();
+    h.session.dispose();
+  });
 });

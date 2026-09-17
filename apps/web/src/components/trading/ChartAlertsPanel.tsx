@@ -83,6 +83,10 @@ const drawingConditionLabel: Record<DrawingAlertCondition, string> = {
   "crossing-down": "Crossing down",
   above: "Greater than",
   below: "Less than",
+  "entering-channel": "Entering channel",
+  "exiting-channel": "Exiting channel",
+  "inside-channel": "Inside channel",
+  "outside-channel": "Outside channel",
 };
 const drawingTriggerLabel: Record<DrawingAlertTrigger, string> = {
   once: "Once",

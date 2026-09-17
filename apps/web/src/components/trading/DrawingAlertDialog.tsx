@@ -7,6 +7,7 @@ import { DrawingAlertExpiration } from "./DrawingAlertExpiration";
 import { AlertIcon } from "./AlertIcon";
 import { DrawingSelect, inputClass } from "./DrawingStyleControls";
 import type { ChartDrawing } from "./drawingGeometry";
+import { isChannelRegionCondition } from "./drawingAlerts";
 import type {
   DrawingAlert,
   NewDrawingAlert,
@@ -34,6 +35,10 @@ const conditions: readonly (readonly [DrawingAlertCondition, string])[] = [
   ["crossing-down", "Crossing Down"],
   ["above", "Greater Than"],
   ["below", "Less Than"],
+  ["entering-channel", "Entering channel"],
+  ["exiting-channel", "Exiting channel"],
+  ["inside-channel", "Inside channel"],
+  ["outside-channel", "Outside channel"],
 ];
 const triggers: readonly (readonly [DrawingAlertTrigger, string])[] = [
   ["once", "Once only"],
@@ -115,7 +120,11 @@ export function DrawingAlertDialog({
     initial?.channelBoundary ?? "upper",
   );
   const baseLabel = drawing.name || drawingLabels[drawing.kind] || "Drawing";
-  const label = channel ? `${baseLabel} ${channelBoundary} boundary` : baseLabel;
+  const targetLabel = (value: DrawingAlertCondition) =>
+    channel && !isChannelRegionCondition(value)
+      ? `${baseLabel} ${channelBoundary} boundary`
+      : baseLabel;
+  const label = targetLabel(condition);
   const [message, setMessage] = useState<MessageDraft>(() => ({
     name: initial?.name ?? "",
     message: initial
@@ -156,7 +165,7 @@ export function DrawingAlertDialog({
       current.message === previousDefault
         ? {
             ...current,
-            message: `${symbol}, ${messageInterval} ${nextLabel} ${label.toLowerCase()}`,
+            message: `${symbol}, ${messageInterval} ${nextLabel} ${targetLabel(next).toLowerCase()}`,
           }
         : current,
     );
@@ -181,7 +190,7 @@ export function DrawingAlertDialog({
     try {
       const failure = await onSubmit({
         drawingId: drawing.id,
-        ...(channel ? { channelBoundary } : {}),
+        ...(channel && !isChannelRegionCondition(condition) ? { channelBoundary } : {}),
         condition: vertical ? "crossing" : condition,
         trigger: vertical ? "once" : trigger,
         expiresAt,
@@ -254,7 +263,7 @@ export function DrawingAlertDialog({
         <div className="min-h-0 overflow-y-auto text-sm">
           {page === "main" ? (
             <div
-              className={`${vertical ? "min-h-[307px]" : channel ? "min-h-[379px]" : "min-h-[337px]"} px-5 py-4`}
+              className={`${vertical ? "min-h-[307px]" : channel && !isChannelRegionCondition(condition) ? "min-h-[379px]" : "min-h-[337px]"} px-5 py-4`}
             >
               <div className="grid grid-cols-[minmax(90px,30%)_minmax(0,1fr)] gap-x-0 gap-y-2 pr-[5px]">
                 <span className="self-center text-[#8c8c8c]">Condition</span>
@@ -277,7 +286,9 @@ export function DrawingAlertDialog({
                   <DrawingSelect
                     label="Alert condition"
                     value={condition}
-                    options={conditions}
+                    options={conditions.filter(
+                      ([value]) => channel || !isChannelRegionCondition(value),
+                    )}
                     className="h-[34px] w-full"
                     onChange={(value) => {
                       const next = conditions.find(([key]) => key === value);
@@ -292,7 +303,7 @@ export function DrawingAlertDialog({
                   value={baseLabel}
                   readOnly
                 />
-                {channel ? (
+                {channel && !isChannelRegionCondition(condition) ? (
                   <>
                     <span className="self-center text-[#8c8c8c]">Boundary</span>
                     <DrawingSelect

@@ -14,6 +14,10 @@ export const DRAWING_ALERT_CONDITIONS = [
   "crossing-down",
   "above",
   "below",
+  "entering-channel",
+  "exiting-channel",
+  "inside-channel",
+  "outside-channel",
 ] as const;
 export const DRAWING_ALERT_TRIGGERS = [
   "once",
@@ -28,8 +32,17 @@ export const DRAWING_ALERT_CHANNEL_BOUNDARIES = ["upper", "lower"] as const;
 export type DrawingAlertChannelBoundary = (typeof DRAWING_ALERT_CHANNEL_BOUNDARIES)[number];
 const isChannelBoundary = (value: unknown): value is DrawingAlertChannelBoundary =>
   value === "upper" || value === "lower";
+export const isChannelRegionCondition = (value: unknown) =>
+  value === "entering-channel" ||
+  value === "exiting-channel" ||
+  value === "inside-channel" ||
+  value === "outside-channel";
 const validChannelBoundary = (drawing: ChartDrawing, value: unknown) =>
   drawing.kind === "channel" ? isChannelBoundary(value) : value === undefined;
+const validDrawingRule = (drawing: ChartDrawing, condition: unknown, boundary: unknown) =>
+  isChannelRegionCondition(condition)
+    ? drawing.kind === "channel" && boundary === undefined
+    : validChannelBoundary(drawing, boundary);
 export type DrawingAlertProjection = {
   /** Use actual chart bar positions, including the drawing renderer's interpolation between bars. */
   logicalAt: (time: Time) => number | null;
@@ -198,7 +211,7 @@ export type DrawingAlertEvent = DrawingAlertPresentation & {
   triggeredAt: number;
   sampleAt: number;
 } & (
-    | { targetKind: "price"; target: number }
+    | { targetKind: "price"; target: number; channelRange?: { lower: number; upper: number } }
     | { targetKind: "time"; targetTime: Time; barTime: Time; actualBarTime?: number }
   );
 export type DrawingAlertState = { alerts: DrawingAlert[]; history: DrawingAlertEvent[] };
@@ -246,7 +259,9 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
         ![undefined, "price", "time"].includes(a.targetKind as undefined) ||
         !supportedRule(a.targetKind === "time" ? "time" : "price", a.condition, a.trigger) ||
         (a.channelBoundary !== undefined &&
-          (!isChannelBoundary(a.channelBoundary) || a.targetKind === "time")) ||
+          (!isChannelBoundary(a.channelBoundary) ||
+            a.targetKind === "time" ||
+            isChannelRegionCondition(a.condition))) ||
         !(a.expiresAt === null || stamp(a.expiresAt)) ||
         typeof a.enabled !== "boolean" ||
         ![null, "user", "deleted", "expired", "triggered"].includes(a.disabledReason as null) ||
@@ -295,7 +310,14 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
         !identifier(e.barId) ||
         !isCondition(e.condition) ||
         (e.channelBoundary !== undefined &&
-          (!isChannelBoundary(e.channelBoundary) || e.targetKind === "time")) ||
+          (!isChannelBoundary(e.channelBoundary) ||
+            e.targetKind === "time" ||
+            isChannelRegionCondition(e.condition))) ||
+        (isChannelRegionCondition(e.condition) &&
+          (!record(e.channelRange) ||
+            !finite(e.channelRange.lower) ||
+            !finite(e.channelRange.upper) ||
+            e.channelRange.lower > e.channelRange.upper)) ||
         !finite(e.price) ||
         !(e.targetKind === "time"
           ? e.condition === "crossing" &&
@@ -328,7 +350,18 @@ export function parseDrawingAlerts(raw: string | null): DrawingAlertState {
                 ? { actualBarTime: e.actualBarTime as number }
                 : {}),
             }
-          : { targetKind: "price" as const, target: e.target as number }),
+          : {
+              targetKind: "price" as const,
+              target: e.target as number,
+              ...(isChannelRegionCondition(e.condition) && record(e.channelRange)
+                ? {
+                    channelRange: {
+                      lower: e.channelRange.lower as number,
+                      upper: e.channelRange.upper as number,
+                    },
+                  }
+                : {}),
+            }),
         triggeredAt: e.triggeredAt,
         sampleAt: e.sampleAt,
       });
@@ -503,7 +536,7 @@ export function createDrawingAlertSession(
           if (
             !drawing ||
             targetKindFor(drawing) !== a.targetKind ||
-            !validChannelBoundary(drawing, a.channelBoundary)
+            !validDrawingRule(drawing, a.condition, a.channelBoundary)
           ) {
             previous.delete(a.id);
             return a.enabled ? { ...a, enabled: false, disabledReason: "deleted" as const } : a;
@@ -524,7 +557,7 @@ export function createDrawingAlertSession(
       if (
         disposed ||
         !drawing ||
-        !validChannelBoundary(drawing, input.channelBoundary) ||
+        !validDrawingRule(drawing, input.condition, input.channelBoundary) ||
         !identifier(context.symbol) ||
         !identifier(context.intervalKey) ||
         !supportedRule(targetKindFor(drawing), input.condition, input.trigger) ||
@@ -567,7 +600,7 @@ export function createDrawingAlertSession(
         input.drawingId !== alert.drawingId ||
         !drawings.has(alert.drawingId) ||
         targetKindFor(drawings.get(alert.drawingId)!) !== alert.targetKind ||
-        !validChannelBoundary(drawings.get(alert.drawingId)!, input.channelBoundary) ||
+        !validDrawingRule(drawings.get(alert.drawingId)!, input.condition, input.channelBoundary) ||
         !supportedRule(alert.targetKind, input.condition, input.trigger) ||
         !(input.expiresAt === null || (stamp(input.expiresAt) && input.expiresAt > now()))
       )
@@ -613,7 +646,7 @@ export function createDrawingAlertSession(
         (enabled &&
           (!drawings.has(a.drawingId) ||
             targetKindFor(drawings.get(a.drawingId)!) !== a.targetKind ||
-            !validChannelBoundary(drawings.get(a.drawingId)!, a.channelBoundary) ||
+            !validDrawingRule(drawings.get(a.drawingId)!, a.condition, a.channelBoundary) ||
             (a.expiresAt !== null && a.expiresAt <= now())))
       )
         return false;
@@ -741,12 +774,34 @@ export function createDrawingAlertSession(
           const timeRule = a.targetKind === "time";
           const barTime = drawingTimeValue(sample.barTime);
           let target: number | null = null;
+          let channelRange: { lower: number; upper: number } | undefined;
+          const regionRule = isChannelRegionCondition(a.condition);
           if (drawing && targetKindFor(drawing) === a.targetKind) {
             if (timeRule) {
               try {
                 target = options.projection.logicalAt(drawing.anchors[0]!.time);
               } catch {
                 /* A detached chart cannot supply a time-boundary projection. */
+              }
+            } else if (regionRule && drawing.kind === "channel") {
+              const lower = drawingAlertTarget(
+                drawing,
+                sample.logical,
+                options.projection,
+                options.extent,
+                "lower",
+              );
+              const upper = drawingAlertTarget(
+                drawing,
+                sample.logical,
+                options.projection,
+                options.extent,
+                "upper",
+              );
+              if (finite(lower) && finite(upper)) {
+                channelRange = { lower, upper };
+                target =
+                  Math.abs(sample.price - lower) <= Math.abs(sample.price - upper) ? lower : upper;
               }
             } else
               target = drawingAlertTarget(
@@ -777,7 +832,9 @@ export function createDrawingAlertSession(
             return a;
           }
           // Time rules compare rendered bar positions, not market price or wall-clock time.
-          const difference = (timeRule ? sample.logical : sample.price) - target;
+          const difference = channelRange
+            ? Math.min(sample.price - channelRange.lower, channelRange.upper - sample.price)
+            : (timeRule ? sample.logical : sample.price) - target;
           if (!finite(difference)) {
             previous.delete(a.id);
             return a;
@@ -803,15 +860,23 @@ export function createDrawingAlertSession(
               before.barTime !== null &&
               barTime !== null &&
               barTime > before.barTime
-            : a.condition === "above"
-              ? difference > 0
-              : a.condition === "below"
-                ? difference < 0
-                : a.condition === "crossing-up"
-                  ? up
-                  : a.condition === "crossing-down"
-                    ? down
-                    : up || down;
+            : a.condition === "entering-channel"
+              ? continuous && before.difference < 0 && difference >= 0
+              : a.condition === "exiting-channel"
+                ? continuous && before.difference >= 0 && difference < 0
+                : a.condition === "inside-channel"
+                  ? difference >= 0
+                  : a.condition === "outside-channel"
+                    ? difference < 0
+                    : a.condition === "above"
+                      ? difference > 0
+                      : a.condition === "below"
+                        ? difference < 0
+                        : a.condition === "crossing-up"
+                          ? up
+                          : a.condition === "crossing-down"
+                            ? down
+                            : up || down;
           if (
             !matches ||
             ((a.trigger === "once-per-bar" || a.trigger === "once-per-bar-close") &&
@@ -839,7 +904,11 @@ export function createDrawingAlertSession(
                     ? { actualBarTime: sample.actualBarTime }
                     : {}),
                 }
-              : { targetKind: "price" as const, target }),
+              : {
+                  targetKind: "price" as const,
+                  target,
+                  ...(channelRange ? { channelRange } : {}),
+                }),
             barId: sample.barId,
             triggeredAt: time,
             sampleAt: sample.timestamp,
