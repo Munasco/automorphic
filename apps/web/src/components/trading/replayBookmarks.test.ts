@@ -409,3 +409,79 @@ it("allows explicit anchor correction at capacity without silently moving change
   expect(resolveReplayBookmark([corrected], useReplayBookmarks.getState().bookmarks[0]!)).toBe(0);
   expect(useReplayBookmarks.getState().bookmarks).toHaveLength(MAX_REPLAY_BOOKMARKS);
 });
+
+describe("bookmark backup merge", () => {
+  const first = {
+    id: "backup-1",
+    scope: "NQU6:minute:5",
+    name: "Breakout",
+    time: 100,
+    anchor: { time: 100, ohlcv: [10, 12, 9, 11, 100] as [number, number, number, number, number] },
+  };
+  const second = { id: "backup-2", scope: "MGC:minute:5", name: "Gold open", time: 200 };
+  it("atomically appends every scope, keeps exact anchors and existing names, and persists without changing sort", async () => {
+    const store = useReplayBookmarks.getState();
+    store.add(first.scope, "My renamed breakout", first.time, first.anchor);
+    store.setSort("name");
+    const existing = structuredClone(useReplayBookmarks.getState().bookmarks);
+    const collidingId = { ...second, id: existing[0]!.id };
+    expect(store.importBookmarks([first, collidingId])).toEqual({ imported: 1, skipped: 1 });
+    const merged = useReplayBookmarks.getState().bookmarks;
+    expect(merged[0]).toEqual(existing[0]);
+    expect(merged[1]).toMatchObject({ scope: second.scope, name: second.name, time: second.time });
+    expect(merged[1]!.id).not.toBe(existing[0]!.id);
+    expect(useReplayBookmarks.getState().sort).toBe("name");
+    const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+    vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+    useReplayBookmarks.setState(useReplayBookmarks.getInitialState(), true);
+    await useReplayBookmarks.persist.rehydrate();
+    expect(useReplayBookmarks.getState().bookmarks).toEqual(merged);
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    expect(store.importBookmarks([first, second])).toEqual({ imported: 0, skipped: 2 });
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  });
+  it("preserves exact duplicate-timestamp bar identities and copies imported anchor data", () => {
+    const records = [
+      first,
+      { ...first, id: "other", anchor: { ...first.anchor, time: 101, id: "tick-2" } },
+    ];
+    expect(useReplayBookmarks.getState().importBookmarks(records)).toEqual({
+      imported: 2,
+      skipped: 0,
+    });
+    const stored = structuredClone(useReplayBookmarks.getState().bookmarks);
+    records[0]!.anchor.ohlcv[0] = 0;
+    expect(useReplayBookmarks.getState().bookmarks).toEqual(stored);
+    // Restore shared fixture after exercising reference isolation.
+    first.anchor.ohlcv[0] = 10;
+  });
+  it("rejects malformed or duplicate input and capacity overflow without a partial write", () => {
+    const store = useReplayBookmarks.getState();
+    for (const input of [
+      null,
+      {},
+      [first, { ...second, anchor: { time: 200, ohlcv: [] } }],
+      [first, first],
+      Array.from({ length: 101 }, () => ({ ...first })),
+    ]) {
+      expect(() => store.importBookmarks(input)).toThrow();
+      expect(useReplayBookmarks.getState().bookmarks).toEqual([]);
+    }
+    useReplayBookmarks.setState({
+      bookmarks: Array.from({ length: 100 }, (_, i) => ({ ...second, id: String(i), time: i })),
+    });
+    const before = useReplayBookmarks.getState();
+    vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+    expect(() => store.importBookmarks([first, second])).toThrow("exceed 100");
+    expect(useReplayBookmarks.getState()).toBe(before);
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+    expect(store.importBookmarks([{ ...second, time: 0 }])).toEqual({ imported: 0, skipped: 1 });
+  });
+  it("blocks import until the workspace is ready", () => {
+    vi.mocked(tradingWorkspaceStorage.getSnapshot).mockReturnValue({ ready: false } as ReturnType<
+      typeof tradingWorkspaceStorage.getSnapshot
+    >);
+    expect(() => useReplayBookmarks.getState().importBookmarks([first])).toThrow("finish loading");
+    expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  });
+});

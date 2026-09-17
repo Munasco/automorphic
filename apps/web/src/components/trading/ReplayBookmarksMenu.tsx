@@ -1,3 +1,4 @@
+import { chooseReplayBookmarkFile, exportReplayBookmarks } from "./replayBookmarkFiles";
 import { useRef, useState, useSyncExternalStore } from "react";
 import { BookmarkIcon, MapPinIcon, Trash2Icon, PencilIcon, CheckIcon, XIcon } from "lucide-react";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
@@ -342,6 +343,25 @@ export function ReplayBookmarks({
             </p>
           )}
         </div>
+        <div className="mt-2 flex gap-2 border-t border-white/10 pt-3">
+          <button
+            type="button"
+            disabled={!workspace.ready}
+            onClick={chooseReplayBookmarkFile}
+            className="h-8 flex-1 rounded border border-zinc-600 px-2 text-xs hover:bg-white/10 disabled:opacity-40"
+          >
+            Import bookmarks
+          </button>
+          <button
+            type="button"
+            disabled={!workspace.ready || !store.bookmarks.length}
+            onClick={exportReplayBookmarks}
+            className="h-8 flex-1 rounded border border-zinc-600 px-2 text-xs hover:bg-white/10 disabled:opacity-40"
+          >
+            Export bookmarks
+          </button>
+        </div>
+        <p className="mt-2 text-[11px] text-zinc-400">Includes every chart in this workspace.</p>
       </PopoverPopup>
     </Popover>
   );

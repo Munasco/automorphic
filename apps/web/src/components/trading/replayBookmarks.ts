@@ -144,6 +144,7 @@ export const useReplayBookmarks = create<{
   rename: (id: string, name: string) => boolean;
   moveToBar: (id: string, scope: string, time: number, anchor: ReplayBookmarkAnchor) => boolean;
   remove: (id: string) => boolean;
+  importBookmarks: (value: unknown) => { imported: number; skipped: number };
 }>()(
   persist(
     (set, get) => ({
@@ -209,6 +210,28 @@ export const useReplayBookmarks = create<{
           ),
         });
         return true;
+      },
+      importBookmarks: (value) => {
+        assertReady();
+        if (!Array.isArray(value) || value.length > MAX_REPLAY_BOOKMARKS)
+          throw Error("A bookmark file can contain at most 100 bookmarks.");
+        const incoming = normalizeReplayBookmarks(value);
+        if (incoming.length !== value.length)
+          throw Error("The file contains invalid or duplicate bookmarks.");
+        const current = get().bookmarks;
+        const additions = incoming.filter(
+          (bookmark) => !current.some((saved) => sameBookmarkBar(saved, bookmark)),
+        );
+        if (current.length + additions.length > MAX_REPLAY_BOOKMARKS)
+          throw Error("Import would exceed 100 bookmarks. Remove some bookmarks and try again.");
+        if (additions.length)
+          set({
+            bookmarks: [
+              ...current,
+              ...additions.map((bookmark) => ({ ...bookmark, id: randomUUID() })),
+            ],
+          });
+        return { imported: additions.length, skipped: incoming.length - additions.length };
       },
       remove: (id) => {
         assertReady();
