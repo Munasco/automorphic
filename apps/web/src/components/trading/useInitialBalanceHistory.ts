@@ -1,3 +1,4 @@
+import { chartHistoryLimit } from "./tradingIntervals";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import {
   experimental_streamedQuery,
@@ -52,7 +53,9 @@ export function subscribeInitialBalanceHistory(
     notification = setTimeout(() => {
       notification = undefined;
       if (disposed) return;
-      const sorted = [...bars.values()].sort((a, b) => a.time - b.time).slice(-1200);
+      const sorted = [...bars.values()]
+        .sort((a, b) => a.time - b.time)
+        .slice(-chartHistoryLimit({ unit: "minute" }));
       bars.clear();
       for (const bar of sorted) bars.set(bar.time, bar);
       onChange({ symbol, bars: sorted, status });

@@ -179,7 +179,7 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
     intervalUnit === "week" || intervalUnit === "month"
       ? createCalendarSeries(intervalUnit, interval)
       : null;
-  const historyLimit = tickSize === 1 ? tickHistoryRequestLimit(1) : calendar ? 2000 : 500;
+  const historyLimit = tickSize === 1 ? tickHistoryRequestLimit(1) : tickSize ? 500 : 2000;
   const session = await credentials();
   // https://api.tradovate.com/: contract/find binds the requested expiry to its ID.
   const contractResponse = await fetch(

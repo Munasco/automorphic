@@ -338,13 +338,13 @@ describe("shared chart market history", () => {
     t.send(
       0,
       batch(
-        Array.from({ length: 1400 }, (_, index) => bar(index + 1)),
+        Array.from({ length: 6200 }, (_, index) => bar(index + 1)),
         true,
       ),
     );
     await vi.advanceTimersByTimeAsync(16);
     const snapshot = emit.mock.lastCall![0];
-    expect(snapshot.bars).toHaveLength(1200);
+    expect(snapshot.bars).toHaveLength(6000);
     expect(snapshot.bars[0]!.time).toBe(201);
     expect(snapshot.updates).toBe(snapshot.bars);
     expect(snapshot.replace).toBe(true);
@@ -439,4 +439,20 @@ describe("shared chart market history", () => {
     await vi.advanceTimersByTimeAsync(0);
     client.clear();
   });
+});
+
+it("keeps the full initial time history and earlier bars after reconnecting", async () => {
+  const t = transport(),
+    emit = vi.fn<(snapshot: ChartMarketSnapshot) => void>();
+  const stop = subscribeChartMarket("NQU6", interval, emit, undefined, t.open);
+  t.send(0, batch(Array.from({ length: 2001 }, (_, i) => bar(i + 1))));
+  await vi.advanceTimersByTimeAsync(16);
+  expect(emit.mock.lastCall![0].bars).toHaveLength(2001);
+  t.subscriptions[0]!.events.onError({ kind: "network" });
+  await vi.advanceTimersByTimeAsync(5000);
+  t.send(1, batch(Array.from({ length: 500 }, (_, i) => bar(i + 1600))));
+  await vi.advanceTimersByTimeAsync(16);
+  expect(emit.mock.lastCall![0].bars[0]!.time).toBe(1);
+  expect(emit.mock.lastCall![0].bars).toHaveLength(2099);
+  stop();
 });

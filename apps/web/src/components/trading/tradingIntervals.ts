@@ -80,3 +80,8 @@ export function normalizeFavoriteChartIntervals(value: unknown): string[] {
     ...new Set(value.filter((key): key is string => typeof key === "string" && available.has(key))),
   ];
 }
+
+/** Time charts keep deeper history; native tick snapshots retain their existing bounded window. */
+export function chartHistoryLimit(interval: Pick<ChartInterval, "unit">): number {
+  return interval.unit === "tick" ? 1200 : 6000;
+}

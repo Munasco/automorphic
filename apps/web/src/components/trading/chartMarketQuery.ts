@@ -7,7 +7,12 @@ import {
 } from "./drawingAlertFeed";
 import type { Candle } from "./chartIndicators";
 import type { MarketQuote } from "./InstrumentHeader";
-import { chartIntervalKey, chartIntervalQuery, type ChartInterval } from "./tradingIntervals";
+import {
+  chartHistoryLimit,
+  chartIntervalKey,
+  chartIntervalQuery,
+  type ChartInterval,
+} from "./tradingIntervals";
 import { openTradingStream, type TradingStreamFailure } from "./tradingTransport";
 import { readChartCandle, readTickHistoryQuality, type TickHistoryQuality } from "./tickChartData";
 import { tradingStreamIterable } from "./tradingStreamIterable";
@@ -85,8 +90,8 @@ export function subscribeChartMarket(
       if (disposed) return;
       if (pending.size || replace) {
         let sorted = [...bars.values()].sort((a, b) => a.time - b.time);
-        if (sorted.length > 1300) {
-          sorted = sorted.slice(-1200);
+        if (sorted.length > chartHistoryLimit(interval) + 100) {
+          sorted = sorted.slice(-chartHistoryLimit(interval));
           bars.clear();
           for (const bar of sorted) bars.set(bar.time, bar);
           replace = true;

@@ -1,3 +1,4 @@
+import { chartHistoryLimit } from "./tradingIntervals";
 import { indicatorInstanceLabels } from "./chartIndicatorInstances";
 import { chartCanvasBackground } from "./chartCanvasBackground";
 import { isIndicatorVisibleOnTimeframe } from "./indicatorTimeframeVisibility";
@@ -1076,8 +1077,14 @@ export function TradovateChart({
       if (state.disposed) return;
       const changes = [...pending.values()].sort((a, b) => a.time - b.time);
       pending.clear();
-      if (replaceHistory || changes.some((b) => b.time < renderedTime) || bars.size > 1300) {
-        const sorted = [...bars.values()].sort((a, b) => a.time - b.time).slice(-1200);
+      if (
+        replaceHistory ||
+        changes.some((b) => b.time < renderedTime) ||
+        bars.size > chartHistoryLimit(interval) + 100
+      ) {
+        const sorted = [...bars.values()]
+          .sort((a, b) => a.time - b.time)
+          .slice(-chartHistoryLimit(interval));
         if (replaceHistory && interval.unit === "tick") {
           const formatters = createChartTimeFormatters(
             (time) => bars.get(time),

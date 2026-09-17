@@ -263,6 +263,10 @@ describe("selected Tradovate contract", () => {
             elementSizeUnit: intervalUnit === "second" ? "Seconds" : "UnderlyingUnits",
           },
         });
+        if (intervalUnit !== "tick")
+          expect(JSON.parse(chartRequest.split("\n\n")[1]!).timeRange.asMuchAsElements).toBe(2000);
+        else if (interval > 1)
+          expect(JSON.parse(chartRequest.split("\n\n")[1]!).timeRange.asMuchAsElements).toBe(500);
         const bar = {
           timestamp: "2026-09-11T12:00:00Z",
           open: 100,
