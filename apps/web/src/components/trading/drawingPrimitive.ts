@@ -1,4 +1,5 @@
 import type { DrawingDataSource } from "./drawingMarketGeometry";
+import { isPositionDrawing } from "./projectionDrawingGeometry";
 import { measureDrawingText } from "./drawingTextLayout";
 import { drawingIntersectsRect } from "./drawingSelectionGeometry";
 import type {
@@ -506,7 +507,8 @@ export function createDrawingPrimitive(
           let activeStyle = drawing.lineStyle ?? "solid";
           let activeWidth = geometry.strokeWidth ?? drawing.width;
           let activeOpacity = lineAlpha;
-          const visibleLines = geometry.lines;
+          // Position zones use fill only; retain their geometry for labels and hit testing.
+          const visibleLines = isPositionDrawing(drawing.kind) ? [] : geometry.lines;
           const fork = isPitchforkDrawingTool(drawing.kind);
           for (const line of visibleLines) {
             const color = line.color ?? drawing.color;
@@ -544,7 +546,7 @@ export function createDrawingPrimitive(
           }
           if (visibleLines.length) ctx.stroke();
           if (clipTextGap) ctx.restore();
-          for (const line of visibleLines) {
+          for (const line of geometry.lines) {
             if (!line.label) continue;
             ctx.globalAlpha = (line.opacity ?? 1) * lineAlpha;
             ctx.fillStyle = line.color ?? drawing.color;
@@ -770,7 +772,7 @@ export function createDrawingPrimitive(
             ctx.lineWidth = drawing.width + 3;
             ctx.globalAlpha = 0.35;
             ctx.setLineDash([]);
-            for (const line of geometry.lines) {
+            for (const line of visibleLines) {
               ctx.beginPath();
               ctx.moveTo(line.from.x, line.from.y);
               ctx.lineTo(line.to.x, line.to.y);
