@@ -2129,6 +2129,7 @@ export function createChartDrawingSession(
   emit();
   return {
     getCommittedDrawings: () => (disposed ? null : committedDrawings),
+    resetDrawingDefaults: (kind: DrawingKind) => !disposed && defaults.reset(kind),
     setTool,
     placeAt: (point: DrawingPoint, modifiers?: DrawingPointerModifiers) => {
       if (disposed || tool === "cursor" || isFreehandDrawingTool(tool)) return false;
@@ -3083,12 +3084,17 @@ export function useChartDrawings(
   const getContextMenuTrigger = useCallback(() => contextMenuTrigger.current, []);
   const getContextMenuRenameAction = useCallback(() => contextMenuRenameAction.current, []);
   const closeContextMenu = useCallback(() => session.current?.closeContextMenu(), []);
+  const resetDrawingDefaults = useCallback(
+    (kind: DrawingKind) => session.current?.resetDrawingDefaults(kind) ?? false,
+    [],
+  );
   const updateSelected = useCallback(
     (patch: DrawingPatch) => session.current?.updateSelected(patch),
     [],
   );
   return {
     ...state,
+    resetDrawingDefaults,
     onHistoryKeyDown,
     onCopy,
     onPaste,

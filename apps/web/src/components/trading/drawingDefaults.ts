@@ -40,11 +40,12 @@ export function normalizeDrawingDefaults(value: unknown): DrawingDefaults {
 export function createDrawingDefaults(storage?: Storage) {
   let cachedJson: string | null | undefined;
   let cachedDefaults: DrawingDefaults = {};
-  const read = (): DrawingDefaults => {
+  const read = (strict = false): DrawingDefaults => {
     let json: string | null;
     try {
       json = storage?.getItem(DRAWING_DEFAULTS_KEY) ?? null;
-    } catch {
+    } catch (error) {
+      if (strict) throw error;
       cachedJson = undefined;
       cachedDefaults = {};
       return cachedDefaults;
@@ -63,6 +64,20 @@ export function createDrawingDefaults(storage?: Storage) {
   return {
     get(kind: DrawingKind) {
       return read()[kind] ?? defaultDrawingTemplateSettings(kind);
+    },
+    /** Reset future objects only; existing drawings and named templates are independent. */
+    reset(kind: DrawingKind) {
+      if (!storage) return false;
+      try {
+        const defaults = read(true);
+        if (!Object.hasOwn(defaults, kind)) return true;
+        const next = { ...defaults };
+        delete next[kind];
+        storage.setItem(DRAWING_DEFAULTS_KEY, JSON.stringify(next));
+        return true;
+      } catch {
+        return false;
+      }
     },
     remember(drawing: ChartDrawing) {
       const appearance = drawingDefaultAppearance(drawing.kind, drawing);

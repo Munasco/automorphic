@@ -7061,3 +7061,39 @@ describe("drawing metadata rename", () => {
     reloaded.dispose();
   });
 });
+
+it("resets future drawings without changing existing objects, selection or undo history", () => {
+  const f = fixture("reset-future-defaults"),
+    session = f.open();
+  session.setTool("trend");
+  f.click(100, 100);
+  f.click(200, 200);
+  session.updateSelected({
+    color: "#ff0000",
+    width: 4,
+    lineStyle: "dotted",
+    visibility: sanitizeDrawingVisibility({ minutes: { enabled: false } }),
+  });
+  const objects = f.saved();
+  const state = f.change.mock.calls.at(-1)![0];
+  const writes = f.writes();
+  expect(session.resetDrawingDefaults("trend")).toBe(true);
+  expect(f.saved()).toBe(objects);
+  expect(f.writes()).toBe(writes);
+  expect(f.change.mock.calls.at(-1)![0]).toEqual(state);
+  session.undo();
+  expect(JSON.parse(f.saved()!)[0].color).toBe("#2962ff");
+  session.redo();
+  expect(f.saved()).toBe(objects);
+  session.dispose();
+  expect(session.resetDrawingDefaults("trend")).toBe(false);
+  const restored = f.open();
+  restored.setTool("trend");
+  f.click(300, 100);
+  f.click(400, 200);
+  const drawings = JSON.parse(f.saved()!);
+  expect(drawings[0]).toEqual(JSON.parse(objects!)[0]);
+  expect(drawings[1]).toMatchObject(defaultDrawingTemplateSettings("trend"));
+  expect(drawings[1].visibility).toBeUndefined();
+  restored.dispose();
+});

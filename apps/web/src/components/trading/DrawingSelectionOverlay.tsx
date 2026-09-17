@@ -808,6 +808,7 @@ function DrawingSettings({
           <div className="mr-auto">
             <DrawingTemplateMenu
               drawing={draft}
+              onResetDefaults={() => drawings.resetDrawingDefaults(draft.kind)}
               onApply={(patch) => {
                 const next = applyDrawingTemplate(draft, patch);
                 setDraft({
@@ -1049,6 +1050,7 @@ export function DrawingSelectionOverlay({
             <DrawingTemplateMenu
               compact
               drawing={selected}
+              onResetDefaults={() => drawings.resetDrawingDefaults(selected.kind)}
               onApply={drawings.applySelectedTemplate}
             />
             {group ? (
@@ -1424,6 +1426,7 @@ function DrawingMenuCommands({
       ) : null}
       <DrawingTemplateSubmenu
         drawing={selected}
+        onResetDefaults={() => drawings.resetDrawingDefaults(selected.kind)}
         onApply={(patch) => onAction(() => drawings.applySelectedTemplate(patch))}
         onSave={() => onAction(onSaveTemplate)}
         onRename={(name) => onAction(() => onRenameTemplate(name))}

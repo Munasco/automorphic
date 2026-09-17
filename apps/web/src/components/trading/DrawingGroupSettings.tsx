@@ -365,6 +365,7 @@ export function DrawingGroupSettings({ drawings }: { drawings: ChartDrawingsCont
         <div className="flex shrink-0 items-center gap-3 border-t border-white/10 px-5 py-4">
           <DrawingTemplateMenu
             drawing={first}
+            onResetDefaults={() => drawings.resetDrawingDefaults(first.kind)}
             onApply={(patch) => drawings.previewSettings(patch, { replace: true })}
           />
           <div className="flex-1" />

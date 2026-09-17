@@ -32,14 +32,27 @@ function duplicateTemplate(kind: ChartDrawing["kind"], name: string) {
   }
 }
 
+function resetNewDrawingDefaults(reset: () => boolean) {
+  const saved = reset();
+  toastManager.add({
+    type: saved ? "success" : "error",
+    title: saved ? "Defaults reset for this tool" : "Couldn't reset drawing defaults",
+    description: saved
+      ? "New drawings will use the original style. Existing drawings are unchanged."
+      : "Try again when the workspace is ready.",
+  });
+}
+
 export function DrawingTemplateMenu({
   drawing,
   onApply,
+  onResetDefaults,
   compact = false,
 }: {
   drawing: ChartDrawing;
   compact?: boolean;
   onApply: (patch: DrawingPatch) => void;
+  onResetDefaults: () => boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -98,6 +111,16 @@ export function DrawingTemplateMenu({
             }}
           >
             Apply defaults
+          </button>
+          <button
+            type="button"
+            className={menuClass}
+            onClick={() => {
+              resetNewDrawingDefaults(onResetDefaults);
+              setOpen(false);
+            }}
+          >
+            Reset defaults for new drawings
           </button>
           <button
             type="button"
@@ -288,11 +311,13 @@ function TemplateMenuSpacer() {
 export function DrawingTemplateSubmenu({
   drawing,
   onApply,
+  onResetDefaults,
   onSave,
   onRename,
 }: {
   drawing: ChartDrawing;
   onApply: (patch: DrawingPatch) => void;
+  onResetDefaults: () => boolean;
   onSave: () => void;
   onRename: (name: string) => void;
 }) {
@@ -319,6 +344,12 @@ export function DrawingTemplateSubmenu({
           onClick={() => onApply(defaultDrawingTemplateSettings(drawing.kind))}
         >
           Apply default
+        </MenuItem>
+        <MenuItem
+          className={templateMenuRowClass}
+          onClick={() => resetNewDrawingDefaults(onResetDefaults)}
+        >
+          Reset defaults for new drawings
         </MenuItem>
         <MenuItem
           className={templateMenuRowClass}

@@ -187,3 +187,65 @@ describe("last-used drawing appearance", () => {
     expect(defaults.remember(drawing)).toBe(false);
   });
 });
+
+describe("reset future drawing defaults", () => {
+  it("clears only the requested tool, survives reload, and skips redundant writes", () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: vi.fn((key: string, value: string) => {
+        values.set(key, value);
+      }),
+    };
+    const defaults = createDrawingDefaults(storage);
+    defaults.remember(drawing);
+    defaults.remember({ ...drawing, kind: "horizontal", color: "#00ff00" });
+    const other = defaults.get("horizontal");
+    expect(defaults.reset("trend")).toBe(true);
+    expect(defaults.get("trend")).toEqual(defaultDrawingTemplateSettings("trend"));
+    expect(createDrawingDefaults(storage).get("trend")).toEqual(defaults.get("trend"));
+    expect(defaults.get("horizontal")).toEqual(other);
+    const writes = storage.setItem.mock.calls.length;
+    expect(defaults.reset("trend")).toBe(true);
+    expect(storage.setItem).toHaveBeenCalledTimes(writes);
+  });
+  it("resets the active workspace without affecting another workspace's defaults", () => {
+    const first = new Map<string, string>(),
+      second = new Map<string, string>();
+    let current = first;
+    const storage = {
+      getItem: (key: string) => current.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        current.set(key, value);
+      },
+    };
+    const defaults = createDrawingDefaults(storage);
+    defaults.remember(drawing);
+    current = second;
+    defaults.remember({ ...drawing, color: "#00ff00" });
+    expect(defaults.reset("trend")).toBe(true);
+    expect(defaults.get("trend").color).toBe("#2962ff");
+    current = first;
+    expect(defaults.get("trend").color).toBe("#ff0000");
+  });
+  it("reports unavailable storage and leaves remembered appearance intact after a failed write", () => {
+    const json = JSON.stringify({ trend: drawing });
+    const defaults = createDrawingDefaults({
+      getItem: () => json,
+      setItem: () => {
+        throw Error("failed");
+      },
+    });
+    expect(defaults.reset("trend")).toBe(false);
+    expect(defaults.get("trend").color).toBe("#ff0000");
+    expect(createDrawingDefaults().reset("trend")).toBe(false);
+    expect(
+      createDrawingDefaults({
+        getItem: () => {
+          throw Error("unavailable");
+        },
+        setItem: vi.fn(),
+      }).reset("trend"),
+    ).toBe(false);
+  });
+});
