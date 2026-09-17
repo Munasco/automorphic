@@ -53,7 +53,7 @@ export function IndicatorLegend({
           const { id, key, hidden, inputs, appearance } = instance;
           const hiddenOnTimeframe = !isIndicatorVisibleOnTimeframe(appearance, interval);
           const muted = hidden || hiddenOnTimeframe;
-          const { detail } = getIndicatorDefinition(key);
+          const { detail, valuePrecision = 2 } = getIndicatorDefinition(key);
           const { description: label, original } = indicatorInstanceLabels(instance);
           const index = (indices.get(key) ?? 0) + 1;
           indices.set(key, index);
@@ -146,7 +146,10 @@ export function IndicatorLegend({
                       "en-US",
                       key === "volume" || key === "obv"
                         ? { notation: "compact", maximumFractionDigits: 2 }
-                        : { minimumFractionDigits: 2, maximumFractionDigits: 2 },
+                        : {
+                            minimumFractionDigits: valuePrecision,
+                            maximumFractionDigits: valuePrecision,
+                          },
                     ) ?? "—"}
                   </span>
                 )}

@@ -44,6 +44,7 @@ import { calculateHullMovingAverage } from "./hullMovingAverage";
 import { calculateWeightedMovingAverage } from "./weightedMovingAverage";
 import { calculateDoubleExponentialMovingAverage } from "./doubleExponentialMovingAverage";
 import { calculateTripleExponentialMovingAverage } from "./tripleExponentialMovingAverage";
+import { calculateTRIX } from "./trix";
 import {
   calculateBollingerBandwidth,
   calculateBollingerBandwidthExtremes,
@@ -1010,6 +1011,44 @@ export const INDICATOR_DEFINITIONS = [
         levels: [0],
         breakOnGaps: true,
       }),
+  }),
+  defineIndicator({
+    key: "trix",
+    label: "TRIX",
+    detail: "Triple-smoothed momentum oscillator",
+    category: "Oscillators",
+    placement: "pane",
+    valuePrecision: 4,
+    inputs: [length(18), length(9, "signalPeriod", "Signal length"), priceSource],
+    styles: [style("main", "TRIX", "#a78bfa", true, 2), style("signal", "Signal", "#fbbf24")],
+    calculate: ({ bars, inputs }) => {
+      const result = calculateTRIX(
+        bars,
+        inputs.period,
+        PRICE_SOURCES[inputs.source ?? 0],
+        inputs.signalPeriod,
+      );
+      return {
+        plots: [
+          {
+            id: "main",
+            styleKey: "main",
+            title: "TRIX",
+            points: result.trix,
+            levels: [0],
+            breakOnGaps: true,
+          },
+          {
+            id: "signal",
+            styleKey: "signal",
+            title: "Signal",
+            points: result.signal,
+            primary: false,
+            breakOnGaps: true,
+          },
+        ],
+      };
+    },
   }),
   defineIndicator({
     key: "adx",

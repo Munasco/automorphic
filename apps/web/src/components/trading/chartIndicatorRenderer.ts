@@ -218,9 +218,10 @@ export function createIndicatorRenderer(
           : "";
       let plot = plots.get(id);
       if (!plot) {
+        const precision = getIndicatorDefinition(indicator).valuePrecision ?? 2;
         const priceFormat = options.volumeFormat
           ? { type: "volume" as const }
-          : { type: "price" as const, precision: 2, minMove: pane ? 0.01 : minMove };
+          : { type: "price" as const, precision, minMove: pane ? 10 ** -precision : minMove };
         const common = {
           title,
           priceLineVisible: false,

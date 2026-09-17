@@ -1016,7 +1016,7 @@ describe("native indicator renderer", () => {
     const result = renderer.update([], all, DEFAULT_INITIAL_BALANCE, 15);
     expect(result.readings).toEqual({});
     expect(result.initialBalanceStatus).toContain("waiting");
-    expect(harness.paneCount()).toBe(16);
+    expect(harness.paneCount()).toBe(17);
     expect(harness.series.every((series) => series.data.length === 0)).toBe(true);
     expect(() => renderer.update([], disabled, DEFAULT_INITIAL_BALANCE, 15)).not.toThrow();
     expect(harness.series).toHaveLength(0);
@@ -1641,4 +1641,48 @@ it("updates independent indicator line patterns without changing data or re-crea
   expect(harness.series.map((item) => item.data)).toEqual(data);
   expect(series.find((item) => item.pane === 1)?.options.lineStyle).toBe(0);
   expect(series.find((item) => item.pane === 2)?.options.lineStyle).toBe(0);
+});
+
+it("keeps TRIX and its signal together while isolating duplicated inputs and live revisions", () => {
+  const harness = chartHarness();
+  const renderer = createIndicatorRenderer(harness.chart, 0.25);
+  const bars = inputBars(100);
+  const first = {
+    ...createIndicatorInstance("trix", "base:trix"),
+    inputs: { period: 3, signalPeriod: 2, source: 0 },
+  };
+  const second = {
+    ...createIndicatorInstance("trix", "trix-second"),
+    inputs: { period: 5, signalPeriod: 4, source: 1 },
+  };
+  const update = (input: Candle[]) =>
+    renderer.update(input, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, [
+      first,
+      second,
+    ]);
+  const initial = update(bars);
+  expect(harness.series.map((s) => s.pane)).toEqual([1, 1, 2, 2]);
+  expect(
+    harness.series.every(
+      (s) =>
+        s.options.priceFormat &&
+        (s.options.priceFormat as { precision: number; minMove: number }).precision === 4 &&
+        (s.options.priceFormat as { precision: number; minMove: number }).minMove === 0.0001,
+    ),
+  ).toBe(true);
+  expect(
+    harness.series
+      .filter((s) => s.options.title === "TRIX")
+      .map((s) => s.priceLines.map((l) => l.options.price)),
+  ).toEqual([[0], [0]]);
+  const priorSignal = harness.series[1]!.data.at(-1)!.value;
+  const unchanged = harness.series.slice(2).map((s) => s.data);
+  const revised = bars.map((b, i) => (i === bars.length - 1 ? { ...b, close: b.close + 100 } : b));
+  const result = update(revised);
+  expect(result.readings.trix).not.toBe(initial.readings.trix);
+  expect(harness.series[1]!.data.at(-1)!.value).not.toBe(priorSignal);
+  expect(harness.series.slice(2).map((s) => s.data)).toEqual(unchanged);
+  renderer.update(revised, disabled, DEFAULT_INITIAL_BALANCE, 1, {}, {}, undefined, []);
+  expect(harness.series).toEqual([]);
+  expect(harness.paneCount()).toBe(1);
 });

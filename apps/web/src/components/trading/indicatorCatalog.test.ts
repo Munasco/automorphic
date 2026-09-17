@@ -1468,3 +1468,55 @@ describe("TEMA overlay inputs", () => {
     });
   });
 });
+
+describe("TRIX oscillator", () => {
+  it("exposes independently configurable length, signal and source with a zero reference", () => {
+    expect(findIndicators("TRIX").map((entry) => entry.key)).toEqual(["trix"]);
+    expect(getIndicatorInputs("trix")).toEqual({ period: 18, signalPeriod: 9, source: 0 });
+    expect(normalizeChartPreferences({}).indicators.trix).toBe(false);
+    const definition = INDICATOR_CATALOG.find((entry) => entry.key === "trix")!;
+    const bars = [100, 110, 121, 133.1].map((open, i) => ({
+      time: i + 1,
+      open,
+      close: 42,
+      high: 140,
+      low: 40,
+      volume: 1,
+    }));
+    const calculate = (source: number) =>
+      definition.calculate({
+        bars,
+        inputs: { period: 1, signalPeriod: 2, source },
+        interval: 5,
+        session: DEFAULT_INITIAL_BALANCE,
+      });
+    expect(definition.placement).toBe("pane");
+    const result = calculate(1);
+    expect(result.plots[0]).toMatchObject({
+      id: "main",
+      styleKey: "main",
+      levels: [0],
+      breakOnGaps: true,
+    });
+    expect(result.plots[1]).toMatchObject({
+      id: "signal",
+      styleKey: "signal",
+      primary: false,
+      breakOnGaps: true,
+    });
+    expect(result.plots[0]!.points).toHaveLength(3);
+    expect(result.plots[1]!.points).toHaveLength(2);
+    for (const plot of result.plots)
+      for (const p of plot.points) expect(p.value).toBeCloseTo(10, 10);
+    for (const plot of calculate(0).plots) for (const p of plot.points) expect(p.value).toBe(0);
+    const current = { trix: { period: 18, signalPeriod: 9, source: 0 } };
+    for (const patch of [
+      { period: 0 },
+      { signalPeriod: 0 },
+      { signalPeriod: 1.5 },
+      { signalPeriod: 501 },
+      { source: 7 },
+    ])
+      expect(updateIndicatorInputs("trix", current, patch)).toBeNull();
+  });
+});

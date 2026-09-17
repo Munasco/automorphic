@@ -5288,3 +5288,43 @@ describe("watermark size", () => {
     },
   );
 });
+
+it("persists independent TRIX inputs and both plot styles", async () => {
+  const store = useChartPreferences.getState();
+  const base = store.addIndicator("trix")!;
+  expect(store.setIndicatorInstanceInputs(base, { period: 12, signalPeriod: 5, source: 2 })).toBe(
+    true,
+  );
+  store.setIndicatorInstanceAppearance(base, {
+    plots: {
+      main: { color: "#123456", lineWidth: 3 },
+      signal: { color: "#abcdef", visible: false },
+    },
+  });
+  const duplicate = store.duplicateIndicatorInstance(base)!;
+  expect(
+    store.setIndicatorInstanceInputs(duplicate, { period: 21, signalPeriod: 7, source: 1 }),
+  ).toBe(true);
+  store.toggleIndicatorInstanceVisibility(duplicate);
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)!;
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved[1]);
+  useChartPreferences.setState(useChartPreferences.getInitialState(), true);
+  await useChartPreferences.persist.rehydrate();
+  const instances = getChartIndicatorInstances(useChartPreferences.getState()).filter(
+    (i) => i.key === "trix",
+  );
+  expect(instances.map((i) => i.inputs)).toEqual([
+    { period: 12, signalPeriod: 5, source: 2 },
+    { period: 21, signalPeriod: 7, source: 1 },
+  ]);
+  expect(instances.map((i) => i.hidden)).toEqual([false, true]);
+  expect(instances[0]!.appearance.plots).toEqual({
+    main: { color: "#123456", lineWidth: 3 },
+    signal: { color: "#abcdef", visible: false },
+  });
+  useChartPreferences.getState().resetIndicatorInstanceInputs(duplicate);
+  expect(
+    getChartIndicatorInstances(useChartPreferences.getState()).find((i) => i.id === duplicate)!
+      .inputs,
+  ).toEqual({ period: 18, signalPeriod: 9, source: 0 });
+});

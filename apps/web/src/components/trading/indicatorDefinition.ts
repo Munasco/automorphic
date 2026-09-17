@@ -92,6 +92,7 @@ export type IndicatorDefinition<K extends string = string> = {
   detail: string;
   category: "Overlays" | "Oscillators" | "Session";
   placement: "overlay" | "pane" | "volume";
+  valuePrecision?: number;
   enabledByDefault?: boolean;
   inputs: readonly IndicatorInputDescriptor[];
   styles: readonly IndicatorStyleDefinition[];
