@@ -142,6 +142,7 @@ export const useReplayBookmarks = create<{
   setSort: (sort: ReplayBookmarkSort) => void;
   add: (scope: string, name: string, time: number, anchor?: ReplayBookmarkAnchor) => string;
   rename: (id: string, name: string) => boolean;
+  moveToBar: (id: string, scope: string, time: number, anchor: ReplayBookmarkAnchor) => boolean;
   remove: (id: string) => boolean;
 }>()(
   persist(
@@ -174,6 +175,25 @@ export const useReplayBookmarks = create<{
           throw Error("Remove a bookmark before adding another (100 per workspace).");
         set({ bookmarks: [...current, bookmark] });
         return bookmark.id;
+      },
+      moveToBar: (id, scope, time, anchor) => {
+        assertReady();
+        if (!text(scope, 160)) throw Error("Choose a valid chart before moving a bookmark.");
+        if (!validTime(time) || !validAnchor(anchor))
+          throw Error("This bar has invalid bookmark data.");
+        const current = get().bookmarks;
+        const bookmark = current.find((saved) => saved.id === id && saved.scope === scope.trim());
+        if (!bookmark) return false;
+        const next = { ...bookmark, time, anchor: copyAnchor(anchor) };
+        if (current.some((saved) => saved.id !== id && sameBookmarkBar(saved, next)))
+          throw Error("This bar already has a bookmark.");
+        if (
+          bookmark.time === time &&
+          JSON.stringify(bookmark.anchor) === JSON.stringify(next.anchor)
+        )
+          return true;
+        set({ bookmarks: current.map((saved) => (saved === bookmark ? next : saved)) });
+        return true;
       },
       rename: (id, name) => {
         assertReady();

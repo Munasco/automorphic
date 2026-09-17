@@ -339,3 +339,73 @@ it("defaults malformed sort settings and ignores invalid/redundant writes", asyn
   >);
   expect(() => store.setSort("date")).toThrow("loading");
 });
+
+it("moves a bookmark to an exact bar while preserving identity, name, scope and saved order", async () => {
+  const store = useReplayBookmarks.getState();
+  const bar = {
+    time: 1000,
+    actualTime: 900,
+    barId: "original",
+    open: 1,
+    high: 3,
+    low: 0,
+    close: 2,
+    volume: 10,
+  };
+  const id = store.add("NQ:tick:100", "Retest", 900, replayBookmarkAnchor(bar));
+  store.add("GC:minute:5", "Other chart", 950);
+  const before = structuredClone(useReplayBookmarks.getState().bookmarks);
+  const next = { ...bar, time: 1001, barId: "next", close: 3 };
+  const anchor = replayBookmarkAnchor(next);
+  expect(store.moveToBar(id, "NQ:tick:100", 900, anchor)).toBe(true);
+  expect(useReplayBookmarks.getState().bookmarks).toEqual([{ ...before[0], anchor }, before[1]]);
+  anchor.ohlcv[3] = 0;
+  expect(resolveReplayBookmark([bar, next], useReplayBookmarks.getState().bookmarks[0]!)).toBe(1);
+  const saved = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.at(-1)![1];
+  useReplayBookmarks.setState(useReplayBookmarks.getInitialState(), true);
+  vi.mocked(tradingWorkspaceStorage.getItem).mockReturnValue(saved);
+  await useReplayBookmarks.persist.rehydrate();
+  expect(resolveReplayBookmark([bar, next], useReplayBookmarks.getState().bookmarks[0]!)).toBe(1);
+  expect(useReplayBookmarks.getState().bookmarks[0]?.id).toBe(id);
+});
+
+it("rejects bookmark move collisions and invalid or foreign targets without changing state", () => {
+  const store = useReplayBookmarks.getState();
+  const bar = { time: 1000, open: 1, high: 3, low: 0, close: 2, volume: 10 };
+  const id = store.add("NQ", "First", 1000, replayBookmarkAnchor(bar));
+  store.add("NQ", "Second", 1001, replayBookmarkAnchor({ ...bar, time: 1001 }));
+  const before = useReplayBookmarks.getState();
+  vi.mocked(tradingWorkspaceStorage.setItem).mockClear();
+  expect(() =>
+    store.moveToBar(id, "NQ", 1001, replayBookmarkAnchor({ ...bar, time: 1001 })),
+  ).toThrow("already");
+  expect(store.moveToBar(id, "GC", 1002, replayBookmarkAnchor(bar))).toBe(false);
+  expect(store.moveToBar("missing", "NQ", 1002, replayBookmarkAnchor(bar))).toBe(false);
+  for (const time of [NaN, Infinity, -1])
+    expect(() => store.moveToBar(id, "NQ", time, replayBookmarkAnchor(bar))).toThrow("invalid");
+  expect(() =>
+    store.moveToBar(id, "NQ", 1002, { ...replayBookmarkAnchor(bar), ohlcv: [1, 0, 3, 2, 10] }),
+  ).toThrow("invalid");
+  expect(store.moveToBar(id, "NQ", 1000, replayBookmarkAnchor(bar))).toBe(true);
+  expect(useReplayBookmarks.getState()).toBe(before);
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+  vi.mocked(tradingWorkspaceStorage.getSnapshot).mockReturnValue({ ready: false } as ReturnType<
+    typeof tradingWorkspaceStorage.getSnapshot
+  >);
+  expect(() => store.moveToBar(id, "NQ", 1002, replayBookmarkAnchor(bar))).toThrow("loading");
+  expect(tradingWorkspaceStorage.setItem).not.toHaveBeenCalled();
+});
+
+it("allows explicit anchor correction at capacity without silently moving changed history", () => {
+  const store = useReplayBookmarks.getState();
+  const bar = { time: 1000, barId: "same", open: 1, high: 3, low: 0, close: 2, volume: 10 };
+  const id = store.add("NQ", "Corrected bar", 1000, replayBookmarkAnchor(bar));
+  for (let i = 1; i < MAX_REPLAY_BOOKMARKS; i++) store.add("NQ", `Other ${i}`, 1000 + i);
+  const corrected = { ...bar, volume: 20 };
+  expect(
+    resolveReplayBookmark([corrected], useReplayBookmarks.getState().bookmarks[0]!),
+  ).toBeNull();
+  expect(store.moveToBar(id, "NQ", 1000, replayBookmarkAnchor(corrected))).toBe(true);
+  expect(resolveReplayBookmark([corrected], useReplayBookmarks.getState().bookmarks[0]!)).toBe(0);
+  expect(useReplayBookmarks.getState().bookmarks).toHaveLength(MAX_REPLAY_BOOKMARKS);
+});

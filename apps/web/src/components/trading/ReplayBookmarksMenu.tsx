@@ -1,5 +1,5 @@
 import { useRef, useState, useSyncExternalStore } from "react";
-import { BookmarkIcon, Trash2Icon, PencilIcon, CheckIcon, XIcon } from "lucide-react";
+import { BookmarkIcon, MapPinIcon, Trash2Icon, PencilIcon, CheckIcon, XIcon } from "lucide-react";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { tradingWorkspaceStorage } from "./workspaceStorage";
@@ -277,6 +277,25 @@ export function ReplayBookmarks({
                         {dateLabel(bookmark.time)}
                       </span>
                     </button>
+                    <Tooltip>
+                      <TooltipTrigger
+                        type="button"
+                        aria-label={`Move bookmark ${bookmark.name} to current bar`}
+                        disabled={!workspace.ready}
+                        onClick={() =>
+                          run(() => {
+                            if (
+                              !store.moveToBar(bookmark.id, scope, time, replayBookmarkAnchor(bar))
+                            )
+                              throw Error("This bookmark no longer exists in this chart.");
+                          })
+                        }
+                        className="flex size-7 shrink-0 items-center justify-center rounded text-zinc-400 hover:bg-white/10 hover:text-white disabled:opacity-40"
+                      >
+                        <MapPinIcon className="size-3.5" />
+                      </TooltipTrigger>
+                      <TooltipPopup>Move to current bar</TooltipPopup>
+                    </Tooltip>
                     <Tooltip>
                       <TooltipTrigger
                         type="button"
