@@ -1,4 +1,5 @@
 import { ghostFeedGeometry } from "./ghostFeedGeometry";
+import { ANCHORED_VWAP_SOURCES, type AnchoredVwapSource } from "./anchoredVwapSource";
 import {
   normalizeBarPattern,
   barPatternGeometry,
@@ -100,6 +101,7 @@ export type DrawingSettings = {
   ghostRange?: number;
   ghostVariance?: number;
   ghostBars?: number;
+  vwapSource?: AnchoredVwapSource;
   lineOpacity?: number;
   textOpacity?: number;
   trendLine?: DrawingLineAppearance;
@@ -645,6 +647,8 @@ export function sanitizeDrawingSettings(value: unknown): DrawingSettings {
   if (!value || typeof value !== "object") return {};
   const source = value as DrawingSettings;
   const result: DrawingSettings = {};
+  if (source.vwapSource && ANCHORED_VWAP_SOURCES.includes(source.vwapSource))
+    result.vwapSource = source.vwapSource;
   for (const key of ["ghostRange", "ghostVariance"] as const)
     if (
       typeof source[key] === "number" &&

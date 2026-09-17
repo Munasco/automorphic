@@ -1,4 +1,5 @@
 import { positionDrawingAnchors } from "./projectionDrawingGeometry";
+import { ANCHORED_VWAP_SOURCES, type AnchoredVwapSource } from "./anchoredVwapSource";
 import { clampDrawingToolbarOffset } from "./drawingToolbarBounds";
 import { DrawingRenameDialog } from "./DrawingRenameDialog";
 import { mergeDrawingChanges } from "./drawingChanges";
@@ -273,11 +274,13 @@ function DrawingSettings({
       ? ["Text", "Visibility"]
       : draft.kind === "regression-trend"
         ? ["Inputs", "Style", "Coordinates", "Visibility"]
-        : supportsDrawingLevels(draft.kind) || ["crossline", "trend-angle"].includes(draft.kind)
-          ? ["Style", "Coordinates", "Visibility"]
-          : isSpecialChannelDrawing(draft.kind)
-            ? ["Style", "Text", "Visibility"]
-            : ["Style", "Text", "Coordinates", "Visibility"];
+        : draft.kind === "anchored-vwap"
+          ? ["Inputs", "Style", "Text", "Coordinates", "Visibility"]
+          : supportsDrawingLevels(draft.kind) || ["crossline", "trend-angle"].includes(draft.kind)
+            ? ["Style", "Coordinates", "Visibility"]
+            : isSpecialChannelDrawing(draft.kind)
+              ? ["Style", "Text", "Visibility"]
+              : ["Style", "Text", "Coordinates", "Visibility"];
   const tab = availableTabs.includes(requestedTab) ? requestedTab : availableTabs[0]!;
   const [focusedTab, setFocusedTab] = useState(tab);
   const [anchorKeys] = useState(() =>
@@ -485,6 +488,7 @@ function DrawingSettings({
               className={cn(
                 "relative mr-6 h-8 shrink-0 pb-2 text-base font-semibold leading-6 text-[#dbdbdb] outline-none before:pointer-events-none before:absolute before:-inset-x-2.5 before:-top-0.5 before:bottom-0 before:rounded-[8px] before:border-2 before:border-transparent after:absolute after:inset-x-0 after:bottom-0 after:h-1 after:rounded-[2px] after:bg-transparent hover:text-white focus-visible:before:border-[#2962ff]",
                 tab === name && "after:bg-[#f2f2f2]",
+                draft.kind === "anchored-vwap" && "mr-4 text-sm",
               )}
             >
               {name}
@@ -513,6 +517,23 @@ function DrawingSettings({
                         : "space-y-6",
           )}
         >
+          {draft.kind === "anchored-vwap" && tab === "Inputs" ? (
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <span>Source</span>
+              <DrawingSelect
+                label="Anchored VWAP source"
+                value={draft.vwapSource ?? "hlc3"}
+                onChange={(vwapSource) => update({ vwapSource: vwapSource as AnchoredVwapSource })}
+                options={ANCHORED_VWAP_SOURCES.map((source) => [
+                  source,
+                  /\d/.test(source)
+                    ? source.toUpperCase()
+                    : source[0]!.toUpperCase() + source.slice(1),
+                ])}
+                className="w-40"
+              />
+            </div>
+          ) : null}
           {draft.kind === "regression-trend" && (tab === "Style" || tab === "Inputs") ? (
             <DrawingRegressionSettings drawing={draft} tab={tab} onChange={update} />
           ) : null}

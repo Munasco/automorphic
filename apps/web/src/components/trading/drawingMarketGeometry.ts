@@ -1,4 +1,5 @@
 import type { Candle } from "./chartIndicators";
+import { anchoredVwapSourcePrice } from "./anchoredVwapSource";
 import type { ChartDrawing, DrawingAnchor, DrawingGeometry, DrawingPoint } from "./drawingGeometry";
 export type DrawingDataSource = {
   bars: ReadonlyMap<number, Candle>;
@@ -24,13 +25,10 @@ export function anchoredVwapGeometry(
   let previous: DrawingPoint | null = null;
   for (const bar of bars) {
     if (bar.time < start) continue;
-    if (
-      ![bar.time, bar.high, bar.low, bar.close, bar.volume].every(Number.isFinite) ||
-      bar.volume < 0
-    ) {
+    const price = anchoredVwapSourcePrice(bar, drawing.vwapSource ?? "hlc3");
+    if (![bar.time, price, bar.volume].every(Number.isFinite) || bar.volume < 0) {
       break;
     }
-    const price = bar.high / 3 + bar.low / 3 + bar.close / 3;
     const nextTotal = total + bar.volume;
     if (!Number.isFinite(nextTotal)) return { lines: [], handles: result.handles };
     if (bar.volume > 0) {

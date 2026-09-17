@@ -15,7 +15,7 @@ import type {
   Time,
   UTCTimestamp,
 } from "lightweight-charts";
-import { createChartDrawingSession } from "./useChartDrawings";
+import { createChartDrawingSession, type DrawingState } from "./useChartDrawings";
 import { sanitizeDrawingVisibility } from "./drawingVisibility";
 import {
   buildDrawingGeometry,
@@ -7270,6 +7270,117 @@ describe("position right-edge editing", () => {
     expect(session.getCommittedDrawings()![0]!.anchors.map((anchor) => anchor.price)).toEqual([
       4900, 4940, 4880,
     ]);
+    session.dispose();
+  });
+});
+
+describe("anchored VWAP source settings", () => {
+  const original: ChartDrawing = {
+    id: "anchored-source",
+    kind: "anchored-vwap",
+    anchors: [{ time: 100 as Time, price: 4900 }],
+    color: "#123456",
+    width: 2,
+    text: "Opening range",
+  };
+
+  it("previews and cancels source changes without writes, then saves once with undo and reload", () => {
+    const f = fixture("vwap-source-transaction", JSON.stringify([original]));
+    const session = f.open();
+    const state = (): DrawingState => f.change.mock.lastCall![0];
+    session.selectDrawing(original.id);
+    expect(session.openSettings()).toBe(true);
+    expect(session.previewSettings({ vwapSource: "open" })).toBe(true);
+    expect(state().selected!.vwapSource).toBe("open");
+    expect(session.getCommittedDrawings()).toEqual([original]);
+    expect(f.writes()).toBe(0);
+    session.closeSettings();
+    expect(state().selected).toEqual(original);
+    expect(f.writes()).toBe(0);
+    expect(f.controls.get(DRAWING_DEFAULTS_KEY)).toBeUndefined();
+
+    session.openSettings();
+    session.previewSettings({ vwapSource: "ohlc4" });
+    expect(session.applySettings({})).toBe(true);
+    const changed = { ...original, vwapSource: "ohlc4" };
+    expect(session.getCommittedDrawings()).toEqual([changed]);
+    expect(f.writes()).toBe(1);
+    session.undo();
+    expect(session.getCommittedDrawings()).toEqual([original]);
+    session.redo();
+    expect(session.getCommittedDrawings()).toEqual([changed]);
+    session.dispose();
+    const reopened = f.open();
+    expect(reopened.getCommittedDrawings()).toEqual([changed]);
+    reopened.dispose();
+  });
+
+  it("retains source in drawing templates and future defaults without copying identity or annotation", () => {
+    const f = fixture("vwap-source-template", JSON.stringify([original]));
+    const session = f.open();
+    session.selectDrawing(original.id);
+    expect(
+      session.applySelectedTemplate({
+        color: "#ff0000",
+        width: 3,
+        vwapSource: "low",
+        text: "Template note",
+      }),
+    ).toBe(true);
+    expect(session.getCommittedDrawings()![0]).toMatchObject({
+      ...original,
+      text: "Template note",
+      color: "#ff0000",
+      width: 3,
+      vwapSource: "low",
+    });
+    const remembered = JSON.parse(f.controls.get(DRAWING_DEFAULTS_KEY)!);
+    expect(remembered["anchored-vwap"].vwapSource).toBe("low");
+    session.dispose();
+
+    const restored = f.open();
+    restored.setTool("anchored-vwap");
+    f.click(200, 200);
+    const created = restored.getCommittedDrawings()!.at(-1)!;
+    expect(created).toMatchObject({
+      kind: "anchored-vwap",
+      vwapSource: "low",
+      color: "#ff0000",
+      width: 3,
+    });
+    expect(created.id).not.toBe(original.id);
+    expect(created.anchors).toEqual([{ time: 200, price: 4800 }]);
+    expect(created.text).toBeUndefined();
+    restored.openSettings();
+    restored.previewSettings(defaultDrawingTemplateSettings("anchored-vwap"), { replace: true });
+    restored.closeSettings();
+    expect(restored.getCommittedDrawings()!.at(-1)!.vwapSource).toBe("low");
+    restored.openSettings();
+    restored.applySettings(defaultDrawingTemplateSettings("anchored-vwap"), { replace: true });
+    expect(restored.getCommittedDrawings()!.at(-1)!.vwapSource ?? "hlc3").toBe("hlc3");
+    restored.setTool("anchored-vwap");
+    f.click(300, 250);
+    expect(restored.getCommittedDrawings()!.at(-1)!.vwapSource ?? "hlc3").toBe("hlc3");
+    expect(restored.getCommittedDrawings()![0]!.vwapSource).toBe("low");
+    restored.dispose();
+  });
+
+  it("drops malformed saved sources while preserving legacy drawings and valid sibling settings", () => {
+    const f = fixture(
+      "vwap-source-invalid",
+      JSON.stringify([
+        original,
+        { ...original, id: "invalid", vwapSource: "volume", width: 4 },
+        { ...original, id: "valid", vwapSource: "hl2" },
+      ]),
+    );
+    const session = f.open();
+    expect(session.getCommittedDrawings()).toEqual([
+      original,
+      { ...original, id: "invalid", width: 4 },
+      { ...original, id: "valid", vwapSource: "hl2" },
+    ]);
+    expect(f.writes()).toBe(0);
     session.dispose();
   });
 });
