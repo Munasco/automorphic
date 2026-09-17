@@ -16,64 +16,73 @@ export function ChartDrawingGlyph({ tool }: { tool: ChartDrawingTool }) {
       {tool === "cursor" ? <path d="M12 2v7m0 6v7M2 12h7m6 0h7" /> : null}
       {tool === "position-forecast" ? (
         <>
-          <circle cx="18" cy="6" r="4" />
-          <path d="m3 20 5-8 4 3 6-9m-4 1 4-1v4" />
+          <path d="M4 3v5m0 10v3M11 2v3m0 9v5" />
+          <path d="M2.5 8h3v10h-3zM9.5 5h3v9h-3z" />
+          <path d="M19 3v10m-2-2 2 2 2-2" />
+          <circle cx="19" cy="17" r="1.5" fill="currentColor" stroke="none" />
         </>
       ) : null}
       {tool === "bars-pattern" ? (
         <>
-          <path d="M5 8v12m-3-7h3m0 3h3M11 4v13m-3-8h3m0 3h3M17 7v13m-3-8h3m0 4h3" />
-          <path d="M15 2h7v16" strokeDasharray="2 2" opacity=".5" />
+          <path d="M3 9v4m0 5v3M9 2v5m0 8v4M15 6v5m0 7v4M21 1v3m0 9v5" />
+          <path d="M1.5 13h3v5h-3zM7.5 7h3v8h-3zM13.5 11h3v7h-3zM19.5 4h3v9h-3z" />
         </>
       ) : null}
       {tool === "ghost-feed" ? (
         <>
-          <path d="M5 12v9M12 7v12M19 2v12" strokeDasharray="2 2" />
-          <rect x="3" y="14" width="4" height="5" strokeDasharray="2 2" />
-          <rect x="10" y="10" width="4" height="6" strokeDasharray="2 2" />
-          <rect x="17" y="5" width="4" height="4" strokeDasharray="2 2" />
+          <path d="M7 9v3m0 4v3M13 5v3m0 5v3M19 2v3m0 4v3" />
+          <path d="M5.5 12h3v4h-3zM11.5 8h3v5h-3zM17.5 5h3v4h-3z" />
+          <path d="m4.5 19 4-4 4-2 7-6" />
+          <circle cx="3" cy="20" r="1.5" />
         </>
       ) : null}
       {tool === "anchored-vwap" ? (
         <>
-          <circle cx="4" cy="17" r="2" />
-          <path d="M6 17c3 0 3-8 7-8s4 3 8-4" />
-          <path d="M4 13V4" strokeDasharray="2 2" opacity=".5" />
+          <path d="M7 7v4m0 7v4M13 2v3m0 8v7M19 4v4m0 5v7" />
+          <path d="M5 11h4v7H5zM11 5h4v8h-4zM17 8h4v5h-4z" />
+          <path d="m4 18 4-5 6 3 8-8" />
+          <circle cx="2.5" cy="19.5" r="1.5" />
         </>
       ) : null}
       {tool === "sector" ? (
         <>
-          <path d="M5 19V4a15 15 0 0 1 15 15Z" fill="currentColor" fillOpacity=".12" />
-          <circle cx="5" cy="19" r="1.5" />
+          <path d="M4 6v14h14M5.5 3.5A17 17 0 0 1 21 18.5" />
+          <circle cx="4" cy="4" r="1.8" />
+          <circle cx="4" cy="20" r="1.8" />
+          <circle cx="20" cy="20" r="1.8" />
         </>
       ) : null}
       {tool === "long-position" || tool === "short-position" ? (
         <>
-          <rect x="5" y="3" width="14" height="18" rx="1" />
-          <path d="M5 12h14" />
-          <path
-            d={tool === "long-position" ? "M12 10V5m-2 2 2-2 2 2" : "M12 14v5m-2-2 2 2 2-2"}
-            strokeWidth="1.6"
-          />
-          <path d={tool === "long-position" ? "M8 16h8M8 18h8" : "M8 6h8M8 8h8"} opacity=".5" />
+          <path d="M6 4h16M2 14h20M6 21h16" />
+          <circle cx="4" cy="4" r="2" />
+          <circle cx="4" cy="21" r="2" />
+          {tool === "long-position" ? (
+            <path d="M11 7v5h4" />
+          ) : (
+            <path d="M15 7h-2.5a1.25 1.25 0 0 0 0 2.5h1a1.25 1.25 0 0 1 0 2.5H11" />
+          )}
         </>
       ) : null}
       {tool === "price-range" ? (
         <>
-          <path d="M4 4h16M4 20h16M12 5v14m-3-3 3 3 3-3M9 8l3-3 3 3" />
-          <path d="M5 8v8M19 8v8" strokeDasharray="1 3" opacity=".5" />
+          <path d="M2 3h17M5 21h17M12 18V6m-2 2 2-2 2 2" />
+          <circle cx="21" cy="3" r="1.8" />
+          <circle cx="3" cy="21" r="1.8" />
         </>
       ) : null}
       {tool === "date-range" ? (
         <>
-          <path d="M4 4v16M20 4v16M5 12h14m-3-3 3 3-3 3M8 9l-3 3 3 3" />
-          <path d="M8 5h8M8 19h8" strokeDasharray="1 3" opacity=".5" />
+          <path d="M3 2v17M21 5v17M6 12h12m-2-2 2 2-2 2" />
+          <circle cx="3" cy="21" r="1.8" />
+          <circle cx="21" cy="3" r="1.8" />
         </>
       ) : null}
       {tool === "date-price-range" ? (
         <>
-          <rect x="4" y="4" width="16" height="16" strokeDasharray="2 2" />
-          <path d="M7 17 17 7M7 12v5h5M12 7h5v5" />
+          <path d="M3 19V3h16M5 21h16V5M7 12h10m-2-2 2 2-2 2M12 17V7m-2 2 2-2 2 2" />
+          <circle cx="21" cy="3" r="1.8" />
+          <circle cx="3" cy="21" r="1.8" />
         </>
       ) : null}
       {tool === "regression-trend" ? (
