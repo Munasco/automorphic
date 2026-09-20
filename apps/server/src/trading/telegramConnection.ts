@@ -68,11 +68,13 @@ export function createTelegramConnection({
   store = connectionSecrets(),
   environment = tradingConnectionEnvironment,
   driver,
+  request = fetch,
   now = Date.now,
 }: {
   store?: ConnectionSecrets;
   environment?: () => Promise<NodeJS.ProcessEnv>;
   driver: (id: number, hash: string, session: string) => Promise<TelegramDriver>;
+  request?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
   now?: () => number;
 }) {
   let current: TelegramDriver | null = null,
@@ -80,6 +82,36 @@ export function createTelegramConnection({
     opening: Promise<TelegramDriver> | null = null;
   let generation = 0;
   let mutations = Promise.resolve();
+  let remoteConfigCache: { id: number; hash: string } | null = null;
+  let remoteConfigChecked = false;
+
+  const fetchRemoteConfig = async (env: NodeJS.ProcessEnv) => {
+    if (remoteConfigChecked) return remoteConfigCache;
+    remoteConfigChecked = true;
+    const convexSiteUrl =
+      env.AUTOMORPHIC_CONVEX_SITE_URL ??
+      env.CONVEX_SITE_URL ??
+      (env.TRADOVATE_SYNC_URL ? new URL(env.TRADOVATE_SYNC_URL).origin : null) ??
+      "https://ideal-mastiff-363.convex.site";
+    try {
+      const response = await request(`${convexSiteUrl.replace(/\/$/, "")}/telegram/app`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (response.ok) {
+        const data = (await response.json()) as { id?: number; hash?: string };
+        const id = Number(data?.id);
+        const hash = typeof data?.hash === "string" ? data.hash.trim() : "";
+        if (validConfig(id, hash)) {
+          remoteConfigCache = { id, hash };
+          return remoteConfigCache;
+        }
+      }
+    } catch {
+      // Remote config fetch error ignored; continue to local options
+    }
+    return null;
+  };
+
   const serial = <T>(operation: () => Promise<T>): Promise<T> => {
     const task = mutations.then(operation);
     mutations = task.then(
@@ -92,9 +124,13 @@ export function createTelegramConnection({
   const listeners = new Set<(message: TelegramChannelMessage | null) => void>();
   const config = async () => {
     const env = await environment(),
-      id = Number(env.TELEGRAM_API_ID ?? env.AUTOMORPHIC_TELEGRAM_API_ID),
-      hash = (env.TELEGRAM_API_HASH ?? env.AUTOMORPHIC_TELEGRAM_API_HASH)?.trim();
+      id = Number(env.AUTOMORPHIC_TELEGRAM_API_ID),
+      hash = env.AUTOMORPHIC_TELEGRAM_API_HASH?.trim();
     if (validConfig(id, hash) && hash) return { id, hash };
+
+    const remote = await fetchRemoteConfig(env);
+    if (remote) return remote;
+
     const saved = await store.read("telegram-app");
     if (!saved) return bundledTelegramApp();
     try {
@@ -180,9 +216,10 @@ export function createTelegramConnection({
         throw new ConnectionError("Enter the API ID and 32-character API hash from Telegram.");
       return serial(async () => {
         const env = await environment();
-        const envId = Number(env.TELEGRAM_API_ID ?? env.AUTOMORPHIC_TELEGRAM_API_ID);
-        const envHash = (env.TELEGRAM_API_HASH ?? env.AUTOMORPHIC_TELEGRAM_API_HASH)?.trim();
-        if (validConfig(envId, envHash))
+        const envId = Number(env.AUTOMORPHIC_TELEGRAM_API_ID);
+        const envHash = env.AUTOMORPHIC_TELEGRAM_API_HASH?.trim();
+        const remote = await fetchRemoteConfig(env);
+        if (validConfig(envId, envHash) || remote)
           throw new ConnectionError("Telegram app settings are managed by this installation.", 409);
         if (current || opening || pending.size || (await store.read("telegram")))
           throw new ConnectionError("Disconnect Telegram before changing its app settings.", 409);

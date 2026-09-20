@@ -115,6 +115,40 @@ http.route({
     );
   }),
 });
+http.route({
+  path: "/telegram/app",
+  method: "GET",
+  handler: httpAction(async () => {
+    const id = Number(process.env.AUTOMORPHIC_TELEGRAM_API_ID);
+    const hash = process.env.AUTOMORPHIC_TELEGRAM_API_HASH?.trim();
+    const headers = {
+      "Cache-Control": "public, max-age=300",
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+    };
+    if (!Number.isSafeInteger(id) || id <= 0 || !hash || !/^[a-f\d]{32}$/i.test(hash)) {
+      return new Response(JSON.stringify({ error: "Telegram app not configured" }), {
+        status: 404,
+        headers,
+      });
+    }
+    return new Response(JSON.stringify({ id, hash }), { status: 200, headers });
+  }),
+});
+http.route({
+  path: "/telegram/app",
+  method: "OPTIONS",
+  handler: httpAction(async () => {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+      },
+    });
+  }),
+});
 const waitlistHandler = httpAction(async (ctx, request) => {
   const origin = allowedWaitlistOrigin(
     request.headers.get("Origin"),

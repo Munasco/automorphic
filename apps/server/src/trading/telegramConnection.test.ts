@@ -28,7 +28,10 @@ function fixture() {
   const c = createTelegramConnection({
     store,
     driver: async () => driver,
-    environment: async () => ({ TELEGRAM_API_ID: "123", TELEGRAM_API_HASH: "a".repeat(32) }),
+    environment: async () => ({
+      AUTOMORPHIC_TELEGRAM_API_ID: "123",
+      AUTOMORPHIC_TELEGRAM_API_HASH: "a".repeat(32),
+    }),
     now: () => now,
   });
   return {
@@ -91,6 +94,7 @@ describe("Telegram sign-in", () => {
     const c = createTelegramConnection({
       driver,
       environment: async () => ({}),
+      request: async () => new Response("Not found", { status: 404 }),
       store: {
         read: async () => null,
         write: async () => {},
@@ -98,6 +102,32 @@ describe("Telegram sign-in", () => {
       },
     });
     expect(await c.status()).toEqual({ configured: false, connected: false, name: null });
+    expect(driver).not.toHaveBeenCalled();
+  });
+  it("loads app settings from Convex remote endpoint when unconfigured locally", async () => {
+    const driver = vi.fn();
+    const c = createTelegramConnection({
+      driver,
+      environment: async () => ({
+        AUTOMORPHIC_CONVEX_SITE_URL: "https://mock.convex.site",
+      }),
+      request: async (input) => {
+        expect(input.toString()).toBe("https://mock.convex.site/telegram/app");
+        return new Response(JSON.stringify({ id: 98765, hash: "d".repeat(32) }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+      store: {
+        read: async () => null,
+        write: async () => {},
+        remove: async () => {},
+      },
+    });
+    expect(await c.status()).toEqual({ configured: true, connected: false, name: null });
+    await expect(c.configure(12345, "e".repeat(32))).rejects.toThrow(
+      "managed by this installation",
+    );
     expect(driver).not.toHaveBeenCalled();
   });
   it("persists app setup privately and uses it for phone sign-in after a restart", async () => {
@@ -113,7 +143,12 @@ describe("Telegram sign-in", () => {
     };
     const f = fixture();
     const driver = vi.fn(async () => f.driver);
-    const options = { store, driver, environment: async () => ({}) };
+    const options = {
+      store,
+      driver,
+      environment: async () => ({}),
+      request: async () => new Response("Not found", { status: 404 }),
+    };
     const first = createTelegramConnection(options);
     await expect(first.configure(0, "bad")).rejects.toThrow("API ID");
     expect(values.size).toBe(0);

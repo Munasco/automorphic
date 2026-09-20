@@ -89,7 +89,7 @@ Official desktop builds use Automorphic’s shared Telegram app identity, suppli
 only sign in to their own Telegram account. These identify the native Telegram client;
 they are embedded in the server bundle, never committed as source or exposed by status APIs.
 
-Self-hosted operators can instead set `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` in the private
+Self-hosted operators can instead set `AUTOMORPHIC_TELEGRAM_API_ID` and `AUTOMORPHIC_TELEGRAM_API_HASH` in the private
 server environment file or use the installation setup form. Environment settings take
 precedence over saved setup, which takes precedence over the bundled app identity.
 
