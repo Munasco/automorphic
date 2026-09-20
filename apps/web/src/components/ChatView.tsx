@@ -327,6 +327,7 @@ import { TradingDock, TradingDockToggle } from "./trading/TradingDock";
 import { BottomDock, type BottomDockTab } from "./BottomDock";
 import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
+import { TradingStarters } from "./trading/TradingStarters";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 
 import { MessagesTimeline } from "./chat/MessagesTimeline";
@@ -8656,6 +8657,19 @@ export default function ChatView(props: ChatViewProps) {
                         </div>
                       </div>
                     </ComposerSurface.Shell>
+                    {isDraftHeroState ? (
+                      <TradingStarters
+                        onSelect={(prompt) => {
+                          if (
+                            composerRef.current?.insertTextAtEnd(prompt, {
+                              ensureLeadingBoundary: true,
+                            })
+                          ) {
+                            scheduleComposerFocus();
+                          }
+                        }}
+                      />
+                    ) : null}
                     <div
                       aria-hidden
                       className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"

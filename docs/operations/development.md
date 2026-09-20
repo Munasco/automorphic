@@ -2,7 +2,7 @@
 
 ## First checkout
 
-Install `vp` using the [root README](../../README.md#install-vp). The checkout requires Node 24;
+Install `vp` using the [root README](../../README.md#run-locally). The checkout requires Node 24;
 Bun is optional. From the repository root:
 
 ```sh
@@ -68,8 +68,8 @@ vp run --filter <package> typecheck
 
 Use `vp run lint:mobile` for native mobile changes. CI owns the full suite; see
 [ci.yml](../../.github/workflows/ci.yml) for its current jobs.
-The [manual Windows lane](../../.github/workflows/windows-tests.yml) is available for focused
-Windows investigation while that suite is not a required gate.
+Run Windows-specific checks on a Windows host using the package's focused test commands.
+The inherited upstream Windows workflow is no longer part of Automorphic CI.
 
 ### Unused code
 

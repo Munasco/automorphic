@@ -5,7 +5,7 @@ const MAX_SYMBOLS = 100;
 const validTime = (time: unknown): time is number =>
   typeof time === "number" && Number.isFinite(time) && Math.abs(time) <= 8.64e12;
 const validSymbol = (symbol: unknown): symbol is string =>
-  typeof symbol === "string" && /^[A-Z0-9][A-Z0-9._-]{0,79}$/.test(symbol);
+  typeof symbol === "string" && /^@?[A-Z0-9][A-Z0-9._-]{0,79}$/.test(symbol);
 const record = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
 

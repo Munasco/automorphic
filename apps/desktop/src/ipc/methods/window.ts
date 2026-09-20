@@ -1,3 +1,4 @@
+import { signInTradovate, saveTradovateSession } from "../../trading/TradovateSignIn.ts";
 import {
   ContextMenuItemSchema,
   DesktopAppBrandingSchema,
@@ -401,5 +402,24 @@ export const checkSystemPermission = DesktopIpc.makeIpcMethod({
     if (environment.platform !== "darwin") return false;
     const check = yield* safariPermissionCheck;
     return yield* Effect.promise(check);
+  }),
+});
+
+export const connectTradovate = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.CONNECT_TRADOVATE_CHANNEL,
+  payload: Schema.Literals(["demo", "live"]),
+  result: Schema.Struct({ connected: Schema.Boolean, error: Schema.optional(Schema.String) }),
+  handler: Effect.fn("desktop.ipc.window.connectTradovate")(function* (target) {
+    const pool = yield* DesktopBackendPool.DesktopBackendPool;
+    const primary = yield* pool.primary;
+    const config = yield* primary.currentConfig;
+    if (Option.isNone(config))
+      return { connected: false, error: "Wait for the local server to start, then retry." };
+    const auth = yield* DesktopLocalEnvironmentAuth.DesktopLocalEnvironmentAuth;
+    const bearer = yield* auth.getBearerToken;
+    const endpoint = new URL("/api/trading/connections", config.value.httpBaseUrl);
+    return yield* Effect.promise(() =>
+      signInTradovate(target, (token) => saveTradovateSession(endpoint, bearer, target, token)),
+    );
   }),
 });
