@@ -83,13 +83,3 @@ jobs:
       - name: Server typecheck
         working-directory: apps/server
         run: vp exec tsc --noEmit
-      - name: Collect dependency notices for review
-        run: |
-          mkdir -p build/source-review
-          pnpm licenses list --prod --json > build/source-review/pnpm-licenses.json
-          node scripts/license-bundle.mjs build/source-review/pnpm-licenses.json build/source-review/licenses
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dependency-notices-for-review
-          path: build/source-review/licenses/
-          retention-days: 14
