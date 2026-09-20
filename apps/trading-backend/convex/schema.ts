@@ -5,6 +5,13 @@ export default defineSchema({
   waitlist: defineTable({
     email: v.string(),
     createdAt: v.number(),
+    betaEmailStatus: v.optional(
+      v.union(v.literal("queued"), v.literal("sent"), v.literal("failed")),
+    ),
+    betaEmailEndsAt: v.optional(v.number()),
+    betaEmailContact: v.optional(v.string()),
+    betaEmailFrom: v.optional(v.string()),
+    betaEmailId: v.optional(v.string()),
   }).index("by_email", ["email"]),
   brokerSessions: defineTable({
     name: v.literal("owner"),

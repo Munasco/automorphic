@@ -55,6 +55,12 @@ export default mergeConfig(
         js: "#!/usr/bin/env node\n",
       },
       define: {
+        __AUTOMORPHIC_BUILD_TELEGRAM_API_ID__: JSON.stringify(
+          repoEnv.AUTOMORPHIC_TELEGRAM_API_ID?.trim() ?? "",
+        ),
+        __AUTOMORPHIC_BUILD_TELEGRAM_API_HASH__: JSON.stringify(
+          repoEnv.AUTOMORPHIC_TELEGRAM_API_HASH?.trim() ?? "",
+        ),
         __T3CODE_BUILD_CHANNEL__: JSON.stringify(cliBuildChannel),
         __T3CODE_BUILD_RELAY_URL__: JSON.stringify(repoEnv.T3CODE_RELAY_URL?.trim() ?? ""),
         __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(

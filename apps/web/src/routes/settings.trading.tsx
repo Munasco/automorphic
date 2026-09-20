@@ -1,5 +1,8 @@
+import { useEffect, useRef } from "react";
+import { TradingConnections } from "../components/trading/BrokerConnections";
 import { createFileRoute } from "@tanstack/react-router";
 import { Button } from "../components/ui/button";
+import { toastManager } from "../components/ui/toast";
 import {
   tradingWorkspaceStorage,
   useTradingWorkspace,
@@ -10,6 +13,19 @@ import { useTradingPreferences } from "../components/trading/tradingPreferences"
 function TradingSettings() {
   const settings = useTradingPreferences();
   const workspace = useTradingWorkspace();
+  const lastToastedWorkspaceErrorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (workspace.error && workspace.error !== lastToastedWorkspaceErrorRef.current) {
+      lastToastedWorkspaceErrorRef.current = workspace.error;
+      toastManager.add({
+        type: "error",
+        title: "Trading workspace error",
+        description: workspace.error,
+      });
+    } else if (!workspace.error) {
+      lastToastedWorkspaceErrorRef.current = null;
+    }
+  }, [workspace.error]);
   if (!workspace.ready)
     return (
       <div className="space-y-3 p-6 text-sm text-muted-foreground">
@@ -43,6 +59,7 @@ function TradingSettings() {
           </Button>
         </div>
       ) : null}
+      <TradingConnections />
       <section className="rounded-lg border border-border">
         <div className="flex items-center justify-between gap-6 border-b border-border p-5">
           <div>
@@ -84,10 +101,6 @@ function TradingSettings() {
           />
         </div>
       </section>
-      <p className="text-xs text-muted-foreground">
-        Tradovate credentials are managed by your server. Chart preferences do not enable order
-        execution.
-      </p>
     </div>
   );
 }

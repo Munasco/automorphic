@@ -9,6 +9,8 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as betaAccess from "../betaAccess.js";
+import type * as betaEmail from "../betaEmail.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as tradovate from "../tradovate.js";
@@ -19,6 +21,8 @@ import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  betaAccess: typeof betaAccess;
+  betaEmail: typeof betaEmail;
   crons: typeof crons;
   http: typeof http;
   tradovate: typeof tradovate;

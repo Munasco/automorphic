@@ -197,3 +197,123 @@ describe("bar replay controls", () => {
     expect(replay.visible).toBeNull();
   });
 });
+
+describe("replay from a selected chart bar", () => {
+  it.each([0, 47, 103])(
+    "starts paused at completed bar %s with only its historical prefix visible",
+    async (index) => {
+      await act(async () => expect(replay.start(candles, candles[index]!.time)).toBe(true));
+      expect(replay.session).toMatchObject({ index, start: index, playing: false, seekVersion: 0 });
+      expect(replay.visible).toEqual(candles.slice(0, index + 1));
+      expect(replay.session!.bars).toHaveLength(104);
+      expect(vi.getTimerCount()).toBe(0);
+      if (index === 103) {
+        await act(async () => replay.toggle());
+        expect(replay.session!.playing).toBe(false);
+        expect(vi.getTimerCount()).toBe(0);
+      }
+    },
+  );
+
+  it("restarts at the chosen origin after stepping and playing forward", async () => {
+    await act(async () => expect(replay.start(candles, candles[40]!.time)).toBe(true));
+    await act(async () => replay.seek(45));
+    await act(async () => replay.toggle());
+    await act(async () => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(replay.session!.index).toBe(47);
+    expect(replay.session!.start).toBe(40);
+    await act(async () => replay.seek(replay.session!.start));
+    expect(replay.session).toMatchObject({ index: 40, start: 40, playing: false, seekVersion: 2 });
+    expect(replay.visible).toEqual(candles.slice(0, 41));
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("resolves exact fractional chart keys rather than shared exchange timestamps after sorting and deduplication", async () => {
+    const bars = [
+      { ...candles[2]!, time: 100.002, actualTime: 100, close: 2 },
+      { ...candles[0]!, time: 100.0001, actualTime: 100, close: 0 },
+      { ...candles[1]!, time: 100.001, actualTime: 100, close: 1 },
+      { ...candles[1]!, time: 100.001, actualTime: 100, close: 11 },
+      { ...candles[3]!, time: 100.003, actualTime: 100, close: 3 },
+    ];
+    await act(async () => expect(replay.start(bars, 100.001)).toBe(true));
+    expect(replay.session).toMatchObject({ index: 1, start: 1 });
+    expect(replay.visible!.map(({ time, close }) => ({ time, close }))).toEqual([
+      { time: 100.0001, close: 0 },
+      { time: 100.001, close: 11 },
+    ]);
+    const previous = replay.session;
+    await act(async () => expect(replay.start(bars, 100)).toBe(false));
+    expect(replay.session).toBe(previous);
+    await act(async () => expect(replay.start(bars, 100.0015)).toBe(false));
+    expect(replay.session).toBe(previous);
+  });
+
+  it("rejects the forming last bar, missing and nonfinite keys without disrupting an existing playback", async () => {
+    await act(async () => {
+      replay.start(candles, candles[10]!.time);
+    });
+    await act(async () => replay.toggle());
+    const previous = replay.session;
+    const visible = replay.visible;
+    for (const fromTime of [
+      candles.at(-1)!.time,
+      candles[10]!.time + 1,
+      -1,
+      NaN,
+      Infinity,
+      -Infinity,
+    ]) {
+      await act(async () => expect(replay.start(candles, fromTime)).toBe(false));
+      expect(replay.session).toBe(previous);
+      expect(replay.visible).toBe(visible);
+      expect(vi.getTimerCount()).toBe(1);
+    }
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(replay.session!.index).toBe(11);
+  });
+
+  it("copies frozen inputs and ignores subsequent feed corrections to the captured history", async () => {
+    const bars = candles.map((bar) => ({ ...bar }));
+    const snapshot = structuredClone(bars);
+    const immutable = Object.freeze(bars.map((bar) => Object.freeze({ ...bar })));
+    await act(async () => expect(replay.start(immutable, immutable[30]!.time)).toBe(true));
+    expect(immutable).toEqual(snapshot);
+    expect(replay.session!.bars[30]).not.toBe(immutable[30]);
+    await act(async () => expect(replay.start(bars, bars[30]!.time)).toBe(true));
+    bars[30]!.close = 9999;
+    bars.push({ ...bars.at(-1)!, time: 99999 });
+    expect(replay.visible).toEqual(snapshot.slice(0, 31));
+    expect(replay.session!.bars).toEqual(snapshot.slice(0, -1));
+  });
+
+  it("keeps the saved speed intact and clears an explicit origin when chart context changes", async () => {
+    await act(async () => replay.setSpeed(5));
+    const writes = vi.mocked(tradingWorkspaceStorage.setItem).mock.calls.length;
+    await act(async () => {
+      replay.start(candles, candles[20]!.time);
+    });
+    expect(replay.speed).toBe(5);
+    expect(vi.mocked(tradingWorkspaceStorage.setItem).mock.calls).toHaveLength(writes);
+    await act(async () => replay.toggle());
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(replay.session!.index).toBe(21);
+    await act(async () => renderer.update(<Harness context="NQ:15m" />));
+    expect(replay.session).toBeNull();
+    expect(replay.visible).toBeNull();
+    expect(replay.speed).toBe(5);
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => renderer.update(<Harness context="MGC:5m" />));
+    expect(replay.session).toBeNull();
+    await act(async () => {
+      replay.start(candles);
+    });
+    expect(replay.session).toMatchObject({ index: 3, start: 3, playing: false });
+  });
+});

@@ -1,0 +1,64 @@
+name: Automorphic Beta Builds
+on:
+  workflow_dispatch:
+  push:
+    branches: [automorphic/release-review]
+    paths: [.github/workflows/automorphic-beta-builds.yml]
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            platform: mac
+            arch: arm64
+            target: dmg
+          - runner: macos-15-intel
+            platform: mac
+            arch: x64
+            target: dmg
+          - runner: windows-2025
+            platform: win
+            arch: x64
+            target: nsis
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+            target: AppImage
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          run-install: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux build libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libx11-dev libxtst-dev libxkbfile-dev libfuse2 libdbus-1-dev libwayland-dev libpipewire-0.3-dev libxcb1-dev libxcb-shm0-dev libxcb-randr0-dev libxcb-xfixes0-dev
+      - name: Install dependencies
+        run: vp install --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+      - name: Configure public account service
+        shell: bash
+        run: |
+          printf '%s\n' 'VITE_AUTOMORPHIC_AUTH_URL=https://ideal-mastiff-363.convex.site' 'VITE_AUTOMORPHIC_CONVEX_URL=https://ideal-mastiff-363.convex.cloud' > .env
+      - name: Build beta installer
+        env:
+          AUTOMORPHIC_DESKTOP_UPDATE_REPOSITORY: TennantCloud/automorphic-releases
+          AUTOMORPHIC_TELEGRAM_API_ID: ${{ secrets.AUTOMORPHIC_TELEGRAM_API_ID }}
+          AUTOMORPHIC_TELEGRAM_API_HASH: ${{ secrets.AUTOMORPHIC_TELEGRAM_API_HASH }}
+        run: vp run dist:desktop:artifact --platform ${{ matrix.platform }} --arch ${{ matrix.arch }} --target ${{ matrix.target }} --build-version 0.0.44-beta.1 --verbose
+      - name: Upload installer for verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: automorphic-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            release/*.dmg
+            release/*.exe
+            release/*.AppImage
+          if-no-files-found: error
+          retention-days: 7
