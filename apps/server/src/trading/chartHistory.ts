@@ -14,7 +14,7 @@ export async function readChartHistory(params: URLSearchParams, load = getHistor
   const interval = Number(params.get("interval"));
   const unit = resolveChartInterval(interval, params.get("intervalUnit") ?? "minute").intervalUnit;
   if (
-    !/^[A-Za-z0-9@._-]{1,40}$/.test(symbol) ||
+    !/^[A-Za-z0-9@._!-]{1,40}$/.test(symbol) ||
     !Number.isFinite(before) ||
     before <= 0 ||
     before > 8.64e12
@@ -34,8 +34,9 @@ export async function readChartHistory(params: URLSearchParams, load = getHistor
       hasMore: false,
       nextBefore: null,
     };
+  const requestSymbol = symbol.endsWith("1!") ? `@${symbol.slice(0, -2)}` : symbol;
   const page = await load({
-    symbol,
+    symbol: requestSymbol,
     interval: calendar ? 1 : interval,
     unit: calendar || unit === "day" ? "day" : unit === "second" ? "second" : "minute",
     start: new Date(start * 1000).toISOString(),

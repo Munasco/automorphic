@@ -172,10 +172,19 @@ export async function contracts(root: string) {
   }
 }
 
+export function toTradovateSymbol(symbol: string): string {
+  const match = /^(MGC|MNQ|GC|NQ)1!$/.exec(symbol);
+  if (match) return `@${match[1]}`;
+  return symbol;
+}
+
 export async function chartStream(symbol: string, interval: number, intervalUnit = "minute") {
-  if (!/^(?:@(MGC|MNQ|GC|NQ)|(MGC|MNQ|GC|NQ)[FGHJKMNQUVXZ]\d{1,2})$/.test(symbol)) {
+  if (
+    !/^(?:@(MGC|MNQ|GC|NQ)|(MGC|MNQ|GC|NQ)[12]!|(MGC|MNQ|GC|NQ)[FGHJKMNQUVXZ]\d{1,2})$/.test(symbol)
+  ) {
     throw new Error("Choose a valid MGC, MNQ, GC or NQ contract.");
   }
+  const lookupSymbol = toTradovateSymbol(symbol);
   const { chartDescription, ...intervalMetadata } = resolveChartInterval(interval, intervalUnit);
   const tickSize = intervalMetadata.intervalUnit === "tick" ? (interval as TickBarSize) : undefined;
   const calendar =
@@ -186,7 +195,7 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
   const session = await credentials();
   // https://api.tradovate.com/: contract/find binds the requested expiry to its ID.
   const contractResponse = await fetch(
-    `https://${session.environment}.tradovateapi.com/v1/contract/find?name=${encodeURIComponent(symbol)}`,
+    `https://${session.environment}.tradovateapi.com/v1/contract/find?name=${encodeURIComponent(lookupSymbol)}`,
     {
       headers: { Authorization: `Bearer ${session.token}` },
       signal: AbortSignal.timeout(10_000),
@@ -202,7 +211,7 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
     typeof contract !== "object" ||
     !("name" in contract) ||
     !("id" in contract) ||
-    contract.name !== symbol ||
+    contract.name !== lookupSymbol ||
     typeof contract.id !== "number" ||
     !Number.isSafeInteger(contract.id) ||
     contract.id <= 0

@@ -5328,3 +5328,22 @@ it("persists independent TRIX inputs and both plot styles", async () => {
       .inputs,
   ).toEqual({ period: 18, signalPeriod: 9, source: 0 });
 });
+
+describe("continuous futures preferences", () => {
+  it("defaults backAdjusted and showRollMarkers to true and allows toggling", () => {
+    const store = useChartPreferences.getState();
+    expect(store.backAdjusted).toBe(true);
+    expect(store.showRollMarkers).toBe(true);
+
+    store.setBackAdjusted(false);
+    expect(useChartPreferences.getState().backAdjusted).toBe(false);
+
+    store.setShowRollMarkers(false);
+    expect(useChartPreferences.getState().showRollMarkers).toBe(false);
+
+    store.setBackAdjusted(true);
+    store.setShowRollMarkers(true);
+    expect(useChartPreferences.getState().backAdjusted).toBe(true);
+    expect(useChartPreferences.getState().showRollMarkers).toBe(true);
+  });
+});

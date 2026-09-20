@@ -4,6 +4,7 @@ import { ConnectionError } from "./trading/connectionSecrets.ts";
 import { McpIntegrationDocument, AuthAccessWriteScope } from "@t3tools/contracts";
 import { readMcpIntegrations, writeMcpIntegrations } from "./mcp/McpIntegrations.ts";
 import { contracts, chartStream } from "./trading/marketData.ts";
+import { generateRollEvents } from "./trading/rolloverSchedule.ts";
 import { readChartHistory } from "./trading/chartHistory.ts";
 import { watchlistStream } from "./trading/watchlistData.ts";
 import { ChartIntervalError } from "./trading/chartInterval.ts";
@@ -505,6 +506,17 @@ const tradingReadHandler = Effect.gen(function* () {
     }
     if (url.pathname === "/api/trading/contracts")
       return HttpServerResponse.jsonUnsafe(await contracts(url.searchParams.get("root") ?? "MGC"));
+    if (url.pathname === "/api/trading/rollover-events") {
+      const symbol = url.searchParams.get("symbol") ?? "MNQ1!";
+      const root = symbol
+        .toUpperCase()
+        .replace(/^@/, "")
+        .replace(/[12]!$/, "");
+      const events = generateRollEvents(root);
+      return HttpServerResponse.jsonUnsafe(events, {
+        headers: { "Cache-Control": "public, max-age=3600" },
+      });
+    }
     if (url.pathname === "/api/trading/history") {
       try {
         return HttpServerResponse.jsonUnsafe(await readChartHistory(url.searchParams), {
