@@ -10,7 +10,7 @@ import { chartBarChange, formatChartBarChange } from "./chartBarChange";
 import { priceLineAppearanceOptions } from "./chartPriceLineAppearance";
 import { chartAreaFillColors } from "./chartAreaFill";
 import { trackChartPaneResize } from "./chartPaneResize";
-import { CalendarDaysIcon } from "lucide-react";
+import { CalendarArrowDownIcon } from "lucide-react";
 import { ChartMeasureOverlay } from "./ChartMeasureOverlay";
 import { ChartGoToDateDialog } from "./ChartGoToDateDialog";
 import {
@@ -435,6 +435,22 @@ export function TradovateChart({
   const [measureComplete, setMeasureComplete] = useState(false);
   const [measureRun, setMeasureRun] = useState(0);
   const [goToDateOpen, setGoToDateOpen] = useState(false);
+  const [clockTick, setClockTick] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockTick(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const clockLabel = useMemo(() => {
+    const time = new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+      timeZone: settings.timeZone,
+    }).format(new Date(clockTick));
+    const zone = CHART_TIME_ZONES.find(({ value }) => value === settings.timeZone)?.label ?? "UTC";
+    return `${time} ${zone}`;
+  }, [clockTick, settings.timeZone]);
   const [orderDraft, setOrderDraft] = useState<
     | (ChartOrderDraft & {
         symbol: string;
@@ -1650,15 +1666,20 @@ export function TradovateChart({
       scale.setVisibleLogicalRange({ from: middle - half, to: middle + half });
     }
   };
-  const range = (days: number | null) => {
+  const range = (days: number | "ytd" | null) => {
     if (!engine || !last) return;
     const times = [...engine.bars.keys()].sort((a, b) => a - b);
     if (days === null) engine.chart.timeScale().fitContent();
-    else
+    else {
+      const from =
+        days === "ytd"
+          ? Date.UTC(new Date(last.time * 1000).getUTCFullYear(), 0, 1) / 1000
+          : last.time - days * 86400;
       engine.chart.timeScale().setVisibleRange({
-        from: Math.max(times[0] ?? last.time, last.time - days * 86400) as UTCTimestamp,
+        from: Math.max(times[0] ?? last.time, from) as UTCTimestamp,
         to: last.time as UTCTimestamp,
       });
+    }
   };
   const screenshot = () => {
     if (!engine) return;
@@ -2195,43 +2216,44 @@ export function TradovateChart({
           />
         ) : null}
       </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-1 border-t border-white/10 px-2 py-1 text-[11px] text-zinc-400">
-        {([1, 5, null] as const).map((days) => (
-          <Tooltip key={days ?? "all"}>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  onClick={() => range(days)}
-                  className="rounded px-2 py-1 hover:bg-white/5 hover:text-white"
-                />
-              }
-            >
-              {days ? `${days}D` : "All"}
-            </TooltipTrigger>
-            <TooltipPopup>Range within loaded history</TooltipPopup>
-          </Tooltip>
+      <div className="flex h-9 shrink-0 items-center gap-0 overflow-hidden border-t border-white/10 px-2 text-[11px] text-zinc-400">
+        {(
+          [
+            [1, "1D"],
+            [5, "5D"],
+            [30, "1M"],
+            [180, "6M"],
+            ["ytd", "YTD"],
+            [365, "1Y"],
+            [1825, "5Y"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => range(value)}
+            className="shrink-0 px-1.5 py-1 text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
+          >
+            {label}
+          </button>
         ))}
+        <span aria-hidden="true" className="mx-2 h-5 w-px shrink-0 bg-white/10" />
         <Tooltip>
           <TooltipTrigger
             type="button"
             aria-label="Go to date (Alt+G)"
             disabled={!last || technicals}
             onClick={() => setGoToDateOpen(true)}
-            className="flex size-7 items-center justify-center rounded border-l border-white/10 text-zinc-400 hover:bg-white/5 hover:text-white disabled:opacity-30"
+            className="flex size-7 shrink-0 items-center justify-center text-zinc-400 hover:bg-white/5 hover:text-white disabled:opacity-30"
           >
-            <CalendarDaysIcon className="size-4" />
+            <CalendarArrowDownIcon className="size-4" />
           </TooltipTrigger>
           <TooltipPopup>Go to date · Alt+G</TooltipPopup>
         </Tooltip>
-        {olderHistoryStatus ? (
+        {olderHistoryStatus === "Retry older candles" ? (
           <button
             type="button"
             className="truncate px-2 text-[10px] text-zinc-400"
-            disabled={
-              olderHistoryStatus !== "Retry older candles" &&
-              !olderHistoryStatus.includes("Search earlier")
-            }
             onClick={() => retryOlderHistory.current()}
           >
             {olderHistoryStatus}
@@ -2249,50 +2271,24 @@ export function TradovateChart({
             <TooltipPopup className="max-w-72">{historyNotice.description}</TooltipPopup>
           </Tooltip>
         ) : null}
-        <Tooltip>
-          <TooltipTrigger
-            aria-label={status}
-            className="ml-auto inline-flex size-6 items-center justify-center rounded hover:bg-white/5"
-          >
-            <span
-              aria-hidden="true"
-              className={cn(
-                "size-1.5 rounded-full",
-                status === "Tradovate connected" ? "bg-emerald-400" : "bg-amber-400",
-              )}
-            />
-          </TooltipTrigger>
-          <TooltipPopup>
-            {last
-              ? `${status} · Last bar ${new Date((last.actualEndTime ?? last.actualTime ?? last.time) * 1000).toLocaleString()}`
-              : status}
-          </TooltipPopup>
-        </Tooltip>
         <TradingSelect
           label="Price scale"
           value={settings.priceScaleMode}
           options={PRICE_SCALE_OPTIONS}
           onChange={(value) => settings.setPriceScaleMode(value as ChartPriceScaleMode)}
           variant="ghost"
-          className="h-7 w-36 text-[11px]"
+          className="ml-1 h-7 w-28 text-[11px]"
         />
-        <button
-          type="button"
-          aria-label="Auto fit price scale"
-          onClick={() => engine?.chart.priceScale("right", 0).applyOptions({ autoScale: true })}
-          className="rounded px-1.5 py-1 hover:bg-white/5"
-        >
-          auto
-        </button>
         <TradingSelect
           label="Chart time zone"
           value={settings.timeZone}
           options={CHART_TIME_ZONES.map(({ value, label }) => [value, label] as const)}
           onChange={settings.setTimeZone}
+          displayValue={<span className="tabular-nums text-zinc-300">{clockLabel}</span>}
           variant="ghost"
-          className="h-7 w-28 text-[11px]"
+          popupProps={{ align: "end" }}
+          className="ml-auto h-7 w-auto min-w-36 text-right text-[11px]"
         />
-        {settingsControl}
       </div>
       {notice ? (
         <button
