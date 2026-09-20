@@ -42,6 +42,19 @@ must never be part of a release. See the provider's documentation for current au
 
 ## Market data and optional headline analysis
 
+Automorphic Desktop provides **Settings → Trading → Connect Tradovate**. Choose simulation/funded
+or live, sign in on Tradovate in the dedicated native window, then select that account environment.
+Automorphic observes authorization only for the matching Tradovate account API, verifies account
+access, and shows Connected. It does not collect passwords or require an OAuth application.
+Web-only clients can use the server token configuration below; they cannot inspect another site's
+browser session. The desktop connects its own primary local server.
+
+Captured sessions are stored outside the checkout in a private `.connections` directory alongside
+the trading environment file, with restrictive directory/file permissions. Sessions renew before
+expiry while used. Disconnect disables the saved connection, including fallback to an older server
+token; reconnect to resume. Revoked/expired sessions and missing broker permissions require sign-in
+or action in Tradovate. Sign-in does not grant additional exchange data or trading permissions.
+
 The local server reads `~/.automorphic/.env`, or the file selected by
 `AUTOMORPHIC_ENV_FILE`. Create the directory/file privately, outside your checkout.
 The development wrapper renews a configured Tradovate session; it cannot create data entitlements.
@@ -63,6 +76,36 @@ requires its own authenticated configuration; do not share an operator's token o
 Charts require access to the requested contracts and history. The source license does not
 license exchange data for redistribution. Use synthetic candles and anonymized examples in
 public fixtures, screenshots, bug reports, and demos.
+
+## Telegram channels
+
+Open Settings → Trading or the chart's Telegram view. For a new installation, register an API
+application at <https://my.telegram.org/apps>, then enter its API ID and API hash in the setup
+form. These are saved in the server's private connection storage. Continue with your phone number,
+the code delivered by Telegram, and, if enabled, your two-step verification password.
+
+Official desktop builds use Automorphic’s shared Telegram app identity, supplied by the
+`AUTOMORPHIC_TELEGRAM_API_ID` and `AUTOMORPHIC_TELEGRAM_API_HASH` release secrets. Users
+only sign in to their own Telegram account. These identify the native Telegram client;
+they are embedded in the server bundle, never committed as source or exposed by status APIs.
+
+Self-hosted operators can instead set `AUTOMORPHIC_TELEGRAM_API_ID` and `AUTOMORPHIC_TELEGRAM_API_HASH` in the private
+server environment file or use the installation setup form. Environment settings take
+precedence over saved setup, which takes precedence over the bundled app identity.
+
+The integration uses your own MTProto account session to read joined channels and supergroups.
+Choose a channel to read recent posts, toggle its bell for in-app notifications, and optionally
+allow desktop notifications. Notifications run while the trading workspace is open. This does not
+send channel messages, execute signals, or place trades. Disconnect logs out the saved Telegram
+session and removes its private session file. Telegram sign-in challenges that require other
+verification methods must be completed in Telegram before retrying.
+
+## Rithmic
+
+A native Rithmic connector has not been implemented. R|Protocol provides a potential WebSocket
+integration path, but requires developer access, the supplied protocol definitions, and applicable
+conformance requirements. Request access through <https://www.rithmic.com/api-request> before
+planning a production connector. No Rithmic account is connected by these settings.
 
 ## Marketing site
 

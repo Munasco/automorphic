@@ -1,3 +1,4 @@
+import { TelegramPanel } from "./TelegramPanel";
 import { chartIntervalKey, type ChartInterval } from "./tradingIntervals";
 import { ChartViewMenu, type ChartView } from "./ChartViewMenu";
 import { INSTRUMENTS, INSTRUMENT_ROOTS } from "./tradingInstruments";
@@ -11,9 +12,10 @@ import type { DrawingAlertsController } from "./useDrawingAlerts";
 import { ChartOverlayLayoutProvider } from "./chartOverlayLayout";
 import type { ChartPriceAlert } from "./chartAlerts";
 import { ChartIcon } from "./ChartIcon";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Button } from "../ui/button";
+import { toastManager } from "../ui/toast";
 import { useTradingPreferences } from "./tradingPreferences";
 import { TradovateChart } from "./TradovateChart";
 import { TradingViewEmbedPanel } from "./TradingViewEmbedPanel";
@@ -51,8 +53,12 @@ function ReadyTradingPanel({
   const loading = contractQueries.some((query) => query.isPending);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [quote, setQuote] = useState<MarketQuote | null>(null);
+  const chartSymbols = contracts.flatMap((contract) => [
+    contract,
+    { name: `@${contract.root}`, root: contract.root },
+  ]);
   const symbol =
-    contracts.find(
+    chartSymbols.find(
       (contract) => contract.root === settings.root && contract.name === settings.selectedSymbol,
     )?.name ??
     contracts.find((contract) => contract.root === settings.root)?.name ??
@@ -91,6 +97,17 @@ function ReadyTradingPanel({
     if (open) setSideView(null);
   };
   const error = selectedQuery.error?.message;
+  const lastToastedErrorTimeRef = useRef<number>(0);
+  useEffect(() => {
+    if (selectedQuery.error && selectedQuery.errorUpdatedAt !== lastToastedErrorTimeRef.current) {
+      lastToastedErrorTimeRef.current = selectedQuery.errorUpdatedAt;
+      toastManager.add({
+        type: "error",
+        title: "Trading error",
+        description: selectedQuery.error.message,
+      });
+    }
+  }, [selectedQuery.error, selectedQuery.errorUpdatedAt]);
   const settingsControl = (
     <Tooltip>
       <TooltipTrigger
@@ -244,7 +261,7 @@ function ReadyTradingPanel({
             <SymbolPicker
               open={pickerOpen}
               onOpenChange={setPickerOpen}
-              contracts={contracts}
+              contracts={chartSymbols}
               selected={symbol}
               loading={loading}
               onSelect={(contract) => {
@@ -252,14 +269,16 @@ function ReadyTradingPanel({
                 settings.setSelectedSymbol(contract.name);
               }}
             />
-            {activeView === "news" ? (
+            {activeView === "news" || activeView === "telegram" ? (
               <div className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1">
                 {navigationControl}
-                <span className="text-xs text-muted-foreground">News</span>
+                <span className="text-xs text-muted-foreground">
+                  {activeView === "telegram" ? "Telegram" : "News"}
+                </span>
                 <div className="ml-auto flex items-center">{settingsControl}</div>
               </div>
             ) : null}
-            {error && !settings.useTradingView ? (
+            {error && !settings.useTradingView && activeView !== "telegram" ? (
               <div
                 role="alert"
                 className="flex items-center gap-3 border-b border-border p-3 text-xs text-amber-400"
@@ -278,7 +297,7 @@ function ReadyTradingPanel({
             <div
               className={cn(
                 "relative min-h-0 min-w-0 flex-1",
-                activeView !== "news" ? "flex" : "hidden",
+                activeView !== "news" && activeView !== "telegram" ? "flex" : "hidden",
               )}
             >
               <div ref={chartContainerRef} className="min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -359,6 +378,11 @@ function ReadyTradingPanel({
                 </aside>
               ) : null}
             </div>
+            <TelegramPanel
+              key={projectId ?? "default"}
+              projectId={projectId}
+              visible={activeView === "telegram"}
+            />
             {activeView === "news" ? (
               <div className="min-h-0 flex-1 overflow-hidden">
                 <LiveWires

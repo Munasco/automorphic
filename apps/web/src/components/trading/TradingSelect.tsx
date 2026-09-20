@@ -1,6 +1,6 @@
 import { Select, SelectTrigger, SelectValue, SelectPopup, SelectItem } from "../ui/select";
 import { cn } from "../../lib/utils";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 /** The same control used by Appearance settings, sized by its surrounding layout. */
 export function TradingSelect({
@@ -16,6 +16,7 @@ export function TradingSelect({
   itemClassName,
   variant,
   icon,
+  displayValue,
 }: {
   id?: string;
   label: string;
@@ -32,6 +33,7 @@ export function TradingSelect({
   itemClassName?: string;
   variant?: "default" | "ghost";
   icon?: ComponentProps<typeof SelectTrigger>["icon"];
+  displayValue?: ReactNode;
 }) {
   return (
     <Select
@@ -49,7 +51,9 @@ export function TradingSelect({
         aria-label={label}
         className={cn("min-w-0", className)}
       >
-        <SelectValue>{options.find(([key]) => key === value)?.[1] ?? value}</SelectValue>
+        <SelectValue>
+          {displayValue ?? options.find(([key]) => key === value)?.[1] ?? value}
+        </SelectValue>
       </SelectTrigger>
       <SelectPopup
         align="end"

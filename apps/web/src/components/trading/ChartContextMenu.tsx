@@ -45,6 +45,7 @@ export function ChartContextMenu({
   onOpenSettings,
   onOpenObjectTree,
   onGoToDate,
+  onReplayFrom,
   onSaveTemplate,
   onManageTemplates,
 }: {
@@ -65,6 +66,7 @@ export function ChartContextMenu({
   onOpenSettings: () => void;
   onOpenObjectTree: () => void;
   onGoToDate?: (() => void) | undefined;
+  onReplayFrom?: ((time: number) => void) | undefined;
   onSaveTemplate?: (() => void) | undefined;
   onManageTemplates?: (() => void) | undefined;
 }) {
@@ -261,6 +263,25 @@ export function ChartContextMenu({
                 <span aria-hidden="true" className="size-4.5 shrink-0" />
                 Go to date…
                 <MenuShortcut className="tracking-normal">{mac ? "⌥" : "Alt"} G</MenuShortcut>
+              </MenuItem>
+            ) : null}
+            {onReplayFrom && typeof point.time === "number" && Number.isFinite(point.time) ? (
+              <MenuItem
+                className={itemClass}
+                onClick={() => run(() => onReplayFrom(point.time as number))}
+              >
+                <svg
+                  className="size-4.5 shrink-0"
+                  viewBox="5 5 19 19"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke="currentColor"
+                    d="M13.5 20V9l-6 5.5 6 5.5zM21.5 20V9l-6 5.5 6 5.5z"
+                  />
+                </svg>
+                Replay from here
               </MenuItem>
             ) : null}
             <MenuSeparator />

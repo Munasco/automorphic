@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalTimers:off globalDate:off - Native WebSocket/ReadableStream adapter; its lifecycle is tied to the HTTP response.
 import { activeCandidates, mostActiveContract, readContractActivity } from "./activeContract.ts";
 import * as NodeFSP from "node:fs/promises";
+import { tradovateConnection } from "./tradovateConnection.ts";
 import { resolveTradingEnvironmentFile, synchronizeTradingSession } from "./runtimeEnv.ts";
 import * as NodeUtil from "node:util";
 import * as NodeStreamWeb from "node:stream/web";
@@ -90,6 +91,8 @@ export function normalizeQuote(quote: unknown, symbol: string, contractId: numbe
 }
 
 export async function credentials() {
+  const connected = await tradovateConnection.credentials();
+  if (connected) return { token: connected.token, environment: connected.environment };
   const path = resolveTradingEnvironmentFile();
   await synchronizeTradingSession(path);
   const env = NodeUtil.parseEnv(await NodeFSP.readFile(path, "utf8"));
@@ -170,7 +173,7 @@ export async function contracts(root: string) {
 }
 
 export async function chartStream(symbol: string, interval: number, intervalUnit = "minute") {
-  if (!/^(MGC|MNQ|GC|NQ)[FGHJKMNQUVXZ]\d{1,2}$/.test(symbol)) {
+  if (!/^(?:@(MGC|MNQ|GC|NQ)|(MGC|MNQ|GC|NQ)[FGHJKMNQUVXZ]\d{1,2})$/.test(symbol)) {
     throw new Error("Choose a valid MGC, MNQ, GC or NQ contract.");
   }
   const { chartDescription, ...intervalMetadata } = resolveChartInterval(interval, intervalUnit);

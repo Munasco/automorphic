@@ -1,4 +1,4 @@
-export const RELEASES_REPO = "Munasco/automorphic-releases";
+export const RELEASES_REPO = "TennantCloud/automorphic-releases";
 export const RELEASES_URL = `https://github.com/${RELEASES_REPO}/releases`;
 
 export interface ReleaseAsset {
@@ -78,4 +78,31 @@ export async function fetchLatestRelease(): Promise<Release | null> {
         downloadLabel(a.name),
     ),
   };
+}
+
+export type DownloadArchitecture = "arm64" | "x64" | "universal";
+export function assetArchitecture(name: string): DownloadArchitecture | null {
+  if (/arm64|aarch64/i.test(name)) return "arm64";
+  if (/x64|x86_64|amd64/i.test(name)) return "x64";
+  if (/universal/i.test(name)) return "universal";
+  return null;
+}
+export async function detectArchitecture(): Promise<DownloadArchitecture | null> {
+  const hints = (
+    navigator as Navigator & {
+      userAgentData?: {
+        getHighEntropyValues: (
+          values: string[],
+        ) => Promise<{ architecture?: string; bitness?: string }>;
+      };
+    }
+  ).userAgentData;
+  try {
+    const info = await hints?.getHighEntropyValues(["architecture", "bitness"]);
+    if (info?.architecture === "arm" && info.bitness === "64") return "arm64";
+    if (info?.architecture === "x86" && info.bitness === "64") return "x64";
+  } catch {
+    /* Some browsers withhold processor details. Let the user choose. */
+  }
+  return null;
 }
