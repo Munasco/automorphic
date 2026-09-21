@@ -58,7 +58,12 @@ export function setupDesktopAccount(stateDir: string) {
     getWindow: () =>
       BrowserWindow.getAllWindows().find((window) => {
         const url = window.webContents.getURL();
-        return url.startsWith("t3code://app/") || url.startsWith("t3code-dev://app/");
+        return (
+          url.startsWith("automorphic://app/") ||
+          url.startsWith("automorphic-dev://app/") ||
+          url.startsWith("t3code://app/") ||
+          url.startsWith("t3code-dev://app/")
+        );
       }) ?? BrowserWindow.getFocusedWindow(),
   });
   if (process.defaultApp && process.argv[1]) {

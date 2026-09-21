@@ -159,19 +159,25 @@ export async function contracts(root: string) {
           : [];
       }),
     );
-    return [
-      mostActiveContract(
-        candidates,
-        await readContractActivity(
+    if (!candidates.length) throw new Error("No current contracts available.");
+    let winner = { id: candidates[0].id, name: candidates[0].name };
+    if (candidates.length > 1) {
+      try {
+        const activity = await readContractActivity(
           candidates,
           session.token,
           session.environment as "demo" | "live",
-        ),
-      ),
-    ];
+        );
+        winner = mostActiveContract(candidates, activity);
+      } catch {
+        // Fallback gracefully to front month candidate if volume check fails or times out
+        winner = { id: candidates[0].id, name: candidates[0].name };
+      }
+    }
+    return [winner];
   };
   const pending = lookup();
-  const entry = { token: session.token, expires: Date.now() + 15 * 60_000, pending };
+  const entry = { token: session.token, expires: Date.now() + 60 * 60_000, pending };
   activeContractCache.set(key, entry);
   try {
     return await pending;
@@ -372,6 +378,19 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
               mode: message.d?.mode,
               ...intervalMetadata,
             });
+          } else if (message.i === 4) {
+            if (message.d?.["p-ticket"]) {
+              const ticket = message.d["p-ticket"] as string;
+              const penaltySec =
+                typeof message.d?.["p-time"] === "number" ? message.d["p-time"] : 1;
+              setTimeout(() => {
+                if (ws.readyState === WebSocket.OPEN && !ended) {
+                  ws.send(
+                    `md/subscribeQuote\n4\n\n${JSON.stringify({ symbol, "p-ticket": ticket })}`,
+                  );
+                }
+              }, penaltySec * 1000);
+            }
           } else if (message.e === "md" && Array.isArray(message.d?.quotes)) {
             for (const rawQuote of message.d.quotes) {
               const quote = normalizeQuote(rawQuote, symbol, contractId);
