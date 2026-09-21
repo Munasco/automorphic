@@ -9,6 +9,8 @@ import {
   SearchIcon,
   ExternalLinkIcon,
   LoaderCircleIcon,
+  ShieldCheckIcon,
+  CheckCircle2Icon,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
@@ -51,6 +53,8 @@ export function TelegramPanel({
   const feed = useRef<HTMLDivElement>(null);
   const followLatest = useRef(true);
   const { prepare, deliver } = useAlertNotifications(false);
+  const deliverRef = useRef(deliver);
+  deliverRef.current = deliver;
   const seen = useRef(new Set<string>());
   const channels = useQuery({
     queryKey: [...scope, "telegram", "channels"],
@@ -151,7 +155,7 @@ export function TelegramPanel({
             );
             if (watched.includes(message.channelId) && message.date >= openedAt) {
               const channel = channels.data?.find((c) => c.id === message.channelId);
-              deliver({
+              deliverRef.current({
                 id: `telegram:${id}`,
                 title: channel?.title ?? "Telegram channel",
                 body:
@@ -181,7 +185,7 @@ export function TelegramPanel({
       close?.();
       if (retry) clearTimeout(retry);
     };
-  }, [connected, streamIds, watchedKey, desktop, scopeKey, client, deliver, channels.data]);
+  }, [connected, streamIds, watchedKey, desktop, scopeKey, client]);
   const list =
     channels.data?.filter((c) => c.title.toLowerCase().includes(search.toLowerCase())) ?? [];
   return (
@@ -198,10 +202,21 @@ export function TelegramPanel({
             <SendIcon className="size-5" />
           </div>
           <div>
-            <h2 className="text-base font-medium">Your signals, where you trade.</h2>
-            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              Connect Telegram, choose your signal channels, and receive alerts as they arrive.
+            <h2 className="text-base font-medium">Connect Telegram</h2>
+            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+              Connect your Telegram account to follow signal channels and receive real-time trading
+              alerts directly in your workspace.
             </p>
+          </div>
+          <div className="space-y-2 rounded-lg border border-border/50 bg-muted/20 p-3 text-xs text-muted-foreground">
+            <div className="flex items-start gap-2.5">
+              <ShieldCheckIcon className="mt-0.5 size-3.5 shrink-0 text-blue-400" />
+              <span>Session authenticated and stored securely on this device.</span>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <CheckCircle2Icon className="mt-0.5 size-3.5 shrink-0 text-emerald-400" />
+              <span>External connections and trading credentials remain protected.</span>
+            </div>
           </div>
           {connection.isPending ? (
             <p className="text-xs text-muted-foreground">Checking connection…</p>

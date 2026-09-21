@@ -138,7 +138,9 @@ export async function getHistoricalBars(input: HistoryRequest) {
   const window = historyWindow(input);
   const session = await credentials();
   const bars = await new Promise<Candle[]>((resolve, reject) => {
-    const socket = new WebSocket("wss://md.tradovateapi.com/v1/websocket");
+    const host =
+      session.environment === "live" ? "md.tradovateapi.com" : "md-demo.tradovateapi.com";
+    const socket = new WebSocket(`wss://${host}/v1/websocket`);
     let historicalId: number | undefined;
     let realtimeId: number | undefined;
     let done = false;

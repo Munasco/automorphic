@@ -124,5 +124,10 @@ export async function watchlistStream(value: string) {
     contract ? [{ root, ...contract }] : [],
   );
   if (!entries.length) throw new Error("No active contracts available.");
-  return createWatchlistResponse(entries, session.token);
+  const host = session.environment === "live" ? "md.tradovateapi.com" : "md-demo.tradovateapi.com";
+  return createWatchlistResponse(
+    entries,
+    session.token,
+    () => new WebSocket(`wss://${host}/v1/websocket`),
+  );
 }

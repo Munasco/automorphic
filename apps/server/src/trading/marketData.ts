@@ -159,7 +159,16 @@ export async function contracts(root: string) {
           : [];
       }),
     );
-    return [mostActiveContract(candidates, await readContractActivity(candidates, session.token))];
+    return [
+      mostActiveContract(
+        candidates,
+        await readContractActivity(
+          candidates,
+          session.token,
+          session.environment as "demo" | "live",
+        ),
+      ),
+    ];
   };
   const pending = lookup();
   const entry = { token: session.token, expires: Date.now() + 15 * 60_000, pending };
@@ -214,7 +223,9 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
   const body = new NodeStreamWeb.ReadableStream<Uint8Array>({
     start(controller) {
       const encoder = new TextEncoder();
-      const ws = new WebSocket("wss://md.tradovateapi.com/v1/websocket");
+      const host =
+        session.environment === "live" ? "md.tradovateapi.com" : "md-demo.tradovateapi.com";
+      const ws = new WebSocket(`wss://${host}/v1/websocket`);
       let ended = false;
       let heartbeat: ReturnType<typeof setInterval> | undefined;
       let historicalId: number | undefined;
@@ -319,6 +330,24 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
             );
             ws.send(`md/subscribeQuote\n4\n\n${JSON.stringify({ symbol })}`);
           } else if (message.i === 2) {
+            if (message.d?.["p-ticket"]) {
+              const ticket = message.d["p-ticket"] as string;
+              const penaltySec =
+                typeof message.d?.["p-time"] === "number" ? message.d["p-time"] : 1;
+              setTimeout(() => {
+                if (ws.readyState === WebSocket.OPEN && !ended) {
+                  ws.send(
+                    `md/getChart\n2\n\n${JSON.stringify({
+                      symbol,
+                      chartDescription,
+                      timeRange: { asMuchAsElements: historyLimit },
+                      "p-ticket": ticket,
+                    })}`,
+                  );
+                }
+              }, penaltySec * 1000);
+              return;
+            }
             if (message.s !== 200 || message.d?.errorText) {
               finish("Chart subscription rejected. Check market-data access for this contract.");
               return;
