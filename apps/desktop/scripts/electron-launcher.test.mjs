@@ -99,15 +99,15 @@ describe("electron development launcher", () => {
   });
 
   it("declares why the macOS app needs protected access", () => {
-    const values = resolveMacBundleInfoPlistStrings("T3 Code (Dev) Launcher");
+    const values = resolveMacBundleInfoPlistStrings("Automorphic (Dev) Launcher");
 
     assert.equal(
       values.NSScreenCaptureUsageDescription,
-      "T3 Code captures the active window when you use the snapshot shortcut.",
+      "Automorphic captures the active window when you use the snapshot shortcut.",
     );
     assert.equal(
       values.NSDocumentsFolderUsageDescription,
-      "T3 Code reads project files you open in the desktop app.",
+      "Automorphic reads project files you open in the desktop app.",
     );
   });
 
@@ -143,7 +143,10 @@ describe("electron development launcher", () => {
     // The source icons are real repo paths, joined for the host.
     assert.match(development.sourceIconPath, /assets[\\/]dev[\\/]blueprint-macos-1024\.png$/);
     assert.equal(development.generatedIconPath, "/runtime/icon-dev.icns");
-    assert.match(production.sourceIconPath, /assets[\\/]prod[\\/]black-macos-1024\.png$/);
+    assert.match(
+      production.sourceIconPath,
+      /apps[\\/]desktop[\\/]resources[\\/]automorphic-macos-1024\.png$/,
+    );
     assert.equal(production.generatedIconPath, "/runtime/icon-prod.icns");
   });
 });

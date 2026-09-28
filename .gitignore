@@ -41,3 +41,4 @@ node_modules/
 
 # Private local font previews; never included in builds.
 apps/web/.local-fonts/
+.kilo/
