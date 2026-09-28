@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalTimers:off globalDate:off - Native WebSocket/ReadableStream adapter; its lifecycle is tied to the HTTP response.
 import { activeCandidates, mostActiveContract, readContractActivity } from "./activeContract.ts";
+import { tradovateMarketSocket } from "./tradovateMarketSocket.ts";
 import * as NodeFSP from "node:fs/promises";
 import { tradovateConnection } from "./tradovateConnection.ts";
 import { resolveTradingEnvironmentFile, synchronizeTradingSession } from "./runtimeEnv.ts";
@@ -15,6 +16,7 @@ import { createCalendarSeries, calendarPeriodStart } from "./calendarSeries.ts";
 import { resolveChartInterval, type ChartIntervalUnit } from "./chartInterval.ts";
 import { createTickSeries, tickHistoryRequestLimit, type TickBarSize } from "./tickSeries.ts";
 import { createNativeTickSeries, type NativeTickSize } from "./nativeTickSeries.ts";
+import { circuitBreaker } from "./rateLimitCircuitBreaker.ts";
 
 export type Candle = {
   time: number;
@@ -90,7 +92,7 @@ export function normalizeQuote(quote: unknown, symbol: string, contractId: numbe
   };
 }
 
-export async function credentials() {
+export async function credentials(): Promise<{ token: string; environment: string }> {
   const connected = await tradovateConnection.credentials();
   if (connected) return { token: connected.token, environment: connected.environment };
   const path = resolveTradingEnvironmentFile();
@@ -99,7 +101,8 @@ export async function credentials() {
   if (!env.TRADOVATE_ACCESS_TOKEN || !["demo", "live"].includes(env.TRADOVATE_ENVIRONMENT ?? "")) {
     throw new Error("Configure a Tradovate session on the server.");
   }
-  return { token: env.TRADOVATE_ACCESS_TOKEN, environment: env.TRADOVATE_ENVIRONMENT };
+  const environment = env.TRADOVATE_ENVIRONMENT === "live" ? "live" : "demo";
+  return { token: env.TRADOVATE_ACCESS_TOKEN, environment };
 }
 
 const activeContractCache = new Map<
@@ -125,7 +128,12 @@ export async function contracts(root: string) {
         signal: AbortSignal.timeout(10_000),
         redirect: "error",
       });
-      if (!response.ok) throw new Error(`Contract lookup returned HTTP ${response.status}.`);
+      if (!response.ok) {
+        if (response.status === 429) {
+          circuitBreaker.trip429("Tradovate contract lookup returned HTTP 429.");
+        }
+        throw new Error(`Contract lookup returned HTTP ${response.status}.`);
+      }
       const body = await response.json();
       if (!Array.isArray(body)) throw new Error("Invalid contract response.");
       return body;
@@ -159,19 +167,20 @@ export async function contracts(root: string) {
           : [];
       }),
     );
-    if (!candidates.length) throw new Error("No current contracts available.");
-    let winner = { id: candidates[0].id, name: candidates[0].name };
+    const front = candidates[0];
+    if (!front) throw new Error("No current contracts available.");
+    let winner = { id: front.id, name: front.name };
     if (candidates.length > 1) {
       try {
         const activity = await readContractActivity(
           candidates,
           session.token,
-          session.environment as "demo" | "live",
+          session.environment === "live" ? "live" : "demo",
         );
         winner = mostActiveContract(candidates, activity);
       } catch {
         // Fallback gracefully to front month candidate if volume check fails or times out
-        winner = { id: candidates[0].id, name: candidates[0].name };
+        winner = { id: front.id, name: front.name };
       }
     }
     return [winner];
@@ -198,6 +207,33 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
       ? createCalendarSeries(intervalUnit, interval)
       : null;
   const historyLimit = tickSize === 1 ? tickHistoryRequestLimit(1) : tickSize ? 500 : 2000;
+  const cb = circuitBreaker.status();
+  if (cb.blocked && !process.env.VITEST) {
+    const encoder = new TextEncoder();
+    return new Response(
+      new NodeStreamWeb.ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                type: "status",
+                state: "disconnected",
+                message: `Rate limit cooldown active (${Math.round(cb.remainingMs / 60_000)}m remaining). Requests paused to preserve IP cooldown.`,
+                ...intervalMetadata,
+              })}\n\n`,
+            ),
+          );
+        },
+      }),
+      {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-store",
+          "X-Accel-Buffering": "no",
+        },
+      },
+    );
+  }
   const session = await credentials();
   // https://api.tradovate.com/: contract/find binds the requested expiry to its ID.
   const contractResponse = await fetch(
@@ -209,6 +245,9 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
     },
   );
   if (!contractResponse.ok) {
+    if (contractResponse.status === 429) {
+      circuitBreaker.trip429("Tradovate contract lookup returned HTTP 429.");
+    }
     throw new Error(`Tradovate contract lookup returned HTTP ${contractResponse.status}.`);
   }
   const contract = await contractResponse.json();
@@ -229,11 +268,7 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
   const body = new NodeStreamWeb.ReadableStream<Uint8Array>({
     start(controller) {
       const encoder = new TextEncoder();
-      const host =
-        session.environment === "live" ? "md.tradovateapi.com" : "md-demo.tradovateapi.com";
-      const ws = new WebSocket(`wss://${host}/v1/websocket`);
       let ended = false;
-      let heartbeat: ReturnType<typeof setInterval> | undefined;
       let historicalId: number | undefined;
       let realtimeId: number | undefined;
       let finishedHistory = false;
@@ -280,14 +315,9 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
         if (ended) return;
         if (message) send({ type: "status", state: "disconnected", message, ...intervalMetadata });
         ended = true;
-        clearInterval(heartbeat);
         clearTimeout(timeout);
         clearTimeout(rotate);
-        if (ws.readyState === WebSocket.OPEN && realtimeId !== undefined)
-          ws.send(`md/cancelChart\n3\n\n${JSON.stringify({ subscriptionId: realtimeId })}`);
-        if (ws.readyState === WebSocket.OPEN)
-          ws.send(`md/unsubscribeQuote\n5\n\n${JSON.stringify({ symbol })}`);
-        ws.close();
+        unsubscribe();
         try {
           controller.close();
         } catch {
@@ -307,63 +337,17 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
         message: "Connecting to Tradovate…",
         ...intervalMetadata,
       });
-      ws.addEventListener("message", (event) => {
-        const raw = String(event.data);
-        if (raw === "o") {
-          ws.send(`authorize\n1\n\n${session.token}`);
-          heartbeat = setInterval(() => {
-            if (ws.readyState === WebSocket.OPEN) ws.send("[]");
-          }, 2500);
-          return;
-        }
-        if (raw === "h") return;
-        if (!raw.startsWith("a")) return;
-        let messages;
-        try {
-          messages = JSON.parse(raw.slice(1));
-        } catch {
-          return;
-        }
-        if (!Array.isArray(messages)) return;
-        for (const message of messages) {
-          if (message.i === 1) {
-            if (message.s !== 200) {
-              finish("Tradovate rejected market-data authorization.");
-              return;
-            }
-            ws.send(
-              `md/getChart\n2\n\n${JSON.stringify({ symbol, chartDescription, timeRange: { asMuchAsElements: historyLimit } })}`,
-            );
-            ws.send(`md/subscribeQuote\n4\n\n${JSON.stringify({ symbol })}`);
-          } else if (message.i === 2) {
-            if (message.d?.["p-ticket"]) {
-              const ticket = message.d["p-ticket"] as string;
-              const penaltySec =
-                typeof message.d?.["p-time"] === "number" ? message.d["p-time"] : 1;
-              setTimeout(() => {
-                if (ws.readyState === WebSocket.OPEN && !ended) {
-                  ws.send(
-                    `md/getChart\n2\n\n${JSON.stringify({
-                      symbol,
-                      chartDescription,
-                      timeRange: { asMuchAsElements: historyLimit },
-                      "p-ticket": ticket,
-                    })}`,
-                  );
-                }
-              }, penaltySec * 1000);
-              return;
-            }
-            if (message.s !== 200 || message.d?.errorText) {
-              finish("Chart subscription rejected. Check market-data access for this contract.");
-              return;
-            }
-            historicalId = message.d?.historicalId;
-            realtimeId = message.d?.realtimeId;
-            if (!Number.isSafeInteger(historicalId) || !Number.isSafeInteger(realtimeId)) {
-              finish("Market data did not provide valid chart subscription IDs.");
-              return;
-            }
+      const unsubscribe = tradovateMarketSocket.subscribeChart(
+        symbol,
+        {
+          symbol,
+          chartDescription,
+          timeRange: { asMuchAsElements: historyLimit },
+        },
+        {
+          onSubscribed: (info) => {
+            historicalId = info.historicalId;
+            realtimeId = info.realtimeId;
             if (tickSize && tickSize > 1) {
               nativeTicks = createNativeTickSeries(tickSize as NativeTickSize, {
                 historicalId: historicalId!,
@@ -375,46 +359,17 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
               type: "status",
               state: "connected",
               message: "Tradovate connected",
-              mode: message.d?.mode,
+              mode: info.mode,
               ...intervalMetadata,
             });
-          } else if (message.i === 4) {
-            if (message.d?.["p-ticket"]) {
-              const ticket = message.d["p-ticket"] as string;
-              const penaltySec =
-                typeof message.d?.["p-time"] === "number" ? message.d["p-time"] : 1;
-              setTimeout(() => {
-                if (ws.readyState === WebSocket.OPEN && !ended) {
-                  ws.send(
-                    `md/subscribeQuote\n4\n\n${JSON.stringify({ symbol, "p-ticket": ticket })}`,
-                  );
-                }
-              }, penaltySec * 1000);
-            }
-          } else if (message.e === "md" && Array.isArray(message.d?.quotes)) {
-            for (const rawQuote of message.d.quotes) {
-              const quote = normalizeQuote(rawQuote, symbol, contractId);
-              if (quote) {
-                const barTime = quoteBarTime(
-                  quote.timestamp,
-                  latestLiveBar,
-                  intervalMetadata.intervalUnit as ChartIntervalUnit,
-                  interval,
-                );
-                send({
-                  type: "quote",
-                  quote: { ...quote, ...(barTime === undefined ? {} : { barTime }) },
-                });
-              }
-            }
-          } else if (message.e === "chart" && Array.isArray(message.d?.charts)) {
+          },
+          onRawCharts: (charts) => {
             if (calendar) {
               const livePeriods = new Map<number, number>();
               let changed = false;
               let provenance: BarProvenance = "historical";
               let bars: Candle[] = calendar.accept([], true);
-              for (const chart of message.d.charts) {
-                if (!chart || !Number.isSafeInteger(chart.id)) continue;
+              for (const chart of charts) {
                 if (chart.id !== historicalId && chart.id !== realtimeId) continue;
                 const source = chartProvenance(chart.id, historicalId, realtimeId, finishedHistory);
                 const incoming = normalizeBars(chart.bars);
@@ -452,10 +407,10 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
                   livePeriods,
                 );
               }
-              continue;
+              return;
             }
-            for (const chart of message.d.charts) {
-              if (!chart || !Number.isSafeInteger(chart.id)) continue;
+
+            for (const chart of charts) {
               if (chart.id !== historicalId && chart.id !== realtimeId) continue;
               const provenance = chartProvenance(
                 chart.id,
@@ -500,11 +455,28 @@ export async function chartStream(symbol: string, interval: number, intervalUnit
                 sendBars(bars, provenance);
               }
             }
-          }
-        }
-      });
-      ws.addEventListener("error", () => finish("Market-data connection failed. Retrying…"));
-      ws.addEventListener("close", () => finish("Market-data connection closed. Retrying…"));
+          },
+          onQuote: (rawQuote) => {
+            const quote = normalizeQuote(rawQuote, symbol, contractId);
+            if (quote) {
+              const barTime = quoteBarTime(
+                quote.timestamp,
+                latestLiveBar,
+                intervalMetadata.intervalUnit as ChartIntervalUnit,
+                interval,
+              );
+              send({
+                type: "quote",
+                quote: { ...quote, ...(barTime === undefined ? {} : { barTime }) },
+              });
+            }
+          },
+          onError: (error) => {
+            finish(error.message);
+          },
+        },
+        session,
+      );
     },
     cancel() {
       dispose();

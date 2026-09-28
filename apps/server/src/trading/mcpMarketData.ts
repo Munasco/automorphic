@@ -2,6 +2,7 @@
 import * as NodeCrypto from "node:crypto";
 import { credentials, normalizeBars, type Candle } from "./marketData.ts";
 import { resolveChartInterval } from "./chartInterval.ts";
+import { tradovateMarketSocket } from "./tradovateMarketSocket.ts";
 
 export interface HistoryRequest {
   symbol: string;
@@ -136,98 +137,22 @@ export async function listProducts(offset = 0, limit = 50) {
 /** A finite historical subscription. Never silently return a partial response on timeout. */
 export async function getHistoricalBars(input: HistoryRequest) {
   const window = historyWindow(input);
-  const session = await credentials();
-  const bars = await new Promise<Candle[]>((resolve, reject) => {
-    const host =
-      session.environment === "live" ? "md.tradovateapi.com" : "md-demo.tradovateapi.com";
-    const socket = new WebSocket(`wss://${host}/v1/websocket`);
-    let historicalId: number | undefined;
-    let realtimeId: number | undefined;
-    let done = false;
-    let heartbeat: ReturnType<typeof setInterval> | undefined;
-    const collected: Candle[] = [];
-    const finish = (error?: Error) => {
-      if (done) return;
-      done = true;
-      clearTimeout(timeout);
-      clearInterval(heartbeat);
-      if (socket.readyState === WebSocket.OPEN && realtimeId !== undefined)
-        socket.send(`md/cancelChart\n3\n\n${JSON.stringify({ subscriptionId: realtimeId })}`);
-      socket.close();
-      if (error) reject(error);
-      else resolve(collected);
-    };
-    const timeout = setTimeout(
-      () =>
-        finish(
-          new Error(
-            "Tradovate history timed out before the end of history. Retry a smaller date window.",
-          ),
-        ),
-      25_000,
-    );
-    socket.addEventListener("error", () =>
-      finish(new Error("Tradovate history connection failed.")),
-    );
-    socket.addEventListener("close", () =>
-      finish(new Error("Tradovate closed the connection before history completed.")),
-    );
-    socket.addEventListener("message", (event) => {
-      const raw = String(event.data);
-      if (raw === "o") {
-        socket.send(`authorize\n1\n\n${session.token}`);
-        heartbeat = setInterval(() => {
-          if (socket.readyState === WebSocket.OPEN) socket.send("[]");
-        }, 2500);
-        return;
-      }
-      if (!raw.startsWith("a")) return;
-      try {
-        const messages = JSON.parse(raw.slice(1));
-        if (!Array.isArray(messages)) return;
-        for (const message of messages) {
-          if (done) return;
-          if (message.i === 1) {
-            if (message.s !== 200)
-              return finish(new Error("Tradovate rejected market-data authorization."));
-            socket.send(
-              `md/getChart\n2\n\n${JSON.stringify({
-                symbol: input.symbol,
-                chartDescription: window.chartDescription,
-                timeRange: {
-                  asFarAsTimestamp: new Date(window.start).toISOString(),
-                  closestTimestamp: new Date(window.before - 1).toISOString(),
-                  asMuchAsElements: window.limit,
-                },
-              })}`,
-            );
-          } else if (message.i === 2) {
-            if (
-              message.s !== 200 ||
-              message.d?.errorText ||
-              !Number.isSafeInteger(message.d?.historicalId)
-            )
-              return finish(
-                new Error(
-                  "Tradovate rejected history for this symbol. Check contract and market-data entitlement.",
-                ),
-              );
-            historicalId = message.d.historicalId;
-            realtimeId = message.d.realtimeId;
-          } else if (message.e === "chart" && Array.isArray(message.d?.charts)) {
-            for (const chart of message.d.charts) {
-              if (historicalId === undefined || chart?.id !== historicalId) continue;
-              collected.push(...normalizeBars(chart.bars));
-              if (collected.length > 10000)
-                return finish(new Error("Tradovate exceeded the history page limit."));
-              if (chart.eoh) return finish();
-            }
-          }
-        }
-      } catch {
-        finish(new Error("Tradovate sent malformed history data."));
-      }
-    });
-  });
+  const rawBars = await tradovateMarketSocket.getHistoricalBars(
+    input.symbol,
+    {
+      symbol: input.symbol,
+      chartDescription: window.chartDescription,
+      timeRange: {
+        asFarAsTimestamp: new Date(window.start).toISOString(),
+        closestTimestamp: new Date(window.before - 1).toISOString(),
+        asMuchAsElements: window.limit,
+      },
+    },
+    25_000,
+  );
+  const bars = normalizeBars(rawBars);
+  if (bars.length > 10000) {
+    throw new Error("Tradovate exceeded the history page limit.");
+  }
   return historyPage(input, bars);
 }
