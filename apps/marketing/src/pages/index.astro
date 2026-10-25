@@ -1,8 +1,41 @@
 ---
 import ReactGrab from "../components/ReactGrab.astro";
+import WaitlistForm from "../components/WaitlistForm.astro";
 import "../styles/automorphic.css";
 
-const signupUrl = "/waitlist";
+const features = [
+  {
+    title: "Pro charting",
+    copy: "Indicators, drawing tools, templates, and bar replay. The chart you already know how to read.",
+    icon: '<path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15v-4"/><path d="M12 15V8"/><path d="M16 15v-6"/><path d="M8 9V8M12 6V5M16 7V6"/>',
+  },
+  {
+    title: "Live Wires",
+    copy: "Know if a move is news or technicals. Every headline is scored for the instrument you’re watching the moment it lands.",
+    icon: '<path d="M5 12a7 7 0 0 1 14 0"/><path d="M8.5 12a3.5 3.5 0 0 1 7 0"/><circle cx="12" cy="12" r="1"/><path d="M12 13v7"/>',
+  },
+  {
+    title: "Staggered entries",
+    copy: "Scale into a position across the levels you set. One bad tick never decides the whole trade.",
+    icon: '<path d="M4 19h4v-4h4v-4h4V7h4"/><path d="M4 19v-2M8 15v-2M12 11V9M16 7V5"/>',
+  },
+  {
+    title: "Automatic staggered TPs",
+    copy: "Take profit at TP1, TP2, and TP3 on their own. Your stop moves to break-even after the first target fills.",
+    icon: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/><path d="M12 2v3M22 12h-3"/>',
+  },
+  {
+    title: "Setup alerts",
+    copy: "Get alerted when your setup forms, not just when price touches a line.",
+    icon: '<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 14l2.5-3 2 2L16 9"/>',
+  },
+  {
+    title: "Telegram signals on the chart",
+    copy: "Calls from the channels you follow show up as entry, stop, and target levels right on the chart.",
+    icon: '<path d="M21 4 3 11l6 2.5L19 7l-8 8 .5 5 3-4 4 3z"/>',
+  },
+];
+
 ---
 
 <!doctype html>
@@ -11,11 +44,11 @@ const signupUrl = "/waitlist";
     <ReactGrab />
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Charts, AI conversations, and macro context in one trading research workspace. Explore the market with Automorphic." />
+    <meta name="description" content="The tools and infrastructure of a quant for day traders: a research and strategy partner, a trading platform, a risk partner, and a strategy marketplace." />
     <link rel="preload" href="/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
     <meta name="theme-color" content="#080b12" />
     <meta property="og:title" content="Automorphic — A clearer view of the markets." />
-    <meta property="og:description" content="A trading research workspace with live charts, configurable indicators, AI macros, and local price alerts." />
+    <meta property="og:description" content="The tools and infrastructure of a quant for day traders: a research and strategy partner, a trading platform, a risk partner, and a strategy marketplace." />
     <link rel="icon" href="/automorphic-icon.svg?v=2" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Automorphic — A clearer view of the markets.</title>
@@ -24,79 +57,151 @@ const signupUrl = "/waitlist";
     <a class="skip-link" href="#main">Skip to content</a>
     <header>
       <a class="brand" href="/" aria-label="Automorphic home"><img src="/automorphic-mark.svg" width="34" height="34" alt="" />Automorphic</a>
-      <nav aria-label="Main navigation"><a href="#workspace">Workspace</a><a href="#approach">Approach</a><a href="#faq">FAQ</a></nav>
-      <a class="nav-cta" href={signupUrl}>Join the waitlist</a>
+      <nav aria-label="Main navigation"><a href="#workspace">Workspace</a><a href="#features">Features</a><a href="#faq">FAQ</a></nav>
     </header>
     <main id="main">
       <section class="hero" aria-labelledby="hero-title">
         <div class="atmosphere" aria-hidden="true"><div class="glow"></div><div class="ribbons"></div><div class="horizon"></div></div>
         <div class="hero-copy">
-          <p class="eyebrow"><span></span> AI-powered trading</p>
+          <p class="eyebrow"><span></span> AI trading workspace</p>
           <h1 id="hero-title">A clearer view<br />of the markets.</h1>
           <p class="lede">Your own trading assistant, to prevent your next tilt.</p>
-          <p class="description">Explore the market with AI. Think through ideas in your own words. See the macro picture.</p>
-          <div class="hero-actions"><a class="primary" href={signupUrl}>Join the waitlist </a><a class="text-link" href="#workspace">Inside the workspace <span aria-hidden="true">↓</span></a></div>
+          <p class="description">All the tools and infrastructure to move from <span class="hl-shift">Day Trader to Quant</span>: a <strong>research and strategy partner</strong>, a <strong>trading platform</strong>, a <strong>risk partner</strong>, and a <strong>marketplace</strong> to sell your strategies.</p>
+          <div class="hero-actions"><a class="primary" href="#waitlist">Join the waitlist <span aria-hidden="true">→</span></a><a class="text-link" href="#workspace">Explore the workspace <span aria-hidden="true">↓</span></a></div>
+        </div>
+        <div class="stage" data-stage>
+          <div class="scene-wrap">
+            <canvas class="scene" data-scene aria-hidden="true"></canvas>
+            <div class="chip chip-news" aria-hidden="true">
+              <span class="chip-kicker"><span class="dot"></span>Live Wires · Breaking</span>
+              <span class="chip-title">CPI comes in hotter than expected</span>
+              <span class="chip-tag chip-tag-down">Bearish NQ</span>
+            </div>
+            <div class="chip chip-risk" aria-hidden="true">
+              <span class="chip-kicker">Untilt</span>
+              <span class="chip-title">Outside your setup</span>
+              <span class="chip-tag chip-tag-warn">Size capped at 1</span>
+            </div>
+            <div class="chip chip-test" aria-hidden="true">
+              <span class="chip-kicker">Backtest · NQ 5m</span>
+              <span class="chip-title">Double bottom to prior high</span>
+              <span class="chip-meta">1,240 trades · costs included · out-of-sample</span>
+            </div>
+          </div>
         </div>
       </section>
+
+      <section class="problem content" aria-labelledby="problem-title">
+        <p class="eyebrow">01 / Why we built it</p>
+        <h2 id="problem-title">Was that dump news,<br />or just technicals?</h2>
+        <div class="problem-copy">
+          <p>Is this trendline tap a re-entry, or a reason to take TP1? Checking takes time. By then you’ve missed the entry, rushed it, or traded outside your setup.</p>
+          <p class="problem-answer">Automorphic puts the answer next to the chart.</p>
+        </div>
+      </section>
+
       <section class="workspace content" id="workspace" aria-labelledby="workspace-title">
-        <div class="section-intro"><p class="eyebrow">01 / The workspace</p><h2 id="workspace-title">Familiar charts.<br />A new way to work.</h2><p>Your charts, AI conversations, and macro news. One workspace.</p></div>
-        <figure class="workspace-preview">
-          <a href="/workspace-snapshot.webp" target="_blank" rel="noopener noreferrer" aria-label="View the full-size Automorphic workspace screenshot">
-            <img class="workspace-snapshot" src="/workspace-snapshot.webp" width="2516" height="1876" loading="lazy" decoding="async" alt="Automorphic workspace with its sidebar and expanded NQ futures chart, initial balance levels, and indicators." />
-          </a>
-        </figure>
+        <div class="section-intro"><p class="eyebrow">02 / The workspace</p><h2 id="workspace-title">Your chart. Your news.<br />Your research partner.</h2><p>Everything you check before a trade, on one screen.</p></div>
+        <div class="features" id="features">
+          {features.map((feature) => (
+            <article>
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" set:html={feature.icon} />
+              <h3>{feature.title}</h3>
+              <p>{feature.copy}</p>
+            </article>
+          ))}
+        </div>
       </section>
-      <section class="research-lenses content" aria-label="What Automorphic is building">
-        <article><p class="eyebrow">Plain-language backtests</p><h3>Backtest any strategy in your own words.</h3><p>What if testing a strategy were as simple as describing it?</p></article>
-        <article><p class="eyebrow">AI indicators &amp; alerts</p><h3>Make the chart follow your rules.</h3><p>Shape your chart around the way you trade.</p></article>
-        <article><p class="eyebrow">AI macros</p><h3>When the macro picture disagrees.</h3><p>See how breaking news could support—or challenge—your trade.</p></article>
-      </section>
-      <section class="approach content" id="approach" aria-labelledby="approach-title">
-        <div><p class="eyebrow">02 / Our vision</p><h2 id="approach-title">Have more confidence in your setup.<br />Test your edge.</h2><p class="approach-lede">Your judgment, backed by AI macro research, large-scale backtests, and a plan for your A+ setups.</p>
+
+      <section class="approach content" id="vision" aria-labelledby="approach-title">
+        <div><p class="eyebrow">03 / Our vision</p><h2 id="approach-title">Have more confidence in your setup.<br />Test your edge.</h2><p class="approach-lede">Your judgment, backed by AI macro research, large-scale backtests, and a plan for your A+ setups.</p>
           <div class="research-example">
             <p class="eyebrow">A new era in trading</p>
             <blockquote>“I’m new to silver. Spend 4 hours backtesting a technical edge targeting an 80% win rate over a large sample.”</blockquote>
           </div>
         </div>
         <div class="principles">
-          <article><span>01</span><div><h3>Describe the setup</h3><p>“How often do double bottoms reach the prior high? Do 2 p.m. shorts work after a strongly bullish open?”</p></div></article>
-          <article><span>02</span><div><h3>Refine the rules</h3><p>Adjust your entries, exits, and risk.</p></div></article>
-          <article><span>03</span><div><h3>Put it through a backtest</h3><p>Inspect the trades, costs, and drawdowns.</p></div></article>
+          <article><span>01</span><div><h3>Research the market</h3><p>AI macro research on the instruments you trade, drawing on how experts read the market. Know if a move is news or just technicals.</p></div></article>
+          <article><span>02</span><div><h3>Describe the setup</h3><p>In words, math, or code. “How often do double bottoms reach the prior high? Do 2 p.m. shorts work after a strongly bullish open?”</p></div></article>
+          <article><span>03</span><div><h3>Backtest and refine</h3><p>Inspect the trades, costs, and drawdowns. Adjust your entries, exits, and risk until the edge holds up.</p></div></article>
           <article><span>04</span><div><h3>Automate your A+ setups</h3><p>Define the conditions, execution, and risk. Make your best setups repeatable.</p></div></article>
         </div>
       </section>
+
+      <section class="next content" aria-labelledby="next-title">
+        <div class="section-intro"><p class="eyebrow">04 / Beyond the chart</p><h2 id="next-title">Risk, signals,<br />and strategies.</h2><p>Stay on your plan, and let your best setups work for you.</p></div>
+        <div class="platform">
+          <article>
+            <div class="mock" aria-hidden="true">
+              <div class="mock-row"><span>Daily loss limit</span><span class="mock-value">2 of 3 trades</span></div>
+              <div class="mock-meter"><span style="width: 66%"></span></div>
+              <div class="mock-row"><span>Outside your setup</span><span class="mock-pill mock-pill-warn">Size capped at 1</span></div>
+              <div class="mock-row"><span>Cooldown</span><span class="mock-value">12:40</span></div>
+            </div>
+            <h3>Untilt</h3>
+            <p>A risk partner that knows your plan. Size caps, cooldowns, and tighter limits after a loss outside your setup.</p>
+          </article>
+          <article>
+            <div class="mock" aria-hidden="true">
+              <div class="mock-row mock-head"><span>IB breakout, NQ</span><span class="mock-pill">Subscribe</span></div>
+              <div class="mock-stats"><div><span>Signals</span>Tracked</div><div><span>Record</span>Public</div><div><span>Code</span>Private</div></div>
+              <div class="mock-row"><span>Long 21,480 · Stop 21,455</span><span class="mock-value">TP1 hit</span></div>
+            </div>
+            <h3>Strategy marketplace</h3>
+            <p>Subscribe to signals and strategies with a tracked, public record. Or sell your own without sharing the code.</p>
+          </article>
+          <article>
+            <div class="mock" aria-hidden="true">
+              <div class="mock-rule"><span class="mock-key">When</span>price breaks the initial balance high</div>
+              <div class="mock-rule"><span class="mock-key">And</span>price holds above session VWAP</div>
+              <div class="mock-rule"><span class="mock-key">Then</span>buy 1 NQ, stop under the IB high</div>
+              <div class="mock-row"><span>Risk limits</span><span class="mock-pill mock-pill-ok">Checked</span></div>
+            </div>
+            <h3>Automated A+ setups</h3>
+            <p>Turn a tested setup into rules that execute inside the risk limits you set.</p>
+          </article>
+        </div>
+      </section>
+
       <section class="faq content" id="faq" aria-labelledby="faq-title">
         <div class="faq-intro">
-          <p class="eyebrow">03 / A few questions</p>
+          <p class="eyebrow">05 / Questions</p>
           <h2 id="faq-title">Before you<br />get started.</h2>
-          <p>The ideas behind Automorphic, and how it can fit your trading.</p>
         </div>
         <div class="faq-list">
           <details open>
-            <summary>What’s the vision for Automorphic?</summary>
-            <p>Our vision is to supercharge discretionary trading: precise AI macro research, backtesting at scale, and automation for your A+ setups. Turn the patterns you recognize into strategies you’ve tested—so you can act with conviction, avoid the impulse trade, and make your best decisions repeatable.</p>
+            <summary>Who is it for?</summary>
+            <p>Discretionary traders who want context faster and setups they’ve actually tested. You stay in control of every trade.</p>
           </details>
           <details>
-            <summary>What can it help me with?</summary>
-            <p>Explore price action, adjust indicators, annotate your chart, and consider the macro news around a setup. Use an AI assistant in your local workspace to discuss ideas and organize your research.</p>
+            <summary>Which AI does it use?</summary>
+            <p>The one you already have. Automorphic works with Claude, Codex, Cursor, Grok, OpenCode, and Antigravity through your own subscription.</p>
           </details>
           <details>
-            <summary>Why use this instead of TradingView?</summary>
-            <p>Automorphic is for traders who want charts supercharged with AI. Try it if that fits how you think through a trade.</p>
+            <summary>Where does my data live?</summary>
+            <p>Your workspaces, backtests, and research live in a folder on your own computer.</p>
           </details>
           <details>
-            <summary>Can it guarantee profits or an 80% win rate?</summary>
-            <p>No. A win-rate target is a question to investigate, not a promised outcome. A backtest can fail that target, and historical results don’t guarantee future performance. Win rate alone also leaves out trade size, costs, and drawdowns.</p>
-          </details>
-          <details>
-            <summary>What can I use today?</summary>
-            <p>Explore trading ideas with built-in, configurable indicators and alerts. Bring your charts, drawing tools, AI macros, and assistant together in one workspace.</p>
+            <summary>Can it guarantee profits?</summary>
+            <p>No. A backtest is evidence, not a promise. Past results don’t guarantee future performance, and win rate alone leaves out size, costs, and drawdowns.</p>
           </details>
         </div>
       </section>
-      <section class="closing content" id="waitlist"><img src="/automorphic-mark.svg" width="64" height="64" alt="" /><h2>Time to experiment with<br />your craziest trading ideas.</h2><p class="closing-copy">AI beside the market. Your reasoning at the center.</p><a class="primary" href={signupUrl}>Join the waitlist</a></section>
+
+      <section class="closing content" id="waitlist">
+        <img src="/automorphic-mark.svg" width="64" height="64" alt="" />
+        <h2>Time to experiment with<br />your craziest trading ideas.</h2>
+        <p class="closing-copy">Join the waitlist. We’ll email you when your access opens.</p>
+        <WaitlistForm />
+      </section>
     </main>
 
+    <script>
+      import { startHeroScene } from "../lib/heroScene";
+      const stage = document.querySelector<HTMLElement>("[data-stage]");
+      const scene = document.querySelector<HTMLCanvasElement>("[data-scene]");
+      if (stage && scene) startHeroScene(stage, scene);
+    </script>
     <footer><a class="brand" href="/"><img src="/automorphic-mark.svg" width="25" height="25" alt="" />Automorphic</a><span>© {new Date().getFullYear()} Automorphic. All rights reserved.</span></footer>
   </body>
 </html>
