@@ -6,6 +6,11 @@ import * as NodePath from "node:path";
 import { chartStream, contracts, normalizeBars, normalizeQuote } from "./marketData.ts";
 import * as ActiveContract from "./activeContract.ts";
 import { parseWires } from "./news.ts";
+
+// These fixtures exercise server credentials, independently of saved device sessions.
+vi.mock("./tradovateConnection.ts", () => ({
+  tradovateConnection: { credentials: async () => null },
+}));
 describe("Tradovate candle normalization", () => {
   it("orders and merges history updates and rejects invalid prices", () => {
     const bar = {

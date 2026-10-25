@@ -5,6 +5,11 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { accountSnapshot, normalizeAccountData, parseAccountId } from "./accountData.ts";
 
+// These fixtures exercise server credentials, independently of saved device sessions.
+vi.mock("./tradovateConnection.ts", () => ({
+  tradovateConnection: { credentials: async () => null },
+}));
+
 describe("Tradovate account attribution", () => {
   it("joins fills through the selected account's orders and rejects foreign or busted fills", () => {
     const result = normalizeAccountData(
