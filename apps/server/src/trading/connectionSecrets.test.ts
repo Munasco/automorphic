@@ -1,24 +1,29 @@
 // @effect-diagnostics nodeBuiltinImport:off - Private filesystem fixture.
 import { it, expect } from "vite-plus/test";
-import * as FS from "node:fs/promises";
-import * as OS from "node:os";
-import * as Path from "node:path";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import { connectionSecrets } from "./connectionSecrets.ts";
 it("stores credentials atomically with private permissions outside fixtures", async () => {
-  const directory = await FS.mkdtemp(Path.join(OS.tmpdir(), "automorphic-secrets-test-"));
+  const directory = await NodeFSP.mkdtemp(
+    NodePath.join(NodeOS.tmpdir(), "automorphic-secrets-test-"),
+  );
   try {
     const store = connectionSecrets(directory);
     expect(await store.read("telegram")).toBeNull();
     await store.write("telegram", { session: "fixture-session" });
     expect(await store.read("telegram")).toEqual({ session: "fixture-session" });
-    if (process.platform !== "win32") {
-      expect((await FS.stat(directory)).mode & 0o777).toBe(0o700);
-      expect((await FS.stat(Path.join(directory, "telegram.json"))).mode & 0o777).toBe(0o600);
+    // oxlint-disable-next-line t3code/no-global-process-runtime -- Native filesystem permission assertions apply only on POSIX hosts.
+    if (NodeOS.platform() !== "win32") {
+      expect((await NodeFSP.stat(directory)).mode & 0o777).toBe(0o700);
+      expect((await NodeFSP.stat(NodePath.join(directory, "telegram.json"))).mode & 0o777).toBe(
+        0o600,
+      );
     }
-    expect(await FS.readdir(directory)).toEqual(["telegram.json"]);
+    expect(await NodeFSP.readdir(directory)).toEqual(["telegram.json"]);
     await store.remove("telegram");
     expect(await store.read("telegram")).toBeNull();
   } finally {
-    await FS.rm(directory, { recursive: true, force: true });
+    await NodeFSP.rm(directory, { recursive: true, force: true });
   }
 });
