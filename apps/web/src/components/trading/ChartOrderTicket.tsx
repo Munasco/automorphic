@@ -114,13 +114,14 @@ export function ChartOrderTicket({
       void client.invalidateQueries({ queryKey: [...scope, "account"] });
     } catch (error) {
       setStatus("failed");
-      if (!mounted.current)
-        toastManager.add({
-          type: "error",
-          title: "Check order status in Tradovate",
-          description: error instanceof Error ? error.message : "Order confirmation unavailable.",
-        });
-      setMessage(error instanceof Error ? error.message : "Check order status in Tradovate.");
+      const description =
+        error instanceof Error ? error.message : "Order was rejected by Tradovate.";
+      toastManager.add({
+        type: "error",
+        title: "Order rejected",
+        description,
+      });
+      setMessage(description);
     }
   }
   return (

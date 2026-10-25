@@ -45,6 +45,8 @@ describe("futures instrument selection", () => {
       await useTradingPreferences.persist.rehydrate();
       expect(useTradingPreferences.getState().interval).toEqual(interval);
     }
+    // Rejection must retain an explicit selection, regardless of catalog ordering.
+    useTradingPreferences.getState().setInterval({ unit: "minute", value: 240 });
     for (const interval of [0, 0.5, 7, 1440, NaN, Infinity]) {
       useTradingPreferences.getState().setInterval(interval);
       expect(useTradingPreferences.getState().interval).toEqual({ unit: "minute", value: 240 });

@@ -1,4 +1,4 @@
-import { GaugeIcon, NewspaperIcon } from "lucide-react";
+import { GaugeIcon, NewspaperIcon, SendIcon } from "lucide-react";
 import {
   Menu,
   MenuTrigger,
@@ -11,9 +11,11 @@ import {
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 
-export type ChartView = "chart" | "technicals" | "news";
+export type ChartView = "chart" | "technicals" | "news" | "telegram";
 function ViewIcon({ view }: { view: ChartView }) {
-  return view === "technicals" ? (
+  return view === "telegram" ? (
+    <SendIcon className="size-5" />
+  ) : view === "technicals" ? (
     <GaugeIcon className="size-5" />
   ) : view === "news" ? (
     <NewspaperIcon className="size-5" />
@@ -83,6 +85,7 @@ export function ChartViewMenu({
           </MenuGroupLabel>
           {technicalsAvailable ? item("technicals", "Technicals") : null}
           {item("news", "News")}
+          {item("telegram", "Telegram")}
         </MenuGroup>
       </MenuPopup>
     </Menu>

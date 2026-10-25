@@ -53,10 +53,16 @@ export function useChartReplay(context: string) {
     visible,
     speed,
     setSpeed,
-    start(bars: readonly Candle[]) {
+    start(bars: readonly Candle[], fromTime?: number) {
       const frozen = createReplayHistory(bars);
       if (frozen.length < 2) return false;
-      const index = Math.max(0, frozen.length - 101);
+      const index =
+        fromTime === undefined
+          ? Math.max(0, frozen.length - 101)
+          : Number.isFinite(fromTime)
+            ? frozen.findIndex((bar) => bar.time === fromTime)
+            : -1;
+      if (index < 0) return false;
       setSession({ context, bars: frozen, index, start: index, seekVersion: 0, playing: false });
       return true;
     },

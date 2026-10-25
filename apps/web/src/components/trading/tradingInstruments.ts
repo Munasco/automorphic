@@ -11,6 +11,8 @@ export function isInstrumentRoot(value: unknown): value is InstrumentRoot {
   return typeof value === "string" && Object.hasOwn(INSTRUMENTS, value);
 }
 export function rootFromSymbol(symbol: string): InstrumentRoot | undefined {
-  const root = /^(MGC|MNQ|GC|NQ)(?:[FGHJKMNQUVXZ]\d{1,2})?$/.exec(symbol)?.[1];
+  const root = symbol.startsWith("@")
+    ? symbol.slice(1)
+    : /^(MGC|MNQ|GC|NQ)(?:[FGHJKMNQUVXZ]\d{1,2})?$/.exec(symbol)?.[1];
   return isInstrumentRoot(root) ? root : undefined;
 }

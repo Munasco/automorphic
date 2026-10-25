@@ -183,6 +183,8 @@ describe("selected Tradovate contract", () => {
     ["MNQU6", 3, "minute"],
     ["GCZ6", 30, "minute"],
     ["NQU6", 240, "minute"],
+    ["@MNQ", 240, "minute"],
+    ["@MGC", 1, "day"],
     ["NQU6", 1, "day"],
     ["NQU6", 3, "day"],
     ["NQU6", 1, "week"],
@@ -238,7 +240,7 @@ describe("selected Tradovate contract", () => {
         vi.stubGlobal("WebSocket", FakeSocket);
         response = await chartStream(symbol, interval, intervalUnit);
         expect(lookup.mock.calls[0]?.[0]).toBe(
-          `https://demo.tradovateapi.com/v1/contract/find?name=${symbol}`,
+          `https://demo.tradovateapi.com/v1/contract/find?name=${encodeURIComponent(symbol)}`,
         );
         const socket = sockets[0]!;
         socket.receive("o");

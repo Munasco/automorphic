@@ -40,6 +40,22 @@ const batch = (bars: unknown[], snapshot = false) => ({
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 describe("shared chart market history", () => {
+  it("archives candles before a rolling replacement so scrolling history survives reconnects", async () => {
+    const t = transport();
+    const archive = vi.fn();
+    const stop = subscribeChartMarket(
+      "NQU6",
+      interval,
+      () => {},
+      { ...emptyChartMarket(), bars: [bar(100), bar(200)] },
+      t.open,
+      archive,
+    );
+    t.send(0, batch([bar(200), bar(300)], true));
+    await vi.advanceTimersByTimeAsync(16);
+    expect(archive).toHaveBeenCalledWith([bar(100)]);
+    stop();
+  });
   it("retains server-proven calendar quote membership and captures receipt separately from close source time", async () => {
     const t = transport(),
       emit = vi.fn<(snapshot: ChartMarketSnapshot) => void>();

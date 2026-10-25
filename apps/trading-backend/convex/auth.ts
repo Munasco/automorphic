@@ -32,7 +32,7 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
           }
         : {},
     plugins: [
-      electron(),
+      electron() as any,
       crossDomain({ siteUrl }),
       convex({ authConfig }),
       emailOTP({

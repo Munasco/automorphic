@@ -1,6 +1,7 @@
 import type { VercelConfig } from "@vercel/config/v1";
 
 export const config: VercelConfig = {
+  redirects: [{ source: "/download", destination: "/waitlist", permanent: false }],
   git: {
     deploymentEnabled: false,
   },

@@ -22,10 +22,10 @@ export function SymbolPicker({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  contracts: FuturesContract[];
+  contracts: Pick<FuturesContract, "root" | "name">[];
   selected: string;
   loading: boolean;
-  onSelect: (contract: FuturesContract) => void;
+  onSelect: (contract: Pick<FuturesContract, "root" | "name">) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
@@ -33,7 +33,7 @@ export function SymbolPicker({
   const filtered = contracts.filter(
     (contract) =>
       (filter === "all" || INSTRUMENTS[contract.root].family === filter) &&
-      `${contract.name} ${INSTRUMENTS[contract.root].name} ${INSTRUMENTS[contract.root].exchange}`
+      `${contract.name} ${contract.name.startsWith("@") ? "continuous" : "contract"} ${INSTRUMENTS[contract.root].name} ${INSTRUMENTS[contract.root].exchange}`
         .toLowerCase()
         .includes(search.trim().toLowerCase()),
   );
@@ -85,7 +85,7 @@ export function SymbolPicker({
         </div>
         <div className="max-h-[min(50vh,360px)] overflow-y-auto px-3 pb-3">
           {filtered.map((contract) => (
-            <Tooltip key={contract.id}>
+            <Tooltip key={contract.name}>
               <TooltipTrigger
                 type="button"
                 onClick={() => {
@@ -95,9 +95,10 @@ export function SymbolPicker({
                 className="flex w-full items-center gap-3 rounded-md px-3 py-3 text-left outline-none hover:bg-accent focus-visible:bg-accent"
               >
                 <MarketInstrumentIcon root={contract.root} className="size-6 shrink-0" />
-                <span className="w-14 shrink-0 text-sm font-semibold">{contract.root}</span>
+                <span className="w-16 shrink-0 text-sm font-semibold">{contract.name}</span>
                 <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
                   {INSTRUMENTS[contract.root].name}
+                  {contract.name.startsWith("@") ? " · Continuous" : " · Contract"}
                 </span>
                 <span className="text-[10px] text-muted-foreground">
                   {INSTRUMENTS[contract.root].exchange}
@@ -108,7 +109,11 @@ export function SymbolPicker({
                   <span className="size-4" />
                 )}
               </TooltipTrigger>
-              <TooltipPopup>{contract.name}</TooltipPopup>
+              <TooltipPopup>
+                {contract.name.startsWith("@")
+                  ? "Continuous history across contract rolls. Choose a dated contract to place orders."
+                  : contract.name}
+              </TooltipPopup>
             </Tooltip>
           ))}
           {filtered.length === 0 ? (

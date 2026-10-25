@@ -727,3 +727,22 @@ nav a:hover {
     margin-right: 0;
   }
 }
+
+.beta-signup-notice {
+  max-width: 560px;
+  margin: 24px auto 0;
+  color: #b4c1d8;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.beta-signup-notice a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.beta-signup-notice p {
+  margin: 0 0 12px;
+}
+.beta-signup-notice p:last-child {
+  margin-bottom: 0;
+}

@@ -16,6 +16,7 @@ import {
 import { openTradingStream, type TradingStreamFailure } from "./tradingTransport";
 import { readChartCandle, readTickHistoryQuality, type TickHistoryQuality } from "./tickChartData";
 import { tradingStreamIterable } from "./tradingStreamIterable";
+import { olderChartHistoryKey, type OlderChartHistory } from "./chartHistoryPagination";
 
 export type ChartMarketSnapshot = {
   alertFeed?: DrawingAlertFeedJournal | undefined;
@@ -48,6 +49,7 @@ export function subscribeChartMarket(
   emit: (snapshot: ChartMarketSnapshot) => void,
   seed = emptyChartMarket(),
   open: typeof openTradingStream = openTradingStream,
+  archive: (bars: readonly Candle[]) => void = () => {},
 ) {
   let disposed = false;
   let source: ReturnType<typeof openTradingStream> | undefined;
@@ -91,6 +93,7 @@ export function subscribeChartMarket(
       if (pending.size || replace) {
         let sorted = [...bars.values()].sort((a, b) => a.time - b.time);
         if (sorted.length > chartHistoryLimit(interval) + 100) {
+          if (interval.unit !== "tick") archive(sorted.slice(0, -chartHistoryLimit(interval)));
           sorted = sorted.slice(-chartHistoryLimit(interval));
           bars.clear();
           for (const bar of sorted) bars.set(bar.time, bar);
@@ -209,7 +212,7 @@ export function subscribeChartMarket(
             (message.symbol && message.symbol !== symbol)
           )
             return;
-          const received = message.bars.flatMap((item: unknown) => {
+          const received: Candle[] = message.bars.flatMap((item: unknown) => {
             const bar = readChartCandle(item);
             return bar ? [bar] : [];
           });
@@ -222,6 +225,11 @@ export function subscribeChartMarket(
             feedReady = message.historyComplete === true;
           }
           if (message.snapshot === true) {
+            if (interval.unit !== "tick" && received.length) {
+              const first = Math.min(...received.map((bar) => bar.time));
+              const earlier = [...bars.values()].filter((bar) => bar.time < first);
+              if (earlier.length) archive(earlier);
+            }
             bars.clear();
             pending.clear();
             replace = true;
@@ -317,7 +325,21 @@ export function chartMarketQueryOptions(
         };
         return tradingStreamIterable<ChartMarketSnapshot>(
           signal,
-          (emit) => subscribeChartMarket(symbol, interval, emit, initial, open),
+          (emit) =>
+            subscribeChartMarket(symbol, interval, emit, initial, open, (bars) => {
+              client.setQueryData<OlderChartHistory>(
+                olderChartHistoryKey(queryKey),
+                (previous) => ({
+                  ...previous,
+                  bars: [
+                    ...new Map(
+                      [...(previous?.bars ?? []), ...bars].map((bar) => [bar.time, bar]),
+                    ).values(),
+                  ].sort((a, b) => a.time - b.time),
+                  hasMore: previous?.hasMore ?? true,
+                }),
+              );
+            }),
           initial,
         );
       },

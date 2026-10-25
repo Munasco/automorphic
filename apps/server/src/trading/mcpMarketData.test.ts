@@ -6,6 +6,9 @@ import {
   type HistoryRequest,
 } from "./mcpMarketData.ts";
 import { calculateRisk } from "../mcp/toolkits/trading/index.ts";
+vi.mock("./tradovateConnection.ts", () => ({
+  tradovateConnection: { credentials: async () => null },
+}));
 vi.mock("./runtimeEnv.ts", () => ({
   resolveTradingEnvironmentFile: () => "unused",
   synchronizeTradingSession: async () => undefined,

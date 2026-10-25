@@ -1,7 +1,10 @@
 import { placeTradingOrder } from "./trading/orderEntry.ts";
+import { readConnectionRoute, writeConnectionRoute } from "./trading/connectionRoutes.ts";
+import { ConnectionError } from "./trading/connectionSecrets.ts";
 import { McpIntegrationDocument, AuthAccessWriteScope } from "@t3tools/contracts";
 import { readMcpIntegrations, writeMcpIntegrations } from "./mcp/McpIntegrations.ts";
 import { contracts, chartStream } from "./trading/marketData.ts";
+import { readChartHistory } from "./trading/chartHistory.ts";
 import { watchlistStream } from "./trading/watchlistData.ts";
 import { ChartIntervalError } from "./trading/chartInterval.ts";
 import { accountSnapshot, parseAccountId, TradingAccountError } from "./trading/accountData.ts";
@@ -301,6 +304,7 @@ const authenticateRawRouteWithScope = (
     if (!session.scopes.includes(scope)) {
       return yield* failEnvironmentScopeRequired(scope);
     }
+    return session;
   });
 
 export const serverEnvironmentHttpApiLayer = HttpApiBuilder.group(
@@ -454,6 +458,30 @@ const tradingReadHandler = Effect.gen(function* () {
     );
   }
   return yield* Effect.tryPromise(async () => {
+    if (
+      url.pathname === "/api/trading/connections" ||
+      url.pathname.startsWith("/api/trading/telegram/")
+    ) {
+      try {
+        const response = await readConnectionRoute(url);
+        return response
+          ? HttpServerResponse.fromWeb(response)
+          : HttpServerResponse.empty({ status: 404 });
+      } catch (error) {
+        return HttpServerResponse.jsonUnsafe(
+          {
+            error:
+              error instanceof ConnectionError
+                ? error.message
+                : "The connection is unavailable. Please retry.",
+          },
+          {
+            status: error instanceof ConnectionError ? error.status : 502,
+            headers: { "Cache-Control": "no-store" },
+          },
+        );
+      }
+    }
     if (url.pathname === "/api/trading/account") {
       try {
         return HttpServerResponse.jsonUnsafe(
@@ -477,6 +505,26 @@ const tradingReadHandler = Effect.gen(function* () {
     }
     if (url.pathname === "/api/trading/contracts")
       return HttpServerResponse.jsonUnsafe(await contracts(url.searchParams.get("root") ?? "MGC"));
+    if (url.pathname === "/api/trading/history") {
+      try {
+        return HttpServerResponse.jsonUnsafe(await readChartHistory(url.searchParams), {
+          headers: { "Cache-Control": "no-store" },
+        });
+      } catch (error) {
+        return HttpServerResponse.jsonUnsafe(
+          {
+            error:
+              error instanceof ChartIntervalError
+                ? error.message
+                : "Older candles could not be loaded. Please retry.",
+          },
+          {
+            status: error instanceof ChartIntervalError ? 400 : 502,
+            headers: { "Cache-Control": "no-store" },
+          },
+        );
+      }
+    }
     if (url.pathname === "/api/trading/watchlist-stream")
       return HttpServerResponse.fromWeb(
         await watchlistStream(url.searchParams.get("roots") ?? "MGC,MNQ,GC,NQ"),
@@ -563,6 +611,58 @@ export const tradingRouteLayer = Layer.unwrap(
         tradingReadHandler.pipe(Effect.provideService(TradingWorkspace, workspace)),
       ),
       HttpRouter.add("POST", "/api/trading/orders", tradingOrderHandler),
+      HttpRouter.add(
+        "POST",
+        "/api/trading/connections",
+        Effect.gen(function* () {
+          const owner = yield* authenticateRawRouteWithScope(AuthAccessWriteScope);
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          if (
+            request.headers["content-type"]?.split(";", 1)[0]?.trim().toLowerCase() !==
+            "application/json"
+          )
+            return HttpServerResponse.jsonUnsafe(
+              { error: "Connection requests require JSON." },
+              { status: 415 },
+            );
+          const text = yield* request.text.pipe(Effect.orElseSucceed(() => ""));
+          if (text.length > 8192)
+            return HttpServerResponse.jsonUnsafe(
+              { error: "Connection request is too large." },
+              { status: 413 },
+            );
+          const body = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(
+            text,
+          ).pipe(Effect.orElseSucceed(() => null));
+          return yield* Effect.tryPromise(async () => {
+            try {
+              return HttpServerResponse.jsonUnsafe(
+                await writeConnectionRoute(owner.sessionId, body),
+                { headers: { "Cache-Control": "no-store" } },
+              );
+            } catch (error) {
+              return HttpServerResponse.jsonUnsafe(
+                {
+                  error:
+                    error instanceof ConnectionError
+                      ? error.message
+                      : "Could not update this connection. Please retry.",
+                },
+                {
+                  status: error instanceof ConnectionError ? error.status : 502,
+                  headers: { "Cache-Control": "no-store" },
+                },
+              );
+            }
+          });
+        }).pipe(
+          Effect.catchTags({
+            EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+            EnvironmentInternalError: HttpServerRespondable.toResponse,
+            EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+          }),
+        ),
+      ),
     );
   }),
 );

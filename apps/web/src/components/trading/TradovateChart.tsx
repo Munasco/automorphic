@@ -10,7 +10,7 @@ import { chartBarChange, formatChartBarChange } from "./chartBarChange";
 import { priceLineAppearanceOptions } from "./chartPriceLineAppearance";
 import { chartAreaFillColors } from "./chartAreaFill";
 import { trackChartPaneResize } from "./chartPaneResize";
-import { CalendarDaysIcon } from "lucide-react";
+import { CalendarArrowDownIcon } from "lucide-react";
 import { ChartMeasureOverlay } from "./ChartMeasureOverlay";
 import { ChartGoToDateDialog } from "./ChartGoToDateDialog";
 import {
@@ -105,6 +105,7 @@ import type { ChartTableSource } from "./ChartDataTableDialog";
 import { ChartTemplatesControl, ChartTemplatesDialog } from "./ChartTemplatesMenu";
 import { ChartContextMenu } from "./ChartContextMenu";
 import { DrawingObjectTree } from "./DrawingObjectTree";
+import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { cn, randomUUID } from "../../lib/utils";
 import { ChartReplayControls, useChartReplay } from "./ChartReplay";
@@ -114,6 +115,13 @@ import { createBarCountdownPrimitive } from "./barCountdownPrimitive";
 import { getFuturesSession } from "./marketSession";
 import { replayViewport } from "./replayViewport";
 import { replayMinuteHistory } from "./replayHistory";
+import {
+  loadOlderChartHistory,
+  olderChartHistoryKey,
+  prependedChartViewport,
+  shouldPrefetchChartHistory,
+  type OlderChartHistory,
+} from "./chartHistoryPagination";
 
 type ChartEngine = ChartTableSource & {
   workspaceProjectId: string | null;
@@ -294,6 +302,14 @@ export function TradovateChart({
   // Query owns the shared stream. Canvas updates subscribe imperatively below, without a React render per packet.
   const marketActive = workspace.ready && !!workspace.projectId && !!symbol;
   useQuery({ ...marketOptions, enabled: marketActive, notifyOnChangeProps: [] });
+  // Keep paged history alive while this chart is mounted, including during quiet markets.
+  useQuery<OlderChartHistory>({
+    queryKey: olderChartHistoryKey(marketOptions.queryKey),
+    queryFn: async () => ({ bars: [], hasMore: true }),
+    enabled: false,
+    notifyOnChangeProps: [],
+    gcTime: 5 * 60_000,
+  });
   useEffect(() => {
     if (!marketActive) void cancelInactiveTradingStream(queryClient, marketOptions.queryKey);
   }, [marketActive, queryClient, marketOptions]);
@@ -385,6 +401,26 @@ export function TradovateChart({
   const paneCount = oscillatorInstancePaneCount(visibleInstances);
   const [engine, setEngine] = useState<ChartEngine | null>(null);
   const [status, setStatus] = useState("Connecting to Tradovate…");
+  const lastToastedStatusRef = useRef<string | null>(null);
+  useEffect(() => {
+    const isError =
+      Boolean(status) &&
+      status !== "Tradovate connected" &&
+      status !== "Connecting to Tradovate…" &&
+      status !== "Reconnecting to Tradovate…";
+    if (isError && status !== lastToastedStatusRef.current) {
+      lastToastedStatusRef.current = status;
+      toastManager.add({
+        type: "error",
+        title: "Market data error",
+        description: status,
+      });
+    } else if (!isError) {
+      lastToastedStatusRef.current = null;
+    }
+  }, [status]);
+  const [olderHistoryStatus, setOlderHistoryStatus] = useState("");
+  const retryOlderHistory = useRef<() => void>(() => {});
   const [tickHistory, setTickHistory] = useState<TickHistoryQuality | null>(null);
   const historyNotice =
     interval.unit === "tick" && tickHistory ? tickHistoryNotice(tickHistory) : null;
@@ -399,6 +435,22 @@ export function TradovateChart({
   const [measureComplete, setMeasureComplete] = useState(false);
   const [measureRun, setMeasureRun] = useState(0);
   const [goToDateOpen, setGoToDateOpen] = useState(false);
+  const [clockTick, setClockTick] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockTick(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const clockLabel = useMemo(() => {
+    const time = new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+      timeZone: settings.timeZone,
+    }).format(new Date(clockTick));
+    const zone = CHART_TIME_ZONES.find(({ value }) => value === settings.timeZone)?.label ?? "UTC";
+    return `${time} ${zone}`;
+  }, [clockTick, settings.timeZone]);
   const [orderDraft, setOrderDraft] = useState<
     | (ChartOrderDraft & {
         symbol: string;
@@ -969,15 +1021,20 @@ export function TradovateChart({
           renderBars();
         } else {
           const snapshot = queryClient.getQueryData<ChartMarketSnapshot>(marketOptions.queryKey);
+          const older = readOlder();
+          const liveCount = snapshot
+            ? new Set([...snapshot.bars, ...(older?.bars ?? [])].map((bar) => bar.time)).size
+            : liveViewport?.count;
           if (liveViewport)
             pendingViewport = replayViewport(
               liveViewport.range,
               liveViewport.count,
-              snapshot?.bars.length ?? liveViewport.count,
+              liveCount ?? liveViewport.count,
               false,
             );
           liveViewport = null;
           revision = null;
+          previousOlder = older;
           previousQuote = null;
           syncCache();
         }
@@ -1082,6 +1139,10 @@ export function TradovateChart({
     });
     let replaceHistory = true;
     const pending = new Map<number, Candle>();
+    const olderKey = olderChartHistoryKey(marketOptions.queryKey);
+    const readOlder = () => queryClient.getQueryData<OlderChartHistory>(olderKey);
+    const retainedHistoryLimit = () =>
+      chartHistoryLimit(interval) + (readOlder()?.bars.length ?? 0);
     const volumePoint = (b: Candle) => ({
       time: b.time as UTCTimestamp,
       value: b.volume,
@@ -1096,11 +1157,11 @@ export function TradovateChart({
       if (
         replaceHistory ||
         changes.some((b) => b.time < renderedTime) ||
-        bars.size > chartHistoryLimit(interval) + 100
+        bars.size > retainedHistoryLimit() + 100
       ) {
         const sorted = [...bars.values()]
           .sort((a, b) => a.time - b.time)
-          .slice(-chartHistoryLimit(interval));
+          .slice(-retainedHistoryLimit());
         if (replaceHistory && interval.unit === "tick") {
           const formatters = createChartTimeFormatters(
             (time) => bars.get(time),
@@ -1196,6 +1257,7 @@ export function TradovateChart({
     };
     let revision: number | null = null;
     let previousQuote: MarketQuote | null = null;
+    let previousOlder: OlderChartHistory | undefined;
     const syncCache = () => {
       const snapshot = queryClient.getQueryData<ChartMarketSnapshot>(marketOptions.queryKey);
       if (!snapshot || state.disposed) return;
@@ -1212,11 +1274,29 @@ export function TradovateChart({
         onQuote?.(snapshot.quote);
         state.refreshTradePrice();
       }
-      if (snapshot.revision === revision) {
+      const older = readOlder();
+      const olderChanged = older !== previousOlder;
+      if (snapshot.revision === revision && !olderChanged) {
         if (render === undefined) drawingAlertsRef.current.consume(snapshot);
         return;
       }
-      const replace = revision === null || snapshot.replace || snapshot.revision !== revision + 1;
+      const replace =
+        olderChanged || revision === null || snapshot.replace || snapshot.revision !== revision + 1;
+      let replacement = snapshot.bars;
+      if (replace && older?.bars.length) {
+        replacement = [
+          ...new Map([...older.bars, ...snapshot.bars].map((bar) => [bar.time, bar])).values(),
+        ].sort((a, b) => a.time - b.time);
+        if (olderChanged && fitted) {
+          const oldFirst = prices.candles.data()[0]?.time;
+          pendingViewport = prependedChartViewport(
+            chart.timeScale().getVisibleLogicalRange(),
+            typeof oldFirst === "number" ? oldFirst : undefined,
+            replacement,
+          );
+        }
+      }
+      previousOlder = older;
       revision = snapshot.revision;
       if (replace) {
         replaceHistory = true;
@@ -1226,14 +1306,98 @@ export function TradovateChart({
         setHovered(null);
         setHoverReadings(null);
       }
-      applyChartBarBatch(bars, pending, replace ? snapshot.bars : snapshot.updates, replace);
+      applyChartBarBatch(bars, pending, replace ? replacement : snapshot.updates, replace);
       if (render === undefined) render = requestAnimationFrame(renderBars);
     };
     const queryHash = hashKey(marketOptions.queryKey);
+    const olderHash = hashKey(olderKey);
+    let loadingOlder = false;
+    let searchPastGap = false;
+    let historyFailed = false;
+    let historyFailures = 0;
+    let historyRetry: ReturnType<typeof setTimeout> | undefined;
+    const loadEarlier = () => {
+      if (state.disposed || replaying || loadingOlder || historyFailed || interval.unit === "tick")
+        return;
+      const snapshot = queryClient.getQueryData<ChartMarketSnapshot>(marketOptions.queryKey);
+      const older = readOlder();
+      if (!snapshot?.bars.length || snapshot.awaitingHistory) return;
+      if (older?.hasMore === false) {
+        setOlderHistoryStatus("Start of available history");
+        return;
+      }
+      if ((older?.emptyPages ?? 0) >= 3 && !searchPastGap) {
+        setOlderHistoryStatus("No candles in this period · Search earlier");
+        return;
+      }
+      searchPastGap = false;
+      // Warm one older page per timeframe; subsequent pages start several screens
+      // before the left edge, while the user can still see loaded candles.
+      if (older && !shouldPrefetchChartHistory(chart.timeScale().getVisibleLogicalRange())) return;
+      const before = Math.min(
+        snapshot.bars[0]!.time,
+        older?.bars[0]?.time ?? Infinity,
+        older?.nextBefore ?? Infinity,
+      );
+      loadingOlder = true;
+      setOlderHistoryStatus("Loading older candles…");
+      void loadOlderChartHistory(queryClient, marketOptions.queryKey, symbol, interval, before)
+        .then(() => {
+          historyFailures = 0;
+          if (!state.disposed)
+            setOlderHistoryStatus(
+              readOlder()?.hasMore === false
+                ? "Start of available history"
+                : (readOlder()?.emptyPages ?? 0) >= 3
+                  ? "No candles in this period · Search earlier"
+                  : "",
+            );
+        })
+        .catch(() => {
+          historyFailed = true;
+          if (!state.disposed) setOlderHistoryStatus("Retry older candles");
+          if (!state.disposed && ++historyFailures <= 3) {
+            historyRetry = setTimeout(
+              () => {
+                historyFailed = false;
+                loadEarlier();
+              },
+              3000 * 2 ** (historyFailures - 1),
+            );
+          } else if (!state.disposed && historyFailures === 4) {
+            toastManager.add({
+              type: "error",
+              title: "History unavailable",
+              description:
+                "Could not load older candles. Click 'Retry older candles' to try again.",
+            });
+          }
+        })
+        .finally(() => {
+          loadingOlder = false;
+          if (!state.disposed) requestAnimationFrame(loadEarlier);
+        });
+    };
+    setOlderHistoryStatus("");
+    retryOlderHistory.current = () => {
+      clearTimeout(historyRetry);
+      historyFailures = 0;
+      historyFailed = false;
+      searchPastGap = true;
+      loadEarlier();
+    };
     const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
-      if (event.type === "updated" && event.query.queryHash === queryHash) syncCache();
+      if (
+        event.type === "updated" &&
+        (event.query.queryHash === queryHash || event.query.queryHash === olderHash)
+      ) {
+        syncCache();
+        loadEarlier();
+      }
     });
+    chart.timeScale().subscribeVisibleLogicalRangeChange(loadEarlier);
     syncCache();
+    loadEarlier();
     const countdownTimer = window.setInterval(state.refreshCountdown, 1000);
     return () => {
       window.clearInterval(countdownTimer);
@@ -1242,6 +1406,8 @@ export function TradovateChart({
       state.disposed = true;
       barListeners.clear();
       unsubscribe();
+      clearTimeout(historyRetry);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(loadEarlier);
       if (render !== undefined) cancelAnimationFrame(render);
       chart.remove();
     };
@@ -1500,15 +1666,20 @@ export function TradovateChart({
       scale.setVisibleLogicalRange({ from: middle - half, to: middle + half });
     }
   };
-  const range = (days: number | null) => {
+  const range = (days: number | "ytd" | null) => {
     if (!engine || !last) return;
     const times = [...engine.bars.keys()].sort((a, b) => a - b);
     if (days === null) engine.chart.timeScale().fitContent();
-    else
+    else {
+      const from =
+        days === "ytd"
+          ? Date.UTC(new Date(last.time * 1000).getUTCFullYear(), 0, 1) / 1000
+          : last.time - days * 86400;
       engine.chart.timeScale().setVisibleRange({
-        from: Math.max(times[0] ?? last.time, last.time - days * 86400) as UTCTimestamp,
+        from: Math.max(times[0] ?? last.time, from) as UTCTimestamp,
         to: last.time as UTCTimestamp,
       });
+    }
   };
   const screenshot = () => {
     if (!engine) return;
@@ -1852,7 +2023,7 @@ export function TradovateChart({
                 }}
                 onAddAlert={onAddPriceAlert}
                 onAddOrder={
-                  !replay.session && activeEngine
+                  !replay.session && activeEngine && !symbol.startsWith("@")
                     ? (draft) =>
                         setOrderDraft({
                           ...draft,
@@ -1868,6 +2039,19 @@ export function TradovateChart({
                 onOpenSettings={() => setDisplaySettingsOpen(true)}
                 onOpenObjectTree={() => setObjectTreeOpen(true)}
                 onGoToDate={() => setGoToDateOpen(true)}
+                onReplayFrom={
+                  !technicals && !replay.session && activeEngine
+                    ? (time) => {
+                        const snapshot = queryClient.getQueryData<ChartMarketSnapshot>(
+                          marketOptions.queryKey,
+                        );
+                        if (!replay.start(snapshot?.bars ?? [...activeEngine.bars.values()], time))
+                          setNotice(
+                            "Choose a completed candle in the loaded history to start replay.",
+                          );
+                      }
+                    : undefined
+                }
                 onSaveTemplate={() => setTemplateDialog("save")}
                 onManageTemplates={() => setTemplateDialog("manage")}
                 indicators={{
@@ -1895,6 +2079,7 @@ export function TradovateChart({
                       >
                         {INSTRUMENTS[root].name} · {formatChartInterval(interval)} ·{" "}
                         {INSTRUMENTS[root].exchange}
+                        {symbol.startsWith("@") ? " · Continuous" : ""}
                         {settings.style === "heikin-ashi" ? " · Heikin Ashi" : null}
                       </TooltipTrigger>
                       <TooltipPopup>
@@ -2031,35 +2216,49 @@ export function TradovateChart({
           />
         ) : null}
       </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-1 border-t border-white/10 px-2 py-1 text-[11px] text-zinc-400">
-        {([1, 5, null] as const).map((days) => (
-          <Tooltip key={days ?? "all"}>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  onClick={() => range(days)}
-                  className="rounded px-2 py-1 hover:bg-white/5 hover:text-white"
-                />
-              }
-            >
-              {days ? `${days}D` : "All"}
-            </TooltipTrigger>
-            <TooltipPopup>Range within loaded history</TooltipPopup>
-          </Tooltip>
+      <div className="flex h-9 shrink-0 items-center gap-0 overflow-hidden border-t border-white/10 px-2 text-[11px] text-zinc-400">
+        {(
+          [
+            [1, "1D"],
+            [5, "5D"],
+            [30, "1M"],
+            [180, "6M"],
+            ["ytd", "YTD"],
+            [365, "1Y"],
+            [1825, "5Y"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => range(value)}
+            className="shrink-0 px-1.5 py-1 text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
+          >
+            {label}
+          </button>
         ))}
+        <span aria-hidden="true" className="mx-2 h-5 w-px shrink-0 bg-white/10" />
         <Tooltip>
           <TooltipTrigger
             type="button"
             aria-label="Go to date (Alt+G)"
             disabled={!last || technicals}
             onClick={() => setGoToDateOpen(true)}
-            className="flex size-7 items-center justify-center rounded border-l border-white/10 text-zinc-400 hover:bg-white/5 hover:text-white disabled:opacity-30"
+            className="flex size-7 shrink-0 items-center justify-center text-zinc-400 hover:bg-white/5 hover:text-white disabled:opacity-30"
           >
-            <CalendarDaysIcon className="size-4" />
+            <CalendarArrowDownIcon className="size-4" />
           </TooltipTrigger>
           <TooltipPopup>Go to date · Alt+G</TooltipPopup>
         </Tooltip>
+        {olderHistoryStatus === "Retry older candles" ? (
+          <button
+            type="button"
+            className="truncate px-2 text-[10px] text-zinc-400"
+            onClick={() => retryOlderHistory.current()}
+          >
+            {olderHistoryStatus}
+          </button>
+        ) : null}
         {historyNotice ? (
           <Tooltip>
             <TooltipTrigger
@@ -2072,50 +2271,24 @@ export function TradovateChart({
             <TooltipPopup className="max-w-72">{historyNotice.description}</TooltipPopup>
           </Tooltip>
         ) : null}
-        <Tooltip>
-          <TooltipTrigger
-            aria-label={status}
-            className="ml-auto inline-flex size-6 items-center justify-center rounded hover:bg-white/5"
-          >
-            <span
-              aria-hidden="true"
-              className={cn(
-                "size-1.5 rounded-full",
-                status === "Tradovate connected" ? "bg-emerald-400" : "bg-amber-400",
-              )}
-            />
-          </TooltipTrigger>
-          <TooltipPopup>
-            {last
-              ? `${status} · Last bar ${new Date((last.actualEndTime ?? last.actualTime ?? last.time) * 1000).toLocaleString()}`
-              : status}
-          </TooltipPopup>
-        </Tooltip>
         <TradingSelect
           label="Price scale"
           value={settings.priceScaleMode}
           options={PRICE_SCALE_OPTIONS}
           onChange={(value) => settings.setPriceScaleMode(value as ChartPriceScaleMode)}
           variant="ghost"
-          className="h-7 w-36 text-[11px]"
+          className="ml-1 h-7 w-28 text-[11px]"
         />
-        <button
-          type="button"
-          aria-label="Auto fit price scale"
-          onClick={() => engine?.chart.priceScale("right", 0).applyOptions({ autoScale: true })}
-          className="rounded px-1.5 py-1 hover:bg-white/5"
-        >
-          auto
-        </button>
         <TradingSelect
           label="Chart time zone"
           value={settings.timeZone}
           options={CHART_TIME_ZONES.map(({ value, label }) => [value, label] as const)}
           onChange={settings.setTimeZone}
+          displayValue={<span className="tabular-nums text-zinc-300">{clockLabel}</span>}
           variant="ghost"
-          className="h-7 w-28 text-[11px]"
+          popupProps={{ align: "end" }}
+          className="ml-auto h-7 w-auto min-w-36 text-right text-[11px]"
         />
-        {settingsControl}
       </div>
       {notice ? (
         <button
