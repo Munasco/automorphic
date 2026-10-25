@@ -3,6 +3,11 @@ import { internal } from "./_generated/api";
 import { internalAction, internalMutation, internalQuery, query } from "./_generated/server";
 import { authComponent } from "./auth";
 
+// Renew once this little time remains. The cron runs every 15 minutes, so a token
+// always gets at least one renewal attempt (plus retries) before it expires.
+const RENEW_WITHIN_MS = 30 * 60_000;
+const RETRY_AFTER_MS = 2 * 60_000;
+
 // Token-bearing database entry points stay internal; clients subscribe only to status.
 export const session = internalQuery({
   args: {},
@@ -27,7 +32,7 @@ export const claimRenewal = internalMutation({
       await ctx.db.patch(session._id, { status: "expired-login-required", lastCheckedAt: now });
       return null;
     }
-    if (!force && session.expiration - now > 55 * 60_000) {
+    if (!force && session.expiration - now > RENEW_WITHIN_MS) {
       await ctx.db.patch(session._id, { status: "valid", lastCheckedAt: now });
       return null;
     }
@@ -110,6 +115,10 @@ export const renew = internalAction({
       previousToken: current.accessToken,
       status,
     });
+    // A failed renewal must not wait for the next cron run: retry while the token is still valid.
+    if (current.expiration - Date.now() > RETRY_AFTER_MS) {
+      await ctx.scheduler.runAfter(RETRY_AFTER_MS, internal.tradovate.renew, { force: true });
+    }
     return { status };
   },
 });
