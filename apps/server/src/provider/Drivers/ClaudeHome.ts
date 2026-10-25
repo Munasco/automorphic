@@ -61,7 +61,11 @@ export const makeClaudeCapabilitiesCacheKey = Effect.fn("makeClaudeCapabilitiesC
 export const claudeSignedOutMessage = (input: {
   readonly configDir: string | undefined;
   readonly cwd: string;
+  readonly environment?: NodeJS.ProcessEnv;
 }): string => {
+  if (input.environment?.CLAUDE_CODE_USE_VERTEX === "1") {
+    return "Claude could not authenticate with Google Vertex AI. Check this instance's Google Application Default Credentials, ANTHROPIC_VERTEX_PROJECT_ID, CLOUD_ML_REGION, and access to the selected Claude model, then start a new thread.";
+  }
   const configuration =
     input.configDir !== undefined
       ? ` from ${quotePath(input.cwd)}, with CLAUDE_CONFIG_DIR set to ${quotePath(input.configDir)}`

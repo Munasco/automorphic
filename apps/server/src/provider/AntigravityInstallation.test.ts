@@ -242,6 +242,35 @@ const expectPreviousRelease = Effect.fn("test.expectPreviousAntigravityRelease")
 });
 
 it.layer(NodeServices.layer)("Antigravity installation", (it) => {
+  it.effect(
+    "does not treat an IDE launcher as an installed ACP runtime or start an installation",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "automorphic-agy-ide-test-" });
+        const bin = path.join(
+          baseDir,
+          "Antigravity IDE.app",
+          "Contents",
+          "Resources",
+          "app",
+          "bin",
+        );
+        const launcher = path.join(bin, "antigravity-ide");
+        yield* fs.makeDirectory(bin, { recursive: true });
+        yield* fs.writeFileString(launcher, "IDE launcher", { mode: 0o755 });
+        const { installation, requests } = yield* makeHarness({ baseDir, path: bin });
+        const unavailable = yield* installation.resolve().pipe(Effect.flip);
+        expect(unavailable.detail).toContain("Antigravity ACP runtime is not installed");
+        expect(unavailable.detail).toContain("IDE app is separate");
+        const override = yield* installation.resolve(launcher).pipe(Effect.flip);
+        expect(override.detail).toContain("IDE launcher is not an ACP runtime");
+        expect(requests).toEqual([]);
+        expect((yield* installation.state).phase).toBe("idle");
+      }),
+  );
+
   it.effect("verifies both files before activating a streamed download", () =>
     Effect.gen(function* () {
       const enteredValidation = yield* Deferred.make<void>();
@@ -704,7 +733,9 @@ it.layer(NodeServices.layer)("Antigravity installation", (it) => {
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-agy-path-test-" });
+        const baseDir = yield* fs
+          .makeTempDirectoryScoped({ prefix: "t3-agy-path-test-" })
+          .pipe(Effect.flatMap(fs.realPath));
         const externalDirectory = path.join(baseDir, "external");
         const externalExecutable = path.join(externalDirectory, executableName);
         const externalHarness = path.join(externalDirectory, harnessName);

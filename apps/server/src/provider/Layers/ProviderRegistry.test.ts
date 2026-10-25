@@ -2671,6 +2671,34 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         ),
       );
 
+      it.effect.each([undefined, "maxplan"])(
+        "supports Vertex without subscription login and prefers cloud metadata (%s)",
+        (subscriptionType) =>
+          Effect.gen(function* () {
+            const status = yield* checkClaudeProviderStatus(
+              defaultClaudeSettings,
+              claudeCapabilities({ apiProvider: "vertex", subscriptionType }),
+              {
+                CLAUDE_CODE_USE_VERTEX: "1",
+                ANTHROPIC_VERTEX_PROJECT_ID: "test-project",
+                CLOUD_ML_REGION: "global",
+              },
+            );
+            assert.strictEqual(status.status, "ready");
+            assert.strictEqual(status.auth.status, "authenticated");
+            assert.strictEqual(status.auth.type, "vertex");
+            assert.strictEqual(status.auth.label, "Google Vertex AI");
+          }).pipe(
+            Effect.provide(
+              mockSpawnerLayer((args) => {
+                if (args.join(" ") === "--version")
+                  return { stdout: "1.0.0\n", stderr: "", code: 0 };
+                throw new Error("Cloud status must not request subscription login");
+              }),
+            ),
+          ),
+      );
+
       it.effect("returns ready and labels Bedrock-backed Claude as authenticated", () =>
         Effect.gen(function* () {
           // Bedrock authenticates via external AWS credentials, so the SDK init

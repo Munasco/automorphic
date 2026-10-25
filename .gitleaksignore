@@ -1,0 +1,131 @@
+# Reviewed historical false positives. Exact commit/path/rule/line fingerprints only.
+# No path-wide, rule-wide, or entropy allowlist is used. New commits are still scanned.
+# Vendor fixtures were byte-compared against their original public T3 upstream commits.
+# Public keys here are publishable identifiers; test credentials must never be used in production.
+
+# Synthetic test data (dummy sync secret, publishable identifier, protocol example, or UUID).
+08993a5ec8fbe5c55a2a4fa8f5fb37f870e87cf6:packages/effect-codex-app-server/src/protocol.test.ts:generic-api-key:117
+# Synthetic test data (dummy sync secret, publishable identifier, protocol example, or UUID).
+08993a5ec8fbe5c55a2a4fa8f5fb37f870e87cf6:packages/effect-codex-app-server/src/protocol.test.ts:generic-api-key:121
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/src/AWS/ACMPCA/CertificateAuthority.ts:generic-api-key:238
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/src/AWS/WAFv2/APIKeys.ts:generic-api-key:62
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/AWS/ACM/fixtures/import-cert.ts:private-key:29
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/AWS/Amplify/Branch.test.ts:generic-api-key:19
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/AWS/ECS/ServiceDomain.test.ts:private-key:45
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/AWS/ELBv2/fixtures/certs.ts:private-key:143
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/AWS/ELBv2/fixtures/certs.ts:private-key:35
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/AWS/ELBv2/fixtures/certs.ts:private-key:89
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/AWS/PaymentCryptography/handler.ts:generic-api-key:104
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/AWS/PaymentCryptography/handler.ts:generic-api-key:77
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/AWS/PaymentCryptography/handler.ts:generic-api-key:90
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/Cloudflare/CustomCertificate/fixtures/key1.pem:private-key:1
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/Cloudflare/CustomCertificate/fixtures/key2.pem:private-key:1
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/Cloudflare/Dns/ZoneTransferPeer.test.ts:generic-api-key:20
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/Cloudflare/Dns/ZoneTransferTsig.test.ts:generic-api-key:20
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/Cloudflare/Dns/ZoneTransferTsig.test.ts:generic-api-key:22
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/Cloudflare/MtlsCertificate/fixtures/certs.ts:private-key:86
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/Cloudflare/OriginTlsClientAuth/fixtures/certs.ts:private-key:143
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/Cloudflare/OriginTlsClientAuth/fixtures/certs.ts:private-key:196
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/Cloudflare/OriginTlsClientAuth/fixtures/certs.ts:private-key:249
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/Cloudflare/OriginTlsClientAuth/fixtures/certs.ts:private-key:302
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/Cloudflare/OriginTlsClientAuth/fixtures/certs.ts:private-key:362
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/Cloudflare/OriginTlsClientAuth/fixtures/certs.ts:private-key:37
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/Cloudflare/OriginTlsClientAuth/fixtures/certs.ts:private-key:415
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/Cloudflare/OriginTlsClientAuth/fixtures/certs.ts:private-key:468
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/Cloudflare/OriginTlsClientAuth/fixtures/certs.ts:private-key:90
+# Public upstream fixture/example or generated API definition.
+108e01746c585d98703df5fe76cb6c213ecb6b8f:.repos/alchemy-effect/packages/alchemy/test/Output.test.ts:generic-api-key:851
+# Public upstream fixture/example or generated API definition.
+458f5029882d6da3f2279893d6c9fffaf7748b5c:.repos/effect-smol/packages/platform/bun/test/BunHttpServer.test.ts:generic-api-key:39
+# Public upstream fixture/example or generated API definition.
+458f5029882d6da3f2279893d6c9fffaf7748b5c:.repos/effect-smol/packages/platform/node/test/NodeHttpServer.test.ts:generic-api-key:914
+# Synthetic test data (dummy sync secret, publishable identifier, protocol example, or UUID).
+4919acd2b78a4dfa2f828d4ad42950f6bbdff1b2:scripts/lib/tradovate-session.test.mjs:generic-api-key:131
+# Synthetic test data (dummy sync secret, publishable identifier, protocol example, or UUID).
+4919acd2b78a4dfa2f828d4ad42950f6bbdff1b2:scripts/lib/tradovate-session.test.mjs:generic-api-key:147
+# Public Clerk publishable key and OAuth client identifier, not server credentials.
+4a07c1ca9d9033ef35161a1ffbea44d0418ca2bf:.env.example:generic-api-key:11
+# Public Clerk publishable key and OAuth client identifier, not server credentials.
+4a07c1ca9d9033ef35161a1ffbea44d0418ca2bf:.env.example:generic-api-key:9
+# Synthetic test data (dummy sync secret, publishable identifier, protocol example, or UUID).
+5ae77c0d63ece1a3e3fa5a70bc7717aa7c342756:apps/server/src/cloud/publicConfig.test.ts:generic-api-key:48
+# Synthetic test data (dummy sync secret, publishable identifier, protocol example, or UUID).
+5ae77c0d63ece1a3e3fa5a70bc7717aa7c342756:apps/server/src/cloud/publicConfig.test.ts:generic-api-key:65
+# Synthetic test data (dummy sync secret, publishable identifier, protocol example, or UUID).
+5ae77c0d63ece1a3e3fa5a70bc7717aa7c342756:apps/server/src/cloud/publicConfig.test.ts:generic-api-key:69
+# Synthetic test data (dummy sync secret, publishable identifier, protocol example, or UUID).
+7a820abfddbf77166d16614bb9bcabe8fcd2c829:apps/server/src/cloud/CliTokenManager.test.ts:generic-api-key:22
+# Synthetic test data (dummy sync secret, publishable identifier, protocol example, or UUID).
+931e91527c285c49d8482328877c93c8c684591a:apps/server/src/httpResponseErrorGuard.test.ts:generic-api-key:61
+# Public upstream fixture/example or generated API definition.
+9d345fa957cf22806171c8037432eec8d9ed496d:.repos/alchemy-effect/examples/cloudflare-dev/src/EffectWorker.ts:generic-api-key:25
+# Public upstream fixture/example or generated API definition.
+9d345fa957cf22806171c8037432eec8d9ed496d:.repos/alchemy-effect/packages/alchemy/src/Cloudflare/Workers/SecretKey.ts:generic-api-key:149
+# Public upstream fixture/example or generated API definition.
+9d345fa957cf22806171c8037432eec8d9ed496d:.repos/alchemy-effect/packages/alchemy/test/Cloudflare/Workers/fixtures/secret-key/worker.ts:generic-api-key:9
+# Public upstream fixture/example or generated API definition.
+9d345fa957cf22806171c8037432eec8d9ed496d:.repos/alchemy-effect/packages/alchemy/test/Fly/Certificate.test.ts:private-key:105
+# Public upstream fixture/example or generated API definition.
+9d345fa957cf22806171c8037432eec8d9ed496d:.repos/alchemy-effect/packages/alchemy/test/Fly/Certificate.test.ts:private-key:157
+# Public upstream fixture/example or generated API definition.
+9d345fa957cf22806171c8037432eec8d9ed496d:.repos/alchemy-effect/packages/alchemy/test/Fly/Certificate.test.ts:private-key:53
+# Public upstream fixture/example or generated API definition.
+9d345fa957cf22806171c8037432eec8d9ed496d:.repos/alchemy-effect/packages/alchemy/test/Hetzner/Certificate.test.ts:private-key:106
+# Public upstream fixture/example or generated API definition.
+9d345fa957cf22806171c8037432eec8d9ed496d:.repos/alchemy-effect/packages/alchemy/test/Hetzner/Certificate.test.ts:private-key:55
+# Public upstream fixture/example or generated API definition.
+9d345fa957cf22806171c8037432eec8d9ed496d:.repos/alchemy-effect/packages/cloudflare-runtime/src/core/test/Docker.test.ts:generic-api-key:65
+# Public upstream fixture/example or generated API definition.
+9d345fa957cf22806171c8037432eec8d9ed496d:.repos/alchemy-effect/packages/cloudflare-runtime/src/core/test/bindings/SecretKey.test.ts:generic-api-key:8
+# Public upstream fixture/example or generated API definition.
+9d345fa957cf22806171c8037432eec8d9ed496d:.repos/alchemy-effect/packages/cloudflare-runtime/src/vite/test/websockets.test.ts:generic-api-key:108
+# Alphabet used to generate pairing tokens, not a token.
+b7559c467803f923e59a287c112b4c92b96e15c7:apps/server/src/auth/Layers/BootstrapCredentialService.ts:generic-api-key:33
+# Public upstream fixture/example or generated API definition.
+bd851c0203f4318b8222566ef87009a189cdf1f5:.repos/alchemy-effect/examples/cloudflare-dev/src/NotifyWorkflow.ts:generic-api-key:11
+# Public upstream fixture/example or generated API definition.
+bd851c0203f4318b8222566ef87009a189cdf1f5:.repos/alchemy-effect/examples/cloudflare-dev/test/integ.test.ts:generic-api-key:70
+# Public upstream fixture/example or generated API definition.
+bd851c0203f4318b8222566ef87009a189cdf1f5:.repos/alchemy-effect/packages/alchemy/src/Cloudflare/Auth/AuthProvider.ts:generic-api-key:705
+# Public upstream fixture/example or generated API definition.
+bd851c0203f4318b8222566ef87009a189cdf1f5:.repos/alchemy-effect/packages/alchemy/test/AWS/IAM/fixtures.ts:private-key:19
+# Public upstream fixture/example or generated API definition.
+bd851c0203f4318b8222566ef87009a189cdf1f5:.repos/alchemy-effect/packages/alchemy/test/KeyPair.test.ts:private-key:19
+# Public upstream fixture/example or generated API definition.
+e3f14058847dbd36695277aab941fefa94e21e5f:.repos/effect-smol/cookbooks/schedule.md:generic-api-key:21154
+# Public upstream fixture/example or generated API definition.
+e3f14058847dbd36695277aab941fefa94e21e5f:.repos/effect-smol/packages/effect/HTTPAPI.md:curl-auth-header:1039
+# Public upstream fixture/example or generated API definition.
+e3f14058847dbd36695277aab941fefa94e21e5f:.repos/effect-smol/packages/effect/src/Config.ts:generic-api-key:1301
+# Public upstream fixture/example or generated API definition.
+e3f14058847dbd36695277aab941fefa94e21e5f:.repos/effect-smol/packages/effect/test/unstable/eventlog/EventLogIdentityDerivation.test.ts:generic-api-key:6
+# Synthetic test data (dummy sync secret, publishable identifier, protocol example, or UUID).
+e95b57dc268471c882f734546fdcd92e9a833e45:apps/mobile/src/features/cloud/linkEnvironment.test.ts:generic-api-key:58
+# Package version parsed as an API key.
+f2d5fc91e3030e5c3956fdadc13e1eaa25bcabe3:pnpm-workspace.yaml:generic-api-key:29

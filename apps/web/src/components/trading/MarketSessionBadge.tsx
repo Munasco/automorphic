@@ -1,0 +1,37 @@
+import { useEffect, useState } from "react";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { MarketStatusIcon } from "./MarketStatusIcon";
+import { getFuturesSession } from "./marketSession";
+import type { InstrumentRoot } from "./tradingInstruments";
+
+export function MarketSessionBadge({ root }: { root: InstrumentRoot }) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const refresh = () => setNow(new Date());
+    const timer = window.setInterval(refresh, 30_000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
+  const session = getFuturesSession(root, now);
+  if (session.status === "scheduled-open") return null;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        aria-label={session.label}
+        className="inline-flex size-7 shrink-0 items-center justify-center rounded text-xs text-zinc-400 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <MarketStatusIcon open={false} />
+      </TooltipTrigger>
+      <TooltipPopup className="max-w-72">
+        <p className="font-semibold">{session.label}</p>
+        <p className="mt-1">{session.reason}</p>
+        {session.nextOpen ? <p className="mt-1">{session.nextOpen}</p> : null}
+        <p className="mt-2 text-muted-foreground">{session.scheduleNote}</p>
+      </TooltipPopup>
+    </Tooltip>
+  );
+}

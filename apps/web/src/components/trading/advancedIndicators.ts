@@ -1,0 +1,574 @@
+import {
+  calculateEMA,
+  calculateRSI,
+  calculateSMA,
+  sourcePrice,
+  type Candle,
+  type IndicatorPoint,
+  type PriceSource,
+} from "./chartIndicators";
+
+export interface IndicatorBands {
+  upper: IndicatorPoint[];
+  middle: IndicatorPoint[];
+  lower: IndicatorPoint[];
+}
+
+const validPeriod = (period: number) => Number.isSafeInteger(period) && period > 0;
+const validClose = (bar: Candle) => Number.isFinite(bar.time) && Number.isFinite(bar.close);
+const validRange = (bar: Candle) =>
+  validClose(bar) &&
+  Number.isFinite(bar.high) &&
+  Number.isFinite(bar.low) &&
+  bar.high >= bar.low &&
+  bar.close >= bar.low &&
+  bar.close <= bar.high;
+const emptyBands = (): IndicatorBands => ({ upper: [], middle: [], lower: [] });
+
+/** Callers supply distinct chronological bars. Missing inputs restart every warmup. */
+function* segments(bars: readonly Candle[], valid: (bar: Candle) => boolean) {
+  let segment: Candle[] = [];
+  for (const bar of bars) {
+    if (valid(bar)) segment.push(bar);
+    else {
+      if (segment.length) yield segment;
+      segment = [];
+    }
+  }
+  if (segment.length) yield segment;
+}
+
+function add(points: IndicatorPoint[], time: number, value: number) {
+  if (Number.isFinite(time) && Number.isFinite(value)) points.push({ time, value });
+}
+
+/** SMA seed, then the requested alpha. Invalid intermediate values reset the seed. */
+function smooth(points: readonly IndicatorPoint[], period: number, alpha: number) {
+  const result: IndicatorPoint[] = [];
+  let count = 0;
+  let average = 0;
+  for (const point of points) {
+    if (!Number.isFinite(point.value)) {
+      count = 0;
+      average = 0;
+      continue;
+    }
+    if (count < period) {
+      count += 1;
+      average = average * ((count - 1) / count) + point.value / count;
+    } else average = average * (1 - alpha) + point.value * alpha;
+    if (count === period) add(result, point.time, average);
+  }
+  return result;
+}
+
+function sma(points: readonly IndicatorPoint[], period: number) {
+  const result: IndicatorPoint[] = [];
+  for (let i = period - 1; i < points.length; i += 1) {
+    let value = 0;
+    for (let j = i - period + 1; j <= i; j += 1) value += points[j]!.value / period;
+    add(result, points[i]!.time, value);
+  }
+  return result;
+}
+
+function wma(points: readonly IndicatorPoint[], period: number) {
+  const result: IndicatorPoint[] = [];
+  const totalWeight = (period * (period + 1)) / 2;
+  for (let i = period - 1; i < points.length; i += 1) {
+    const start = i - period + 1;
+    let value = 0;
+    for (let j = start; j <= i; j += 1) value += points[j]!.value * ((j - start + 1) / totalWeight);
+    add(result, points[i]!.time, value);
+  }
+  return result;
+}
+
+function ranges(bars: readonly Candle[], period: number) {
+  const result: { time: number; close: number; high: number; low: number }[] = [];
+  for (let i = period - 1; i < bars.length; i += 1) {
+    let high = -Infinity;
+    let low = Infinity;
+    for (let j = i - period + 1; j <= i; j += 1) {
+      high = Math.max(high, bars[j]!.high);
+      low = Math.min(low, bars[j]!.low);
+    }
+    result.push({ time: bars[i]!.time, close: bars[i]!.close, high, low });
+  }
+  return result;
+}
+
+export const BOLLINGER_BASIS_TYPES = ["sma", "ema", "rma", "wma", "vwma"] as const;
+export type BollingerBasisType = (typeof BOLLINGER_BASIS_TYPES)[number];
+
+/** Selected-source moving average ± unweighted population standard deviation.
+ * Defaults close / 20 bars / 2 deviations / SMA. Invalid VWMA volume restarts warmup;
+ * zero-volume windows have no basis value, without resetting later windows.
+ * https://www.tradingview.com/support/solutions/43000501840-bollinger-bands-bb/
+ */
+export function calculateBollingerBands(
+  bars: readonly Candle[],
+  period = 20,
+  deviations = 2,
+  source: PriceSource = "close",
+  basis: BollingerBasisType = "sma",
+): IndicatorBands {
+  const result = emptyBands();
+  if (
+    !validPeriod(period) ||
+    !Number.isFinite(deviations) ||
+    deviations < 0 ||
+    !BOLLINGER_BASIS_TYPES.includes(basis)
+  )
+    return result;
+  for (const segment of segments(
+    bars,
+    (bar) =>
+      Number.isFinite(bar.time) &&
+      Number.isFinite(sourcePrice(bar, source)) &&
+      (basis !== "vwma" || (Number.isFinite(bar.volume) && bar.volume >= 0)),
+  )) {
+    const samples = segment.map((bar) => ({ time: bar.time, value: sourcePrice(bar, source) }));
+    const averages = new Map(
+      (basis === "ema" || basis === "rma"
+        ? smooth(samples, period, basis === "ema" ? 2 / (period + 1) : 1 / period)
+        : basis === "wma"
+          ? wma(samples, period)
+          : []
+      ).map((point) => [point.time, point.value]),
+    );
+    for (let i = period - 1; i < segment.length; i += 1) {
+      const baseline = sourcePrice(segment[i - period + 1]!, source);
+      let offset = 0;
+      for (let j = i - period + 1; j <= i; j += 1)
+        offset += (sourcePrice(segment[j]!, source) - baseline) / period;
+      const mean = baseline + offset;
+      let variance = 0;
+      for (let j = i - period + 1; j <= i; j += 1)
+        variance += (sourcePrice(segment[j]!, source) - mean) ** 2 / period;
+      const time = segment[i]!.time;
+      let middle = basis === "sma" ? mean : (averages.get(time) ?? NaN);
+      if (basis === "vwma") {
+        let maxVolume = 0;
+        for (let j = i - period + 1; j <= i; j += 1)
+          maxVolume = Math.max(maxVolume, segment[j]!.volume);
+        if (maxVolume === 0) continue;
+        // Normalize weights before multiplication to avoid volume/product overflow.
+        let totalWeight = 0;
+        let weightedOffset = 0;
+        for (let j = i - period + 1; j <= i; j += 1) {
+          const weight = segment[j]!.volume / maxVolume;
+          totalWeight += weight;
+          weightedOffset += (sourcePrice(segment[j]!, source) - baseline) * weight;
+        }
+        middle = baseline + weightedOffset / totalWeight;
+      }
+      const width = deviations * Math.sqrt(variance);
+      if (![middle, width, middle + width, middle - width].every(Number.isFinite)) continue;
+      add(result.middle, time, middle);
+      add(result.upper, time, middle + width);
+      add(result.lower, time, middle - width);
+    }
+  }
+  return result;
+}
+
+export type MACDOptions = {
+  source?: PriceSource;
+  oscillatorMA?: "ema" | "sma";
+  signalMA?: "ema" | "sma";
+};
+
+/** Fast minus slow moving average, smoothed signal, MACD minus signal histogram.
+ * Defaults: close-price EMA12 / EMA26 with an EMA9 signal.
+ * https://www.tradingview.com/support/solutions/43000502344-moving-average-convergence-divergence-macd-indicator/
+ */
+export function calculateMACD(
+  bars: readonly Candle[],
+  fast = 12,
+  slow = 26,
+  signalPeriod = 9,
+  options: MACDOptions = {},
+) {
+  const result: { macd: IndicatorPoint[]; signal: IndicatorPoint[]; histogram: IndicatorPoint[] } =
+    { macd: [], signal: [], histogram: [] };
+  if (![fast, slow, signalPeriod].every(validPeriod) || fast >= slow) return result;
+  const source = options.source ?? "close";
+  const average = options.oscillatorMA === "sma" ? calculateSMA : calculateEMA;
+  for (const segment of segments(
+    bars,
+    (bar) => Number.isFinite(bar.time) && Number.isFinite(sourcePrice(bar, source)),
+  )) {
+    const fastPoints = new Map(
+      average(segment, fast, source).map((point) => [point.time, point.value]),
+    );
+    const macd = average(segment, slow, source).map((point) => ({
+      time: point.time,
+      value: (fastPoints.get(point.time) ?? NaN) - point.value,
+    }));
+    const signal =
+      options.signalMA === "sma"
+        ? sma(macd, signalPeriod)
+        : smooth(macd, signalPeriod, 2 / (signalPeriod + 1));
+    const byTime = new Map(macd.map((point) => [point.time, point.value]));
+    for (const point of macd) add(result.macd, point.time, point.value);
+    result.signal.push(...signal);
+    for (const point of signal)
+      add(result.histogram, point.time, (byTime.get(point.time) ?? NaN) - point.value);
+  }
+  return result;
+}
+
+function trueRange(bar: Candle, previous?: Candle) {
+  return previous
+    ? Math.max(
+        bar.high - bar.low,
+        Math.abs(bar.high - previous.close),
+        Math.abs(bar.low - previous.close),
+      )
+    : bar.high - bar.low;
+}
+
+export type ATRSmoothing = "rma" | "sma" | "ema" | "wma";
+
+/** ATR14 defaults to Wilder/RMA smoothing. The first loaded bar uses high-low without a previous close.
+ * https://www.tradingview.com/support/solutions/43000501823-average-true-range-atr/
+ */
+export function calculateATR(
+  bars: readonly Candle[],
+  period = 14,
+  smoothing: ATRSmoothing = "rma",
+): IndicatorPoint[] {
+  if (!validPeriod(period)) return [];
+  const result: IndicatorPoint[] = [];
+  for (const segment of segments(bars, validRange)) {
+    const ranges = segment.map((bar, index) => ({
+      time: bar.time,
+      value: trueRange(bar, segment[index - 1]),
+    }));
+    const points =
+      smoothing === "sma"
+        ? sma(ranges, period)
+        : smoothing === "wma"
+          ? wma(ranges, period)
+          : smooth(ranges, period, smoothing === "ema" ? 2 / (period + 1) : 1 / period);
+    result.push(...points);
+  }
+  return result;
+}
+
+/** Full stochastic14/3/3: range position, SMA(K), SMA(D). Zero-range bars are
+ * undefined, so they reset smoothing rather than inventing an overbought/oversold value.
+ * https://www.tradingview.com/support/solutions/43000502332-stochastic-stoch/
+ */
+export function calculateStochastic(
+  bars: readonly Candle[],
+  period = 14,
+  smoothK = 3,
+  periodD = 3,
+) {
+  const result: { k: IndicatorPoint[]; d: IndicatorPoint[] } = { k: [], d: [] };
+  if (![period, smoothK, periodD].every(validPeriod)) return result;
+  for (const segment of segments(bars, validRange)) {
+    // Keep undefined values in the series so consecutive SMA windows cannot bridge them.
+    const raw = ranges(segment, period).map((point) => ({
+      time: point.time,
+      value:
+        point.high === point.low
+          ? NaN
+          : 100 * ((point.close - point.low) / (point.high - point.low)),
+    }));
+    const kWindows: IndicatorPoint[] = [];
+    let valid: IndicatorPoint[] = [];
+    const flush = () => {
+      const k = sma(valid, smoothK);
+      kWindows.push(...k);
+      result.d.push(...sma(k, periodD));
+      valid = [];
+    };
+    for (const point of raw) {
+      if (Number.isFinite(point.value)) valid.push(point);
+      else flush();
+    }
+    flush();
+    result.k.push(...kWindows);
+  }
+  return result;
+}
+
+/** Wilder DMI14 and ADX14. DM needs a previous bar; ADX needs a full DX seed.
+ * Tied up/down moves contribute neither direction. A motionless range produces zero.
+ * https://www.tradingview.com/support/solutions/43000589099-average-directional-index-adx/
+ */
+export function calculateADX(bars: readonly Candle[], period = 14, adxPeriod = 14) {
+  const result: { adx: IndicatorPoint[]; plusDI: IndicatorPoint[]; minusDI: IndicatorPoint[] } = {
+    adx: [],
+    plusDI: [],
+    minusDI: [],
+  };
+  if (![period, adxPeriod].every(validPeriod)) return result;
+  for (const segment of segments(bars, validRange)) {
+    const tr: IndicatorPoint[] = [];
+    const plus: IndicatorPoint[] = [];
+    const minus: IndicatorPoint[] = [];
+    for (let i = 1; i < segment.length; i += 1) {
+      const bar = segment[i]!;
+      const previous = segment[i - 1]!;
+      const up = bar.high - previous.high;
+      const down = previous.low - bar.low;
+      tr.push({ time: bar.time, value: trueRange(bar, previous) });
+      plus.push({ time: bar.time, value: up > down && up > 0 ? up : 0 });
+      minus.push({ time: bar.time, value: down > up && down > 0 ? down : 0 });
+    }
+    const averageTR = smooth(tr, period, 1 / period);
+    const averagePlus = new Map(
+      smooth(plus, period, 1 / period).map((point) => [point.time, point.value]),
+    );
+    const averageMinus = new Map(
+      smooth(minus, period, 1 / period).map((point) => [point.time, point.value]),
+    );
+    const dx: IndicatorPoint[] = [];
+    for (const point of averageTR) {
+      const plusDI =
+        point.value === 0 ? 0 : 100 * ((averagePlus.get(point.time) ?? NaN) / point.value);
+      const minusDI =
+        point.value === 0 ? 0 : 100 * ((averageMinus.get(point.time) ?? NaN) / point.value);
+      add(result.plusDI, point.time, plusDI);
+      add(result.minusDI, point.time, minusDI);
+      dx.push({
+        time: point.time,
+        value: plusDI + minusDI === 0 ? 0 : (100 * Math.abs(plusDI - minusDI)) / (plusDI + minusDI),
+      });
+    }
+    result.adx.push(...smooth(dx, adxPeriod, 1 / adxPeriod));
+  }
+  return result;
+}
+
+/** Cumulative signed volume, anchored to zero at the first available bar.
+ * Absolute OBV depends on loaded history. Invalid volume resets that local baseline.
+ * https://www.tradingview.com/support/solutions/43000502593-on-balance-volume-obv/
+ */
+export function calculateOBV(bars: readonly Candle[]): IndicatorPoint[] {
+  const result: IndicatorPoint[] = [];
+  for (const segment of segments(
+    bars,
+    (bar) => validClose(bar) && Number.isFinite(bar.volume) && bar.volume >= 0,
+  )) {
+    let total = 0;
+    for (let i = 0; i < segment.length; i += 1) {
+      const bar = segment[i]!;
+      const previous = segment[i - 1];
+      if (previous) total += Math.sign(bar.close - previous.close) * bar.volume;
+      add(result, bar.time, total);
+    }
+  }
+  return result;
+}
+
+/** CCI uses mean absolute deviation and Lambert's 0.015 constant; flat windows return zero. */
+export function calculateCCI(
+  bars: readonly Candle[],
+  period = 20,
+  source: PriceSource = "hlc3",
+): IndicatorPoint[] {
+  if (!validPeriod(period)) return [];
+  const result: IndicatorPoint[] = [];
+  for (const segment of segments(
+    bars,
+    (bar) => Number.isFinite(bar.time) && Number.isFinite(sourcePrice(bar, source)),
+  )) {
+    const prices = segment.map((bar) => sourcePrice(bar, source));
+    const windowValue = (end: number, scale: number) => {
+      const start = end - period + 1;
+      const baseline = prices[start]! / scale;
+      let offset = 0;
+      for (let j = start; j <= end; j += 1) offset += (prices[j]! / scale - baseline) / period;
+      const mean = baseline + offset;
+      let deviation = 0;
+      for (let j = start; j <= end; j += 1)
+        deviation += Math.abs(prices[j]! / scale - mean) / period;
+      if (!Number.isFinite(mean) || !Number.isFinite(deviation)) return NaN;
+      return deviation === 0 ? 0 : (prices[end]! / scale - mean) / deviation / 0.015;
+    };
+    for (let i = period - 1; i < prices.length; i += 1) {
+      let value = windowValue(i, 1);
+      if (!Number.isFinite(value)) {
+        // CCI is scale invariant; rescale only when finite prices overflow intermediate sums.
+        let scale = 0;
+        for (let j = i - period + 1; j <= i; j += 1) scale = Math.max(scale, Math.abs(prices[j]!));
+        value = windowValue(i, scale);
+      }
+      add(result, segment[i]!.time, value);
+    }
+  }
+  return result;
+}
+
+/** Williams %R14. A zero high-low span is undefined and omitted.
+ * https://www.tradingview.com/support/solutions/43000501985-williams-r-r/
+ */
+export function calculateWilliamsR(bars: readonly Candle[], period = 14): IndicatorPoint[] {
+  if (!validPeriod(period)) return [];
+  const result: IndicatorPoint[] = [];
+  for (const segment of segments(bars, validRange)) {
+    for (const point of ranges(segment, period)) {
+      if (point.high !== point.low)
+        add(result, point.time, -100 * ((point.high - point.close) / (point.high - point.low)));
+    }
+  }
+  return result;
+}
+
+/** Highest high / lowest low over20 bars including the current bar; midpoint basis.
+ * https://www.tradingview.com/support/solutions/43000502253-donchian-channels-dc/
+ */
+export function calculateDonchian(bars: readonly Candle[], period = 20): IndicatorBands {
+  const result = emptyBands();
+  if (!validPeriod(period)) return result;
+  for (const segment of segments(bars, validRange)) {
+    for (const point of ranges(segment, period)) {
+      add(result.upper, point.time, point.high);
+      add(result.lower, point.time, point.low);
+      add(result.middle, point.time, point.high / 2 + point.low / 2);
+    }
+  }
+  return result;
+}
+
+/** Stochastic of Wilder RSI, displayed on the 0–100 scale with separate K/D SMAs.
+ * https://www.tradingview.com/support/solutions/43000502333-stochastic-rsi-stoch-rsi/
+ */
+export function calculateStochasticRSI(
+  bars: readonly Candle[],
+  rsiPeriod = 14,
+  stochasticPeriod = 14,
+  smoothK = 3,
+  periodD = 3,
+  source: PriceSource = "close",
+) {
+  const result: { k: IndicatorPoint[]; d: IndicatorPoint[] } = { k: [], d: [] };
+  if (![rsiPeriod, stochasticPeriod, smoothK, periodD].every(validPeriod)) return result;
+  for (const segment of segments(
+    bars,
+    (bar) => Number.isFinite(bar.time) && Number.isFinite(sourcePrice(bar, source)),
+  )) {
+    const rsi = calculateRSI(segment, rsiPeriod, source).map(({ time, value }) => ({
+      time,
+      open: value,
+      high: value,
+      low: value,
+      close: value,
+      volume: 0,
+    }));
+    const stochastic = calculateStochastic(rsi, stochasticPeriod, smoothK, periodD);
+    result.k.push(...stochastic.k);
+    result.d.push(...stochastic.d);
+  }
+  return result;
+}
+
+/** Moving-average basis ± selected range. High-low uses Wilder smoothing over the MA period. */
+export function calculateKeltnerChannels(
+  bars: readonly Candle[],
+  period = 20,
+  atrPeriod = 10,
+  multiplier = 2,
+  source: PriceSource = "close",
+  basisType: "ema" | "sma" = "ema",
+  rangeType: "atr" | "trueRange" | "highLow" = "atr",
+): IndicatorBands {
+  const result = emptyBands();
+  if (
+    ![period, atrPeriod].every(validPeriod) ||
+    !Number.isFinite(multiplier) ||
+    multiplier < 0 ||
+    (basisType !== "ema" && basisType !== "sma") ||
+    !["atr", "trueRange", "highLow"].includes(rangeType)
+  )
+    return result;
+  for (const segment of segments(bars, validRange)) {
+    const ranges =
+      rangeType === "atr"
+        ? calculateATR(segment, atrPeriod)
+        : rangeType === "trueRange"
+          ? segment.map((bar, index) => ({
+              time: bar.time,
+              value: trueRange(bar, segment[index - 1]),
+            }))
+          : smooth(
+              segment.map((bar) => ({ time: bar.time, value: bar.high - bar.low })),
+              period,
+              1 / period,
+            );
+    const rangeByTime = new Map(ranges.map((point) => [point.time, point.value]));
+    const basis = basisType === "ema" ? calculateEMA : calculateSMA;
+    for (const point of basis(segment, period, source)) {
+      const range = rangeByTime.get(point.time);
+      if (range === undefined) continue;
+      const upper = point.value + multiplier * range;
+      const lower = point.value - multiplier * range;
+      if (![upper, lower].every(Number.isFinite)) continue;
+      result.middle.push(point);
+      add(result.upper, point.time, upper);
+      add(result.lower, point.time, lower);
+    }
+  }
+  return result;
+}
+
+/** Rolling money-flow volume / total volume, in [-1, 1]. Flat bars have no flow;
+ * an all-zero-volume window is undefined rather than a synthetic neutral reading.
+ * https://www.tradingview.com/support/solutions/43000501974-chaikin-money-flow-cmf/
+ */
+export function calculateCMF(bars: readonly Candle[], period = 20): IndicatorPoint[] {
+  if (!validPeriod(period)) return [];
+  const result: IndicatorPoint[] = [];
+  for (const segment of segments(
+    bars,
+    (bar) => validRange(bar) && Number.isFinite(bar.volume) && bar.volume >= 0,
+  )) {
+    const flows = segment.map((bar) =>
+      bar.high === bar.low
+        ? 0
+        : ((bar.close - bar.low - (bar.high - bar.close)) / (bar.high - bar.low)) * bar.volume,
+    );
+    let flow = 0;
+    let volume = 0;
+    for (let i = 0; i < segment.length; i += 1) {
+      flow += flows[i]!;
+      volume += segment[i]!.volume;
+      if (i >= period) {
+        flow -= flows[i - period]!;
+        volume -= segment[i - period]!.volume;
+      }
+      if (i >= period - 1 && volume > 0) add(result, segment[i]!.time, flow / volume);
+    }
+  }
+  return result;
+}
+
+/** Percent change from the selected price exactly N bars ago; zero baselines are omitted. */
+export function calculateROC(
+  bars: readonly Candle[],
+  period = 9,
+  source: PriceSource = "close",
+): IndicatorPoint[] {
+  if (!validPeriod(period)) return [];
+  const result: IndicatorPoint[] = [];
+  for (const segment of segments(
+    bars,
+    (bar) => Number.isFinite(bar.time) && Number.isFinite(sourcePrice(bar, source)),
+  )) {
+    for (let i = period; i < segment.length; i += 1) {
+      const previous = sourcePrice(segment[i - period]!, source);
+      if (previous === 0) continue;
+      const current = sourcePrice(segment[i]!, source);
+      const difference = current - previous;
+      // Opposite-sign finite prices can overflow subtraction despite a finite ratio.
+      const change = Number.isFinite(difference) ? difference / previous : current / previous - 1;
+      add(result, segment[i]!.time, 100 * change);
+    }
+  }
+  return result;
+}

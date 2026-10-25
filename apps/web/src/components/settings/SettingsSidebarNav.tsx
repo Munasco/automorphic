@@ -1,3 +1,4 @@
+import { TradingIcon } from "../trading/TradingIcon";
 import {
   lazy,
   Suspense,
@@ -76,6 +77,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   Record<SettingsPath, ComponentType<{ className?: string }>>
 > = {
   "/settings/general": Settings2Icon,
+  "/settings/trading": TradingIcon,
   "/settings/appearance": PaletteIcon,
   "/settings/projects": PanelsTopLeftIcon,
   "/settings/keybindings": KeyboardIcon,

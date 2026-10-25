@@ -52,6 +52,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
 import FileBrowserPanel from "./FileBrowserPanel";
+import { HtmlDocumentPreview } from "./HtmlDocumentPreview";
 import { FileBreadcrumbs } from "./FileBreadcrumbs";
 import { FileMarkdownPreview } from "./FileMarkdownPreview";
 import {
@@ -217,13 +218,7 @@ function BrowserDocumentFrame(props: {
     // oxlint-disable-next-line react/iframe-missing-sandbox
     <iframe key={props.src} src={props.src} title={props.title} className={className} />
   ) : (
-    <iframe
-      key={props.src}
-      src={props.src}
-      title={props.title}
-      className={className}
-      sandbox="allow-scripts allow-forms allow-popups allow-modals"
-    />
+    <HtmlDocumentPreview key={props.src} src={props.src} title={props.title} />
   );
 }
 

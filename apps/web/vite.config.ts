@@ -13,6 +13,7 @@ import { DEV_PROXIED_PATH_PREFIXES } from "@t3tools/shared/devProxy";
 
 import { loadRepoEnv } from "../../scripts/lib/public-config";
 import { tailwindPlugins } from "./vite/tailwind";
+import { localFontPreview } from "./vite/localFontPreview";
 
 const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
@@ -156,6 +157,7 @@ export default defineConfig(() => {
   return {
     assetsInclude: ["**/*.wasm"],
     plugins: [
+      localFontPreview(),
       devCompressionPlugin(),
       // Route components load as split chunks so settings, pull-request, and
       // usage code stay out of the cold-start payload; the router prefetches

@@ -1,3 +1,17 @@
+import { placeTradingOrder } from "./trading/orderEntry.ts";
+import { readConnectionRoute, writeConnectionRoute } from "./trading/connectionRoutes.ts";
+import { ConnectionError } from "./trading/connectionSecrets.ts";
+import { McpIntegrationDocument, AuthAccessWriteScope } from "@t3tools/contracts";
+import { readMcpIntegrations, writeMcpIntegrations } from "./mcp/McpIntegrations.ts";
+import { contracts, chartStream } from "./trading/marketData.ts";
+import { generateRollEvents } from "./trading/rolloverSchedule.ts";
+import { readChartHistory } from "./trading/chartHistory.ts";
+import { watchlistStream } from "./trading/watchlistData.ts";
+import { ChartIntervalError } from "./trading/chartInterval.ts";
+import { accountSnapshot, parseAccountId, TradingAccountError } from "./trading/accountData.ts";
+import { makeTradingWorkspaceCreator } from "./trading/createWorkspace.ts";
+import { TradingWorkspace } from "./trading/TradingWorkspace.ts";
+import { parseWorkspaceValue } from "./trading/workspaceState.ts";
 import Mime from "@effect/platform-node/Mime";
 import {
   AuthOrchestrationOperateScope,
@@ -269,7 +283,10 @@ export function resolveDevRedirectUrl(devUrl: URL, requestUrl: URL): string {
 }
 
 const authenticateRawRouteWithScope = (
-  scope: typeof AuthOrchestrationReadScope | typeof AuthOrchestrationOperateScope,
+  scope:
+    | typeof AuthOrchestrationReadScope
+    | typeof AuthOrchestrationOperateScope
+    | typeof AuthAccessWriteScope,
 ) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
@@ -288,6 +305,7 @@ const authenticateRawRouteWithScope = (
     if (!session.scopes.includes(scope)) {
       return yield* failEnvironmentScopeRequired(scope);
     }
+    return session;
   });
 
 export const serverEnvironmentHttpApiLayer = HttpApiBuilder.group(
@@ -363,6 +381,346 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
       EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
     }),
   ),
+);
+
+const tradingWorkspaceWriteHandler = Effect.gen(function* () {
+  yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+  const request = yield* HttpServerRequest.HttpServerRequest;
+  const workspace = yield* TradingWorkspace;
+  const projectId =
+    new URL(request.url, "http://localhost").searchParams.get("projectId") ?? undefined;
+  const body = yield* request.json.pipe(Effect.orElseSucceed(() => null));
+  if (request.method === "PATCH") {
+    const hours =
+      body && typeof body === "object" && "retentionHours" in body ? body.retentionHours : null;
+    if (hours !== 24 && hours !== 168)
+      return HttpServerResponse.jsonUnsafe(
+        { error: "Choose 24 hours or 7 days." },
+        { status: 400 },
+      );
+    yield* workspace.setRetention(hours, projectId);
+  } else {
+    const value = parseWorkspaceValue(body);
+    if (!value)
+      return HttpServerResponse.jsonUnsafe(
+        { error: "Invalid trading preference." },
+        { status: 400 },
+      );
+    yield* workspace.save(value.key, value.value, projectId);
+  }
+  return HttpServerResponse.jsonUnsafe({ saved: true });
+}).pipe(
+  Effect.catchTags({
+    EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+    EnvironmentInternalError: HttpServerRespondable.toResponse,
+    EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+  }),
+  Effect.orElseSucceed(() =>
+    HttpServerResponse.jsonUnsafe(
+      { error: "Trading preference could not be saved." },
+      { status: 503 },
+    ),
+  ),
+);
+
+export const tradingWorkspaceWriteRouteLayer = Layer.unwrap(
+  Effect.gen(function* () {
+    const workspace = yield* TradingWorkspace;
+    const handler = tradingWorkspaceWriteHandler.pipe(
+      Effect.provideService(TradingWorkspace, workspace),
+    );
+    return Layer.mergeAll(
+      HttpRouter.add("PUT", "/api/trading/workspace", handler),
+      HttpRouter.add("PATCH", "/api/trading/workspace", handler),
+    );
+  }),
+);
+
+const tradingReadHandler = Effect.gen(function* () {
+  yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
+  const request = yield* HttpServerRequest.HttpServerRequest;
+  const url = new URL(request.url, "http://localhost");
+  if (url.pathname === "/api/trading/workspace" || url.pathname === "/api/trading/news") {
+    const workspace = yield* TradingWorkspace;
+    return yield* Effect.gen(function* () {
+      const projectId = url.searchParams.get("projectId") ?? undefined;
+      if (url.pathname === "/api/trading/workspace") return yield* workspace.snapshot(projectId);
+      return yield* workspace.news(url.searchParams.get("root") === "NQ" ? "NQ" : "MGC", projectId);
+    }).pipe(
+      Effect.map((value) =>
+        HttpServerResponse.jsonUnsafe(value, { headers: { "Cache-Control": "no-store" } }),
+      ),
+      Effect.orElseSucceed(() =>
+        HttpServerResponse.jsonUnsafe(
+          { error: "Trading workspace is unavailable. Please retry." },
+          { status: 503 },
+        ),
+      ),
+    );
+  }
+  return yield* Effect.tryPromise(async () => {
+    if (
+      url.pathname === "/api/trading/connections" ||
+      url.pathname === "/api/trading/connections/telegram" ||
+      url.pathname === "/api/trading/connections/tradovate" ||
+      url.pathname.startsWith("/api/trading/telegram/")
+    ) {
+      try {
+        const response = await readConnectionRoute(url);
+        return response
+          ? HttpServerResponse.fromWeb(response)
+          : HttpServerResponse.empty({ status: 404 });
+      } catch (error) {
+        return HttpServerResponse.jsonUnsafe(
+          {
+            error:
+              error instanceof ConnectionError
+                ? error.message
+                : "The connection is unavailable. Please retry.",
+          },
+          {
+            status: error instanceof ConnectionError ? error.status : 502,
+            headers: { "Cache-Control": "no-store" },
+          },
+        );
+      }
+    }
+    if (url.pathname === "/api/trading/account") {
+      try {
+        return HttpServerResponse.jsonUnsafe(
+          await accountSnapshot(parseAccountId(url.searchParams.get("accountId"))),
+          { headers: { "Cache-Control": "no-store" } },
+        );
+      } catch (error) {
+        return HttpServerResponse.jsonUnsafe(
+          {
+            error:
+              error instanceof TradingAccountError
+                ? error.message
+                : "Tradovate account data is unavailable. Retry shortly.",
+          },
+          {
+            status: error instanceof TradingAccountError ? error.status : 502,
+            headers: { "Cache-Control": "no-store" },
+          },
+        );
+      }
+    }
+    if (url.pathname === "/api/trading/contracts")
+      return HttpServerResponse.jsonUnsafe(await contracts(url.searchParams.get("root") ?? "MGC"));
+    if (url.pathname === "/api/trading/rollover-events") {
+      const symbol = url.searchParams.get("symbol") ?? "MNQ1!";
+      const root = symbol
+        .toUpperCase()
+        .replace(/^@/, "")
+        .replace(/[12]!$/, "");
+      const events = generateRollEvents(root);
+      return HttpServerResponse.jsonUnsafe(events, {
+        headers: { "Cache-Control": "public, max-age=3600" },
+      });
+    }
+    if (url.pathname === "/api/trading/history") {
+      try {
+        return HttpServerResponse.jsonUnsafe(await readChartHistory(url.searchParams), {
+          headers: { "Cache-Control": "no-store" },
+        });
+      } catch (error) {
+        return HttpServerResponse.jsonUnsafe(
+          {
+            error:
+              error instanceof ChartIntervalError
+                ? error.message
+                : "Older candles could not be loaded. Please retry.",
+          },
+          {
+            status: error instanceof ChartIntervalError ? 400 : 502,
+            headers: { "Cache-Control": "no-store" },
+          },
+        );
+      }
+    }
+    if (url.pathname === "/api/trading/watchlist-stream")
+      return HttpServerResponse.fromWeb(
+        await watchlistStream(url.searchParams.get("roots") ?? "MGC,MNQ,GC,NQ"),
+      );
+    if (url.pathname === "/api/trading/stream") {
+      try {
+        return HttpServerResponse.fromWeb(
+          await chartStream(
+            url.searchParams.get("symbol") ?? "",
+            Number(url.searchParams.get("interval") ?? 5),
+            url.searchParams.get("intervalUnit") ?? "minute",
+          ),
+        );
+      } catch (error) {
+        if (error instanceof ChartIntervalError)
+          return HttpServerResponse.jsonUnsafe({ error: error.message }, { status: 400 });
+        throw error;
+      }
+    }
+    return HttpServerResponse.empty({ status: 404 });
+  }).pipe(
+    Effect.orElseSucceed(() =>
+      HttpServerResponse.jsonUnsafe(
+        {
+          error:
+            "Trading data is unavailable. Check the server's Tradovate session or news connection.",
+        },
+        { status: 502 },
+      ),
+    ),
+  );
+}).pipe(
+  Effect.catchTags({
+    EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+    EnvironmentInternalError: HttpServerRespondable.toResponse,
+    EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+  }),
+);
+
+const tradingOrderHandler = Effect.gen(function* () {
+  yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+  const request = yield* HttpServerRequest.HttpServerRequest;
+  const config = yield* ServerConfig.ServerConfig;
+  if (
+    request.headers["content-type"]?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json"
+  )
+    return HttpServerResponse.jsonUnsafe(
+      { error: "Order requests require JSON." },
+      { status: 415 },
+    );
+  const body = yield* request.json.pipe(Effect.orElseSucceed(() => null));
+  return yield* Effect.tryPromise(async () => {
+    try {
+      return HttpServerResponse.jsonUnsafe(await placeTradingOrder(config.stateDir, body), {
+        headers: { "Cache-Control": "no-store" },
+      });
+    } catch (error) {
+      return HttpServerResponse.jsonUnsafe(
+        {
+          error:
+            error instanceof TradingAccountError
+              ? error.message
+              : "Could not verify order status. Check Tradovate before submitting another order.",
+        },
+        { status: error instanceof TradingAccountError ? error.status : 502 },
+      );
+    }
+  });
+}).pipe(
+  Effect.catchTags({
+    EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+    EnvironmentInternalError: HttpServerRespondable.toResponse,
+    EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+  }),
+);
+
+export const tradingRouteLayer = Layer.unwrap(
+  Effect.gen(function* () {
+    const workspace = yield* TradingWorkspace;
+    return Layer.mergeAll(
+      HttpRouter.add(
+        "GET",
+        "/api/trading/*",
+        tradingReadHandler.pipe(Effect.provideService(TradingWorkspace, workspace)),
+      ),
+      HttpRouter.add("POST", "/api/trading/orders", tradingOrderHandler),
+      HttpRouter.add(
+        "POST",
+        "/api/trading/connections",
+        Effect.gen(function* () {
+          const owner = yield* authenticateRawRouteWithScope(AuthAccessWriteScope);
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          if (
+            request.headers["content-type"]?.split(";", 1)[0]?.trim().toLowerCase() !==
+            "application/json"
+          )
+            return HttpServerResponse.jsonUnsafe(
+              { error: "Connection requests require JSON." },
+              { status: 415 },
+            );
+          const text = yield* request.text.pipe(Effect.orElseSucceed(() => ""));
+          if (text.length > 8192)
+            return HttpServerResponse.jsonUnsafe(
+              { error: "Connection request is too large." },
+              { status: 413 },
+            );
+          const body = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(
+            text,
+          ).pipe(Effect.orElseSucceed(() => null));
+          return yield* Effect.tryPromise(async () => {
+            try {
+              return HttpServerResponse.jsonUnsafe(
+                await writeConnectionRoute(owner.sessionId, body),
+                { headers: { "Cache-Control": "no-store" } },
+              );
+            } catch (error) {
+              return HttpServerResponse.jsonUnsafe(
+                {
+                  error:
+                    error instanceof ConnectionError
+                      ? error.message
+                      : "Could not update this connection. Please retry.",
+                },
+                {
+                  status: error instanceof ConnectionError ? error.status : 502,
+                  headers: { "Cache-Control": "no-store" },
+                },
+              );
+            }
+          });
+        }).pipe(
+          Effect.catchTags({
+            EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+            EnvironmentInternalError: HttpServerRespondable.toResponse,
+            EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+          }),
+        ),
+      ),
+    );
+  }),
+);
+
+const decodeWorkspaceCreateBody = Schema.decodeUnknownEffect(
+  Schema.Struct({ title: Schema.String }),
+);
+
+export const tradingWorkspaceCreateRouteLayer = Layer.unwrap(
+  Effect.gen(function* () {
+    const create = yield* makeTradingWorkspaceCreator;
+    return HttpRouter.add(
+      "POST",
+      "/api/trading/workspaces",
+      Effect.gen(function* () {
+        yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        const body = yield* request.json.pipe(Effect.orElseSucceed(() => null));
+        const decoded = yield* decodeWorkspaceCreateBody(body).pipe(Effect.option);
+        if (Option.isNone(decoded))
+          return HttpServerResponse.jsonUnsafe(
+            { error: "A workspace title is required." },
+            { status: 400 },
+          );
+        return HttpServerResponse.jsonUnsafe(yield* create(decoded.value.title));
+      }).pipe(
+        Effect.catchTags({
+          EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+          EnvironmentInternalError: HttpServerRespondable.toResponse,
+          EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+          InvalidTradingWorkspaceName: (error) =>
+            Effect.succeed(
+              HttpServerResponse.jsonUnsafe({ error: error.message }, { status: 400 }),
+            ),
+        }),
+        Effect.orElseSucceed(() =>
+          HttpServerResponse.jsonUnsafe(
+            { error: "Workspace could not be created. Please retry." },
+            { status: 503 },
+          ),
+        ),
+      ),
+    );
+  }),
 );
 
 export const assetRouteLayer = HttpRouter.add(
@@ -631,4 +989,53 @@ export const staticAndDevRouteLayer = Layer.unwrap(
   loadImmutableBuildAssets.pipe(
     Effect.map((assets) => HttpRouter.add("GET", "*", handleStaticAndDevRequest(assets))),
   ),
+);
+
+const decodeMcpIntegrationDocument = Schema.decodeUnknownEffect(McpIntegrationDocument);
+const mcpIntegrationsRoute = (method: "GET" | "PUT") =>
+  HttpRouter.add(
+    method,
+    "/api/trading/plugins",
+    Effect.gen(function* () {
+      yield* authenticateRawRouteWithScope(
+        method === "PUT" ? AuthAccessWriteScope : AuthOrchestrationReadScope,
+      );
+      if (method === "GET")
+        return HttpServerResponse.jsonUnsafe(yield* readMcpIntegrations, {
+          headers: { "cache-control": "no-store" },
+        });
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const raw = yield* request.json;
+      const decoded = yield* decodeMcpIntegrationDocument(raw).pipe(Effect.option);
+      if (Option.isNone(decoded))
+        return HttpServerResponse.jsonUnsafe(
+          { error: "Invalid plugin configuration." },
+          { status: 400 },
+        );
+      return yield* writeMcpIntegrations(decoded.value).pipe(
+        Effect.map((value) => HttpServerResponse.jsonUnsafe(value)),
+        Effect.orElseSucceed(() =>
+          HttpServerResponse.jsonUnsafe(
+            {
+              error:
+                "Could not save plugins. Check the configuration or refresh if another client changed it.",
+            },
+            { status: 409 },
+          ),
+        ),
+      );
+    }).pipe(
+      Effect.catchTags({
+        EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+        EnvironmentInternalError: HttpServerRespondable.toResponse,
+        EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+      }),
+      Effect.orElseSucceed(() =>
+        HttpServerResponse.jsonUnsafe({ error: "Plugins are unavailable." }, { status: 503 }),
+      ),
+    ),
+  );
+export const mcpIntegrationsRouteLayer = Layer.mergeAll(
+  mcpIntegrationsRoute("GET"),
+  mcpIntegrationsRoute("PUT"),
 );

@@ -1,3 +1,4 @@
+import { claudeMcpConfiguration } from "../../mcp/customProviderConfig.ts";
 /**
  * ClaudeAdapterLive - Scoped live implementation for the Claude Agent provider adapter.
  *
@@ -3235,6 +3236,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       // generic API error, so retain that evidence for the result fallback.
       if (message.error === "authentication_failed") {
         context.turnState.authenticationFailureMessage = claudeSignedOutMessage({
+          environment: claudeEnvironment,
           configDir: claudeEnvironment.CLAUDE_CONFIG_DIR,
           cwd: path.resolve(context.session.cwd ?? "."),
         });
@@ -4713,6 +4715,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(mcpSession
           ? {
               mcpServers: {
+                ...claudeMcpConfiguration(mcpSession.customServers, claudeEnvironment),
                 "t3-code": {
                   type: "http",
                   url: mcpSession.endpoint,

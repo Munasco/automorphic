@@ -30,6 +30,10 @@ it("isolates Claude capability probes without dropping workspace setting sources
     abortController,
     environment: {
       HOME: "/home/user",
+      CLAUDE_CODE_USE_VERTEX: "1",
+      ANTHROPIC_VERTEX_PROJECT_ID: "test-project",
+      CLOUD_ML_REGION: "global",
+      GOOGLE_APPLICATION_CREDENTIALS: "/private/config/adc.json",
       ENABLE_CLAUDEAI_MCP_SERVERS: "true",
       FORCE_CODE_TERMINAL: "1",
     },
@@ -46,6 +50,10 @@ it("isolates Claude capability probes without dropping workspace setting sources
   assert.equal(options.pathToClaudeCodeExecutable, "/usr/bin/claude");
   assert.equal(options.abortController, abortController);
   assert.equal(options.env?.HOME, "/home/user");
+  assert.equal(options.env?.CLAUDE_CODE_USE_VERTEX, "1");
+  assert.equal(options.env?.ANTHROPIC_VERTEX_PROJECT_ID, "test-project");
+  assert.equal(options.env?.CLOUD_ML_REGION, "global");
+  assert.equal(options.env?.GOOGLE_APPLICATION_CREDENTIALS, "/private/config/adc.json");
   assert.equal(options.env?.ENABLE_CLAUDEAI_MCP_SERVERS, "false");
   assert.equal(options.env?.FORCE_CODE_TERMINAL, undefined);
   assert.equal(options.env?.CLAUDE_CODE_AUTO_CONNECT_IDE, "0");

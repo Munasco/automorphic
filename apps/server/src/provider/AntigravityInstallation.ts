@@ -416,7 +416,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
         }
         return yield* installationError(
           "resolve",
-          "The custom Antigravity executable or its localharness_external sibling is missing or not executable.",
+          "The custom Antigravity ACP executable or its localharness_external sibling is missing or not executable. The IDE launcher is not an ACP runtime.",
         );
       }
       if (yield* fs.exists(activePath)) {
@@ -430,7 +430,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
       return yield* installationError(
         "resolve",
         releaseAsset
-          ? "Antigravity is not installed. Install it in this environment or set a custom executable path."
+          ? "Antigravity ACP runtime is not installed. Install the provider runtime in this environment or set its executable path. The Antigravity IDE app is separate."
           : `Google does not publish an Antigravity runtime for ${platform}-${arch}. Use a supported environment or a custom executable.`,
       );
     },

@@ -1,5 +1,7 @@
 "use client";
 
+import { useOverlayLayout, mergeOverlayStyle, overlayCollisionBoundary } from "./overlay-layout";
+
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import type * as React from "react";
@@ -36,6 +38,10 @@ function MenuPopup({
   side?: MenuPrimitive.Positioner.Props["side"];
   anchor?: MenuPrimitive.Positioner.Props["anchor"];
 }) {
+  const overlayLayout = useOverlayLayout();
+  const popupStyle = overlayLayout.measured
+    ? { ...overlayLayout.popupStyle, overflowY: "auto" as const }
+    : overlayLayout.popupStyle;
   const hasExplicitWidthClass =
     typeof className === "string" &&
     className.split(/\s+/).some((classToken) => {
@@ -49,6 +55,7 @@ function MenuPopup({
         align={align}
         alignOffset={alignOffset}
         anchor={anchor}
+        collisionBoundary={overlayCollisionBoundary(overlayLayout)}
         className="z-[130]"
         data-slot="menu-positioner"
         side={side}
@@ -62,6 +69,7 @@ function MenuPopup({
           )}
           data-slot="menu-popup"
           {...props}
+          style={mergeOverlayStyle(props.style, popupStyle)}
         >
           <div className="max-h-(--available-height) w-full overflow-y-auto p-1">{children}</div>
         </MenuPrimitive.Popup>

@@ -160,7 +160,9 @@ function claudeAuthMetadata(input: {
 function apiProviderAuthMetadata(
   apiProvider: string | undefined,
 ): { readonly type: string; readonly label: string } | undefined {
-  return apiProvider === "bedrock" ? { type: "bedrock", label: "Amazon Bedrock" } : undefined;
+  if (apiProvider === "bedrock") return { type: "bedrock", label: "Amazon Bedrock" };
+  if (apiProvider === "vertex") return { type: "vertex", label: "Google Vertex AI" };
+  return undefined;
 }
 
 // ── SDK capability probe ────────────────────────────────────────────
@@ -231,7 +233,7 @@ type ClaudeCapabilitiesProbe = {
   /**
    * Active API backend reported by the SDK's `AccountInfo`. Anthropic OAuth
    * login only applies when `"firstParty"`; for Amazon Bedrock (`"bedrock"`)
-   * the subscription/token fields are absent and auth is external AWS creds.
+   * and Google Vertex AI ("vertex"), subscription login is not required.
    */
   readonly apiProvider: string | undefined;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
@@ -550,16 +552,20 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         version: parsedVersion,
         status: "warning",
         auth: { status: "unknown" },
-        message: "Could not verify Claude authentication status from initialization result.",
+        message:
+          resolvedEnvironment.CLAUDE_CODE_USE_VERTEX === "1"
+            ? "Could not verify Google Vertex AI access. Check Application Default Credentials, project, region, and Claude model access."
+            : "Could not verify Claude authentication status from initialization result.",
       },
     });
   }
 
   const authMetadata =
+    apiProviderAuthMetadata(capabilities.apiProvider) ??
     claudeAuthMetadata({
       subscriptionType: capabilities.subscriptionType,
       authMethod: capabilities.tokenSource,
-    }) ?? apiProviderAuthMetadata(capabilities.apiProvider);
+    });
   const usageLimits = !capabilities.usage
     ? makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" })
     : scopedLimitNames

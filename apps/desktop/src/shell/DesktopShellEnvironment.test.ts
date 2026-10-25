@@ -1,4 +1,4 @@
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as FileSystem from "effect/FileSystem";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -69,6 +69,7 @@ function runShellEnvironment(input: {
   readonly platform: NodeJS.Platform;
   readonly handler: (command: ChildProcess.Command) => string;
   readonly failure?: PlatformError.PlatformError;
+  readonly existingPaths?: ReadonlyArray<string>;
 }) {
   const environmentLayer = Layer.succeed(
     DesktopEnvironment.DesktopEnvironment,
@@ -91,7 +92,15 @@ function runShellEnvironment(input: {
   }).pipe(
     Effect.provide(
       DesktopShellEnvironment.layer.pipe(
-        Layer.provide(Layer.mergeAll(environmentLayer, NodeServices.layer, spawnerLayer)),
+        Layer.provide(
+          Layer.mergeAll(
+            environmentLayer,
+            FileSystem.layerNoop({
+              exists: (path) => Effect.succeed(input.existingPaths?.includes(path) ?? false),
+            }),
+            spawnerLayer,
+          ),
+        ),
       ),
     ),
   );
@@ -100,6 +109,75 @@ function runShellEnvironment(input: {
 }
 
 describe("DesktopShellEnvironment", () => {
+  it.effect.each(["darwin", "linux"] as const)(
+    "adds existing native CLI directories after shell PATH on %s",
+    (platform) =>
+      Effect.gen(function* () {
+        const env: NodeJS.ProcessEnv = { HOME: "/home/test/", PATH: "/usr/bin" };
+        yield* runShellEnvironment({
+          env,
+          platform,
+          handler: () => envOutput({ PATH: "/custom/bin:/usr/bin" }),
+          existingPaths: ["/home/test/.local/bin"],
+        });
+        assert.equal(env.PATH, "/custom/bin:/usr/bin:/home/test/.local/bin");
+      }),
+  );
+  it.effect("does not duplicate native directories already supplied by a shell", () =>
+    Effect.gen(function* () {
+      const env: NodeJS.ProcessEnv = { HOME: "/home/test", PATH: "/usr/bin" };
+      yield* runShellEnvironment({
+        env,
+        platform: "darwin",
+        handler: () => envOutput({ PATH: "/home/test/.local/bin:/usr/bin" }),
+        existingPaths: ["/home/test/.local/bin"],
+      });
+      assert.equal(env.PATH, "/home/test/.local/bin:/usr/bin");
+    }),
+  );
+
+  it.effect("finds bundled Codex after shell-installed commands on Finder launches", () =>
+    Effect.gen(function* () {
+      const env: NodeJS.ProcessEnv = { HOME: "/Users/test", PATH: "/usr/bin:/bin" };
+      yield* runShellEnvironment({
+        env,
+        platform: "darwin",
+        handler: () => envOutput({ PATH: "/opt/homebrew/bin:/usr/bin" }),
+        existingPaths: ["/Applications/ChatGPT.app/Contents/Resources/codex"],
+      });
+      assert.equal(
+        env.PATH,
+        "/opt/homebrew/bin:/usr/bin:/bin:/Applications/ChatGPT.app/Contents/Resources",
+      );
+    }),
+  );
+
+  it.effect("recognizes a per-user app without duplicating inherited paths", () =>
+    Effect.gen(function* () {
+      const directory = "/Users/test/Applications/Codex.app/Contents/Resources";
+      const env: NodeJS.ProcessEnv = { HOME: "/Users/test", PATH: `/usr/bin:${directory}` };
+      yield* runShellEnvironment({
+        env,
+        platform: "darwin",
+        handler: () => envOutput({ PATH: "/usr/bin" }),
+        existingPaths: [`${directory}/codex`],
+      });
+      assert.equal(env.PATH, `/usr/bin:${directory}`);
+    }),
+  );
+
+  it.effect("does not add Mac app paths to a Linux environment", () =>
+    Effect.gen(function* () {
+      const env: NodeJS.ProcessEnv = { PATH: "/usr/bin" };
+      yield* runShellEnvironment({
+        env,
+        platform: "linux",
+        handler: () => envOutput({ PATH: "/usr/bin" }),
+        existingPaths: ["/Applications/ChatGPT.app/Contents/Resources/codex"],
+      });
+      assert.equal(env.PATH, "/usr/bin");
+    }),
+  );
   it.effect("hydrates PATH and missing SSH_AUTH_SOCK from the login shell on macOS", () =>
     Effect.gen(function* () {
       const env: NodeJS.ProcessEnv = {

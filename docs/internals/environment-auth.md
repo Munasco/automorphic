@@ -4,6 +4,14 @@ The environment issues its own sessions and enforces their capabilities. Cloud
 identity and relay credentials belong to a separate trust boundary, described in
 [T3 Connect](./t3-connect.md). A relay token is never an environment login.
 
+Automorphic web and desktop entry also require a verified Automorphic account.
+The web gate uses Better Auth's Convex provider and an authenticated current-user
+query before importing workspace routes. Desktop Google sign-in returns a
+single-use, PKCE-bound code through the account callback protocol; the Electron
+SDK exchanges it and encrypts its session storage. Account sign-in records the
+user's identity but does not grant access to an environment: a new browser must
+still pair with the environment, and its existing scope checks remain in force.
+
 ## Authority survives transport changes
 
 Pairing delegates a set of scopes. Exchanging a bootstrap credential can narrow

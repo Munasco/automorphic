@@ -1,76 +1,31 @@
-# Contributing
+# Contributing to Automorphic
 
-## Developer Setup
+Automorphic is a trading workspace built on [T3 Code](https://github.com/pingdotgg/t3code).
+Report Automorphic bugs and propose changes in [this repository](https://github.com/Munasco/automorphic/issues), rather than in T3 Code's issue tracker.
 
-See the [development runbook](docs/operations/development.md#first-checkout) for the initial checkout,
-development commands, tests, and platform-specific desktop packaging prerequisites.
+## Get started
 
-## Read This First
+Fork the repository, create a branch, and follow the [development guide](docs/operations/development.md).
+See [self-hosting](docs/operations/self-hosting.md) for account, market-data, and AI configuration.
+Use your own credentials and synthetic data. Never include brokerage sessions, account exports,
+private conversations, environment files, or browser profiles in a contribution.
 
-We are not actively accepting contributions right now.
+## Propose a change
 
-You can still report a bug or open a PR, but please do so knowing there is a high chance we close it, defer it forever, or never look at it.
+Open an issue before a substantial feature or architectural change so we can agree on scope.
+Focused bug fixes, accessibility improvements, performance work, documentation, and tests are welcome.
+Describe the problem, expected behavior, and steps to reproduce it. Redact logs and screenshots.
+For security issues, use the [private reporting process](.github/SECURITY.md).
 
-Feature requests and proposals belong in [Ideas discussions](https://github.com/pingdotgg/t3code/discussions/categories/ideas), not issues.
+## Submit a pull request
 
-If that sounds annoying, that is because it is. This project is still early and we are trying to keep scope, quality, and direction under control.
+- Keep each PR focused and explain the resulting behavior and why it matters.
+- Run focused tests, lint, and package typechecks for the files you changed. CI owns the full suite.
+- Include before/after screenshots for UI changes and a short video for interaction or timing changes.
+- Consider both compact and expanded charts and the web/desktop clients; shared changes may also affect mobile.
+- Update user documentation when setup or behavior changes. Follow [AGENTS.md](AGENTS.md) for repository conventions.
+- Preserve copyright and license notices. Identify the source and license of any added code, icons, fonts, or other assets.
 
-PRs are automatically labeled with a `vouch:*` trust status and a `size:*` diff size based on changed lines.
-
-If you are an external contributor, expect `vouch:unvouched` until we explicitly add you to [.github/VOUCHED.td](.github/VOUCHED.td).
-
-## What We Are Most Likely To Accept
-
-Small, focused bug fixes.
-
-Small reliability fixes.
-
-Small performance improvements.
-
-Tightly scoped maintenance work that clearly improves the project without changing its direction.
-
-## What We Are Least Likely To Accept
-
-Large PRs.
-
-Drive-by feature work.
-
-Opinionated rewrites.
-
-Anything that expands product scope without us asking for it first.
-
-If you open a 1,000+ line PR full of new features, we will probably close it quickly and remember that you ignored the clearly written instructions.
-
-## If You Still Want To Open A PR
-
-Keep it small.
-
-Explain exactly what changed.
-
-Explain exactly why the change should exist.
-
-Follow the [documentation rules](AGENTS.md#documentation). Keep internal docs for decisions and
-hard-to-discover constraints. Update user guides when how to use a feature changes; skip descriptions
-of obvious controls and cosmetic changes.
-
-Do not mix unrelated fixes together.
-
-If the PR makes anything resembling a UI change, include clear before/after images.
-
-If the change depends on motion, timing, transitions, or interaction details, include a short video.
-
-If we have to guess what changed, we are much less likely to review it.
-
-## Discuss Changes First
-
-If you are thinking about a non-trivial change, start a discussion first. Issues are reserved for bug reports.
-
-That still does not mean we will want the PR, but it gives you a chance to avoid wasting your time.
-
-## Be Realistic
-
-Opening a PR does not create an obligation on our side.
-
-We may close it. We may ignore it. We may ask you to shrink it. We may reimplement the idea ourselves later.
-
-If you are fine with that, proceed.
+Contributions are provided under the repository's MIT license unless an existing file has a
+different license. Submit only work you have the right to contribute. Third-party components
+retain their own licenses. Review and acceptance are at the maintainers' discretion.
