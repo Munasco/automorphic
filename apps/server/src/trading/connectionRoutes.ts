@@ -7,16 +7,25 @@ import { telegramConnection } from "./telegramDriver.ts";
 
 export async function readConnectionRoute(url: URL): Promise<Response | null> {
   const json = (data: unknown) => Response.json(data, { headers: { "Cache-Control": "no-store" } });
-  if (url.pathname === "/api/trading/connections")
+  if (url.pathname === "/api/trading/connections/telegram")
+    return json(await telegramConnection.status());
+  if (url.pathname === "/api/trading/connections/tradovate")
+    return json(await tradovateConnection.status());
+  if (url.pathname === "/api/trading/connections") {
+    const [tradovate, telegram] = await Promise.all([
+      tradovateConnection.status(),
+      telegramConnection.status(),
+    ]);
     return json({
-      tradovate: await tradovateConnection.status(),
-      telegram: await telegramConnection.status(),
+      tradovate,
+      telegram,
       rithmic: {
         available: false,
         reason:
           "Rithmic support requires developer access and a verified integration. It is not connected yet.",
       },
     });
+  }
   if (url.pathname === "/api/trading/telegram/channels")
     return json(await telegramConnection.channels());
   if (url.pathname === "/api/trading/telegram/messages")
@@ -78,7 +87,8 @@ export async function readConnectionRoute(url: URL): Promise<Response | null> {
     return new Response(stream, {
       headers: {
         "Content-Type": "text/event-stream",
-        "Cache-Control": "no-store",
+        // Compression buffers sparse Telegram posts and heartbeats instead of delivering them live.
+        "Cache-Control": "no-store, no-transform",
         "X-Accel-Buffering": "no",
       },
     });

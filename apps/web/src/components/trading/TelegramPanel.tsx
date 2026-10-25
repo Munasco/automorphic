@@ -11,14 +11,22 @@ import {
   LoaderCircleIcon,
   ShieldCheckIcon,
   CheckCircle2Icon,
+  PlusIcon,
+  XIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
+import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 import { TelegramSignIn } from "./BrokerConnections";
-import { connectionRequest, useTradingConnections } from "./connectionClient";
+import { connectionRequest, useTelegramConnection } from "./connectionClient";
 import { tradingQueryScope } from "./tradingQueries";
 import { openTradingStream } from "./tradingTransport";
 import { useAlertNotifications } from "./useAlertNotifications";
+import {
+  readTelegramChannelSelection,
+  selectedTelegramChannels,
+  setTelegramChannelIncluded,
+} from "./telegramChannels";
 
 export function TelegramPanel({
   visible,
@@ -27,12 +35,26 @@ export function TelegramPanel({
   visible: boolean;
   projectId: string | null;
 }) {
-  const connection = useTradingConnections(),
+  const connection = useTelegramConnection(),
     client = useQueryClient();
   const scope = tradingQueryScope(),
     scopeKey = scope.join("|"),
-    connected = connection.data?.telegram.connected === true;
+    connected = connection.data?.connected === true;
   const storageKey = `automorphic:telegram:v1:${scopeKey}:${projectId ?? "default"}`;
+  const selectionKey = `${storageKey}:channels`;
+  const [selection, setSelection] = useState(() => {
+    try {
+      const saved = localStorage.getItem(selectionKey);
+      return saved !== null
+        ? readTelegramChannelSelection(saved)
+        : readTelegramChannelSelection(
+            JSON.stringify({ added: JSON.parse(localStorage.getItem(storageKey) ?? "[]") }),
+          );
+    } catch {
+      return readTelegramChannelSelection(null);
+    }
+  });
+  const [showAll, setShowAll] = useState(false);
   const [active, setActive] = useState(""),
     [search, setSearch] = useState(""),
     [notice, setNotice] = useState(""),
@@ -66,7 +88,12 @@ export function TelegramPanel({
     staleTime: 60_000,
     retry: false,
   });
-  const selected = channels.data?.find((c) => c.id === active) ?? channels.data?.[0];
+  const tradingChannels = useMemo(
+    () => selectedTelegramChannels(channels.data ?? [], selection, watched),
+    [channels.data, selection, watched],
+  );
+  const includedIds = new Set(tradingChannels.map((channel) => channel.id));
+  const selected = tradingChannels.find((c) => c.id === active) ?? tradingChannels[0];
   const selectedId = selected?.id ?? "";
   const messages = useQuery({
     queryKey: [...scope, "telegram", "messages", selectedId],
@@ -117,6 +144,13 @@ export function TelegramPanel({
     }
   }, [storageKey, watched]);
   useEffect(() => {
+    try {
+      localStorage.setItem(selectionKey, JSON.stringify(selection));
+    } catch {
+      setNotice("Channel preferences could not be saved in this browser.");
+    }
+  }, [selectionKey, selection]);
+  useEffect(() => {
     if (!connected) {
       client.removeQueries({ queryKey: [...tradingQueryScope(), "telegram"] });
       return;
@@ -132,6 +166,11 @@ export function TelegramPanel({
       const stream = openTradingStream(
         `/api/trading/telegram/events?channels=${encodeURIComponent(streamIds)}`,
         {
+          onOpen: () => {
+            if (stopped) return;
+            attempt = 0;
+            setStreamState("Connected");
+          },
           onMessage: (data) => {
             let message: TelegramChannelMessage;
             try {
@@ -186,8 +225,9 @@ export function TelegramPanel({
       if (retry) clearTimeout(retry);
     };
   }, [connected, streamIds, watchedKey, desktop, scopeKey, client]);
-  const list =
-    channels.data?.filter((c) => c.title.toLowerCase().includes(search.toLowerCase())) ?? [];
+  const list = (showAll ? (channels.data ?? []) : tradingChannels).filter((channel) =>
+    `${channel.title} ${channel.username ?? ""}`.toLowerCase().includes(search.toLowerCase()),
+  );
   return (
     <div
       hidden={!visible}
@@ -269,15 +309,23 @@ export function TelegramPanel({
             </p>
           ) : null}
           <div className="flex min-h-0 flex-1 flex-col @min-[600px]:flex-row">
-            <aside className="flex max-h-44 shrink-0 flex-col border-b border-border @min-[600px]:max-h-none @min-[600px]:w-48 @min-[600px]:border-r @min-[600px]:border-b-0">
-              <p className="px-3 pt-2 text-[11px] leading-relaxed text-muted-foreground">
-                Turn on a channel’s bell for signal alerts.
-              </p>
+            <aside className="flex max-h-44 shrink-0 flex-col border-b border-border @min-[600px]:max-h-none @min-[600px]:w-60 @min-[600px]:border-r @min-[600px]:border-b-0">
+              <div className="flex items-center justify-between gap-2 px-3 pt-2 text-[11px]">
+                <span className="whitespace-nowrap font-medium">Trading channels</span>
+                <button
+                  type="button"
+                  aria-pressed={showAll}
+                  className="rounded px-1 py-1 whitespace-nowrap text-muted-foreground hover:bg-muted hover:text-foreground"
+                  onClick={() => setShowAll((value) => !value)}
+                >
+                  {showAll ? "Done" : "All channels"}
+                </button>
+              </div>
               <label className="m-2 flex items-center gap-2 rounded-md border border-border px-2 py-1.5">
                 <SearchIcon className="size-3 text-muted-foreground" />
                 <input
                   aria-label="Search Telegram channels"
-                  className="min-w-0 flex-1 bg-transparent text-xs outline-none"
+                  className="min-w-0 flex-1 bg-transparent text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   placeholder="Find a channel"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -309,36 +357,74 @@ export function TelegramPanel({
                       type="button"
                       aria-pressed={selectedId === channel.id}
                       className="min-w-0 flex-1 truncate px-2 py-2 text-left text-xs"
-                      onClick={() => setActive(channel.id)}
+                      onClick={() => {
+                        if (!includedIds.has(channel.id))
+                          setSelection((value) =>
+                            setTelegramChannelIncluded(value, channel.id, true),
+                          );
+                        setActive(channel.id);
+                      }}
                     >
                       {channel.title}
                     </button>
-                    <button
-                      type="button"
-                      className="mr-1 grid size-7 shrink-0 place-items-center rounded hover:bg-muted"
-                      aria-label={`${watched.includes(channel.id) ? "Mute" : "Notify me about"} ${channel.title}`}
-                      aria-pressed={watched.includes(channel.id)}
-                      onClick={() =>
-                        setWatched((ids) =>
-                          ids.includes(channel.id)
-                            ? ids.filter((id) => id !== channel.id)
-                            : [...ids, channel.id].slice(-100),
-                        )
-                      }
-                    >
-                      {watched.includes(channel.id) ? (
-                        <BellIcon className="size-3 text-blue-400" />
-                      ) : (
-                        <BellOffIcon className="size-3 opacity-50" />
-                      )}
-                    </button>
+                    {includedIds.has(channel.id) ? (
+                      <Tooltip>
+                        <TooltipTrigger
+                          type="button"
+                          className="mr-1 grid size-7 shrink-0 place-items-center rounded hover:bg-muted"
+                          aria-label={`${watched.includes(channel.id) ? "Mute" : "Notify me about"} ${channel.title}`}
+                          aria-pressed={watched.includes(channel.id)}
+                          onClick={() =>
+                            setWatched((ids) =>
+                              ids.includes(channel.id)
+                                ? ids.filter((id) => id !== channel.id)
+                                : [...ids, channel.id].slice(-100),
+                            )
+                          }
+                        >
+                          {watched.includes(channel.id) ? (
+                            <BellIcon className="size-3 text-blue-400" />
+                          ) : (
+                            <BellOffIcon className="size-3 opacity-50" />
+                          )}
+                        </TooltipTrigger>
+                        <TooltipPopup>
+                          {watched.includes(channel.id) ? "Mute alerts" : "Enable alerts"}
+                        </TooltipPopup>
+                      </Tooltip>
+                    ) : null}
+                    <Tooltip>
+                      <TooltipTrigger
+                        type="button"
+                        className="mr-1 grid size-7 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                        aria-label={`${includedIds.has(channel.id) ? "Remove" : "Add"} ${channel.title}`}
+                        onClick={() => {
+                          const included = !includedIds.has(channel.id);
+                          setSelection((value) =>
+                            setTelegramChannelIncluded(value, channel.id, included),
+                          );
+                          if (!included) setWatched((ids) => ids.filter((id) => id !== channel.id));
+                        }}
+                      >
+                        {includedIds.has(channel.id) ? (
+                          <XIcon className="size-3" />
+                        ) : (
+                          <PlusIcon className="size-3" />
+                        )}
+                      </TooltipTrigger>
+                      <TooltipPopup>
+                        {includedIds.has(channel.id) ? "Remove channel" : "Add channel"}
+                      </TooltipPopup>
+                    </Tooltip>
                   </div>
                 ))}
                 {!channels.isPending && !channels.error && !list.length ? (
                   <p className="p-3 text-xs leading-relaxed text-muted-foreground">
                     {search
                       ? "No matching channels."
-                      : "Join channels in Telegram, then refresh to see them here."}
+                      : !showAll && channels.data?.length
+                        ? "No trading channels yet. Add one from All channels."
+                        : "Join channels in Telegram, then refresh to see them here."}
                   </p>
                 ) : null}
               </div>

@@ -100,11 +100,15 @@ describe("trading transport", () => {
     vi.stubGlobal("fetch", request);
     const onMessage = vi.fn();
     const onError = vi.fn();
+    const onOpen = vi.fn();
     const stream = openTradingStream("/api/trading/stream?symbol=MGCZ6&interval=15", {
       onMessage,
       onError,
+      onOpen,
     });
     await vi.waitFor(() => expect(request).toHaveBeenCalled());
+    await vi.waitFor(() => expect(onOpen).toHaveBeenCalledOnce());
+    expect(onMessage).not.toHaveBeenCalled();
     const frame = new TextEncoder().encode(
       ': heartbeat\r\n\r\ndata: {"message":"€"}\r\n\r\ndata: one\r\ndata: two\r\n\r\n',
     );

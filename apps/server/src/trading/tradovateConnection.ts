@@ -1,5 +1,6 @@
 // @effect-diagnostics globalFetch:off globalDate:off - Tradovate transport and private session lifecycle.
 import * as Schema from "effect/Schema";
+import * as NodeBuffer from "node:buffer";
 import {
   connectionSecrets,
   ConnectionError,
@@ -19,6 +20,28 @@ type Saved = typeof Saved.Type;
 const Renewal = Schema.Struct({ accessToken: Schema.String, expirationTime: Schema.String });
 const disabled = (value: unknown) =>
   !!value && typeof value === "object" && "disconnected" in value && value.disconnected === true;
+function serverTokenExpired(env: NodeJS.ProcessEnv, now: number) {
+  const configured = Date.parse(env.TRADOVATE_TOKEN_EXPIRATION ?? "");
+  if (Number.isFinite(configured)) return configured <= now;
+  try {
+    const payload: unknown = JSON.parse(
+      NodeBuffer.Buffer.from(
+        env.TRADOVATE_ACCESS_TOKEN?.split(".")[1] ?? "",
+        "base64url",
+      ).toString(),
+    );
+    return (
+      !!payload &&
+      typeof payload === "object" &&
+      "exp" in payload &&
+      typeof payload.exp === "number" &&
+      Number.isFinite(payload.exp) &&
+      payload.exp * 1000 <= now
+    );
+  } catch {
+    return false;
+  }
+}
 export function createTradovateConnection({
   store = connectionSecrets(),
   environment = tradingConnectionEnvironment,
@@ -95,7 +118,7 @@ export function createTradovateConnection({
       }
       return {
         configured: true,
-        connected: !!env.TRADOVATE_ACCESS_TOKEN,
+        connected: !!env.TRADOVATE_ACCESS_TOKEN && !serverTokenExpired(env, now()),
         environment:
           env.TRADOVATE_ENVIRONMENT === "demo"
             ? ("demo" as const)

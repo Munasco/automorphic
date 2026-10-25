@@ -86,6 +86,8 @@ import { OtlpSerialization, OtlpTracer } from "effect/unstable/observability";
 import { RpcClient, RpcSerialization } from "effect/unstable/rpc";
 import * as Socket from "effect/unstable/socket/Socket";
 import { vi } from "vite-plus/test";
+import { telegramConnection } from "./trading/telegramDriver.ts";
+import { tradovateConnection } from "./trading/tradovateConnection.ts";
 
 const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
 const decodeTransferThreadSnapshot = Schema.decodeUnknownEffect(
@@ -1680,6 +1682,40 @@ const EMPTY_DEVICE_STATE: DeviceServiceState = {
 };
 
 it.layer(NodeServices.layer)("server router seam", (it) => {
+  it.effect(
+    "serves independent Telegram and Tradovate status through the authenticated HTTP router",
+    () =>
+      Effect.gen(function* () {
+        const telegram = vi
+          .spyOn(telegramConnection, "status")
+          .mockResolvedValue({ configured: true, connected: true, name: "Trader" });
+        const tradovate = vi.spyOn(tradovateConnection, "status").mockResolvedValue({
+          configured: true,
+          connected: false,
+          environment: "demo",
+          source: "server",
+        });
+        try {
+          yield* buildAppUnderTest();
+          const cookie = yield* getAuthenticatedSessionCookieHeader();
+          for (const [service, connected] of [
+            ["telegram", true],
+            ["tradovate", false],
+          ] as const) {
+            const response = yield* fetchEffect(
+              yield* getHttpServerUrl(`/api/trading/connections/${service}`),
+              { headers: { cookie } },
+            );
+            assert.equal(response.status, 200);
+            const body = yield* responseJsonEffect<{ connected: boolean }>(response);
+            assert.equal(body.connected, connected);
+          }
+        } finally {
+          telegram.mockRestore();
+          tradovate.mockRestore();
+        }
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
   it.effect("parks HTTP ingress until command readiness", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

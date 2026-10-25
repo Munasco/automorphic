@@ -3,7 +3,11 @@ import { CheckIcon, ArrowUpRightIcon, SendIcon, LinkIcon, LoaderCircleIcon } fro
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
 import { TradingSelect } from "./TradingSelect";
-import { connectionRequest, useTradingConnections } from "./connectionClient";
+import {
+  connectionRequest,
+  useTelegramConnection,
+  useTradovateConnection,
+} from "./connectionClient";
 
 const inputClass =
   "h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400";
@@ -97,19 +101,19 @@ export function TelegramSignIn({
   onConnected?: () => void;
   allowAppSetup?: boolean;
 }) {
-  const connection = useTradingConnections();
+  const connection = useTelegramConnection();
   const [step, setStep] = useState<"phone" | "code" | "password">("phone"),
     [value, setValue] = useState(""),
     [challenge, setChallenge] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [editApp, setEditApp] = useState(false);
-  if (connection.data?.telegram.connected)
+  if (connection.data?.connected)
     return (
       <div className="flex items-center justify-between gap-3 text-xs">
         <span className="flex items-center gap-2 text-emerald-400">
           <CheckIcon className="size-3.5" />
-          {`Connected as ${connection.data.telegram.name}`}
+          {`Connected as ${connection.data.name}`}
         </span>
         <Button
           size="xs"
@@ -141,7 +145,7 @@ export function TelegramSignIn({
         {error ? <span role="alert">{error}</span> : null}
       </div>
     );
-  if (connection.data && (!connection.data.telegram.configured || editApp))
+  if (connection.data && (!connection.data.configured || editApp))
     return (
       <div className="space-y-3">
         {!allowAppSetup ? (
@@ -298,11 +302,11 @@ export function TelegramSignIn({
   );
 }
 export function TradingConnections() {
-  const connection = useTradingConnections(),
+  const connection = useTradovateConnection(),
     [target, setTarget] = useState<"demo" | "live">("demo"),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  const broker = connection.data?.tradovate;
+  const broker = connection.data;
   const lastToastedConnectionErrorRef = useRef<string | null>(null);
   useEffect(() => {
     if (connection.error && connection.error.message !== lastToastedConnectionErrorRef.current) {

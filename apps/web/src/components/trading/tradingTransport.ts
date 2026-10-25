@@ -29,6 +29,7 @@ export type TradingStreamFailure =
 export function openTradingStream(
   endpoint: string,
   callbacks: {
+    onOpen?: () => void;
     onMessage: (data: string) => void;
     onError: (failure?: TradingStreamFailure) => void;
   },
@@ -52,6 +53,7 @@ export function openTradingStream(
         return;
       }
       const reader = response.body.getReader();
+      if (!abort.signal.aborted) callbacks.onOpen?.();
       const cancelReader = () => void reader.cancel().catch(() => undefined);
       abort.signal.addEventListener("abort", cancelReader, { once: true });
       const decoder = new TextDecoder();

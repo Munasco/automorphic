@@ -1,6 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Schema from "effect/Schema";
-import { TradingConnectionStatus, type TradingConnectionCommand } from "@t3tools/contracts";
+import {
+  TradingConnectionStatus,
+  TelegramConnectionStatus,
+  type TradingConnectionCommand,
+} from "@t3tools/contracts";
 import { tradingFetch } from "./tradingTransport";
 import { tradingQueryScope } from "./tradingQueries";
 export async function readConnectionResponse(response: Response): Promise<unknown> {
@@ -41,18 +45,25 @@ export async function connectionRequest(
   });
   return readConnectionResponse(response);
 }
-export function useTradingConnections() {
+const decodeTelegramStatus = Schema.decodeUnknownSync(TelegramConnectionStatus);
+const decodeTradovateStatus = Schema.decodeUnknownSync(TradingConnectionStatus.fields.tradovate);
+
+function useConnectionStatus<T>(service: "telegram" | "tradovate", decode: (value: unknown) => T) {
   const client = useQueryClient(),
     scope = tradingQueryScope();
   const query = useQuery({
-    queryKey: [...scope, "connections"],
+    queryKey: [...scope, "connections", service],
     queryFn: async ({ signal }) =>
-      Schema.decodeUnknownSync(TradingConnectionStatus)(
-        await connectionRequest("connections", undefined, signal),
-      ),
+      decode(await connectionRequest(`connections/${service}`, undefined, signal)),
     staleTime: 10_000,
     refetchInterval: 30_000,
     retry: false,
   });
   return { ...query, refresh: () => client.invalidateQueries({ queryKey: scope }) };
+}
+export function useTelegramConnection() {
+  return useConnectionStatus("telegram", decodeTelegramStatus);
+}
+export function useTradovateConnection() {
+  return useConnectionStatus("tradovate", decodeTradovateStatus);
 }

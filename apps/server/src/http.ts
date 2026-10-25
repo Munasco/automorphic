@@ -460,6 +460,8 @@ const tradingReadHandler = Effect.gen(function* () {
   return yield* Effect.tryPromise(async () => {
     if (
       url.pathname === "/api/trading/connections" ||
+      url.pathname === "/api/trading/connections/telegram" ||
+      url.pathname === "/api/trading/connections/tradovate" ||
       url.pathname.startsWith("/api/trading/telegram/")
     ) {
       try {

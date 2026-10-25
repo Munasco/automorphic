@@ -8,6 +8,17 @@ export interface AccountUser {
   image?: string | null;
 }
 
+let pendingUser: Promise<AccountUser | null> | undefined;
+
+/** Share concurrent bridge lookups without caching a verified identity across sign-out. */
+export function readDesktopAccount() {
+  if (!window.getUser) return Promise.resolve(null);
+  pendingUser ??= window.getUser().finally(() => {
+    pendingUser = undefined;
+  });
+  return pendingUser;
+}
+
 declare global {
   interface Window {
     getUser?: () => Promise<AccountUser | null>;
@@ -27,8 +38,7 @@ export function useDesktopAccount() {
     if (!window.getUser) return;
     let active = true;
     const refresh = () => {
-      void window
-        .getUser?.()
+      void readDesktopAccount()
         .then((value) => {
           if (active) {
             setUser(value);
@@ -45,8 +55,14 @@ export function useDesktopAccount() {
           if (active) setPending(false);
         });
     };
-    const authenticated = window.onAuthenticated?.(() => refresh());
-    const updated = window.onUserUpdated?.(() => refresh());
+    const applyUser = (value: AccountUser | null) => {
+      if (!active) return;
+      setUser(value);
+      setPending(false);
+      setError("");
+    };
+    const authenticated = window.onAuthenticated?.(applyUser);
+    const updated = window.onUserUpdated?.(applyUser);
     const failed = window.onAuthError?.(() => {
       if (active) setError("Google sign-in did not finish. Please try again.");
     });

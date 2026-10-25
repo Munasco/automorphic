@@ -1,10 +1,12 @@
 // @effect-diagnostics nodeBuiltinImport:off -- OS callback registration is synchronous at the Electron adapter boundary.
+// @effect-diagnostics globalFetch:off globalConsole:off -- Better Auth fetch adapter logs only request path, status and duration.
 import { createAuthClient } from "better-auth/client";
 import type { BetterAuthClientPlugin } from "better-auth";
 import { electronClient } from "@better-auth/electron/client";
 import { storage } from "@better-auth/electron/storage";
 import { app, BrowserWindow } from "electron";
 import * as NodePath from "node:path";
+import * as NodePerfHooks from "node:perf_hooks";
 
 const ACCOUNT_PROTOCOL = "com.automorphic.account";
 const pendingLinks: string[] = [];
@@ -39,6 +41,30 @@ export function setupDesktopAccount(stateDir: string) {
   });
   const account = createAuthClient({
     baseURL: "https://ideal-mastiff-363.convex.site",
+    fetchOptions: {
+      timeout: 10_000,
+      customFetchImpl: async (input, init) => {
+        const started = NodePerfHooks.performance.now();
+        const path = new URL(
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+        ).pathname;
+        try {
+          const response = await fetch(input, init);
+          console.info("[account] request", {
+            path,
+            status: response.status,
+            durationMs: Math.round(NodePerfHooks.performance.now() - started),
+          });
+          return response;
+        } catch (error) {
+          console.info("[account] request failed", {
+            path,
+            durationMs: Math.round(NodePerfHooks.performance.now() - started),
+          });
+          throw error;
+        }
+      },
+    },
     plugins: [
       {
         ...plugin,

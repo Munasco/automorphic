@@ -303,7 +303,7 @@ function GoogleIcon() {
   );
 }
 
-export function AccountLoading() {
+export function AccountLoading({ phase = "session" }: { phase?: "session" | "workspace" } = {}) {
   const [stalled, setStalled] = useState(false);
   useEffect(() => {
     const timeout = window.setTimeout(() => setStalled(true), 15_000);
@@ -321,9 +321,13 @@ export function AccountLoading() {
             className="size-6 animate-spin text-blue-400 motion-reduce:animate-none"
           />
           <p>
-            {stalled
-              ? "Session verification is taking longer than expected."
-              : "Verifying session…"}
+            {phase === "workspace"
+              ? stalled
+                ? "The workspace is taking longer than expected."
+                : "Opening workspace…"
+              : stalled
+                ? "Session verification is taking longer than expected."
+                : "Verifying session…"}
           </p>
           {stalled && (
             <button

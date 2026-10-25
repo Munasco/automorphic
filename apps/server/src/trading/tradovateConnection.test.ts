@@ -41,6 +41,29 @@ function fixture() {
   };
 }
 describe("Tradovate browser session", () => {
+  it("does not report an expired server token as connected", async () => {
+    const f = fixture();
+    const c = createTradovateConnection({
+      ...f,
+      environment: async () => ({
+        TRADOVATE_ACCESS_TOKEN: token,
+        TRADOVATE_TOKEN_EXPIRATION: new Date(f.now() - 1).toISOString(),
+      }),
+    });
+    expect((await c.status()).connected).toBe(false);
+    expect(f.calls).toEqual([]);
+  });
+  it("recognizes expiry in a server JWT and leaves valid sessions connected", async () => {
+    const f = fixture();
+    for (const expired of [true, false]) {
+      const jwt = `header.${Buffer.from(JSON.stringify({ exp: (f.now() + (expired ? -1000 : 3600000)) / 1000 })).toString("base64url")}.signature`;
+      const c = createTradovateConnection({
+        ...f,
+        environment: async () => ({ TRADOVATE_ACCESS_TOKEN: jwt }),
+      });
+      expect((await c.status()).connected).toBe(!expired);
+    }
+  });
   it("verifies account access before saving and never returns tokens in status", async () => {
     const f = fixture(),
       c = createTradovateConnection({ ...f, environment: async () => ({}) });

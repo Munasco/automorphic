@@ -49,7 +49,7 @@ import.meta.hot?.dispose(() => {
 const app = (
   <AccountProvider>
     <AccountGate>
-      <Suspense fallback={<AccountLoading />}>
+      <Suspense fallback={<AccountLoading phase="workspace" />}>
         <AuthenticatedWorkspace />
       </Suspense>
     </AccountGate>
@@ -67,8 +67,8 @@ const managedAuthShellModule =
       : import("./components/clerk/BrowserManagedAuthShell")
     : null;
 
-// Keep the boot splash until auth can render. Workspace modules load only
-// inside the authenticated gate, after Convex validates the current user.
+// Keep the boot splash until auth can render. Workspace code loads only
+// after account verification succeeds.
 export const startup = Promise.resolve(
   managedAuthShellModule?.then((module) => module.default) ?? null,
 )
