@@ -46,13 +46,18 @@ export function mostActiveContract(
   return { id: winner.id, name: winner.name };
 }
 
-export function readContractActivity(candidates: ActiveContractCandidate[], token: string) {
+export function readContractActivity(
+  candidates: ActiveContractCandidate[],
+  token: string,
+  environment: "demo" | "live" = "demo",
+) {
   return new Promise<Map<number, ContractActivity>>((resolve, reject) => {
     if (!candidates.length) {
       reject(new Error("No current contracts available."));
       return;
     }
-    const ws = new WebSocket("wss://md.tradovateapi.com/v1/websocket");
+    const host = environment === "live" ? "md.tradovateapi.com" : "md-demo.tradovateapi.com";
+    const ws = new WebSocket(`wss://${host}/v1/websocket`);
     const activity = new Map<number, ContractActivity>();
     let settled = false;
     const finish = (error?: Error) => {

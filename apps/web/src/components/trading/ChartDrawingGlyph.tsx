@@ -130,7 +130,7 @@ export function ChartDrawingGlyph({ tool }: { tool: ChartDrawingTool }) {
         <>
           <path d="m5.5 18.5 16-16" />
           <circle cx="4" cy="20" r="2" />
-          <circle cx="14" cy="10" r="1.5" fill="var(--color-background, #0b0d12)" />
+          <path d="m14 7.8 2.2 2.2-2.2 2.2-2.2-2.2z" fill="var(--color-background, #0b0d12)" />
         </>
       ) : null}
       {tool === "horizontal" ? (

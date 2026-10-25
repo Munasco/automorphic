@@ -31,8 +31,8 @@ Review native binaries and assets separately; package metadata alone is not a cl
   retain their packaged notices and satisfy the native library's LGPL requirements.
 - **Fonts**: preserve the OFL files alongside Geist, Inter, DM Sans, JetBrains Mono, and
   terminal fonts. Local trial/evaluation fonts must not enter public source or builds.
-- **Third-party marks and imagery**: provider logos, inherited T3 marketing imagery,
-  profile photographs, and market-data screenshots need their own provenance review.
+- **Third-party marks and imagery**: provider logos, profile photographs, and
+  market-data screenshots need their own provenance review.
   Their presence in a source tree does not establish trademark, publicity, or data rights.
 
 ## Additional assets

@@ -109,7 +109,7 @@ export function TelegramSignIn({
       <div className="flex items-center justify-between gap-3 text-xs">
         <span className="flex items-center gap-2 text-emerald-400">
           <CheckIcon className="size-3.5" />
-          Connected as {connection.data.telegram.name}
+          {`Connected as ${connection.data.telegram.name}`}
         </span>
         <Button
           size="xs"

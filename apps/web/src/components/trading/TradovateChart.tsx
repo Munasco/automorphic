@@ -401,24 +401,6 @@ export function TradovateChart({
   const paneCount = oscillatorInstancePaneCount(visibleInstances);
   const [engine, setEngine] = useState<ChartEngine | null>(null);
   const [status, setStatus] = useState("Connecting to Tradovate…");
-  const lastToastedStatusRef = useRef<string | null>(null);
-  useEffect(() => {
-    const isError =
-      Boolean(status) &&
-      status !== "Tradovate connected" &&
-      status !== "Connecting to Tradovate…" &&
-      status !== "Reconnecting to Tradovate…";
-    if (isError && status !== lastToastedStatusRef.current) {
-      lastToastedStatusRef.current = status;
-      toastManager.add({
-        type: "error",
-        title: "Market data error",
-        description: status,
-      });
-    } else if (!isError) {
-      lastToastedStatusRef.current = null;
-    }
-  }, [status]);
   const [olderHistoryStatus, setOlderHistoryStatus] = useState("");
   const retryOlderHistory = useRef<() => void>(() => {});
   const [tickHistory, setTickHistory] = useState<TickHistoryQuality | null>(null);

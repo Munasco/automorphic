@@ -2719,8 +2719,14 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       },
       protocols: [
         {
-          name: "T3 Code",
-          schemes: ["t3code", "t3code-dev", "com.automorphic.account"],
+          name: "Automorphic",
+          schemes: [
+            "automorphic",
+            "automorphic-dev",
+            "t3code",
+            "t3code-dev",
+            "com.automorphic.account",
+          ],
         },
       ],
       ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
@@ -2766,8 +2772,14 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       // t3code:// OAuth callbacks to the app.
       protocols: [
         {
-          name: "T3 Code",
-          schemes: ["t3code", "t3code-dev", "com.automorphic.account"],
+          name: "Automorphic",
+          schemes: [
+            "automorphic",
+            "automorphic-dev",
+            "t3code",
+            "t3code-dev",
+            "com.automorphic.account",
+          ],
         },
       ],
       desktop: {

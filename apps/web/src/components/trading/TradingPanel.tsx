@@ -12,10 +12,10 @@ import type { DrawingAlertsController } from "./useDrawingAlerts";
 import { ChartOverlayLayoutProvider } from "./chartOverlayLayout";
 import type { ChartPriceAlert } from "./chartAlerts";
 import { ChartIcon } from "./ChartIcon";
+import { ArrowLeftIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Button } from "../ui/button";
-import { toastManager } from "../ui/toast";
 import { useTradingPreferences } from "./tradingPreferences";
 import { TradovateChart } from "./TradovateChart";
 import { TradingViewEmbedPanel } from "./TradingViewEmbedPanel";
@@ -97,17 +97,6 @@ function ReadyTradingPanel({
     if (open) setSideView(null);
   };
   const error = selectedQuery.error?.message;
-  const lastToastedErrorTimeRef = useRef<number>(0);
-  useEffect(() => {
-    if (selectedQuery.error && selectedQuery.errorUpdatedAt !== lastToastedErrorTimeRef.current) {
-      lastToastedErrorTimeRef.current = selectedQuery.errorUpdatedAt;
-      toastManager.add({
-        type: "error",
-        title: "Trading error",
-        description: selectedQuery.error.message,
-      });
-    }
-  }, [selectedQuery.error, selectedQuery.errorUpdatedAt]);
   const settingsControl = (
     <Tooltip>
       <TooltipTrigger
@@ -271,8 +260,17 @@ function ReadyTradingPanel({
             />
             {activeView === "news" || activeView === "telegram" ? (
               <div className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1">
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  className="size-7 p-0 text-muted-foreground hover:text-foreground"
+                  onClick={() => setView("chart")}
+                  aria-label="Back to chart"
+                >
+                  <ArrowLeftIcon className="size-4" />
+                </Button>
                 {navigationControl}
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs font-medium text-foreground">
                   {activeView === "telegram" ? "Telegram" : "News"}
                 </span>
                 <div className="ml-auto flex items-center">{settingsControl}</div>

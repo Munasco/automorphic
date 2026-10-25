@@ -27,7 +27,7 @@ export const claimRenewal = internalMutation({
       await ctx.db.patch(session._id, { status: "expired-login-required", lastCheckedAt: now });
       return null;
     }
-    if (!force && session.expiration - now > 15 * 60_000) {
+    if (!force && session.expiration - now > 55 * 60_000) {
       await ctx.db.patch(session._id, { status: "valid", lastCheckedAt: now });
       return null;
     }
@@ -163,5 +163,42 @@ export const bindOwner = internalMutation({
     const ownerEmail = email.trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(ownerEmail)) throw new Error("Invalid owner email.");
     await ctx.db.patch(current._id, { ownerEmail });
+  },
+});
+
+export const setSession = internalMutation({
+  args: {
+    accessToken: v.string(),
+    expiration: v.number(),
+    environment: v.union(v.literal("demo"), v.literal("live")),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("brokerSessions")
+      .withIndex("by_name", (q) => q.eq("name", "owner"))
+      .unique();
+    const now = Date.now();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        accessToken: args.accessToken,
+        expiration: args.expiration,
+        environment: args.environment,
+        lastRenewedAt: now,
+        lastCheckedAt: now,
+        status: "valid",
+        leaseUntil: 0,
+      });
+      return existing._id;
+    } else {
+      return await ctx.db.insert("brokerSessions", {
+        name: "owner",
+        accessToken: args.accessToken,
+        expiration: args.expiration,
+        environment: args.environment,
+        lastRenewedAt: now,
+        lastCheckedAt: now,
+        status: "valid",
+      });
+    }
   },
 });

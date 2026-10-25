@@ -4,10 +4,10 @@ export const BRAND_ASSET_PATHS = {
   developmentUniversalIconPng: "assets/dev/blueprint-universal-1024.png",
 
   productionIconComposerProject: "assets/prod/app-icon.icon",
-  productionIosIconPng: "assets/prod/black-ios-1024.png",
+  productionIosIconPng: "assets/prod/automorphic-ios-1024.png",
   productionMacIconPng: "apps/desktop/resources/automorphic-macos-1024.png",
-  productionLinuxIconPng: "assets/prod/black-universal-1024.png",
-  productionWindowsIconIco: "assets/prod/t3-black-windows.ico",
+  productionLinuxIconPng: "assets/prod/automorphic-universal-1024.png",
+  productionWindowsIconIco: "assets/prod/automorphic-windows.ico",
   productionWebFaviconIco: "assets/automorphic/favicon.ico",
   productionWebFavicon16Png: "assets/automorphic/favicon-16x16.png",
   productionWebFavicon32Png: "assets/automorphic/favicon-32x32.png",

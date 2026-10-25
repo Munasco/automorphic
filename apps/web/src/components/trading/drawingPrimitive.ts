@@ -815,7 +815,16 @@ export function createDrawingPrimitive(
                 ctx.roundRect(point.x - radius, point.y - radius, radius * 2, radius * 2, 2);
               else if (drawing.kind === "disjoint-channel" && index === 2)
                 ctx.rect(point.x - radius, point.y - radius, radius * 2, radius * 2);
-              else ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+              // A ray's second anchor controls its direction; the stroke continues
+              // through it to the chart edge. Keep it visually distinct from a
+              // trendline's circular terminal endpoint.
+              else if (drawing.kind === "ray" && index === 1) {
+                ctx.moveTo(point.x, point.y - radius);
+                ctx.lineTo(point.x + radius, point.y);
+                ctx.lineTo(point.x, point.y + radius);
+                ctx.lineTo(point.x - radius, point.y);
+                ctx.closePath();
+              } else ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
               ctx.fillStyle = "#15171a";
               ctx.fill();
               ctx.strokeStyle =
