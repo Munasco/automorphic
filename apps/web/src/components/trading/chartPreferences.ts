@@ -223,6 +223,8 @@ type SavedChartPreferences = {
   showPriceScale: boolean;
   showPriceScaleTicks: boolean;
   alignPriceLabels: boolean;
+  backAdjusted: boolean;
+  showRollMarkers: boolean;
 };
 
 /** Old saved charts keep their choices while newly introduced indicators stay disabled. */
@@ -380,6 +382,8 @@ export function normalizeChartPreferences(value: unknown): SavedChartPreferences
     showPriceScale: saved.showPriceScale !== false,
     showPriceScaleTicks: saved.showPriceScaleTicks === true,
     alignPriceLabels: saved.alignPriceLabels !== false,
+    backAdjusted: saved.backAdjusted !== false,
+    showRollMarkers: saved.showRollMarkers !== false,
   };
 }
 export const useChartPreferences = create<{
@@ -461,6 +465,10 @@ export const useChartPreferences = create<{
   showPriceScale: boolean;
   showPriceScaleTicks: boolean;
   alignPriceLabels: boolean;
+  backAdjusted: boolean;
+  showRollMarkers: boolean;
+  setBackAdjusted: (backAdjusted: boolean) => void;
+  setShowRollMarkers: (showRollMarkers: boolean) => void;
   setShowChartTitle: (show: boolean) => void;
   setShowBarChange: (show: boolean) => void;
   setShowCandleValues: (show: boolean) => void;
@@ -635,6 +643,8 @@ export const useChartPreferences = create<{
       showPriceScale: true,
       showPriceScaleTicks: false,
       alignPriceLabels: true,
+      backAdjusted: true,
+      showRollMarkers: true,
       setShowChartTitle: (showChartTitle) => {
         if (typeof showChartTitle === "boolean" && showChartTitle !== get().showChartTitle)
           set({ showChartTitle });
@@ -1245,6 +1255,14 @@ export const useChartPreferences = create<{
           showPriceScaleTicks !== get().showPriceScaleTicks
         )
           set({ showPriceScaleTicks });
+      },
+      setBackAdjusted: (backAdjusted) => {
+        if (typeof backAdjusted === "boolean" && backAdjusted !== get().backAdjusted)
+          set({ backAdjusted });
+      },
+      setShowRollMarkers: (showRollMarkers) => {
+        if (typeof showRollMarkers === "boolean" && showRollMarkers !== get().showRollMarkers)
+          set({ showRollMarkers });
       },
     }),
     {
