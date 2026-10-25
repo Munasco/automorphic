@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
-import { getThirdFridayOfMonth, getCmeIndexRollDate, generateRollEvents } from "./rolloverSchedule";
+import {
+  getThirdFridayOfMonth,
+  getCmeIndexRollDate,
+  generateRollEvents,
+} from "./rolloverSchedule.ts";
 
 describe("rolloverSchedule", () => {
   it("calculates third Friday of September 2026 correctly", () => {
