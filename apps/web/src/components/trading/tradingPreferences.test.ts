@@ -91,7 +91,8 @@ describe("futures instrument selection", () => {
     );
     await useTradingPreferences.persist.rehydrate();
     expect(useTradingPreferences.getState().root).toBe("MGC");
-    for (const symbol of ["ESZ6", "MGCNQZ6", "GC1!", "NQbad", "mgcz6", ""]) {
+    expect(rootFromSymbol("GC1!")).toBe("GC");
+    for (const symbol of ["ESZ6", "MGCNQZ6", "NQbad", "mgcz6", ""]) {
       expect(rootFromSymbol(symbol)).toBeUndefined();
     }
   });
